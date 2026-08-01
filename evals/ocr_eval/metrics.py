@@ -188,8 +188,15 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     return missing / len(tokens)
 
 
-def _canonical(text: str) -> str:
-    return re.sub(r"\s+", "", normalize_for_compare(text))
+def _canonical(text: str, token_class: str | None = None) -> str:
+    collapsed = re.sub(r"\s+", "", normalize_for_compare(text))
+    if token_class == "route":
+        # Routes are case-insensitive abbreviations, so 'IM' and 'im' are the
+        # same value. Turkish lowercasing maps 'I' to 'ı', which would leave
+        # them comparing unequal and report a correct transcription as a
+        # mismatch; folding up puts both spellings on 'IM'.
+        return collapsed.upper()
+    return collapsed
 
 
 def _annotated_spans(text: str, tokens: Iterable[str]) -> list[tuple[int, int, str]]:
@@ -225,7 +232,10 @@ def critical_token_sequence(
 
     text = nfc(text)
     detected = detect_critical_tokens(text, wordlists)
-    entries = [(t.start, t.end, t.token_class, _canonical(t.text)) for t in detected]
+    entries = [
+        (t.start, t.end, t.token_class, _canonical(t.text, t.token_class))
+        for t in detected
+    ]
 
     if annotated_tokens:
         # Suppress an annotation only when the detector already produced the
@@ -256,7 +266,8 @@ def _sequence_with_surfaces(
     text = nfc(text)
     detected = detect_critical_tokens(text, wordlists)
     entries = [
-        (t.start, t.end, t.token_class, _canonical(t.text), t.text) for t in detected
+        (t.start, t.end, t.token_class, _canonical(t.text, t.token_class), t.text)
+        for t in detected
     ]
 
     if annotated_tokens:

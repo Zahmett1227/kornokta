@@ -294,8 +294,22 @@ class TestCriticalTokenSequence:
         assert critical_token_mismatches(gold, hypothesis, gold_tokens=gold_tokens) != []
         assert critical_token_mismatches(gold, gold, gold_tokens=gold_tokens) == []
 
-    def test_route_change_is_reported(self):
-        assert critical_token_mismatches("5 mg IM verilir", "5 mg IV verilir") != []
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("5 mg IM verilir", "5 mg IV verilir"),
+            ("5 mg iv verilir", "5 mg im verilir"),   # OCR may lowercase both
+            ("5 mg IM verilir", "5 mg iv verilir"),   # ...or only one side
+        ],
+    )
+    def test_route_change_is_reported(self, gold, hypothesis):
+        assert critical_token_mismatches(gold, hypothesis) != []
+
+    def test_route_case_alone_is_not_a_mismatch(self):
+        # 'IM' and 'im' are the same route; Turkish lowercasing maps 'I' to 'ı',
+        # so without folding these would compare unequal and a correct
+        # transcription would be reported as an error.
+        assert critical_token_mismatches("5 mg IM verilir", "5 mg im verilir") == []
 
     def test_annotation_respects_token_boundaries(self):
         # 'adrenalin' must not be located inside 'noradrenalin'.

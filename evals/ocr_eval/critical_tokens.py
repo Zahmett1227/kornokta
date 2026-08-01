@@ -76,10 +76,15 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # Administration route. Not named in ANA-PLAN §10.5's list, but it changes
     # medical meaning as sharply as the classes that are — 'IM' read as 'IV'
     # is a different drug order — and the section's stated purpose is to gate
-    # meaning-changing disagreements. Matched case-sensitively on purpose:
-    # lowercase 'im', 'it', 'id', 'po' are ordinary Turkish letter sequences
-    # (evim, tedavisidir) and would flood the confirmation queue.
-    ("route", re.compile(r"\b(?:IM|IV|PO|SC|SQ|IO|IT|SL|PR|TD|INH|ID)\b")),
+    # meaning-changing disagreements.
+    #
+    # Case-insensitive: the \b boundaries already stop word-internal matches,
+    # so 'evim', 'resim', 'birim' and 'tedavim' do not trigger. Requiring
+    # uppercase instead would miss a route change entirely whenever OCR
+    # lowercases it ('5 mg iv' vs '5 mg im' would both go undetected).
+    ("route", re.compile(
+        r"\b(?:IM|IV|PO|SC|SQ|IO|IT|SL|PR|TD|INH|ID)\b", re.IGNORECASE
+    )),
     ("percentage", re.compile(r"%\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*%")),
     ("number_decimal", re.compile(
         r"\d+(?:[.,]\d+)?(?:\s*[–—-]\s*\d+(?:[.,]\d+)?)?"

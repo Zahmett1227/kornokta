@@ -204,6 +204,21 @@ class TestTurkishSemanticClasses:
         assert "stage_grade_class" in classes_of("2. derece blok")
 
 
+class TestRoute:
+    @pytest.mark.parametrize("text", ["5 mg IM verilir", "5 mg im verilir", "PO alınır", "po alınır"])
+    def test_route_detected_in_either_case(self, text):
+        assert "route" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        ["evim güzel", "tedavisidir", "resim", "birim", "tedavim", "isim", "yardım"],
+    )
+    def test_word_internal_letters_are_not_a_route(self, text):
+        # The \b boundaries do this work, which is why case-insensitive
+        # matching is safe here.
+        assert "route" not in classes_of(text)
+
+
 class TestWordlists:
     def test_drug_name_from_wordlist(self):
         wl = Wordlists(drug_names={"adrenalin", "amiodaron"})

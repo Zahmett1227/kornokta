@@ -72,7 +72,9 @@ ANA-PLAN §10.5 kritik token sınıflarını sayarken **uygulama yolunu (IM/IV/P
 
 **Gerekçe:** §10.5'in belirtilen amacı "tıbbi anlamı değiştiren" uyuşmazlıkları otomatik geçişten alıkoymak. `5 mg IM` yerine `5 mg IV` okumak farklı bir order demektir ve bu, listede yer alan doz/birim hatalarıyla aynı ağırlıkta. Eklenmeden önce bu değişim üç kapının hiçbirinden görünmüyordu.
 
-**Uygulama notu:** Büyük harfe duyarlı eşleştirilir. Küçük harfli `im`, `it`, `id`, `po` sıradan Türkçe harf dizileridir (`evim`, `tedavisidir`, `po polikliniği`) ve küçük harfe de bakmak onay kuyruğunu kullanılamaz hale getirirdi. Bunun bedeli: OCR yolu küçük harf üretirse yakalanmaz.
+**Uygulama notu:** Büyük/küçük harften bağımsız eşleştirilir ve değerler karşılaştırma için büyük harfe katlanır (`IM` ile `im` aynı yol; Türkçe küçültme `I`'yı `ı`'ya çevirdiği için katlama olmadan doğru bir transkripsiyon hata sayılırdı). Sözcük sınırları (`\b`) sözcük-içi eşleşmeleri zaten engelliyor: `evim`, `resim`, `birim`, `tedavim`, `isim`, `yardım` tetiklemiyor.
+
+> İlk uygulamada büyük harf kısıtı konmuştu; gerekçe "küçük `im/it/id` Türkçe harf dizileriyle çakışır" idi. Bu **test edilmeden** varsayılmıştı ve yanlıştı — sınırlar bu işi zaten yapıyor. Kısıt, OCR yolu küçük harf ürettiğinde (`5 mg iv` → `5 mg im`) değişimi tamamen görünmez yapıyordu.
 
 **Durum:** ANA-PLAN sahibinin onayı bekleniyor (§0.11 uyarınca en küçük geri alınabilir çözüm olarak eklendi). Onaylanmazsa `route` kalıbının ve şema enum girdisinin kaldırılması yeterli.
 
