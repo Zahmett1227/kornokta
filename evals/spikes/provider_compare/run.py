@@ -60,8 +60,10 @@ def run_dry(cfg: dict) -> int:
         have = "key present" if status[cand["key"]] else "no key in env"
         print(f"  - {cand['key']:24} {cand['provider']}:{cand['model']:20} "
               f"[{cand['role']}]  ({have})")
-    print(f"\nOCR: {cfg['ocr']['provider']} "
-          f"({'creds present' if status['ocr:' + cfg['ocr']['provider']] else 'no creds in env'})")
+    ocr = cfg["ocr"]
+    print(f"\nOCR: {ocr['provider']} "
+          f"({'creds present' if status['ocr:' + ocr['provider']] else 'no creds in env'})"
+          f"  —  {ocr['pricePer1000PagesUSD']} USD / 1000 pages (ANA-PLAN §10.2)")
     print("\nEvaluation dimensions:")
     for dim in cfg["evaluationDimensions"]:
         print(f"  - {dim}")
