@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from .normalize import turkish_lower
+from .normalize import nfc
 
 TOKEN_CLASSES = (
     "number_decimal",
@@ -100,8 +100,13 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # listed separately because their positive forms carry the same
     # meaning-flip risk as artar/azalır (ANA-PLAN §10.5).
     ("negation_pair", re.compile(
+        # Negative aorist: artmaz, göstermez, bulunmaz, değişmez ...
         r"\w+m[ae]z\b"
-        r"|\b(?:var|yok|değil)\b"
+        # Negative participle: olmayan, yapmayan, görülmeyen ...
+        r"|\w+m[ae]y[ae]n\b"
+        # 'değil' takes copular suffixes: değil, değildir, değildi, değilse ...
+        r"|\bdeğil\w*"
+        r"|\b(?:var|yok|yoktur|vardır)\b"
         r"|\b(?:yapar|artar|artırır|azalır|azaltır|görülür|izlenir|saptanır"
         r"|yükselir|yükseltir|düşer|düşürür|çoğalır|gerileri?r|bozar|engeller)\b",
         re.IGNORECASE,
@@ -115,20 +120,37 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
+def _fold_preserving_length(text: str) -> str:
+    """Case-fold for matching with a guaranteed 1:1 character mapping.
+
+    Offsets are reported back to the caller, so any length change here would
+    shift every following span. str.lower() expands a few code points (notably
+    'İ' → 'i' + combining dot), so those are mapped explicitly and any other
+    expanding character keeps its original form rather than corrupting indices.
+    """
+    out = []
+    for ch in text:
+        lowered = ch.translate(_TR_LOWER_MAP_LOCAL).lower()
+        out.append(lowered if len(lowered) == 1 else ch.lower()[:1] or ch)
+    return "".join(out)
+
+
+_TR_LOWER_MAP_LOCAL = str.maketrans({"I": "ı", "İ": "i"})
+
+
 def _wordlist_matches(text: str, names: Iterable[str], token_class: str) -> list[CriticalToken]:
-    # turkish_lower is length-preserving ('İ'→'i'), unlike str.casefold which
-    # expands 'İ' to two code points and would shift every following index.
     found: list[CriticalToken] = []
-    lowered = turkish_lower(text)
+    lowered = _fold_preserving_length(text)
     for name in names:
-        needle = turkish_lower(name)
+        needle = _fold_preserving_length(nfc(name))
         start = 0
         while True:
             idx = lowered.find(needle, start)
             if idx == -1:
                 break
-            found.append(CriticalToken(text[idx:idx + len(name)], token_class, idx, idx + len(name)))
-            start = idx + len(name)
+            end = idx + len(needle)
+            found.append(CriticalToken(text[idx:end], token_class, idx, end))
+            start = end
     return found
 
 
@@ -138,7 +160,15 @@ def detect_critical_tokens(text: str, wordlists: Wordlists | None = None) -> lis
     Overlapping spans are kept — '0,5 mg/kg' yields dose_frequency,
     number_decimal and unit hits — because each class carries its own
     confirmation rule downstream.
+
+    The input is normalized to NFC once, up front, and every reported
+    `start`/`end` indexes that NFC form. Normalizing per-match would be unsafe:
+    NFC can change length (decomposed 'İ' is two code points, composed is one),
+    so offsets taken from a normalized copy do not address the original string.
+    Callers that need to slice should use `nfc(text)` or the token's own `text`.
     """
+    text = nfc(text)
+
     tokens: list[CriticalToken] = []
     for token_class, pattern in _PATTERNS:
         for match in pattern.finditer(text):

@@ -5,8 +5,9 @@ from evals.ocr_eval.metrics import selection_prf
 from evals.spikes.marker_detection.detector import (
     LineBox,
     analyze_page,
-    group_selected_passage,
+    group_selected_passages,
     load_config,
+    selected_line_ids,
 )
 from evals.spikes.marker_detection.synthetic import make_page
 
@@ -57,19 +58,61 @@ class TestUnderlineDetection:
 
 
 class TestPassageGrouping:
-    def test_selected_passage_matches_truth(self, cfg):
+    def test_selected_lines_match_truth(self, cfg):
         page = make_page(n_lines=8, marked={2: "highlight:yellow", 5: "underline:pen"})
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
-        selected = group_selected_passage(detections)
-        prf = selection_prf(page.marked_line_ids, selected)
+        prf = selection_prf(page.marked_line_ids, selected_line_ids(detections))
         assert prf.recall == 1.0
         assert prf.false_positives == 0
 
-    def test_consecutive_highlight_grouped(self, cfg):
+    def test_consecutive_highlight_is_one_passage(self, cfg):
         page = make_page(n_lines=8, marked={3: "highlight:yellow", 4: "highlight:yellow"})
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
-        selected = set(group_selected_passage(detections))
-        assert {"line_03", "line_04"} <= selected
+        assert group_selected_passages(detections) == [["line_03", "line_04"]]
+
+    def test_separated_marks_are_distinct_passages(self, cfg):
+        # line_02 and line_05 are unrelated regions; merging them would feed
+        # disjoint source text to card generation as one passage.
+        page = make_page(n_lines=8, marked={2: "highlight:yellow", 5: "underline:pen"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        assert group_selected_passages(detections) == [["line_02"], ["line_05"]]
+
+    def test_no_marks_yields_no_passages(self, cfg):
+        page = make_page(n_lines=4)
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        assert group_selected_passages(detections) == []
+
+
+class TestThickDarkBandRejection:
+    def _page_with_dark_band(self, cfg, band_height):
+        """A page whose line_02 sits above a thick dark region (shadow/table rule)."""
+        import numpy as np
+
+        page = make_page(n_lines=6)
+        line = next(l for l in page.lines if l.line_id == "line_02")
+        page.image_bgr[line.y2: line.y2 + band_height, line.x: line.x2] = 5
+        return page, line
+
+    def test_thick_band_not_classified_as_underline(self, cfg):
+        page, _ = self._page_with_dark_band(cfg, band_height=30)
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.detail["rejected_too_thick"] is True
+        assert target.selection_type == "none"
+
+    def test_thick_band_never_auto_accepted(self, cfg):
+        page, _ = self._page_with_dark_band(cfg, band_height=30)
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=1.0, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.decision == "user_selection"
+        assert target.selection_confidence < cfg["decisionThresholds"]["autoCandidate"]
+
+    def test_thin_underline_still_accepted(self, cfg):
+        page = make_page(n_lines=6, marked={2: "underline:pen"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.detail["rejected_too_thick"] is False
+        assert target.selection_type == "underline"
 
 
 class TestConfidenceComponents:

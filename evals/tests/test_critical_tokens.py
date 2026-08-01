@@ -89,6 +89,24 @@ class TestTurkishSemanticClasses:
 
     @pytest.mark.parametrize(
         "text",
+        [
+            "kontrendike değildir",
+            "değildi",
+            "endike değilse",
+            "olmayan olgular",
+            "görülmeyen bulgu",
+            "bulunmaz",
+            "yoktur",
+        ],
+    )
+    def test_productive_negation_forms(self, text):
+        # 'değil' takes copular suffixes and negation also surfaces as the
+        # -mayan/-meyen participle; a finite verb list misses all of these,
+        # letting a meaning-reversing disagreement skip confirmation.
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
         ["kırmızı hücre", "beyaz küre", "domuz gribi", "yaz aylarında", "tuz kısıtlaması"],
     )
     def test_suffix_rule_does_not_overmatch(self, text):
@@ -118,6 +136,34 @@ class TestWordlists:
 
     def test_empty_wordlist_no_flag(self):
         assert "drug_name" not in classes_of("İlk seçenek adrenalindir")
+
+
+class TestOffsets:
+    def test_spans_slice_correctly_in_ascii(self):
+        text = "Doz 0,5 mg/kg verilir"
+        for token in detect_critical_tokens(text):
+            assert text[token.start:token.end] == token.text
+
+    def test_wordlist_offsets_survive_unicode_normalization(self):
+        # Decomposed 'İ' is two code points; NFC collapses it to one. Offsets
+        # taken from a normalized copy but applied to the original string would
+        # slide, making the confirmation UI highlight the wrong text.
+        from evals.ocr_eval.normalize import nfc
+
+        text = "İLAÇ adrenalin"  # decomposed İ
+        wl = Wordlists(drug_names={"adrenalin"})
+        drug = next(t for t in detect_critical_tokens(text, wl) if t.token_class == "drug_name")
+        assert drug.text == "adrenalin"
+        assert nfc(text)[drug.start:drug.end] == "adrenalin"
+
+    def test_regex_and_wordlist_offsets_share_one_frame(self):
+        from evals.ocr_eval.normalize import nfc
+
+        text = "İLAÇ 0,5 mg adrenalin"
+        normalized = nfc(text)
+        wl = Wordlists(drug_names={"adrenalin"})
+        for token in detect_critical_tokens(text, wl):
+            assert normalized[token.start:token.end] == token.text
 
 
 class TestBehavior:

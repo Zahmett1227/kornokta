@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .detector import LineBox, analyze_page, group_selected_passage, load_config
+from .detector import LineBox, analyze_page, group_selected_passages, load_config
 
 
 def _print_report(detections) -> None:
@@ -26,8 +26,13 @@ def _print_report(detections) -> None:
             f"{d.line_id:8} {d.selection_type:10} {d.selection_confidence:6.3f} "
             f"{d.decision:16} {json.dumps(d.detail, ensure_ascii=False)}"
         )
-    passage = group_selected_passage(detections)
-    print(f"\nSelected passage lines: {passage or '(none)'}")
+    passages = group_selected_passages(detections)
+    if not passages:
+        print("\nSelected passages: (none)")
+        return
+    print(f"\nSelected passages ({len(passages)}):")
+    for i, passage in enumerate(passages, start=1):
+        print(f"  {i}. {passage}")
 
 
 def run_demo(cfg: dict) -> int:

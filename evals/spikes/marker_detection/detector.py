@@ -124,10 +124,10 @@ def detect_highlight_overlap(image_bgr: np.ndarray, line: LineBox, cfg: dict) ->
     return float(mask.mean())
 
 
-def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> tuple[float, float]:
+def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> tuple[float, float, float]:
     """Detect a dark horizontal mark in the band below the text baseline.
 
-    Returns (dark_pixel_ratio, horizontal_extent_ratio) for the band.
+    Returns (dark_pixel_ratio, horizontal_extent_ratio, thickness_ratio).
     """
     ucfg = cfg["underline"]
     band_h = max(3, int(round(line.height * ucfg["bandHeightRatio"])))
@@ -148,7 +148,23 @@ def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> tuple[f
     # underline spans most of the line, stray specks do not.
     columns_with_dark = dark.any(axis=0)
     extent_ratio = float(columns_with_dark.mean()) if columns_with_dark.size else 0.0
-    return dark_ratio, extent_ratio
+
+    # Thickness: how many consecutive rows form the wide dark stripe. An
+    # underline is thin; a shadow, table rule or graphic filling the band is
+    # thick and must not be read as a marked line.
+    wide_rows = dark.mean(axis=1) >= ucfg["minHorizontalExtentRatio"]
+    thickness_px = _longest_run(wide_rows)
+    thickness_ratio = thickness_px / max(1, line.height)
+    return dark_ratio, extent_ratio, float(thickness_ratio)
+
+
+def _longest_run(flags: np.ndarray) -> int:
+    """Length of the longest run of True values."""
+    best = run = 0
+    for flag in flags:
+        run = run + 1 if flag else 0
+        best = max(best, run)
+    return best
 
 
 def _neighboring_separation(line: LineBox, others: Sequence[LineBox]) -> float:
@@ -179,12 +195,17 @@ def analyze_line(
     cfg: dict,
 ) -> LineDetection:
     highlight_overlap = detect_highlight_overlap(image_bgr, line, cfg)
-    dark_ratio, extent_ratio = detect_underline(image_bgr, line, cfg)
+    dark_ratio, extent_ratio, thickness_ratio = detect_underline(image_bgr, line, cfg)
 
     ucfg = cfg["underline"]
+    # A band filled by a shadow, table rule or graphic satisfies both the
+    # darkness and extent tests and would otherwise score as a confident
+    # underline. Thickness is what separates a pen stroke from a dark region.
+    too_thick = thickness_ratio > ucfg["maxComponentThicknessRatio"]
     is_underline = (
         dark_ratio >= ucfg["minDarkPixelRatio"]
         and extent_ratio >= ucfg["minHorizontalExtentRatio"]
+        and not too_thick
     )
     is_highlight = highlight_overlap >= cfg["highlight"]["minOverlapRatio"]
 
@@ -200,8 +221,14 @@ def analyze_line(
         line_geometry = extent_ratio
     else:
         selection_type = "none"
-        marker_overlap = max(highlight_overlap, dark_ratio)
-        line_geometry = extent_ratio if extent_ratio else highlight_overlap
+        if too_thick:
+            # Don't let a rejected dark region report near-perfect evidence;
+            # the score should read as "no usable marker", not "very confident".
+            marker_overlap = 0.0
+            line_geometry = 0.0
+        else:
+            marker_overlap = max(highlight_overlap, dark_ratio)
+            line_geometry = extent_ratio if extent_ratio else highlight_overlap
 
     separation = _neighboring_separation(line, all_lines)
     weights = cfg["confidenceWeights"]
@@ -237,6 +264,8 @@ def analyze_line(
             "highlight_overlap": round(highlight_overlap, 4),
             "underline_dark_ratio": round(dark_ratio, 4),
             "underline_extent_ratio": round(extent_ratio, 4),
+            "underline_thickness_ratio": round(thickness_ratio, 4),
+            "rejected_too_thick": bool(too_thick),
         },
     )
 
@@ -251,10 +280,34 @@ def analyze_page(
     return [analyze_line(image_bgr, line, lines, document_quality, cfg) for line in lines]
 
 
-def group_selected_passage(detections: Sequence[LineDetection]) -> list[str]:
-    """Consecutive selected lines form one passage (§9.2 adım 7)."""
+def selected_line_ids(detections: Sequence[LineDetection]) -> list[str]:
+    """Flat list of every line whose marker was detected confidently enough."""
     return [
         d.line_id
         for d in detections
         if d.selection_type != "none" and d.decision != "user_selection"
     ]
+
+
+def group_selected_passages(detections: Sequence[LineDetection]) -> list[list[str]]:
+    """Group selected lines into passages of consecutive lines (§9.2 adım 7).
+
+    `detections` must be in page order. A gap — any unselected line between two
+    selected ones — starts a new passage, so separately marked regions are not
+    merged into one passage and fed to card generation as a single source text.
+    """
+    passages: list[list[str]] = []
+    current: list[str] = []
+    for detection in detections:
+        selected = (
+            detection.selection_type != "none"
+            and detection.decision != "user_selection"
+        )
+        if selected:
+            current.append(detection.line_id)
+        elif current:
+            passages.append(current)
+            current = []
+    if current:
+        passages.append(current)
+    return passages
