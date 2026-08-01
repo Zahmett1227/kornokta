@@ -1,0 +1,45 @@
+{
+  "_comment": "Model karşılaştırma yapılandırması (ANA-PLAN §11.3, §27). Model kimlikleri koda gömülmez; buradan güncellenir. Anahtarlar YALNIZ ortam değişkenlerinden okunur, burada TUTULMAZ.",
+  "candidates": [
+    {
+      "key": "openai_primary",
+      "provider": "openai",
+      "model": "gpt-5.6-sol",
+      "role": "primary_card_model",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "reasoningEffort": "low",
+      "maxOutputTokens": 700
+    },
+    {
+      "key": "gemini_second_opinion",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "role": "handwriting_second_opinion",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "maxOutputTokens": 700
+    },
+    {
+      "key": "claude_candidate",
+      "provider": "anthropic",
+      "model": "claude-opus-latest",
+      "role": "comparison_candidate",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "maxOutputTokens": 700
+    }
+  ],
+  "ocr": {
+    "provider": "google-document-ai",
+    "credentialsEnv": "GOOGLE_APPLICATION_CREDENTIALS",
+    "pricePer1000PagesUSD": 1.5
+  },
+  "evaluationDimensions": [
+    "handwriting_transcription_accuracy",
+    "critical_token_error_rate",
+    "source_faithfulness",
+    "medical_card_quality",
+    "turkish_question_language",
+    "schema_conformance",
+    "latency_ms",
+    "cost_usd"
+  ]
+}
