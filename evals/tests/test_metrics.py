@@ -150,6 +150,20 @@ class TestCriticalTokenErrorRate:
         assert critical_token_error_rate(["5", "5"], "50 mg sabah, 50 mg akşam") == 1.0
 
     @pytest.mark.parametrize(
+        "gold_tokens, hypothesis",
+        [(["IM", "im"], "5 mg IM"), (["MG", "mg"], "5 MG")],
+    )
+    def test_differently_spelled_duplicates_still_need_distinct_occurrences(
+        self, gold_tokens, hypothesis
+    ):
+        # Counting before canonicalizing splits 'IM' and 'im' into two groups
+        # that each match the same single occurrence, hiding the lost one.
+        assert critical_token_error_rate(gold_tokens, hypothesis) == pytest.approx(0.5)
+
+    def test_differently_spelled_duplicates_pass_when_both_present(self):
+        assert critical_token_error_rate(["IM", "im"], "IM ve im") == 0.0
+
+    @pytest.mark.parametrize(
         "gold, hypothesis",
         [
             ("sağ", "sağında kitle"),          # possessive + case

@@ -181,21 +181,27 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     haystack = normalize_for_compare(hypothesis)
     route_haystack = nfc(hypothesis)
 
-    required = Counter(tokens)
-    missing = 0
-    for token, needed in required.items():
+    # Canonicalize *before* counting. Keying on the raw spelling would split
+    # 'IM' and 'im' into two groups that each find the same single occurrence,
+    # so a passage listing two routes would score clean after one was lost.
+    def key_of(token: str) -> tuple[str, str]:
         if _is_route(token):
+            return ("route", nfc(token).strip().upper())
+        return ("plain", normalize_for_compare(token))
+
+    required = Counter(key_of(t) for t in tokens)
+    missing = 0
+    for (kind, value), needed in required.items():
+        if kind == "route":
             # Routes fold on case, and Turkish lowercasing would not make the
             # two spellings meet ('IM' -> 'ım' but 'im' -> 'im'), so they are
             # matched case-insensitively against the un-lowercased text.
             pattern = re.compile(
-                _token_occurrence_pattern(nfc(token)).pattern, re.IGNORECASE
+                _token_occurrence_pattern(value).pattern, re.IGNORECASE
             )
             available = len(pattern.findall(route_haystack))
         else:
-            available = len(
-                _token_occurrence_pattern(normalize_for_compare(token)).findall(haystack)
-            )
+            available = len(_token_occurrence_pattern(value).findall(haystack))
         missing += max(0, needed - available)
     return missing / len(tokens)
 
