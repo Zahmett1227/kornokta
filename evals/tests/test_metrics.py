@@ -101,6 +101,9 @@ class TestCriticalTokenErrorRate:
             ("5", "15 mg"),
             ("0,3", "0,35 mg"),
             ("adrenalin", "noradrenalin verildi"),  # different drug
+            ("1", "1,5 mg"),
+            ("sol", "solunum sistemi"),   # laterality vs a different word
+            ("sağ", "sağlıklı birey"),
         ],
     )
     def test_partial_match_is_not_a_pass(self, gold, hypothesis):
@@ -120,7 +123,25 @@ class TestCriticalTokenErrorRate:
             ("hiperkalemi", "Hiperkalemide görülür"),
             ("mmHg", "120 mmHg"),
             ("1", "1 mg verildi"),
+            ("sol", "sol alt kadran"),
+            ("sağ", "sağa doğru"),        # dative suffix, same word
+            ("sol", "solda kitle"),       # locative suffix, same word
+            ("1", "Evre 1."),             # sentence-final period is not a decimal
+            ("0,1", "Doz 0,1."),
         ],
     )
     def test_genuine_occurrences_still_count_as_correct(self, gold, hypothesis):
         assert critical_token_error_rate([gold], hypothesis) == 0.0
+
+    def test_repeated_tokens_need_distinct_occurrences(self):
+        # Searching each gold entry independently would let the surviving '5'
+        # satisfy both doses and hide the second one being misread as '50'.
+        assert critical_token_error_rate(
+            ["5", "5"], "5 mg sabah, 50 mg akşam"
+        ) == pytest.approx(0.5)
+
+    def test_repeated_tokens_pass_when_all_present(self):
+        assert critical_token_error_rate(["5", "5"], "5 mg sabah, 5 mg akşam") == 0.0
+
+    def test_repeated_tokens_all_missing(self):
+        assert critical_token_error_rate(["5", "5"], "50 mg sabah, 50 mg akşam") == 1.0
