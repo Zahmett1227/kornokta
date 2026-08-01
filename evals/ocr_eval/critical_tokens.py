@@ -93,8 +93,17 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     )),
     ("hypo_hyper", re.compile(r"\b(?:hipo|hiper)\w*", re.IGNORECASE)),
     ("positive_negative", re.compile(r"\b(?:pozitif|negatif)\b", re.IGNORECASE)),
+    # Negation and direction-of-change. Enumerating verb forms misses Turkish
+    # inflection ('artar' was listed but 'artmaz' was not), so the negative
+    # aorist suffix -maz/-mez is matched as a pattern: one rule covers
+    # artmaz, azalmaz, göstermez, etkilemez, değişmez, ... Direction verbs are
+    # listed separately because their positive forms carry the same
+    # meaning-flip risk as artar/azalır (ANA-PLAN §10.5).
     ("negation_pair", re.compile(
-        r"\b(?:var|yok|yapar|yapmaz|artar|azalır|artırır|azaltır|görülür|görülmez)\b",
+        r"\w+m[ae]z\b"
+        r"|\b(?:var|yok|değil)\b"
+        r"|\b(?:yapar|artar|artırır|azalır|azaltır|görülür|izlenir|saptanır"
+        r"|yükselir|yükseltir|düşer|düşürür|çoğalır|gerileri?r|bozar|engeller)\b",
         re.IGNORECASE,
     )),
     ("laterality", re.compile(r"\b(?:sağ|sol)\b", re.IGNORECASE)),

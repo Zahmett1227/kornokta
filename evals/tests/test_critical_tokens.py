@@ -1,3 +1,5 @@
+import pytest
+
 from evals.ocr_eval.critical_tokens import (
     Wordlists,
     contains_critical_token,
@@ -63,6 +65,35 @@ class TestTurkishSemanticClasses:
     def test_negation_pairs(self):
         assert "negation_pair" in classes_of("refleks yok")
         assert "negation_pair" in classes_of("renin salınımını artırır")
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "etki göstermez",
+            "artmaz",
+            "azalmaz",
+            "değişmez",
+            "etkilemez",
+            "engellemez",
+            "tedavi değil",
+        ],
+    )
+    def test_turkish_negative_aorist_suffix(self, text):
+        # Inflected negatives ('artmaz') must flag just like their positive
+        # counterparts ('artar') — the meaning flip is what matters (§10.5).
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize("text", ["yükselir", "düşer", "düşürür", "çoğalır"])
+    def test_direction_of_change_verbs(self, text):
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        ["kırmızı hücre", "beyaz küre", "domuz gribi", "yaz aylarında", "tuz kısıtlaması"],
+    )
+    def test_suffix_rule_does_not_overmatch(self, text):
+        # -maz/-mez is a suffix pattern; ordinary words must not trip it.
+        assert "negation_pair" not in classes_of(text)
 
     def test_laterality(self):
         assert "laterality" in classes_of("sol alt kadran ağrısı")
