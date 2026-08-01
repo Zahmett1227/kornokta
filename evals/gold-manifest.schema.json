@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cizgi.local/schemas/gold-manifest.schema.json",
+  "title": "Çizgi altın test seti manifesti",
+  "description": "ANA-PLAN §23.1: en az 100 gerçek görüntü ve her görüntü için gold veri. Gerçek görseller evals/fixtures/ altında YEREL tutulur, repoya commit edilmez.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "categories", "entries"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "description": { "type": "string" },
+    "categories": {
+      "description": "Kategori kotaları (ANA-PLAN §23.1). Anahtarlar kategori kimlikleridir.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "printed_highlight",
+        "printed_ink_underline",
+        "pencil_underline",
+        "printed_with_margin_note",
+        "handwriting_heavy",
+        "complex_layout",
+        "poor_capture"
+      ],
+      "properties": {
+        "printed_highlight": { "$ref": "#/$defs/categoryQuota" },
+        "printed_ink_underline": { "$ref": "#/$defs/categoryQuota" },
+        "pencil_underline": { "$ref": "#/$defs/categoryQuota" },
+        "printed_with_margin_note": { "$ref": "#/$defs/categoryQuota" },
+        "handwriting_heavy": { "$ref": "#/$defs/categoryQuota" },
+        "complex_layout": { "$ref": "#/$defs/categoryQuota" },
+        "poor_capture": { "$ref": "#/$defs/categoryQuota" }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "categoryQuota": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "description"],
+      "properties": {
+        "target": { "type": "integer", "minimum": 1 },
+        "description": { "type": "string" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "imagePath",
+        "status",
+        "expectedOutcome",
+        "goldSelectedLines",
+        "exactTranscription",
+        "criticalTokens",
+        "handwriting",
+        "acceptableCards",
+        "rejectCardExamples"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^gold_[0-9]{3}$",
+          "description": "Benzersiz kimlik, ör. gold_001"
+        },
+        "category": {
+          "enum": [
+            "printed_highlight",
+            "printed_ink_underline",
+            "pencil_underline",
+            "printed_with_margin_note",
+            "handwriting_heavy",
+            "complex_layout",
+            "poor_capture"
+          ]
+        },
+        "imagePath": {
+          "type": "string",
+          "pattern": "^fixtures/",
+          "description": "evals/ köküne göre yol. Gerçek görsel yerel tutulur; repoya girmez."
+        },
+        "status": {
+          "enum": ["pending", "annotated"],
+          "description": "pending: görsel var, gold veri eksik. annotated: gold veri tam."
+        },
+        "expectedOutcome": {
+          "enum": ["auto_accept", "needs_confirmation", "reject"],
+          "description": "İşlem hattının bu görüntü için beklenen davranışı (ANA-PLAN §19)."
+        },
+        "sourceMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subject": { "type": "string", "description": "Ders, ör. Farmakoloji" },
+            "topic": { "type": "string" },
+            "bookAlias": { "type": "string", "description": "Kitap takma adı; telif nedeniyle tam künye zorunlu değil" },
+            "pageNumber": { "type": "string" }
+          }
+        },
+        "captureConditions": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "lighting": { "enum": ["good", "dim", "harsh_shadow", "glare"] },
+            "angle": { "enum": ["flat", "slight_tilt", "strong_tilt"] },
+            "notes": { "type": "string" }
+          }
+        },
+        "goldSelectedLines": {
+          "description": "Doğru seçili satırlar (ANA-PLAN §23.1). reject beklenen görüntülerde boş olabilir.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["lineId", "text", "selectionType"],
+            "properties": {
+              "lineId": { "type": "string", "pattern": "^line_[0-9]{2}$" },
+              "text": { "type": "string", "minLength": 1 },
+              "selectionType": { "enum": ["underline", "highlight", "margin_mark", "manual"] },
+              "markerType": { "enum": ["highlighter", "pen", "pencil"] },
+              "markerColor": { "type": "string" }
+            }
+          }
+        },
+        "exactTranscription": {
+          "type": "string",
+          "description": "İşaretli pasajın birebir transkripsiyonu; Türkçe karakterler, sayılar, birimler ve semboller aynen korunur."
+        },
+        "criticalTokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["token", "tokenClass"],
+            "properties": {
+              "token": { "type": "string", "minLength": 1 },
+              "tokenClass": {
+                "enum": [
+                  "number_decimal",
+                  "unit",
+                  "dose_frequency",
+                  "route",
+                  "percentage",
+                  "plus_minus",
+                  "comparator",
+                  "greek_letter",
+                  "ion_charge",
+                  "hypo_hyper",
+                  "positive_negative",
+                  "negation_pair",
+                  "laterality",
+                  "proximal_distal",
+                  "stage_grade_class",
+                  "drug_name",
+                  "organism_name"
+                ]
+              },
+              "note": { "type": "string" }
+            }
+          }
+        },
+        "handwriting": {
+          "description": "El yazısı bölgeleri; yoksa boş dizi.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text"],
+            "properties": {
+              "regionId": { "type": "string" },
+              "text": { "type": "string", "minLength": 1 },
+              "expandedText": {
+                "type": "string",
+                "description": "Kısaltmanın açılımı, ör. 'hiperK' → 'hiperkalemi'"
+              },
+              "containsCriticalToken": { "type": "boolean" }
+            }
+          }
+        },
+        "acceptableCards": {
+          "description": "Kabul edilebilir kartlar; reject dışındaki görüntülerde en az 2 (ANA-PLAN §23.1).",
+          "type": "array",
+          "items": { "$ref": "#/$defs/card" }
+        },
+        "rejectCardExamples": {
+          "description": "Reddedilmesi gereken kart örnekleri ve ret nedenleri.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["front", "back", "rejectReason"],
+            "properties": {
+              "front": { "type": "string" },
+              "back": { "type": "string" },
+              "rejectReason": {
+                "enum": [
+                  "not_answerable_from_source",
+                  "model_added_information",
+                  "duplicate_card",
+                  "ambiguous_question",
+                  "multiple_possible_answers",
+                  "critical_token_error",
+                  "trivial_no_learning_value"
+                ]
+              }
+            }
+          }
+        },
+        "notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": { "const": "annotated" },
+              "expectedOutcome": { "enum": ["auto_accept", "needs_confirmation"] }
+            }
+          },
+          "then": {
+            "properties": {
+              "goldSelectedLines": { "minItems": 1 },
+              "exactTranscription": { "minLength": 1 },
+              "acceptableCards": { "minItems": 2 },
+              "rejectCardExamples": { "minItems": 1 }
+            }
+          }
+        }
+      ]
+    },
+    "card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "front", "back"],
+      "properties": {
+        "type": { "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
+        "front": { "type": "string", "minLength": 1 },
+        "back": { "type": "string", "minLength": 1 },
+        "sourceQuote": { "type": "string" },
+        "sourceLineIds": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^line_[0-9]{2}$" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,41 @@
+# --- Secrets: never commit keys or credentials (ANA-PLAN §0.7, §24.6) ---
+.env
+.env.*
+*.pem
+*.p8
+*.p12
+*.key
+*service-account*.json
+*credentials*.json
+secrets/
+
+# --- Gold-set fixtures: real book-page images stay local (ANA-PLAN §26, §30) ---
+evals/fixtures/*
+!evals/fixtures/.gitkeep
+!evals/fixtures/README.md
+evals/reports/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# --- Node / backend ---
+node_modules/
+.vercel/
+dist/
+
+# --- Xcode / iOS ---
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.dSYM.zip
+.build/
+
+# --- OS ---
+.DS_Store
+Thumbs.db

@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cizgi.local/schemas/llm_output.schema.json",
+  "title": "Kanonik LLM çıktı sözleşmesi",
+  "description": "ANA-PLAN §14: backend her sağlayıcı yanıtını bu yapıya dönüştürür. Şema doğrulanmayan yanıt kaydedilmez.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestId", "transcription", "knowledgeUnits", "cards", "quality", "usage"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "requestId": { "type": "string", "minLength": 1 },
+    "transcription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactText", "cleanText", "language", "overallConfidence", "isHandwritten", "selectedLineIds", "uncertainSpans"],
+      "properties": {
+        "exactText": { "type": "string" },
+        "cleanText": { "type": "string" },
+        "language": { "type": "string" },
+        "overallConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "isHandwritten": { "type": "boolean" },
+        "selectedLineIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "uncertainSpans": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["text", "alternatives", "reason", "critical", "requiresUserConfirmation"],
+            "properties": {
+              "text": { "type": "string" },
+              "alternatives": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 3 },
+              "reason": { "type": "string" },
+              "critical": { "type": "boolean" },
+              "requiresUserConfirmation": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "knowledgeUnits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "canonicalClaim", "mechanism", "tags", "sourceConcern", "requiresUserApproval"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "canonicalClaim": { "type": "string", "minLength": 1 },
+          "mechanism": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "sourceConcern": { "type": ["string", "null"] },
+          "requiresUserApproval": { "type": "boolean" }
+        }
+      }
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "knowledgeUnitId", "type", "front", "back", "explanation", "sourceQuote", "sourceLineIds", "sourceFaithful", "enriched", "difficulty", "riskFlags", "requiresUserApproval"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "knowledgeUnitId": { "type": "string", "minLength": 1 },
+          "type": { "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
+          "front": { "type": "string", "minLength": 1 },
+          "back": { "type": "string", "minLength": 1 },
+          "explanation": { "type": "string" },
+          "sourceQuote": { "type": "string" },
+          "sourceLineIds": { "type": "array", "items": { "type": "string" } },
+          "sourceFaithful": { "type": "boolean" },
+          "enriched": { "type": "boolean" },
+          "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "riskFlags": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/riskFlag" }
+          },
+          "requiresUserApproval": { "type": "boolean" }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceCoverage", "duplicateCardRisk", "medicalMeaningChangeRisk", "warnings"],
+      "properties": {
+        "sourceCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
+        "duplicateCardRisk": { "type": "number", "minimum": 0, "maximum": 1 },
+        "medicalMeaningChangeRisk": { "type": "number", "minimum": 0, "maximum": 1 },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "inputTokens", "outputTokens", "estimatedCostUSD"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "estimatedCostUSD": { "type": "number", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "riskFlag": {
+      "enum": [
+        "ocr_disagreement",
+        "handwriting_uncertain",
+        "critical_number",
+        "critical_unit",
+        "negation_risk",
+        "symbol_risk",
+        "drug_name_risk",
+        "organism_name_risk",
+        "source_insufficient",
+        "source_possible_error",
+        "model_added_information",
+        "duplicate_card",
+        "ambiguous_question",
+        "multiple_possible_answers"
+      ]
+    }
+  }
+}

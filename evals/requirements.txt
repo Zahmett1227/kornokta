@@ -1,0 +1,5 @@
+jsonschema>=4.21
+pytest>=8.0
+numpy>=1.26
+Pillow>=10.0
+opencv-python-headless>=4.9

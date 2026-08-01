@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Çizgi altın test seti (ANA-PLAN §23.1). Hedef: en az 100 gerçek görüntü. Gerçek görseller evals/fixtures/ altında YEREL tutulur; bu manifest yalnız gold veriyi taşır. Aşağıdaki iki örnek girdi SENTETİKTİR (fixtures/samples/ altındaki üretilmiş görüntülere aittir) ve şema/araç doğrulaması için vardır; gerçek set toplandıkça kaldırılabilir.",
+  "categories": {
+    "printed_highlight": { "target": 40, "description": "Basılı metin + renkli fosforlu kalem" },
+    "printed_ink_underline": { "target": 20, "description": "Basılı metin + siyah/renkli tükenmez alt çizgi" },
+    "pencil_underline": { "target": 10, "description": "Kurşun kalem alt çizgisi" },
+    "printed_with_margin_note": { "target": 15, "description": "Basılı metin + el yazısı kenar notu" },
+    "handwriting_heavy": { "target": 5, "description": "Ağırlıklı el yazısı sayfa" },
+    "complex_layout": { "target": 5, "description": "İki sütun, tablo veya şekil içeren sayfa" },
+    "poor_capture": { "target": 5, "description": "Kötü açı, gölge veya düşük ışık" }
+  },
+  "entries": [
+    {
+      "id": "gold_001",
+      "category": "printed_highlight",
+      "imagePath": "fixtures/samples/synthetic_highlight_001.png",
+      "status": "annotated",
+      "expectedOutcome": "auto_accept",
+      "sourceMeta": {
+        "subject": "Farmakoloji",
+        "topic": "Otonom sinir sistemi",
+        "bookAlias": "sentetik-ornek"
+      },
+      "captureConditions": { "lighting": "good", "angle": "flat" },
+      "goldSelectedLines": [
+        {
+          "lineId": "line_04",
+          "text": "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir.",
+          "selectionType": "highlight",
+          "markerType": "highlighter",
+          "markerColor": "yellow"
+        }
+      ],
+      "exactTranscription": "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir.",
+      "criticalTokens": [
+        { "token": "0,3–0,5", "tokenClass": "number_decimal" },
+        { "token": "mg", "tokenClass": "unit" },
+        { "token": "adrenalin", "tokenClass": "drug_name" }
+      ],
+      "handwriting": [],
+      "acceptableCards": [
+        {
+          "type": "direct_recall",
+          "front": "Anafilakside ilk seçenek tedavi nedir?",
+          "back": "0,3–0,5 mg IM adrenalin.",
+          "sourceQuote": "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir.",
+          "sourceLineIds": ["line_04"]
+        },
+        {
+          "type": "cloze",
+          "front": "Anafilakside ilk seçenek tedavi ___ mg IM adrenalindir.",
+          "back": "0,3–0,5",
+          "sourceQuote": "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir.",
+          "sourceLineIds": ["line_04"]
+        }
+      ],
+      "rejectCardExamples": [
+        {
+          "front": "Anafilakside adrenalin hangi reseptörler üzerinden etki eder?",
+          "back": "α1, β1 ve β2 reseptörleri.",
+          "rejectReason": "not_answerable_from_source"
+        }
+      ],
+      "notes": "Sentetik örnek; şema ve araç doğrulaması için."
+    },
+    {
+      "id": "gold_002",
+      "category": "printed_with_margin_note",
+      "imagePath": "fixtures/samples/synthetic_margin_note_002.png",
+      "status": "annotated",
+      "expectedOutcome": "needs_confirmation",
+      "sourceMeta": {
+        "subject": "Dahiliye",
+        "topic": "Elektrolit bozuklukları",
+        "bookAlias": "sentetik-ornek"
+      },
+      "captureConditions": { "lighting": "good", "angle": "slight_tilt" },
+      "goldSelectedLines": [
+        {
+          "lineId": "line_07",
+          "text": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
+          "selectionType": "underline",
+          "markerType": "pen",
+          "markerColor": "black"
+        }
+      ],
+      "exactTranscription": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
+      "criticalTokens": [
+        { "token": "Hiperkalemide", "tokenClass": "hypo_hyper" },
+        { "token": "en erken", "tokenClass": "stage_grade_class", "note": "Sıralama/aşama anlamı taşır; erken/geç karışması anlamı değiştirir." }
+      ],
+      "handwriting": [
+        {
+          "regionId": "margin_01",
+          "text": "hiperK → sivri T",
+          "expandedText": "hiperkalemi → sivri T dalgası",
+          "containsCriticalToken": true
+        }
+      ],
+      "acceptableCards": [
+        {
+          "type": "direct_recall",
+          "front": "Hiperkalemide EKG'deki en erken bulgu nedir?",
+          "back": "Sivri T dalgası.",
+          "sourceQuote": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
+          "sourceLineIds": ["line_07"]
+        },
+        {
+          "type": "cloze",
+          "front": "Hiperkalemide EKG'de en erken bulgu ___ dalgasıdır.",
+          "back": "sivri T",
+          "sourceQuote": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
+          "sourceLineIds": ["line_07"]
+        }
+      ],
+      "rejectCardExamples": [
+        {
+          "front": "Hipokalemide EKG'de en erken bulgu nedir?",
+          "back": "Sivri T dalgası.",
+          "rejectReason": "critical_token_error"
+        },
+        {
+          "front": "Hiperkalemide EKG bulgusu nedir?",
+          "back": "Sivri T dalgası, QRS genişlemesi, P kaybı ve sinüs dalgası paterni.",
+          "rejectReason": "model_added_information"
+        }
+      ],
+      "notes": "Sentetik örnek; el yazısı kısaltma sözlüğü akışını (ANA-PLAN §10.6) temsil eder."
+    }
+  ]
+}
