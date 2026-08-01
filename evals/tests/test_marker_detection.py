@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pytest
 
@@ -65,26 +67,63 @@ class TestPassageGrouping:
     def test_selected_lines_match_truth(self, cfg):
         page = make_page(n_lines=8, marked={2: "highlight:yellow", 5: "underline:pen"})
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
-        prf = selection_prf(page.marked_line_ids, selected_line_ids(detections))
+        found = selected_line_ids(detections, include_pending=True)
+        prf = selection_prf(page.marked_line_ids, found)
         assert prf.recall == 1.0
         assert prf.false_positives == 0
 
     def test_consecutive_highlight_is_one_passage(self, cfg):
         page = make_page(n_lines=8, marked={3: "highlight:yellow", 4: "highlight:yellow"})
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
-        assert group_selected_passages(detections) == [["line_03", "line_04"]]
+        passages = group_selected_passages(detections, include_pending=True)
+        assert passages == [["line_03", "line_04"]]
 
     def test_separated_marks_are_distinct_passages(self, cfg):
         # line_02 and line_05 are unrelated regions; merging them would feed
         # disjoint source text to card generation as one passage.
         page = make_page(n_lines=8, marked={2: "highlight:yellow", 5: "underline:pen"})
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
-        assert group_selected_passages(detections) == [["line_02"], ["line_05"]]
+        passages = group_selected_passages(detections, include_pending=True)
+        assert passages == [["line_02"], ["line_05"]]
 
     def test_no_marks_yields_no_passages(self, cfg):
         page = make_page(n_lines=4)
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        assert group_selected_passages(detections, include_pending=True) == []
+
+
+class TestConfirmationGate:
+    """A line at quick_confirm still owes the user a tap; it must not be
+    exported as if it had been accepted (§19.2, §24.2)."""
+
+    def _pen_page(self, cfg):
+        page = make_page(n_lines=6, marked={2: "underline:pen"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        return detections, next(d for d in detections if d.line_id == "line_02")
+
+    def test_precondition_line_is_pending(self, cfg):
+        _detections, target = self._pen_page(cfg)
+        assert target.decision == "quick_confirm"
+
+    def test_pending_line_excluded_by_default(self, cfg):
+        detections, _target = self._pen_page(cfg)
+        assert selected_line_ids(detections) == []
         assert group_selected_passages(detections) == []
+
+    def test_pending_line_available_to_confirmation_ui(self, cfg):
+        detections, _target = self._pen_page(cfg)
+        assert selected_line_ids(detections, include_pending=True) == ["line_02"]
+
+    def test_auto_candidate_is_exported_by_default(self, cfg):
+        # Lower the bar so the pen underline becomes an auto candidate, and
+        # confirm the default export does surface genuinely accepted lines.
+        relaxed = json.loads(json.dumps(cfg))
+        relaxed["decisionThresholds"]["autoCandidate"] = 0.5
+        page = make_page(n_lines=6, marked={2: "underline:pen"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=relaxed)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.decision == "auto_candidate"
+        assert selected_line_ids(detections) == ["line_02"]
 
 
 class TestThickDarkBandRejection:

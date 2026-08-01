@@ -50,6 +50,13 @@ class TestSymbols:
     def test_ion_charge_ascii(self):
         assert "ion_charge" in classes_of("K+ düzeyi yükselir")
 
+    @pytest.mark.parametrize("text", ["na+ yüksek", "na- düşük", "NA+ artar", "k+ 6,5", "cl- kaybı"])
+    def test_ion_charge_case_insensitive(self, text):
+        # OCR readily emits 'na+' for 'Na⁺'. The standalone sign pattern cannot
+        # cover it (the sign is glued to a word character), so a charge
+        # reversal would otherwise produce no critical token at all.
+        assert "ion_charge" in classes_of(text)
+
     def test_standalone_plus_minus(self):
         assert "plus_minus" in classes_of("Babinski (+) saptandı")
 

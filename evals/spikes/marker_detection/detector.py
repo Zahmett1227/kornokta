@@ -374,30 +374,44 @@ def analyze_page(
     return [analyze_line(image_bgr, line, lines, document_quality, cfg) for line in lines]
 
 
-def selected_line_ids(detections: Sequence[LineDetection]) -> list[str]:
-    """Flat list of every line whose marker was detected confidently enough."""
-    return [
-        d.line_id
-        for d in detections
-        if d.selection_type != "none" and d.decision != "user_selection"
-    ]
+def _is_accepted(detection: LineDetection, include_pending: bool) -> bool:
+    if detection.selection_type == "none":
+        return False
+    if detection.decision == "auto_candidate":
+        return True
+    return include_pending and detection.decision == "quick_confirm"
 
 
-def group_selected_passages(detections: Sequence[LineDetection]) -> list[list[str]]:
-    """Group selected lines into passages of consecutive lines (§9.2 adım 7).
+def selected_line_ids(
+    detections: Sequence[LineDetection], include_pending: bool = False
+) -> list[str]:
+    """Lines whose marker was accepted outright.
 
-    `detections` must be in page order. A gap — any unselected line between two
-    selected ones — starts a new passage, so separately marked regions are not
+    By default only `auto_candidate`. A `quick_confirm` line still owes the
+    user a tap (ANA-PLAN §19.2) — exporting it here would let a caller hand it
+    to card generation as though it had been confirmed, which is exactly the
+    silent auto-accept §24.2 forbids. Pass `include_pending=True` when the
+    caller is the confirmation UI itself and will ask for that tap.
+    """
+    return [d.line_id for d in detections if _is_accepted(d, include_pending)]
+
+
+def group_selected_passages(
+    detections: Sequence[LineDetection], include_pending: bool = False
+) -> list[list[str]]:
+    """Group accepted lines into passages of consecutive lines (§9.2 adım 7).
+
+    `detections` must be in page order. A gap — any unaccepted line between two
+    accepted ones — starts a new passage, so separately marked regions are not
     merged into one passage and fed to card generation as a single source text.
+
+    `include_pending` carries the same meaning as in `selected_line_ids`: off by
+    default so lines awaiting confirmation never reach card generation.
     """
     passages: list[list[str]] = []
     current: list[str] = []
     for detection in detections:
-        selected = (
-            detection.selection_type != "none"
-            and detection.decision != "user_selection"
-        )
-        if selected:
+        if _is_accepted(detection, include_pending):
             current.append(detection.line_id)
         elif current:
             passages.append(current)

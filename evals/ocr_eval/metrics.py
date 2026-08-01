@@ -6,6 +6,7 @@ reference for the future Swift implementation.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -71,8 +72,40 @@ def selection_prf(gold_line_ids: Iterable[str], predicted_line_ids: Iterable[str
     return PrecisionRecallF1(precision, recall, f1, tp, fp, fn)
 
 
+#: A digit, or a decimal separator sitting between digits — the characters that
+#: turn one number into a different number.
+_NUMERIC_NEIGHBOUR = r"[\d.,]"
+#: Any letter, Unicode-aware, so Turkish characters count.
+_LETTER = r"[^\W\d_]"
+
+
+def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
+    """Regex that finds `token` as a real occurrence, not as part of a
+    different value.
+
+    Plain substring search is wrong here: gold '1' is "found" inside '10 mg'
+    and gold '0,1' inside '10,1 mg', so an OCR error that changes the dose
+    reports as correct. Boundaries are chosen per token:
+
+    - a token starting/ending in a digit must not touch another digit or a
+      decimal separator ('1' is not satisfied by '10');
+    - a token starting with a letter must not be preceded by a letter
+      ('adrenalin' is not satisfied by 'noradrenalin') while trailing letters
+      stay allowed, because Turkish attaches suffixes ('adrenalindir' does
+      contain the drug).
+    """
+    left = right = ""
+    if token[:1].isdigit():
+        left = f"(?<!{_NUMERIC_NEIGHBOUR})"
+    elif token[:1].isalpha():
+        left = f"(?<!{_LETTER})"
+    if token[-1:].isdigit():
+        right = f"(?!{_NUMERIC_NEIGHBOUR})"
+    return re.compile(left + re.escape(token) + right)
+
+
 def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> float:
-    """Fraction of gold critical tokens NOT reproduced verbatim in the hypothesis.
+    """Fraction of gold critical tokens NOT reproduced in the hypothesis.
 
     Comparison is case/whitespace-normalized but character-exact otherwise:
     '0,1' vs '0.1' or 'hipo' vs 'hiper' counts as an error (ANA-PLAN §10.5).
@@ -81,5 +114,7 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     if not tokens:
         return 0.0
     haystack = normalize_for_compare(hypothesis)
-    missing = sum(1 for token in tokens if token not in haystack)
+    missing = sum(
+        1 for token in tokens if not _token_occurrence_pattern(token).search(haystack)
+    )
     return missing / len(tokens)

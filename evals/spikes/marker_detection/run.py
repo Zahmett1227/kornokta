@@ -26,13 +26,20 @@ def _print_report(detections) -> None:
             f"{d.line_id:8} {d.selection_type:10} {d.selection_confidence:6.3f} "
             f"{d.decision:16} {json.dumps(d.detail, ensure_ascii=False)}"
         )
-    passages = group_selected_passages(detections)
-    if not passages:
-        print("\nSelected passages: (none)")
-        return
-    print(f"\nSelected passages ({len(passages)}):")
-    for i, passage in enumerate(passages, start=1):
+    accepted = group_selected_passages(detections)
+    print(f"\nAccepted passages — ready for card generation ({len(accepted)}):")
+    for i, passage in enumerate(accepted, start=1) if accepted else []:
         print(f"  {i}. {passage}")
+    if not accepted:
+        print("  (none)")
+
+    with_pending = group_selected_passages(detections, include_pending=True)
+    pending = [p for p in with_pending if p not in accepted]
+    print(f"\nAwaiting user confirmation ({len(pending)}):")
+    for i, passage in enumerate(pending, start=1) if pending else []:
+        print(f"  {i}. {passage}")
+    if not pending:
+        print("  (none)")
 
 
 def run_demo(cfg: dict) -> int:

@@ -87,9 +87,14 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("comparator", re.compile(r"[<>≤≥]")),
     ("plus_minus", re.compile(r"(?<![\w+±-])[+±−](?![\w+±−-])|\(\s*[+−-]\s*\)")),
     ("greek_letter", re.compile(r"[α-ωΑ-Ω]")),
+    # Case-insensitive: OCR readily emits 'na+' or 'NA+' for 'Na⁺', and the
+    # standalone sign pattern cannot rescue those (its lookbehind rejects a
+    # sign glued to a word character), so a charge reversal like na+ vs na-
+    # would produce no critical token at all.
     ("ion_charge", re.compile(
         r"\b(?:Na|K|Ca|Mg|Cl|H|HCO₃|HCO3|PO₄|PO4|NH₄|NH4|Fe)"
-        r"(?:[⁺⁻²³]+|\^?\d?[+-])"
+        r"(?:[⁺⁻²³]+|\^?\d?[+-])",
+        re.IGNORECASE,
     )),
     ("hypo_hyper", re.compile(r"\b(?:hipo|hiper)\w*", re.IGNORECASE)),
     ("positive_negative", re.compile(r"\b(?:pozitif|negatif)\b", re.IGNORECASE)),

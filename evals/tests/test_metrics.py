@@ -92,3 +92,35 @@ class TestCriticalTokenErrorRate:
 
     def test_no_tokens(self):
         assert critical_token_error_rate([], "her şey yolunda") == 0.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("1", "10 mg"),        # dose read ten times too high
+            ("0,1", "10,1 mg"),
+            ("5", "15 mg"),
+            ("0,3", "0,35 mg"),
+            ("adrenalin", "noradrenalin verildi"),  # different drug
+        ],
+    )
+    def test_partial_match_is_not_a_pass(self, gold, hypothesis):
+        # Substring membership would score these 0.0 and make the Faz 0
+        # critical-token gate look clean on exactly the errors it exists to
+        # catch (§24.3).
+        assert critical_token_error_rate([gold], hypothesis) == 1.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("0,1", "doz 0,1 mg/kg"),
+            ("mg", "500 mg/kg verilir"),
+            ("adrenalin", "adrenalindir"),      # Turkish suffix still matches
+            ("0,3–0,5", "0,3–0,5 mg IM"),
+            ("%40", "%40 oranında"),
+            ("hiperkalemi", "Hiperkalemide görülür"),
+            ("mmHg", "120 mmHg"),
+            ("1", "1 mg verildi"),
+        ],
+    )
+    def test_genuine_occurrences_still_count_as_correct(self, gold, hypothesis):
+        assert critical_token_error_rate([gold], hypothesis) == 0.0
