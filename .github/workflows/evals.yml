@@ -1,0 +1,31 @@
+name: evals
+
+on:
+  push:
+    paths:
+      - "evals/**"
+      - "backend/schemas/**"
+      - ".github/workflows/evals.yml"
+  pull_request:
+    paths:
+      - "evals/**"
+      - "backend/schemas/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install eval dependencies
+        run: pip install -r evals/requirements.txt
+      - name: Validate gold manifest
+        run: python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
+      - name: Run unit tests
+        run: python -m pytest evals -q
+      - name: Marker-detection smoke test
+        run: python -m evals.spikes.marker_detection.run --demo
+      - name: Provider-compare dry run (no keys)
+        run: python -m evals.spikes.provider_compare.run --dry-run
