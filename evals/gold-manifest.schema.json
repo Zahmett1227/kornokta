@@ -145,6 +145,7 @@
                   "number_decimal",
                   "unit",
                   "dose_frequency",
+                  "route",
                   "percentage",
                   "plus_minus",
                   "comparator",

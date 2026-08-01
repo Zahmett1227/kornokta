@@ -228,14 +228,45 @@ def critical_token_sequence(
     entries = [(t.start, t.end, t.token_class, _canonical(t.text)) for t in detected]
 
     if annotated_tokens:
-        covered = [(t.start, t.end) for t in detected]
+        # Suppress an annotation only when the detector already produced the
+        # *same span* — a true duplicate. Dropping partial overlaps instead
+        # would discard the annotation whenever it merely contains a detected
+        # token: 'β-bloker' overlaps the greek letter 'β', so both drug names
+        # in 'β-bloker 1 mg, β-agonist 2 mg' would vanish and a swap between
+        # them would pass the gate.
+        exact = {(t.start, t.end) for t in detected}
         for start, end, surface in _annotated_spans(text, annotated_tokens):
-            overlaps = any(start < c_end and end > c_start for c_start, c_end in covered)
-            if not overlaps:
+            if (start, end) not in exact:
                 entries.append((start, end, "annotated", _canonical(surface)))
 
     entries.sort(key=lambda e: (e[0], e[1], e[2]))
     return [(cls, value) for _s, _e, cls, value in entries]
+
+
+def _sequence_with_surfaces(
+    text: str,
+    wordlists: "Wordlists | None",
+    annotated_tokens: Iterable[str] | None,
+) -> list[tuple[tuple[str, str], str]]:
+    """((class, canonical), surface) pairs — canonical drives comparison, the
+    surface is what a human reads in the report. They differ for values whose
+    normalization is lossy: 'IM' folds to 'ım' under Turkish lowercasing."""
+    from .critical_tokens import detect_critical_tokens
+
+    text = nfc(text)
+    detected = detect_critical_tokens(text, wordlists)
+    entries = [
+        (t.start, t.end, t.token_class, _canonical(t.text), t.text) for t in detected
+    ]
+
+    if annotated_tokens:
+        exact = {(t.start, t.end) for t in detected}
+        for start, end, surface in _annotated_spans(text, annotated_tokens):
+            if (start, end) not in exact:
+                entries.append((start, end, "annotated", _canonical(surface), surface))
+
+    entries.sort(key=lambda e: (e[0], e[1], e[2]))
+    return [((cls, value), surface) for _s, _e, cls, value, surface in entries]
 
 
 def critical_token_mismatches(
@@ -264,19 +295,22 @@ def critical_token_mismatches(
     """
     import difflib
 
-    gold_seq = critical_token_sequence(gold_text, wordlists, gold_tokens)
-    hyp_seq = critical_token_sequence(hypothesis, wordlists, gold_tokens)
+    gold_entries = _sequence_with_surfaces(gold_text, wordlists, gold_tokens)
+    hyp_entries = _sequence_with_surfaces(hypothesis, wordlists, gold_tokens)
+    gold_keys = [key for key, _surface in gold_entries]
+    hyp_keys = [key for key, _surface in hyp_entries]
 
-    def render(pairs: Sequence[tuple[str, str]]) -> str:
-        return ", ".join(f"{value} ({cls})" for cls, value in pairs) or "—"
+    def render(entries: Sequence[tuple[tuple[str, str], str]]) -> str:
+        return ", ".join(f"{surface} ({key[0]})" for key, surface in entries) or "—"
 
-    matcher = difflib.SequenceMatcher(a=gold_seq, b=hyp_seq, autojunk=False)
+    matcher = difflib.SequenceMatcher(a=gold_keys, b=hyp_keys, autojunk=False)
     mismatches: list[str] = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             continue
         mismatches.append(
-            f"{tag}: kaynak [{render(gold_seq[i1:i2])}] -> okuma [{render(hyp_seq[j1:j2])}]"
+            f"{tag}: kaynak [{render(gold_entries[i1:i2])}] "
+            f"-> okuma [{render(hyp_entries[j1:j2])}]"
         )
     return mismatches
 

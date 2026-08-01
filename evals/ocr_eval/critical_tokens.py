@@ -21,6 +21,7 @@ TOKEN_CLASSES = (
     "number_decimal",
     "unit",
     "dose_frequency",
+    "route",
     "percentage",
     "plus_minus",
     "comparator",
@@ -72,6 +73,13 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"|\d+\s*[x×]\s*\d+",
         re.IGNORECASE,
     )),
+    # Administration route. Not named in ANA-PLAN §10.5's list, but it changes
+    # medical meaning as sharply as the classes that are — 'IM' read as 'IV'
+    # is a different drug order — and the section's stated purpose is to gate
+    # meaning-changing disagreements. Matched case-sensitively on purpose:
+    # lowercase 'im', 'it', 'id', 'po' are ordinary Turkish letter sequences
+    # (evim, tedavisidir) and would flood the confirmation queue.
+    ("route", re.compile(r"\b(?:IM|IV|PO|SC|SQ|IO|IT|SL|PR|TD|INH|ID)\b")),
     ("percentage", re.compile(r"%\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*%")),
     ("number_decimal", re.compile(
         r"\d+(?:[.,]\d+)?(?:\s*[–—-]\s*\d+(?:[.,]\d+)?)?"

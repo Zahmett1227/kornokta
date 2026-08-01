@@ -284,6 +284,19 @@ class TestCriticalTokenSequence:
         seq = critical_token_sequence("Doz 1 mg", annotated_tokens=["1", "mg"])
         assert seq == [("number_decimal", "1"), ("unit", "mg")]
 
+    def test_partially_overlapping_annotation_is_kept(self):
+        # 'β-bloker' contains the detected greek letter 'β'. Dropping the whole
+        # annotation on that overlap would erase both drug names, letting a
+        # swap between them pass.
+        gold = "β-bloker 1 mg, β-agonist 2 mg"
+        hypothesis = "β-agonist 1 mg, β-bloker 2 mg"
+        gold_tokens = ["β-bloker", "1", "mg", "β-agonist", "2", "mg"]
+        assert critical_token_mismatches(gold, hypothesis, gold_tokens=gold_tokens) != []
+        assert critical_token_mismatches(gold, gold, gold_tokens=gold_tokens) == []
+
+    def test_route_change_is_reported(self):
+        assert critical_token_mismatches("5 mg IM verilir", "5 mg IV verilir") != []
+
     def test_annotation_respects_token_boundaries(self):
         # 'adrenalin' must not be located inside 'noradrenalin'.
         seq = critical_token_sequence("noradrenalin verildi", annotated_tokens=["adrenalin"])
