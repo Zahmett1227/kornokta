@@ -45,7 +45,8 @@ Faz 0'ın bazı adımları bu Linux ortamında (Xcode/iPhone yok) tamamlanamaz. 
 
 `marker_detection/config.json` içindeki ağırlık ve eşikler **ilk başlangıç değeridir, ürün kararı değildir.** Gerçek altın set toplandıktan sonra:
 
-1. Her gold görüntüde `analyze_page` çalıştır, tahmin edilen seçili satırları çıkar.
+1. Her gold görüntüde `analyze_page` çalıştır, tahmin edilen seçili satırları çıkar:
+   `selected_line_ids(detections, include_pending=True)` — **tespit kalitesini** ölçerken onay bekleyenler de dahil edilmeli, yoksa kalibrasyonun kendisi onay kapısıyla karışır. Varsayılan (`include_pending=False`) yalnız otomatik kabul edilenleri verir ve *kapıyı* ölçmek için kullanılır.
 2. `selection_prf(gold_lines, predicted_lines)` ile kategori bazında precision/recall/F1 hesapla.
 3. `autoCandidate` / `quickConfirm` eşiklerini şu hedefe göre ayarla:
    - **Yanlış satırın sessiz otomatik kabulü ≈ 0** (§24.2) — yüksek precision önceliklidir.
