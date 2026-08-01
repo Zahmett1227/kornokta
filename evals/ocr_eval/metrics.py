@@ -175,17 +175,35 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     gold entry independently would let one surviving '5' satisfy both doses of
     '5 mg sabah, 5 mg akşam' even after the second was misread as '50'.
     """
-    tokens = [normalize_for_compare(t) for t in gold_tokens if t.strip()]
+    tokens = [t for t in gold_tokens if t.strip()]
     if not tokens:
         return 0.0
     haystack = normalize_for_compare(hypothesis)
+    route_haystack = nfc(hypothesis)
 
     required = Counter(tokens)
     missing = 0
     for token, needed in required.items():
-        available = len(_token_occurrence_pattern(token).findall(haystack))
+        if _is_route(token):
+            # Routes fold on case, and Turkish lowercasing would not make the
+            # two spellings meet ('IM' -> 'ım' but 'im' -> 'im'), so they are
+            # matched case-insensitively against the un-lowercased text.
+            pattern = re.compile(
+                _token_occurrence_pattern(nfc(token)).pattern, re.IGNORECASE
+            )
+            available = len(pattern.findall(route_haystack))
+        else:
+            available = len(
+                _token_occurrence_pattern(normalize_for_compare(token)).findall(haystack)
+            )
         missing += max(0, needed - available)
     return missing / len(tokens)
+
+
+def _is_route(token: str) -> bool:
+    from .critical_tokens import ROUTE_ABBREVIATIONS
+
+    return token.strip().upper() in ROUTE_ABBREVIATIONS
 
 
 def _canonical(text: str, token_class: str | None = None) -> str:
@@ -343,11 +361,13 @@ def added_critical_tokens(
     from .critical_tokens import detect_critical_tokens
 
     def counted(text: str) -> Counter:
-        # Key on (class, canonical value). Several patterns accept optional
-        # spacing — '%40' and '% 40', 'q8h' and 'q8 h' — so keying on the raw
-        # surface would report a re-spaced value as a newly introduced one.
+        # Key on (class, canonical value) using the same class-aware
+        # canonicalization as the ordered gate. Several patterns accept
+        # optional spacing — '%40' and '% 40', 'q8h' and 'q8 h' — and routes
+        # fold on case, so keying on the raw surface would report an unchanged
+        # value as newly introduced.
         return Counter(
-            (t.token_class, re.sub(r"\s+", "", normalize_for_compare(t.text)))
+            (t.token_class, _canonical(t.text, t.token_class))
             for t in detect_critical_tokens(text, wordlists)
         )
 

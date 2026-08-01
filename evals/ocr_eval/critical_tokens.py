@@ -58,6 +58,14 @@ class Wordlists:
     organism_names: set[str] = field(default_factory=set)
 
 
+#: Administration-route abbreviations. Exposed so every gate measure folds them
+#: the same way — the ordered comparison and the two count-based measures must
+#: agree that 'IM' and 'im' are one value, or a correct transcription trips one
+#: measure while passing another.
+ROUTE_ABBREVIATIONS = (
+    "IM", "IV", "PO", "SC", "SQ", "IO", "IT", "SL", "PR", "TD", "INH", "ID",
+)
+
 _UNITS = (
     "mEq/L", "mmol/L", "mmHg", "mcg", "µg", "μg", "mg", "ng", "pg",
     "kg", "g", "mL", "ml", "dL", "dl", "L", "IU", "U", "mOsm",
@@ -83,7 +91,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # uppercase instead would miss a route change entirely whenever OCR
     # lowercases it ('5 mg iv' vs '5 mg im' would both go undetected).
     ("route", re.compile(
-        r"\b(?:IM|IV|PO|SC|SQ|IO|IT|SL|PR|TD|INH|ID)\b", re.IGNORECASE
+        r"\b(?:" + "|".join(ROUTE_ABBREVIATIONS) + r")\b", re.IGNORECASE
     )),
     ("percentage", re.compile(r"%\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*%")),
     ("number_decimal", re.compile(

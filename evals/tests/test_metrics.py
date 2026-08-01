@@ -311,6 +311,20 @@ class TestCriticalTokenSequence:
         # transcription would be reported as an error.
         assert critical_token_mismatches("5 mg IM verilir", "5 mg im verilir") == []
 
+    def test_route_folding_is_consistent_across_all_three_measures(self):
+        # The gate runs all three; folding the route in only one of them makes
+        # a correct transcription trip the others.
+        gold, hypothesis = "5 mg IM verilir", "5 mg im verilir"
+        assert critical_token_mismatches(gold, hypothesis) == []
+        assert added_critical_tokens(gold, hypothesis) == []
+        assert critical_token_error_rate(["IM"], hypothesis) == 0.0
+
+    def test_real_route_change_still_caught_by_all_three(self):
+        gold, hypothesis = "5 mg IM verilir", "5 mg IV verilir"
+        assert critical_token_mismatches(gold, hypothesis) != []
+        assert added_critical_tokens(gold, hypothesis) != []
+        assert critical_token_error_rate(["IM"], hypothesis) == 1.0
+
     def test_annotation_respects_token_boundaries(self):
         # 'adrenalin' must not be located inside 'noradrenalin'.
         seq = critical_token_sequence("noradrenalin verildi", annotated_tokens=["adrenalin"])
