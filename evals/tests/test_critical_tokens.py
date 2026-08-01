@@ -211,6 +211,42 @@ class TestRoute:
 
     @pytest.mark.parametrize(
         "text",
+        [
+            "intravenöz uygulanır", "damar içine verilir", "intramüsküler",
+            "kas içi enjeksiyon", "ağızdan alınır", "per os", "subkutan",
+            "deri altına", "sublingual", "dil altı", "rektal", "inhalasyon",
+            "intranazal", "topikal", "transdermal", "intratekal",
+            "intraartiküler", "eklem içi", "oftalmik", "otik",
+        ],
+    )
+    def test_full_route_spellings_detected(self, text):
+        assert "route" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "surface, code",
+        [
+            ("IV", "IV"), ("intravenöz", "IV"), ("damar içi", "IV"),
+            ("IM", "IM"), ("kas içi", "IM"),
+            ("PO", "PO"), ("oral", "PO"), ("ağızdan", "PO"),
+            ("SQ", "SC"), ("deri altı", "SC"),
+        ],
+    )
+    def test_synonyms_fold_to_one_code(self, surface, code):
+        from evals.ocr_eval.critical_tokens import canonical_route
+
+        assert canonical_route(surface) == code
+
+    def test_distinct_routes_never_share_a_code(self):
+        from evals.ocr_eval.critical_tokens import ROUTE_SYNONYMS, canonical_route
+
+        codes = {code: {canonical_route(s) for s in surfaces}
+                 for code, surfaces in ROUTE_SYNONYMS.items()}
+        for code, resolved in codes.items():
+            assert resolved == {code}
+        assert len(ROUTE_SYNONYMS) == len(set(ROUTE_SYNONYMS))
+
+    @pytest.mark.parametrize(
+        "text",
         ["evim güzel", "tedavisidir", "resim", "birim", "tedavim", "isim", "yardım"],
     )
     def test_word_internal_letters_are_not_a_route(self, text):

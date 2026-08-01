@@ -64,19 +64,16 @@ Faz 1'e geçmeden önce:
 - [ ] Model karşılaştırması en az bir aday için kabul rubriğini (≥12/14) geçiyor (§23.3, §27).
 - [ ] Ölçüm raporu yazıldı (CER/WER, kritik token hata oranı, seçim F1, otomatik kabul precision'ı, çekim başına düzeltme dokunuşu).
 
-## Onay bekleyen şartname sapması
+## Uygulama yolu (route) kontrolü
 
-### S-1 — `route` (uygulama yolu) kritik token sınıfı
+ANA-PLAN §10.5 ve §10.5.1 uyarınca uygulama yolu kritik token sınıfıdır (ANA-PLAN sahibi tarafından onaylandı ve şartnameye işlendi). Uygulama: `evals/ocr_eval/critical_tokens.py` içindeki `ROUTE_SYNONYMS` sözlüğü.
 
-ANA-PLAN §10.5 kritik token sınıflarını sayarken **uygulama yolunu (IM/IV/PO/SC…) listelemiyor.** Buna rağmen `evals/ocr_eval/critical_tokens.py` içine `route` sınıfı eklendi ve `evals/gold-manifest.schema.json` enum'ı genişletildi.
+- Aynı yolun tüm yazımları tek kanonik koda katlanır: `IV` = `intravenöz` = `damar içi`.
+- Farklı kodlar **asla** eşdeğer sayılmaz; aralarındaki fark her zaman uyuşmazlıktır ve sessizce otomatik kaydedilemez.
+- Katlama üç kapı ölçümünde de aynıdır. Biri katlarken diğeri katlamazsa doğru bir transkripsiyon kapıdan geçemez; bu hata bir kez yaşandı, o yüzden regresyon testi üç ölçümü **birlikte** kontrol ediyor.
+- `IN`, `IA`, `TOP`, `OT`, `OPH` çıplak kısaltmaları bilinçli olarak kayıtlı değil (sıradan sözcüklerle çakışır); bu yollar tam yazımlarıyla kapsanıyor.
 
-**Gerekçe:** §10.5'in belirtilen amacı "tıbbi anlamı değiştiren" uyuşmazlıkları otomatik geçişten alıkoymak. `5 mg IM` yerine `5 mg IV` okumak farklı bir order demektir ve bu, listede yer alan doz/birim hatalarıyla aynı ağırlıkta. Eklenmeden önce bu değişim üç kapının hiçbirinden görünmüyordu.
-
-**Uygulama notu:** Büyük/küçük harften bağımsız eşleştirilir ve değerler karşılaştırma için büyük harfe katlanır (`IM` ile `im` aynı yol; Türkçe küçültme `I`'yı `ı`'ya çevirdiği için katlama olmadan doğru bir transkripsiyon hata sayılırdı). Sözcük sınırları (`\b`) sözcük-içi eşleşmeleri zaten engelliyor: `evim`, `resim`, `birim`, `tedavim`, `isim`, `yardım` tetiklemiyor.
-
-> İlk uygulamada büyük harf kısıtı konmuştu; gerekçe "küçük `im/it/id` Türkçe harf dizileriyle çakışır" idi. Bu **test edilmeden** varsayılmıştı ve yanlıştı — sınırlar bu işi zaten yapıyor. Kısıt, OCR yolu küçük harf ürettiğinde (`5 mg iv` → `5 mg im`) değişimi tamamen görünmez yapıyordu.
-
-**Durum:** ANA-PLAN sahibinin onayı bekleniyor (§0.11 uyarınca en küçük geri alınabilir çözüm olarak eklendi). Onaylanmazsa `route` kalıbının ve şema enum girdisinin kaldırılması yeterli.
+**Yeni yol/yazım eklerken:** `ROUTE_SYNONYMS` içine yaz, `test_full_route_spellings_detected` ve `test_synonyms_fold_to_one_code` listelerine ekle. Çıplak kısaltma ekliyorsan `test_word_internal_letters_are_not_a_route` ile çakışma kontrolü yap.
 
 ## Bilinen sınırlar ve Faz 2 takip maddeleri
 

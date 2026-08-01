@@ -58,13 +58,71 @@ class Wordlists:
     organism_names: set[str] = field(default_factory=set)
 
 
-#: Administration-route abbreviations. Exposed so every gate measure folds them
-#: the same way — the ordered comparison and the two count-based measures must
-#: agree that 'IM' and 'im' are one value, or a correct transcription trips one
-#: measure while passing another.
-ROUTE_ABBREVIATIONS = (
-    "IM", "IV", "PO", "SC", "SQ", "IO", "IT", "SL", "PR", "TD", "INH", "ID",
-)
+#: Administration routes, keyed by canonical code (ANA-PLAN §10.5).
+#:
+#: Spellings inside one entry are the SAME route and fold together, so 'IV',
+#: 'intravenöz' and 'damar içi' compare equal. Entries never fold into each
+#: other: IV and IM are different orders and a disagreement between them is a
+#: critical-token error, never an automatic acceptance.
+#:
+#: Exposed so every gate measure folds identically — the ordered comparison and
+#: both count-based measures must agree, or a correct transcription trips one
+#: while passing another.
+ROUTE_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "IV": ("IV", "intravenöz", "intravenoz", "intravenous", "damar içi", "damar içine", "damardan"),
+    "IM": ("IM", "intramüsküler", "intramuskuler", "intramuscular", "kas içi", "kas içine"),
+    "PO": ("PO", "oral", "oralden", "ağızdan", "agizdan", "per os", "peroral"),
+    "SC": ("SC", "SQ", "subkutan", "subcutaneous", "deri altı", "deri altına", "cilt altı"),
+    "SL": ("SL", "sublingual", "dil altı", "dil altına"),
+    "PR": ("PR", "rektal", "rectal", "makattan"),
+    "INH": ("INH", "inhaler", "inhalasyon", "inhalation", "inhale"),
+    "IN": ("intranazal", "intranasal", "burun içi", "burun içine"),
+    "TOP": ("topikal", "topical"),
+    "TD": ("TD", "transdermal"),
+    "IT": ("IT", "intratekal", "intrathecal"),
+    "IA": ("intraartiküler", "intraartikuler", "intraarticular", "eklem içi"),
+    "OPH": ("oftalmik", "ophthalmic", "oftalmolojik"),
+    "OT": ("otik", "otic"),
+}
+
+#: Deliberately NOT registered as bare abbreviations: IN, IA, TOP, OT, OPH.
+#: Each collides with an ordinary word in Turkish or English running text
+#: ('in', 'top' = ball, 'ot' = grass), and the full spellings above cover them
+#: without flooding the confirmation queue.
+
+#: surface (folded) -> canonical route code
+_ROUTE_LOOKUP: dict[str, str] = {
+    re.sub(r"\s+", " ", surface.casefold()).strip(): code
+    for code, surfaces in ROUTE_SYNONYMS.items()
+    for surface in surfaces
+}
+
+# Longest first so 'damar içine' wins over 'damar içi', and multi-word forms
+# tolerate any run of whitespace between their words.
+_ROUTE_ALTERNATION = r"\b(?:" + "|".join(
+    r"\s+".join(re.escape(word) for word in surface.split())
+    for surface in sorted(
+        (s for surfaces in ROUTE_SYNONYMS.values() for s in surfaces),
+        key=len,
+        reverse=True,
+    )
+) + r")\b"
+
+
+def canonical_route(surface: str) -> str:
+    """Map any accepted spelling of a route to its canonical code.
+
+    Unknown text folds to its own uppercase form, so an unrecognised value is
+    never silently merged with a known route.
+    """
+    key = re.sub(r"\s+", " ", nfc(surface).casefold()).strip()
+    return _ROUTE_LOOKUP.get(key, key.upper())
+
+
+def is_route_surface(text: str) -> bool:
+    key = re.sub(r"\s+", " ", nfc(text).casefold()).strip()
+    return key in _ROUTE_LOOKUP
+
 
 _UNITS = (
     "mEq/L", "mmol/L", "mmHg", "mcg", "µg", "μg", "mg", "ng", "pg",
@@ -90,9 +148,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # so 'evim', 'resim', 'birim' and 'tedavim' do not trigger. Requiring
     # uppercase instead would miss a route change entirely whenever OCR
     # lowercases it ('5 mg iv' vs '5 mg im' would both go undetected).
-    ("route", re.compile(
-        r"\b(?:" + "|".join(ROUTE_ABBREVIATIONS) + r")\b", re.IGNORECASE
-    )),
+    ("route", re.compile(_ROUTE_ALTERNATION, re.IGNORECASE)),
     ("percentage", re.compile(r"%\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*%")),
     ("number_decimal", re.compile(
         r"\d+(?:[.,]\d+)?(?:\s*[–—-]\s*\d+(?:[.,]\d+)?)?"

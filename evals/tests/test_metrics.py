@@ -333,6 +333,45 @@ class TestCriticalTokenSequence:
         assert added_critical_tokens(gold, hypothesis) == []
         assert critical_token_error_rate(["IM"], hypothesis) == 0.0
 
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("5 mg IV", "5 mg intravenöz"),
+            ("5 mg IM", "5 mg kas içi"),
+            ("PO alınır", "ağızdan alınır"),
+            ("SC uygulanır", "deri altı uygulanır"),
+        ],
+    )
+    def test_route_synonyms_are_equivalent(self, gold, hypothesis):
+        assert critical_token_mismatches(gold, hypothesis) == []
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("5 mg IV", "5 mg IM"),
+            ("damar içi", "kas içi"),
+            ("PO", "SL"),
+            ("intratekal", "intraartiküler"),
+            ("topikal", "transdermal"),
+        ],
+    )
+    def test_different_routes_are_never_equivalent(self, gold, hypothesis):
+        # A route disagreement is a critical-token error; it must never be
+        # folded away as if the two orders were interchangeable.
+        assert critical_token_mismatches(gold, hypothesis) != []
+
+    @pytest.mark.parametrize(
+        "gold_tokens, gold, hypothesis",
+        [
+            (["%40"], "mortalite %40", "mortalite % 40"),
+            (["q8h"], "q8h uygulanır", "q8 h uygulanır"),
+        ],
+    )
+    def test_optional_spacing_is_clean_in_all_three(self, gold_tokens, gold, hypothesis):
+        assert critical_token_mismatches(gold, hypothesis) == []
+        assert critical_token_error_rate(gold_tokens, hypothesis) == 0.0
+        assert added_critical_tokens(gold, hypothesis) == []
+
     def test_real_route_change_still_caught_by_all_three(self):
         gold, hypothesis = "5 mg IM verilir", "5 mg IV verilir"
         assert critical_token_mismatches(gold, hypothesis) != []

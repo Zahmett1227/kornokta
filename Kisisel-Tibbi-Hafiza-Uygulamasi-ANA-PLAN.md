@@ -500,6 +500,7 @@ Aşağıdaki sınıflarda uyuşmazlık otomatik geçemez:
 - Sayılar ve ondalık ayraçlar
 - Birimler: mg, g, μg, mL, L, mEq/L, mmol/L, mmHg
 - Doz/frekans: mg/kg, q8h, günde 2, haftada 1
+- **Uygulama yolu (route):** IV, IM, PO/oral, SC/SQ, SL, PR, inhaler/inhalasyon, intranazal, topikal, transdermal, intratekal, intraartiküler, oftalmik/otik
 - Yüzde
 - \+ ve −
 - <, >, ≤, ≥
@@ -512,6 +513,20 @@ Aşağıdaki sınıflarda uyuşmazlık otomatik geçemez:
 - Proksimal/distal
 - Evre/derece/sınıf
 - İlaç ve mikroorganizma özel adları
+
+#### 10.5.1 Uygulama yolu kuralları
+
+Uygulama yolu uyuşmazlığı; doz, birim, sayı, olumsuzluk ve iyon uyuşmazlığıyla **aynı ağırlıkta kritik token hatasıdır.**
+
+- Aynı yolun Türkçe/İngilizce/kısaltma yazımları kontrollü sözlükle **tek bir kanonik koda** eşlenir:
+  - `IV` = intravenöz = damar içi
+  - `IM` = intramüsküler = kas içi
+  - `PO` = oral = ağızdan = per os
+  - `SC` = `SQ` = subkutan = deri altı
+- **Farklı uygulama yolları hiçbir koşulda otomatik olarak eşdeğer sayılmaz.** `IV` ile `IM`, `PO` ile `SL`, `intratekal` ile `intraartiküler` arasındaki fark her zaman uyuşmazlıktır.
+- Yol uyuşmazlığı **sessizce otomatik kaydedilemez**: ya doğrudan reddedilir (hard fail) ya da `quick_confirm` üretir (§19.2).
+- Eşleştirme büyük/küçük harften bağımsızdır; `IM` ile `im` aynı yoldur.
+- Kısaltmalardan `IN`, `IA`, `TOP`, `OT`, `OPH` çıplak biçimleriyle **kayıtlı değildir** — Türkçe/İngilizce sıradan sözcüklerle çakışırlar (`in`, `top`, `ot`). Bu yollar tam yazımlarıyla (intranazal, intraartiküler, topikal, otik, oftalmik) kapsanır.
 
 ### 10.6 Kişisel el yazısı sözlüğü
 

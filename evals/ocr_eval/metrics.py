@@ -158,7 +158,7 @@ def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
         chain = _suffix_chain(token) if len(token) >= _MIN_LENGTH_FOR_SUFFIXES else ""
         right = f"{chain}(?!{_LETTER})"
 
-    return re.compile(left + re.escape(token) + right)
+    return re.compile(left + _flexible_escape(token) + right)
 
 
 def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> float:
@@ -207,20 +207,34 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
 
 
 def _is_route(token: str) -> bool:
-    from .critical_tokens import ROUTE_ABBREVIATIONS
+    from .critical_tokens import is_route_surface
 
-    return token.strip().upper() in ROUTE_ABBREVIATIONS
+    return is_route_surface(token)
 
 
 def _canonical(text: str, token_class: str | None = None) -> str:
-    collapsed = re.sub(r"\s+", "", normalize_for_compare(text))
     if token_class == "route":
-        # Routes are case-insensitive abbreviations, so 'IM' and 'im' are the
-        # same value. Turkish lowercasing maps 'I' to 'ı', which would leave
-        # them comparing unequal and report a correct transcription as a
-        # mismatch; folding up puts both spellings on 'IM'.
-        return collapsed.upper()
-    return collapsed
+        # Every accepted spelling of one route folds to its code, so 'IV',
+        # 'intravenöz' and 'damar içi' compare equal while IV and IM stay
+        # distinct. Turkish lowercasing alone would not even make 'IM' and
+        # 'im' meet ('I' -> 'ı').
+        from .critical_tokens import canonical_route
+
+        return canonical_route(text)
+    return re.sub(r"\s+", "", normalize_for_compare(text))
+
+
+def _flexible_escape(token: str) -> str:
+    """Escape `token` so runs of a different character class may be separated
+    by whitespace in the text.
+
+    The detector's own patterns accept either spacing — '%40' and '% 40',
+    'q8h' and 'q8 h' are one value — and the ordered gate folds spaces away.
+    Without the same tolerance here, the count-based measure would call a
+    correct reading an error while the other two called it clean.
+    """
+    runs = re.findall(r"\d+|[^\W\d_]+|[^\w\s]", token)
+    return r"\s*".join(re.escape(run) for run in runs) or re.escape(token)
 
 
 def _annotated_spans(text: str, tokens: Iterable[str]) -> list[tuple[int, int, str]]:
