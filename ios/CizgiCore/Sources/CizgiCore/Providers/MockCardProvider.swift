@@ -1,0 +1,82 @@
+import Foundation
+
+/// Offline card generator for Faz 1 (ANA-PLAN §25).
+///
+/// It exists so the whole capture → queue → review loop can be exercised with
+/// no network, no API key and no cost. It does **not** try to be clever: it
+/// produces a direct-recall card and a cloze from the passage, which is enough
+/// to prove the pipeline and the review screen work.
+///
+/// It deliberately keeps two of the real generator's guarantees so the
+/// downstream code is written against honest data from the start:
+///   * never more than `maxCards` (§13.2)
+///   * every card carries the passage as `sourceQuote`, so "Kaynağı Göster"
+///     works from day one (§5.5)
+public struct MockCardProvider: CardGenerating {
+    public init() {}
+
+    public func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
+        let passage = request.passage.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !passage.isEmpty else {
+            throw CardGenerationError.sourceInsufficient
+        }
+
+        var cards: [GeneratedCard] = [
+            GeneratedCard(
+                type: .directRecall,
+                front: Self.recallQuestion(for: passage),
+                back: passage,
+                explanation: nil,
+                sourceQuote: passage,
+                riskFlags: []
+            )
+        ]
+
+        if let cloze = Self.clozeCard(for: passage) {
+            cards.append(cloze)
+        }
+
+        return GeneratedKnowledge(
+            canonicalClaim: passage,
+            tags: [request.subject].compactMap { $0 },
+            sourceConcern: nil,
+            cards: Array(cards.prefix(request.maxCards))
+        )
+    }
+
+    /// Turns a statement into a question without inventing content — the mock
+    /// must not add anything the passage does not say (§12.1).
+    static func recallQuestion(for passage: String) -> String {
+        let firstSentence = passage
+            .split(separator: ".", maxSplits: 1, omittingEmptySubsequences: true)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? passage
+        return "[Taslak] \(firstSentence) — bu ifadeyi tamamlayın."
+    }
+
+    /// Blanks the longest word so there is something to recall. Real cloze
+    /// selection is the model's job in Faz 3.
+    static func clozeCard(for passage: String) -> GeneratedCard? {
+        let words = passage.split(separator: " ").map(String.init)
+        guard words.count >= 4 else { return nil }
+        guard let target = words.max(by: { $0.count < $1.count }), target.count >= 4 else {
+            return nil
+        }
+        let blanked = words
+            .map { $0 == target ? String(repeating: "_", count: max(3, target.count)) : $0 }
+            .joined(separator: " ")
+        return GeneratedCard(
+            type: .cloze,
+            front: blanked,
+            back: target,
+            sourceQuote: passage
+        )
+    }
+}
+
+public enum CardGenerationError: Error, Sendable, Equatable {
+    case sourceInsufficient
+    case schemaInvalid(String)
+    case budgetExceeded
+}

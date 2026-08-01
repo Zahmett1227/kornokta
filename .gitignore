@@ -39,3 +39,7 @@ xcuserdata/
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# --- Xcode project is generated from ios/project.yml via XcodeGen ---
+ios/*.xcodeproj
+ios/*.xcworkspace
