@@ -9,7 +9,7 @@ from evals.spikes.marker_detection.detector import (
     load_config,
     selected_line_ids,
 )
-from evals.spikes.marker_detection.synthetic import make_page
+from evals.spikes.marker_detection.synthetic import draw_table_rule, make_page
 
 
 @pytest.fixture(scope="module")
@@ -112,6 +112,44 @@ class TestThickDarkBandRejection:
         detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
         target = next(d for d in detections if d.line_id == "line_02")
         assert target.detail["rejected_too_thick"] is False
+        assert target.selection_type == "underline"
+
+
+class TestTableRuleRejection:
+    """A ruled table border is thin enough to pass the thickness test, so it
+    must be separated from a pen stroke by some other evidence (§9.2)."""
+
+    @pytest.mark.parametrize("thickness", [2, 3, 5])
+    def test_thin_table_rule_not_an_underline(self, cfg, thickness):
+        page = make_page(n_lines=6)
+        draw_table_rule(page, below_line_index=2, thickness=thickness)
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=1.0, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        # Precondition: this is exactly the case thickness alone cannot catch.
+        assert target.detail["underline_thickness_ratio"] <= cfg["underline"]["maxComponentThicknessRatio"]
+        assert target.detail["rejected_spans_beyond_line"] is True
+        assert target.selection_type == "none"
+
+    def test_table_rule_never_auto_accepted(self, cfg):
+        page = make_page(n_lines=6)
+        draw_table_rule(page, below_line_index=2, thickness=3)
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=1.0, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.decision == "user_selection"
+        assert target.selection_confidence < cfg["decisionThresholds"]["quickConfirm"]
+
+    def test_pen_underline_does_not_overrun(self, cfg):
+        page = make_page(n_lines=6, marked={2: "underline:pen"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.95, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_02")
+        assert target.detail["rejected_spans_beyond_line"] is False
+        assert target.selection_type == "underline"
+
+    def test_pencil_underline_does_not_overrun(self, cfg):
+        page = make_page(n_lines=6, marked={4: "underline:pencil"})
+        detections = analyze_page(page.image_bgr, page.lines, document_quality=0.9, cfg=cfg)
+        target = next(d for d in detections if d.line_id == "line_04")
+        assert target.detail["rejected_spans_beyond_line"] is False
         assert target.selection_type == "underline"
 
 

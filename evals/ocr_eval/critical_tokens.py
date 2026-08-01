@@ -100,10 +100,26 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     # listed separately because their positive forms carry the same
     # meaning-flip risk as artar/azalır (ANA-PLAN §10.5).
     ("negation_pair", re.compile(
-        # Negative aorist: artmaz, göstermez, bulunmaz, değişmez ...
-        r"\w+m[ae]z\b"
-        # Negative participle: olmayan, yapmayan, görülmeyen ...
-        r"|\w+m[ae]y[ae]n\b"
+        # Turkish negation is the -ma/-me morpheme between verb stem and
+        # tense/aspect/modality suffix, so match the morpheme plus the suffix
+        # that follows it rather than enumerating whole verb forms. One rule
+        # covers the whole paradigm:
+        #   -maz/-mez      artmaz, göstermez        (aorist)
+        #   -mayan/-meyen  olmayan, görülmeyen      (participle)
+        #   -madı/-medi    uygulanmadı, yapılmadığı (past)
+        #   -mamış/-memiş  görülmemiş, bulunmamıştır(evidential)
+        #   -mamalı/-memeli kullanılmamalıdır       (necessity)
+        #   -mayacak/-meyecek verilmeyecek          (future)
+        #   -mama/-meme    kullanılmaması           (verbal noun)
+        # 'kullanılmamalıdır' vs 'kullanılmalıdır' is the sharpest meaning
+        # flip in clinical prose, so missing this paradigm is the costliest
+        # false negative in the whole detector (ANA-PLAN §10.5).
+        r"\w+?m[ae](?:z|y[ae]n|d[ıi]|m[ıi]ş|m[ae]l[ıi]|y[ae]c[ae]k|m[ae])\w*"
+        # -masın/-mesin needs a word boundary: without it the positive verbal
+        # noun plus case ending ('kullanılmasında') would match too.
+        r"|\w+?m[ae]s[ıi]n\b"
+        # Negative present continuous: görülmüyor, etkilemiyor ...
+        r"|\w+?m[ıiuü]yor\w*"
         # 'değil' takes copular suffixes: değil, değildir, değildi, değilse ...
         r"|\bdeğil\w*"
         r"|\b(?:var|yok|yoktur|vardır)\b"

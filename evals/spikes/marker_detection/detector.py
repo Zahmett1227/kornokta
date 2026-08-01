@@ -124,24 +124,34 @@ def detect_highlight_overlap(image_bgr: np.ndarray, line: LineBox, cfg: dict) ->
     return float(mask.mean())
 
 
-def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> tuple[float, float, float]:
-    """Detect a dark horizontal mark in the band below the text baseline.
+@dataclass(frozen=True)
+class UnderlineEvidence:
+    dark_ratio: float
+    extent_ratio: float
+    thickness_ratio: float
+    overrun_ratio: float
 
-    Returns (dark_pixel_ratio, horizontal_extent_ratio, thickness_ratio).
-    """
+
+def _dark_mask(region: np.ndarray) -> np.ndarray:
+    gray = region.mean(axis=-1)
+    threshold = max(80.0, gray.mean() - 2.0 * gray.std())
+    return gray < threshold
+
+
+def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> UnderlineEvidence:
+    """Measure evidence for a dark horizontal mark below the text baseline."""
     ucfg = cfg["underline"]
     band_h = max(3, int(round(line.height * ucfg["bandHeightRatio"])))
     # Band hugs the baseline: a small overlap above (for underlines touching
     # descenders) plus band_h below, where underlines actually sit. Keeping it
     # tight avoids diluting the dark-pixel ratio for thin pencil strokes.
     band_top = line.y2 - 2
-    band = _region(image_bgr, line.x, band_top, line.width, band_h + 2)
+    band_height = band_h + 2
+    band = _region(image_bgr, line.x, band_top, line.width, band_height)
     if band.size == 0:
-        return 0.0, 0.0
+        return UnderlineEvidence(0.0, 0.0, 0.0, 0.0)
 
-    gray = band.mean(axis=-1)
-    threshold = max(80.0, gray.mean() - 2.0 * gray.std())
-    dark = gray < threshold
+    dark = _dark_mask(band)
     dark_ratio = float(dark.mean())
 
     # Horizontal extent: fraction of columns that contain a dark pixel — a real
@@ -150,12 +160,44 @@ def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> tuple[f
     extent_ratio = float(columns_with_dark.mean()) if columns_with_dark.size else 0.0
 
     # Thickness: how many consecutive rows form the wide dark stripe. An
-    # underline is thin; a shadow, table rule or graphic filling the band is
-    # thick and must not be read as a marked line.
+    # underline is thin; a shadow or filled graphic is thick.
     wide_rows = dark.mean(axis=1) >= ucfg["minHorizontalExtentRatio"]
-    thickness_px = _longest_run(wide_rows)
-    thickness_ratio = thickness_px / max(1, line.height)
-    return dark_ratio, extent_ratio, float(thickness_ratio)
+    thickness_ratio = _longest_run(wide_rows) / max(1, line.height)
+
+    # Overrun: does the mark continue past the ends of the text line? A ruled
+    # table border or page rule runs the full column width regardless of where
+    # the text stops; a pen underline starts and ends at the text. Thickness
+    # alone cannot separate a 3px table rule from a 3px pen stroke — this can.
+    overrun_ratio = _horizontal_overrun(
+        image_bgr, line, band_top, band_height, ucfg["overrunMarginRatio"]
+    )
+
+    return UnderlineEvidence(dark_ratio, extent_ratio, float(thickness_ratio), overrun_ratio)
+
+
+def _horizontal_overrun(
+    image_bgr: np.ndarray,
+    line: LineBox,
+    band_top: int,
+    band_height: int,
+    margin_ratio: float,
+) -> float:
+    """Fraction of the margins beside the line that continue the dark mark.
+
+    Measured on both sides and combined with min(), so a mark must overrun in
+    BOTH directions to look like a rule. A line that merely sits near the page
+    edge, or an underline that runs slightly long on one side, does not trip it.
+    """
+    margin = max(4, int(round(line.width * margin_ratio)))
+    left = _region(image_bgr, line.x - margin, band_top, margin, band_height)
+    right = _region(image_bgr, line.x2, band_top, margin, band_height)
+
+    coverages = []
+    for side in (left, right):
+        if side.size == 0:
+            return 0.0  # Cannot see past the line on one side — no evidence.
+        coverages.append(float(_dark_mask(side).any(axis=0).mean()))
+    return min(coverages)
 
 
 def _longest_run(flags: np.ndarray) -> int:
@@ -195,17 +237,21 @@ def analyze_line(
     cfg: dict,
 ) -> LineDetection:
     highlight_overlap = detect_highlight_overlap(image_bgr, line, cfg)
-    dark_ratio, extent_ratio, thickness_ratio = detect_underline(image_bgr, line, cfg)
+    evidence = detect_underline(image_bgr, line, cfg)
+    dark_ratio = evidence.dark_ratio
+    extent_ratio = evidence.extent_ratio
 
     ucfg = cfg["underline"]
-    # A band filled by a shadow, table rule or graphic satisfies both the
-    # darkness and extent tests and would otherwise score as a confident
-    # underline. Thickness is what separates a pen stroke from a dark region.
-    too_thick = thickness_ratio > ucfg["maxComponentThicknessRatio"]
+    # Two ways a non-underline passes the darkness and extent tests:
+    # a filled dark region (shadow, graphic) is too thick, and a ruled table
+    # border is thin enough to look like a pen stroke but runs past the text.
+    too_thick = evidence.thickness_ratio > ucfg["maxComponentThicknessRatio"]
+    spans_beyond_line = evidence.overrun_ratio > ucfg["maxOutsideOverrunRatio"]
+    rejected = too_thick or spans_beyond_line
     is_underline = (
         dark_ratio >= ucfg["minDarkPixelRatio"]
         and extent_ratio >= ucfg["minHorizontalExtentRatio"]
-        and not too_thick
+        and not rejected
     )
     is_highlight = highlight_overlap >= cfg["highlight"]["minOverlapRatio"]
 
@@ -221,9 +267,9 @@ def analyze_line(
         line_geometry = extent_ratio
     else:
         selection_type = "none"
-        if too_thick:
-            # Don't let a rejected dark region report near-perfect evidence;
-            # the score should read as "no usable marker", not "very confident".
+        if rejected:
+            # Don't let a rejected mark report near-perfect evidence; the score
+            # should read as "no usable marker", not "very confident".
             marker_overlap = 0.0
             line_geometry = 0.0
         else:
@@ -264,8 +310,10 @@ def analyze_line(
             "highlight_overlap": round(highlight_overlap, 4),
             "underline_dark_ratio": round(dark_ratio, 4),
             "underline_extent_ratio": round(extent_ratio, 4),
-            "underline_thickness_ratio": round(thickness_ratio, 4),
+            "underline_thickness_ratio": round(evidence.thickness_ratio, 4),
+            "underline_overrun_ratio": round(evidence.overrun_ratio, 4),
             "rejected_too_thick": bool(too_thick),
+            "rejected_spans_beyond_line": bool(spans_beyond_line),
         },
     )
 

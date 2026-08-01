@@ -89,6 +89,17 @@ def _draw_text_blocks(draw: ImageDraw.ImageDraw, box: LineBox) -> None:
         x += word_w + gap
 
 
+def draw_table_rule(page: SyntheticPage, below_line_index: int, thickness: int = 3) -> None:
+    """Draw a full-width horizontal rule below a line, as a table/page rule.
+
+    Geometrically this is a thin dark stripe just like a pen underline; the only
+    difference is that it spans the whole page rather than stopping at the text.
+    """
+    line = page.lines[below_line_index]
+    top = line.y2 + 3
+    page.image_bgr[top: top + thickness, :] = 20
+
+
 def save_png(page: SyntheticPage, path: str) -> None:
     rgb = page.image_bgr[..., ::-1]
     Image.fromarray(rgb).save(path)

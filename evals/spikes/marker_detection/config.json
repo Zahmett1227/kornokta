@@ -28,6 +28,9 @@
     "bandHeightRatio": 0.35,
     "minDarkPixelRatio": 0.12,
     "minHorizontalExtentRatio": 0.40,
-    "maxComponentThicknessRatio": 0.25
+    "maxComponentThicknessRatio": 0.25,
+    "_overrunComment": "Tablo/sayfa cetveli metin satırının iki yanına da taşar; kalem alt çizgisi taşmaz. Kalınlık ince cetveli kalemden ayıramadığı için taşma ayrı bir kanıt olarak ölçülür.",
+    "overrunMarginRatio": 0.20,
+    "maxOutsideOverrunRatio": 0.60
   }
 }

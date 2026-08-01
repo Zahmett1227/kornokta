@@ -99,7 +99,7 @@ class TestTurkishSemanticClasses:
             "yoktur",
         ],
     )
-    def test_productive_negation_forms(self, text):
+    def test_copular_and_participle_negation(self, text):
         # 'değil' takes copular suffixes and negation also surfaces as the
         # -mayan/-meyen participle; a finite verb list misses all of these,
         # letting a meaning-reversing disagreement skip confirmation.
@@ -111,6 +111,41 @@ class TestTurkishSemanticClasses:
     )
     def test_suffix_rule_does_not_overmatch(self, text):
         # -maz/-mez is a suffix pattern; ordinary words must not trip it.
+        assert "negation_pair" not in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "İlaç kullanılmamalıdır",   # -mamalı, necessity — flips the whole instruction
+            "Tedavi uygulanmadı",       # -madı, past
+            "Yan etki görülmüyor",      # -müyor, present continuous
+            "İlaç verilmeyecek",        # -meyecek, future
+            "Komplikasyon görülmemiş",  # -memiş, evidential
+            "ilacın kullanılmaması",    # -mama, verbal noun
+            "doz aşılmasın",            # -masın, optative
+        ],
+    )
+    def test_negative_tense_and_modality_forms(self, text):
+        # Negation is the -ma/-me morpheme carried across the tense/aspect
+        # paradigm; matching only the aorist would let 'kullanılmamalıdır'
+        # pass as if it were 'kullanılmalıdır'.
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "ilacın kullanılması",      # positive verbal noun
+            "kullanılmasında",          # positive verbal noun + case ending
+            "meme kanseri",
+            "memeli hayvan",
+            "madde bağımlılığı",
+            "maden suyu",
+            "romatizma",
+            "plazma değişimi",
+            "lenfoma",
+        ],
+    )
+    def test_negation_paradigm_does_not_overmatch(self, text):
         assert "negation_pair" not in classes_of(text)
 
     def test_laterality(self):
@@ -168,7 +203,7 @@ class TestOffsets:
 
 class TestBehavior:
     def test_plain_text_not_flagged(self):
-        assert not contains_critical_token("bu cümlede kritik öğe bulunmuyor")
+        assert not contains_critical_token("hastalığın klinik seyri değişkendir")
 
     def test_overlapping_spans_all_kept(self):
         classes = classes_of("0,5 mg/kg dozunda")
