@@ -23,7 +23,9 @@ Bu sorunlar çözülmeden ekran geliştirmek boşa yatırımdır. Faz 0, bunlar�
 | Kart kalite rubriği (§23.3) | `evals/card_quality/rubric.py` | Hazır |
 | Kanonik LLM çıktı sözleşmesi (§14) | `backend/schemas/llm_output.schema.json` | Hazır |
 
-Çalıştırma: `python -m pytest evals` (100 test), `python -m evals.spikes.marker_detection.run --demo`.
+Çalıştırma: `python -m pytest evals`, `python -m evals.spikes.marker_detection.run --demo`.
+
+Spike'ın **çözmediği** noktalar için aşağıdaki "Bilinen sınırlar ve Faz 2 takip maddeleri" bölümüne bakın.
 
 ## Yapılacaklar ve ortam gereksinimleri
 
@@ -60,6 +62,33 @@ Faz 1'e geçmeden önce:
 - [ ] El yazısında kritik uyuşmazlık kullanıcı onayı olmadan karta dönüşmüyor (§10.4, §24.3).
 - [ ] Model karşılaştırması en az bir aday için kabul rubriğini (≥12/14) geçiyor (§23.3, §27).
 - [ ] Ölçüm raporu yazıldı (CER/WER, kritik token hata oranı, seçim F1, otomatik kabul precision'ı, çekim başına düzeltme dokunuşu).
+
+## Bilinen sınırlar ve Faz 2 takip maddeleri
+
+Aşağıdakiler spike'ın **bilinçli olarak çözmediği** noktalardır. Kod incelemesinde tespit edildiler; gerçek altın set olmadan burada anlamlı biçimde çözülemezler, bu yüzden Faz 2'ye taşındı. "Unutulmuş boşluk" değil, kayıtlı borç.
+
+### F2-1 — Tablo/ızgara yapısı analizi
+
+`detector.py` şu an bir tablo cetvelini alt çizgiden **taşma** ile ayırıyor: cetvel metin satırının iki yanına da devam eder, kalem çizgisi etmez. Bu sezgisel ve iki durumda yetersiz:
+
+- Satır sütun genişliğini tamamen kaplıyorsa yanlarda ölçülecek pay kalmaz → sinyal `overrun_observed=False` döner ve satır otomatik kabul edilemez (güvenli taraf, ama fazla temkinli).
+- Dikey cetveller, ızgara kesişimleri ve hücre sınırları hiç kullanılmıyor.
+
+Faz 2'de bağlı bileşen/tablo yapısı analizi eklenmeli (ANA-PLAN §9.2 adım 8 ile birlikte). Gerçek `complex_layout` görselleri geldiğinde ölçülebilir.
+
+### F2-2 — Çıplak `-ma/-me` olumsuzluğu
+
+`critical_tokens.py` olumsuzluk ekini tense/aspect ekleriyle birlikte yakalıyor (`-maz`, `-madı`, `-mamalı`, `-mayacak`, `-mayan`, `-madan`, `-masa`, `-mayarak`, `-mıyor`). **Çıplak `-ma/-me` bilinçli olarak dışarıda:** olumlu isim-fiil ile eşyazımlı ve tıbbi metinde her yerde (`kanama`, `uygulama`, `gelişme`, `yayılma`, `beslenme`). Ölçüldü: 20 sıradan tıbbi isim-fiilin 20'si de yanlış bayrak alıyor.
+
+Sonuç: `ilacı kullanma` (olumsuz emir) ile `ilaç kullanma` (isim tamlaması) sözlüksel olarak ayrılamaz. Bu ayrım sözdizimsel bağlam gerektirir → ANA-PLAN §10.4 LLM uzlaştırma adımının işi. Faz 3'te prompt'un bu durumu `uncertainSpans` ile bildirmesi beklenmeli.
+
+### F2-3 — Eşiklerin gerçek veriyle kalibrasyonu
+
+`config.json` içindeki tüm eşikler sentetik görüntülerle doğrulandı. Gerçek kağıt dokusu, gölge, tarayıcı gürültüsü ve kurşun kalem çok daha zor; §9.3 ağırlıkları ve `decisionThresholds` altın set gelince yeniden ayarlanmalı (yukarıdaki kalibrasyon planı).
+
+### F2-4 — Sentetik görüntüler gerçek geometriyi temsil etmiyor
+
+`synthetic.py` metni koyu dikdörtgenlerle taklit ediyor; glif şekilleri, taban çizgisi altına inen harfler (g, y, p, ç) ve satır aralığı düzensizliği yok. Taban çizgisi altı bandı gerçek inen harflerle test edilmedi — alt çizgi tespitinde yanlış pozitif kaynağı olabilir. Gerçek görseller geldiğinde ilk bakılacak yerlerden biri.
 
 ## Ölçüm metodolojisi
 
