@@ -188,6 +188,53 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     return missing / len(tokens)
 
 
+def critical_token_sequence(
+    text: str, wordlists: "Wordlists | None" = None
+) -> list[tuple[str, str]]:
+    """Ordered (class, canonical value) pairs for every critical span in `text`."""
+    from .critical_tokens import detect_critical_tokens
+
+    return [
+        (t.token_class, re.sub(r"\s+", "", normalize_for_compare(t.text)))
+        for t in detect_critical_tokens(text, wordlists)
+    ]
+
+
+def critical_token_mismatches(
+    gold_text: str, hypothesis: str, wordlists: "Wordlists | None" = None
+) -> list[str]:
+    """Ordered differences between the two texts' critical-token sequences.
+
+    Both count-based measures — `critical_token_error_rate` and
+    `added_critical_tokens` — compare multisets, which discards the pairing
+    between values. Swapping two units keeps every count identical:
+    'A ilacı 1 mg, B ilacı 2 g' read as 'A ilacı 1 g, B ilacı 2 mg' scores
+    clean on both while the doses have exchanged units. Comparing the ordered
+    sequences catches it, so the Faz 0 gate needs this alongside the other two
+    (ANA-PLAN §23.2, §24.3).
+
+    Returns one human-readable entry per divergence; empty means the sequences
+    agree.
+    """
+    import difflib
+
+    gold_seq = critical_token_sequence(gold_text, wordlists)
+    hyp_seq = critical_token_sequence(hypothesis, wordlists)
+
+    def render(pairs: Sequence[tuple[str, str]]) -> str:
+        return ", ".join(f"{value} ({cls})" for cls, value in pairs) or "—"
+
+    matcher = difflib.SequenceMatcher(a=gold_seq, b=hyp_seq, autojunk=False)
+    mismatches: list[str] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        mismatches.append(
+            f"{tag}: kaynak [{render(gold_seq[i1:i2])}] -> okuma [{render(hyp_seq[j1:j2])}]"
+        )
+    return mismatches
+
+
 def added_critical_tokens(
     gold_text: str, hypothesis: str, wordlists: "Wordlists | None" = None
 ) -> list[str]:

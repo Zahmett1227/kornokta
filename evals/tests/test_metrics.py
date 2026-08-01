@@ -4,6 +4,8 @@ from evals.ocr_eval.metrics import (
     added_critical_tokens,
     cer,
     critical_token_error_rate,
+    critical_token_mismatches,
+    critical_token_sequence,
     levenshtein,
     selection_prf,
     wer,
@@ -229,6 +231,44 @@ class TestAddedCriticalTokens:
         assert added_critical_tokens(
             "noradrenalin verildi", "adrenalin verildi", wordlists
         ) == ["adrenalin"]
+
+
+class TestCriticalTokenSequence:
+    """Count-based measures discard the pairing between values; the ordered
+    comparison is what catches a swap (§23.2, §24.3)."""
+
+    def test_swapped_units_are_reported(self):
+        gold = "A ilacı 1 mg, B ilacı 2 g"
+        hypothesis = "A ilacı 1 g, B ilacı 2 mg"
+        # Every count is preserved, so both count-based measures look clean...
+        assert critical_token_error_rate(["1", "mg", "2", "g"], hypothesis) == 0.0
+        assert added_critical_tokens(gold, hypothesis) == []
+        # ...but the doses have exchanged units.
+        assert critical_token_mismatches(gold, hypothesis) != []
+
+    def test_clean_reading_has_no_mismatch(self):
+        assert critical_token_mismatches("Doz 0,5 mg/kg", "Doz 0,5 mg/kg") == []
+
+    def test_respacing_is_not_a_mismatch(self):
+        assert critical_token_mismatches("mortalite %40", "mortalite % 40") == []
+
+    def test_changed_dose_is_reported(self):
+        assert critical_token_mismatches("Doz 1 mg", "Doz 10 mg") != []
+
+    def test_lost_laterality_is_reported(self):
+        assert critical_token_mismatches("sağ alt kadran", "alt kadran") != []
+
+    def test_added_negation_is_reported(self):
+        assert critical_token_mismatches("etkilidir", "etkili değildir") != []
+
+    def test_sequence_preserves_order_and_class(self):
+        seq = critical_token_sequence("1 mg ve 2 g")
+        assert seq == [
+            ("number_decimal", "1"),
+            ("unit", "mg"),
+            ("number_decimal", "2"),
+            ("unit", "g"),
+        ]
 
 
 class TestBufferedCopula:
