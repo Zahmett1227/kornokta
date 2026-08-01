@@ -1,6 +1,7 @@
 import pytest
 
 from evals.ocr_eval.metrics import (
+    added_critical_tokens,
     cer,
     critical_token_error_rate,
     levenshtein,
@@ -145,3 +146,52 @@ class TestCriticalTokenErrorRate:
 
     def test_repeated_tokens_all_missing(self):
         assert critical_token_error_rate(["5", "5"], "50 mg sabah, 50 mg akşam") == 1.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("sağ", "sağında kitle"),          # possessive + case
+            ("sol", "solunda kitle"),
+            ("hiperkalemi", "hiperkalemilerde"),  # plural + case
+            ("adrenalin", "adrenalinlerden"),
+        ],
+    )
+    def test_stacked_inflectional_suffixes_are_accepted(self, gold, hypothesis):
+        assert critical_token_error_rate([gold], hypothesis) == 0.0
+
+    def test_suffix_chain_still_rejects_a_different_lexeme(self):
+        # The ordered slots must not let 'sol' + 'un' + 'um' parse 'solunum'.
+        assert critical_token_error_rate(["sol"], "solunum sistemi") == 1.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [
+            ("g", "doz 5 q / gün"),   # 'gün' is not the unit 'g' plus a suffix
+            ("mg", "mgr değil"),
+        ],
+    )
+    def test_short_unit_tokens_take_no_suffixes(self, gold, hypothesis):
+        assert critical_token_error_rate([gold], hypothesis) == 1.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [("mg", "500 mg/kg"), ("g", "5 g verildi"), ("L", "2 L sıvı"), ("mmHg", "120 mmHg")],
+    )
+    def test_units_still_match_when_present(self, gold, hypothesis):
+        assert critical_token_error_rate([gold], hypothesis) == 0.0
+
+
+class TestAddedCriticalTokens:
+    def test_clean_reading_adds_nothing(self):
+        assert added_critical_tokens("Doz 0,5 mg/kg", "Doz 0,5 mg/kg") == []
+
+    def test_extra_dose_endpoint_is_reported(self):
+        # The recall metric alone scores this clean: every gold token survived.
+        assert critical_token_error_rate(["1", "mg"], "1–2 mg") == 0.0
+        assert added_critical_tokens("1 mg", "1–2 mg") == ["1–2"]
+
+    def test_added_negation_is_reported(self):
+        assert "değildir" in added_critical_tokens("etkilidir", "etkili değildir")
+
+    def test_removed_token_is_not_reported_as_added(self):
+        assert added_critical_tokens("5 mg ve 10 mg", "5 mg") == []

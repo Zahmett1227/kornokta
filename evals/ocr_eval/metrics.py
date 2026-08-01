@@ -76,26 +76,45 @@ def selection_prf(gold_line_ids: Iterable[str], predicted_line_ids: Iterable[str
 #: Any letter, Unicode-aware, so Turkish characters count.
 _LETTER = r"[^\W\d_]"
 
-#: Turkish *inflectional* suffixes — they attach to a word without changing
-#: which word it is, so 'hiperkalemide' still contains 'hiperkalemi'.
-#: Derivational suffixes (-lı, -lık, -sız, -ce) are deliberately absent: they
-#: build a different lexeme, and allowing them would let 'sağlıklı' satisfy the
-#: laterality token 'sağ'. Longer alternatives come first so the regex prefers
-#: the fullest suffix.
-_SUFFIX = (
-    "leri|ları|ler|lar"
-    "|den|dan|ten|tan"
-    "|nin|nın|nun|nün"
-    "|de|da|te|ta"
-    "|in|ın|un|ün"
-    "|yle|yla|le|la"
-    "|miz|mız|muz|müz|niz|nız|nuz|nüz"
-    "|ye|ya|yi|yı|yu|yü"
-    "|si|sı|su|sü|ni|nı|nu|nü"
-    "|e|a|i|ı|u|ü|m|n"
+# Turkish *inflectional* suffixes attach without changing which word it is, so
+# 'hiperkalemide' still contains 'hiperkalemi'. Derivational suffixes (-lı,
+# -lık, -sız, -ce) are deliberately absent: they build a different lexeme, and
+# allowing them would let 'sağlıklı' satisfy the laterality token 'sağ'.
+#
+# The slots are kept separate and applied in Turkish order — plural, then
+# possessive, then case, then copula. A flat "any suffix, repeated" rule would
+# re-open the very hole this exists to close: 'solunum' decomposes into
+# 'sol' + 'un' + 'um' if arbitrary chains are allowed, whereas here 'um' is in
+# no case slot, so the parse fails and the laterality error is reported.
+_PLURAL = "ler|lar"
+_POSSESSIVE = (
+    "imiz|ımız|umuz|ümüz|iniz|ınız|unuz|ünüz"
+    "|leri|ları"
+    "|im|ım|um|üm|in|ın|un|ün"
+    "|si|sı|su|sü"
+    "|i|ı|u|ü"
 )
-#: Copular endings, which may follow a suffix ('adrenalindir', 'evredeydi').
+_CASE = (
+    "nden|ndan|den|dan|ten|tan"
+    "|nde|nda|de|da|te|ta"
+    "|nin|nın|nun|nün"
+    "|yle|yla|le|la"
+    "|ye|ya|ne|na"
+    "|yi|yı|yu|yü|ni|nı|nu|nü"
+    "|e|a|i|ı|u|ü"
+)
+#: Copular endings, which may follow the case slot ('adrenalindir', 'evredeydi').
 _COPULA = "dir|dır|dur|dür|tir|tır|tur|tür|di|dı|du|dü|ti|tı|tu|tü"
+
+_SUFFIX_CHAIN = (
+    f"(?:{_PLURAL})?(?:{_POSSESSIVE})?(?:{_CASE})?(?:{_COPULA})?"
+)
+
+#: Below this length a token is matched exactly, with no suffix tolerance.
+#: Unit symbols are short and are not inflected in running text, while ordinary
+#: words readily start with the same letters: applying the suffix policy to the
+#: unit 'g' lets 'gün' ("day") satisfy it and hides a lost unit.
+_MIN_LENGTH_FOR_SUFFIXES = 3
 
 
 def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
@@ -108,10 +127,12 @@ def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
       itself joins a digit. '1' is not satisfied by '10' or '1,5', but ordinary
       sentence punctuation ('Evre 1.') still counts as a genuine occurrence.
     - Letters: the token must not be preceded by a letter ('adrenalin' is not
-      satisfied by 'noradrenalin'), and may only be followed by a recognised
-      inflectional suffix. Arbitrary trailing letters would let 'sol' be
-      satisfied by 'solunum' and 'sağ' by 'sağlıklı' — a reversed laterality
-      scoring as correct.
+      satisfied by 'noradrenalin'), and may only be followed by an ordered
+      chain of inflectional suffixes. Arbitrary trailing letters would let
+      'sol' be satisfied by 'solunum' and 'sağ' by 'sağlıklı' — a reversed
+      laterality scoring as correct. Tokens shorter than
+      `_MIN_LENGTH_FOR_SUFFIXES` take no suffixes at all, so the unit 'g' is
+      not satisfied by 'gün'.
     """
     left = right = ""
     if token[:1].isdigit():
@@ -123,13 +144,18 @@ def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
     if token[-1:].isdigit():
         right = r"(?!\d)(?![.,]\d)"
     elif token[-1:].isalpha():
-        right = f"(?:{_SUFFIX})?(?:{_COPULA})?(?!{_LETTER})"
+        chain = _SUFFIX_CHAIN if len(token) >= _MIN_LENGTH_FOR_SUFFIXES else ""
+        right = f"{chain}(?!{_LETTER})"
 
     return re.compile(left + re.escape(token) + right)
 
 
 def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> float:
     """Fraction of gold critical tokens NOT reproduced in the hypothesis.
+
+    This measures one direction only — whether what the source said survived.
+    Pair it with `added_critical_tokens` for the other direction; a clean score
+    here does not by itself mean the hypothesis is safe.
 
     Comparison is case/whitespace-normalized but character-exact otherwise:
     '0,1' vs '0.1' or 'hipo' vs 'hiper' counts as an error (ANA-PLAN §10.5).
@@ -149,3 +175,29 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
         available = len(_token_occurrence_pattern(token).findall(haystack))
         missing += max(0, needed - available)
     return missing / len(tokens)
+
+
+def added_critical_tokens(
+    gold_text: str, hypothesis: str, wordlists: "Wordlists | None" = None
+) -> list[str]:
+    """Critical tokens the hypothesis introduces that the gold text lacks.
+
+    `critical_token_error_rate` only measures one direction — whether the gold
+    tokens survived — so an OCR run that *adds* a critical value scores zero
+    while changing the meaning: gold '1 mg' read as '1–2 mg' keeps every gold
+    token and gains a dose endpoint. The Faz 0 gate needs both directions
+    (ANA-PLAN §23.2, §24.3), so this reports the surplus side.
+
+    Returns the surplus occurrences, so a value appearing twice in the
+    hypothesis but once in the source is reported once.
+    """
+    from .critical_tokens import detect_critical_tokens
+
+    def counted(text: str) -> Counter:
+        return Counter(
+            normalize_for_compare(t.text)
+            for t in detect_critical_tokens(text, wordlists)
+        )
+
+    surplus = counted(hypothesis) - counted(gold_text)
+    return sorted(surplus.elements())

@@ -93,7 +93,11 @@ Sonuç: `ilacı kullanma` (olumsuz emir) ile `ilaç kullanma` (isim tamlaması) 
 
 ## Ölçüm metodolojisi
 
-- **OCR:** her gold görüntü için `cer`/`wer` (normalize açık) + `critical_token_error_rate(gold_tokens, hypothesis)`. Kritik token hata oranı otomatik-kabul edilenlerde **0 hedeflenir**.
+- **OCR:** her gold görüntü için `cer`/`wer` (normalize açık) + kritik token kontrolü **iki yönde birden**:
+  - `critical_token_error_rate(gold_tokens, hypothesis)` — kaynaktaki kritik token korunmuş mu (eksilme yönü).
+  - `added_critical_tokens(gold_transcription, hypothesis)` — OCR kaynakta olmayan bir kritik değer *eklemiş* mi (fazlalık yönü). Gold `1 mg` iken OCR `1–2 mg` okursa birinci ölçüm temiz görünür; doz uçlarının eklenmesini yalnız bu yakalar.
+
+  Otomatik-kabul edilenlerde **her iki yön de 0 hedeflenir**.
 - **Seçim:** kategori bazında `selection_prf`. Ana kapı precision (yanlış otomatik kabul) ve "tek dokunuşla düzeltilebilirlik".
 - **Kart:** gold pasajlardan üretilen kartlar `card_quality.rubric.score_card` ile puanlanır; kabul oranı raporlanır.
 - **Maliyet/latency:** `provider_compare` çıktısı; §20 bütçe varsayımlarıyla karşılaştırılır.
