@@ -114,7 +114,9 @@ Faz 2/3'te bu ayrım netleştirilmeli. Şu anki testler regex katmanının bilin
 ## Ölçüm metodolojisi
 
 - **OCR:** her gold görüntü için `cer`/`wer` (normalize açık) + kritik token kontrolü **üç ölçümle birden**:
-  - `critical_token_mismatches(gold_transcription, hypothesis)` — **birincil kapı.** Kritik token dizilerini sıralı karşılaştırır. Diğer iki ölçüm çoklu-küme temelli olduğu için değerler arası eşleşmeyi göremez: `A ilacı 1 mg, B ilacı 2 g` okuması `A ilacı 1 g, B ilacı 2 mg` olduğunda bütün sayılar korunur ve ikisi de temiz çıkar, oysa dozların birimleri yer değiştirmiştir.
+  - `critical_token_mismatches(gold_transcription, hypothesis, gold_tokens=manifest_tokens)` — **birincil kapı.** Kritik token dizilerini sıralı karşılaştırır. Diğer iki ölçüm çoklu-küme temelli olduğu için değerler arası eşleşmeyi göremez: `A ilacı 1 mg, B ilacı 2 g` okuması `A ilacı 1 g, B ilacı 2 mg` olduğunda bütün sayılar korunur ve ikisi de temiz çıkar, oysa dozların birimleri yer değiştirmiştir.
+
+    **Manifestteki `criticalTokens` mutlaka `gold_tokens` olarak geçilmelidir.** Otomatik detektör yalnız kendi kalıplarını ve kelime listelerini bilir; listede olmayan bir ilaç adı ona görünmez. `Adrenalin 1 mg, dopamin 2 mg` okuması `Dopamin 1 mg, adrenalin 2 mg` olduğunda anotasyon geçilmezse dizi iki tarafta da özdeş çıkar ve ilaç-doz eşleşmesi takası kaçar. Neyin kritik olduğuna karar veren manifesttir, detektör değil (§23.1).
   - `critical_token_error_rate(gold_tokens, hypothesis)` — eksilme yönü tanısı: kaynaktaki kritik token korunmuş mu.
   - `added_critical_tokens(gold_transcription, hypothesis)` — fazlalık yönü tanısı: OCR kaynakta olmayan bir kritik değer *eklemiş* mi. Gold `1 mg` iken OCR `1–2 mg` okursa eksilme ölçümü temiz görünür.
 

@@ -261,6 +261,34 @@ class TestCriticalTokenSequence:
     def test_added_negation_is_reported(self):
         assert critical_token_mismatches("etkilidir", "etkili değildir") != []
 
+    def test_swapped_drug_dose_assignment_needs_gold_annotations(self):
+        # Neither drug is in the built-in word lists, so the detector alone
+        # produces the same sequence for both readings and the swap is
+        # invisible. The manifest's criticalTokens are the authority on what
+        # counts as critical, so they must feed the ordered gate.
+        gold = "Adrenalin 1 mg, dopamin 2 mg"
+        hypothesis = "Dopamin 1 mg, adrenalin 2 mg"
+        gold_tokens = ["adrenalin", "1", "mg", "dopamin", "2", "mg"]
+
+        assert critical_token_mismatches(gold, hypothesis) == []
+        assert critical_token_mismatches(gold, hypothesis, gold_tokens=gold_tokens) != []
+
+    def test_annotations_do_not_flag_a_clean_reading(self):
+        gold = "Adrenalin 1 mg, dopamin 2 mg"
+        gold_tokens = ["adrenalin", "1", "mg", "dopamin", "2", "mg"]
+        assert critical_token_mismatches(gold, gold, gold_tokens=gold_tokens) == []
+
+    def test_annotated_token_does_not_duplicate_a_detected_one(self):
+        # '1' and 'mg' are already found by the detector; annotating them too
+        # must not add a second entry at the same position.
+        seq = critical_token_sequence("Doz 1 mg", annotated_tokens=["1", "mg"])
+        assert seq == [("number_decimal", "1"), ("unit", "mg")]
+
+    def test_annotation_respects_token_boundaries(self):
+        # 'adrenalin' must not be located inside 'noradrenalin'.
+        seq = critical_token_sequence("noradrenalin verildi", annotated_tokens=["adrenalin"])
+        assert seq == []
+
     def test_sequence_preserves_order_and_class(self):
         seq = critical_token_sequence("1 mg ve 2 g")
         assert seq == [

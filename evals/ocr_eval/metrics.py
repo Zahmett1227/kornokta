@@ -11,7 +11,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from .normalize import normalize_for_compare
+from .normalize import nfc, normalize_for_compare
 
 
 def levenshtein(a: Sequence, b: Sequence) -> int:
@@ -188,20 +188,61 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     return missing / len(tokens)
 
 
+def _canonical(text: str) -> str:
+    return re.sub(r"\s+", "", normalize_for_compare(text))
+
+
+def _annotated_spans(text: str, tokens: Iterable[str]) -> list[tuple[int, int, str]]:
+    """Locate human-annotated tokens in `text`, with the same boundary rules."""
+    spans: list[tuple[int, int, str]] = []
+    for token in tokens:
+        token = nfc(token).strip()
+        if not token:
+            continue
+        pattern = re.compile(
+            _token_occurrence_pattern(token).pattern, re.IGNORECASE
+        )
+        for match in pattern.finditer(text):
+            spans.append((match.start(), match.end(), match.group(0)))
+    return spans
+
+
 def critical_token_sequence(
-    text: str, wordlists: "Wordlists | None" = None
+    text: str,
+    wordlists: "Wordlists | None" = None,
+    annotated_tokens: Iterable[str] | None = None,
 ) -> list[tuple[str, str]]:
-    """Ordered (class, canonical value) pairs for every critical span in `text`."""
+    """Ordered (class, canonical value) pairs for every critical span in `text`.
+
+    `annotated_tokens` are the manifest's hand-marked criticalTokens. They are
+    needed because the automatic detector only knows the patterns and word
+    lists compiled into it: a drug absent from `Wordlists` is invisible to it,
+    so a passage naming two such drugs yields the same sequence however the
+    doses are assigned. The manifest — not the detector — is the authority on
+    what counts as critical (ANA-PLAN §23.1).
+    """
     from .critical_tokens import detect_critical_tokens
 
-    return [
-        (t.token_class, re.sub(r"\s+", "", normalize_for_compare(t.text)))
-        for t in detect_critical_tokens(text, wordlists)
-    ]
+    text = nfc(text)
+    detected = detect_critical_tokens(text, wordlists)
+    entries = [(t.start, t.end, t.token_class, _canonical(t.text)) for t in detected]
+
+    if annotated_tokens:
+        covered = [(t.start, t.end) for t in detected]
+        for start, end, surface in _annotated_spans(text, annotated_tokens):
+            overlaps = any(start < c_end and end > c_start for c_start, c_end in covered)
+            if not overlaps:
+                entries.append((start, end, "annotated", _canonical(surface)))
+
+    entries.sort(key=lambda e: (e[0], e[1], e[2]))
+    return [(cls, value) for _s, _e, cls, value in entries]
 
 
 def critical_token_mismatches(
-    gold_text: str, hypothesis: str, wordlists: "Wordlists | None" = None
+    gold_text: str,
+    hypothesis: str,
+    wordlists: "Wordlists | None" = None,
+    gold_tokens: Iterable[str] | None = None,
 ) -> list[str]:
     """Ordered differences between the two texts' critical-token sequences.
 
@@ -213,13 +254,18 @@ def critical_token_mismatches(
     sequences catches it, so the Faz 0 gate needs this alongside the other two
     (ANA-PLAN §23.2, §24.3).
 
+    Pass the manifest's `criticalTokens` as `gold_tokens`: they are applied to
+    *both* texts, so values the built-in detector cannot recognise — an
+    unlisted drug name, say — still take part in the ordering. Without them a
+    swapped drug/dose assignment goes unseen.
+
     Returns one human-readable entry per divergence; empty means the sequences
     agree.
     """
     import difflib
 
-    gold_seq = critical_token_sequence(gold_text, wordlists)
-    hyp_seq = critical_token_sequence(hypothesis, wordlists)
+    gold_seq = critical_token_sequence(gold_text, wordlists, gold_tokens)
+    hyp_seq = critical_token_sequence(hypothesis, wordlists, gold_tokens)
 
     def render(pairs: Sequence[tuple[str, str]]) -> str:
         return ", ".join(f"{value} ({cls})" for cls, value in pairs) or "—"
