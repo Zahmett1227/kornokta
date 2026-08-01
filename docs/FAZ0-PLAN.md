@@ -64,6 +64,18 @@ Faz 1'e geçmeden önce:
 - [ ] Model karşılaştırması en az bir aday için kabul rubriğini (≥12/14) geçiyor (§23.3, §27).
 - [ ] Ölçüm raporu yazıldı (CER/WER, kritik token hata oranı, seçim F1, otomatik kabul precision'ı, çekim başına düzeltme dokunuşu).
 
+## Onay bekleyen şartname sapması
+
+### S-1 — `route` (uygulama yolu) kritik token sınıfı
+
+ANA-PLAN §10.5 kritik token sınıflarını sayarken **uygulama yolunu (IM/IV/PO/SC…) listelemiyor.** Buna rağmen `evals/ocr_eval/critical_tokens.py` içine `route` sınıfı eklendi ve `evals/gold-manifest.schema.json` enum'ı genişletildi.
+
+**Gerekçe:** §10.5'in belirtilen amacı "tıbbi anlamı değiştiren" uyuşmazlıkları otomatik geçişten alıkoymak. `5 mg IM` yerine `5 mg IV` okumak farklı bir order demektir ve bu, listede yer alan doz/birim hatalarıyla aynı ağırlıkta. Eklenmeden önce bu değişim üç kapının hiçbirinden görünmüyordu.
+
+**Uygulama notu:** Büyük harfe duyarlı eşleştirilir. Küçük harfli `im`, `it`, `id`, `po` sıradan Türkçe harf dizileridir (`evim`, `tedavisidir`, `po polikliniği`) ve küçük harfe de bakmak onay kuyruğunu kullanılamaz hale getirirdi. Bunun bedeli: OCR yolu küçük harf üretirse yakalanmaz.
+
+**Durum:** ANA-PLAN sahibinin onayı bekleniyor (§0.11 uyarınca en küçük geri alınabilir çözüm olarak eklendi). Onaylanmazsa `route` kalıbının ve şema enum girdisinin kaldırılması yeterli.
+
 ## Bilinen sınırlar ve Faz 2 takip maddeleri
 
 Aşağıdakiler spike'ın **bilinçli olarak çözmediği** noktalardır. Kod incelemesinde tespit edildiler; gerçek altın set olmadan burada anlamlı biçimde çözülemezler, bu yüzden Faz 2'ye taşındı. "Unutulmuş boşluk" değil, kayıtlı borç.
