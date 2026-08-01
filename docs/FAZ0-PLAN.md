@@ -100,6 +100,8 @@ Sonuç: `ilacı kullanma` (olumsuz emir) ile `ilaç kullanma` (isim tamlaması) 
 
 ### F2-5 — Kritik token tespiti tek başına düzenli ifadeye bırakılmamalı
 
+> **Karara bağlandı:** [ADR-001 — Türkçe morfoloji için hibrit yaklaşım](ADR-001-hibrit-turkce-morfoloji.md). Aşağıdaki analiz o kararın gerekçesidir; uygulama sırası ve sınırlar ADR'de.
+
 Bu PR'ın kod incelemesi sekiz tur sürdü ve bulguların ezici çoğunluğu iki dosyada toplandı: `critical_tokens.py` ve `metrics.py`. Sebep tek tek dikkatsizlik değil, yapısal: **Türkçe biçimbilimini sözlüksüz düzenli ifadeyle çözmek uzun kuyruklu bir iş.** Her tur yeni bir çekim biçimi veya eşyazımlı sözcük çıktı:
 
 - `solunum` = `sol` + `un` + `um` diye ayrışıyordu

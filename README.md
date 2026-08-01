@@ -13,8 +13,12 @@ Ana plan §25 ve §32 uyarınca önce alt çizgi / OCR / el yazısı riski çöz
 - **Kritik token detektörü** (ana plan §10.5 sınıfları)
 - **İşaret algılama spike'ı** (fosforlu/alt çizgi, OpenCV; sentetik görüntülerle test edilebilir)
 - **Sağlayıcı karşılaştırma iskeleti** (ana plan §27; anahtarlar yalnız env üzerinden)
+- **Apple Vision spike'ı** (`ios/spikes/AppleVisionSpike/`) ve çıktısını puanlayan `vision_report`
 - **Faz 0 çalışma planı**: [`docs/FAZ0-PLAN.md`](docs/FAZ0-PLAN.md)
+- **Durum özeti**: [`docs/FAZ0-STATUS.md`](docs/FAZ0-STATUS.md)
+- **Mac'te sıradaki adımlar**: [`docs/MAC-ADIMLARI.md`](docs/MAC-ADIMLARI.md)
 - **Altın set çekim/etiketleme rehberi**: [`docs/GOLD-SET-GUIDE.md`](docs/GOLD-SET-GUIDE.md)
+- **Türkçe morfoloji kararı**: [`docs/ADR-001-hibrit-turkce-morfoloji.md`](docs/ADR-001-hibrit-turkce-morfoloji.md)
 
 iOS (`ios/`) ve backend (`backend/`) dizinleri şimdilik iskelettir; Faz 0 çıkış kapıları geçilmeden doldurulmayacaktır.
 
