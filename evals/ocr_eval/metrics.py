@@ -103,8 +103,11 @@ _CASE = (
     "|yi|yı|yu|yü|ni|nı|nu|nü"
     "|e|a|i|ı|u|ü"
 )
-#: Copular endings, which may follow the case slot ('adrenalindir', 'evredeydi').
-_COPULA = "dir|dır|dur|dür|tir|tır|tur|tür|di|dı|du|dü|ti|tı|tu|tü"
+#: Copular endings, which may follow the case slot. Turkish inserts a buffer
+#: 'y' when the copula lands on a vowel-final case suffix, so 'sağdaydı' is
+#: 'sağ' + 'da' + 'y' + 'dı' — without the buffer a perfect transcription would
+#: be scored as a critical-token error.
+_COPULA = "y?(?:dir|dır|dur|dür|tir|tır|tur|tür|di|dı|du|dü|ti|tı|tu|tü)"
 
 _SUFFIX_CHAIN = (
     f"(?:{_PLURAL})?(?:{_POSSESSIVE})?(?:{_CASE})?(?:{_COPULA})?"
@@ -194,10 +197,13 @@ def added_critical_tokens(
     from .critical_tokens import detect_critical_tokens
 
     def counted(text: str) -> Counter:
+        # Key on (class, canonical value). Several patterns accept optional
+        # spacing — '%40' and '% 40', 'q8h' and 'q8 h' — so keying on the raw
+        # surface would report a re-spaced value as a newly introduced one.
         return Counter(
-            normalize_for_compare(t.text)
+            (t.token_class, re.sub(r"\s+", "", normalize_for_compare(t.text)))
             for t in detect_critical_tokens(text, wordlists)
         )
 
     surplus = counted(hypothesis) - counted(gold_text)
-    return sorted(surplus.elements())
+    return sorted(value for _cls, value in surplus.elements())

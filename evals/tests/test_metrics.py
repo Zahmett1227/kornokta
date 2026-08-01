@@ -195,3 +195,32 @@ class TestAddedCriticalTokens:
 
     def test_removed_token_is_not_reported_as_added(self):
         assert added_critical_tokens("5 mg ve 10 mg", "5 mg") == []
+
+    @pytest.mark.parametrize(
+        "gold_text, hypothesis",
+        [("mortalite %40", "mortalite % 40"), ("q8h uygulanır", "q8 h uygulanır")],
+    )
+    def test_respacing_is_not_an_added_token(self, gold_text, hypothesis):
+        # These patterns accept either spacing, so the value is unchanged.
+        assert added_critical_tokens(gold_text, hypothesis) == []
+
+    def test_drug_substitution_is_reported(self):
+        from evals.ocr_eval.critical_tokens import Wordlists
+
+        wordlists = Wordlists(drug_names={"adrenalin"})
+        # 'adrenalin' must not be read out of 'noradrenalin', otherwise both
+        # texts look like they mention the same drug and the swap passes.
+        assert added_critical_tokens(
+            "noradrenalin verildi", "adrenalin verildi", wordlists
+        ) == ["adrenalin"]
+
+
+class TestBufferedCopula:
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [("sağ", "Lezyon sağdaydı"), ("sol", "Lezyon soldaydı")],
+    )
+    def test_case_plus_buffered_copula_is_accepted(self, gold, hypothesis):
+        # Turkish inserts a buffer 'y' between a vowel-final case suffix and
+        # the copula; without it a perfect transcription scores as an error.
+        assert critical_token_error_rate([gold], hypothesis) == 0.0

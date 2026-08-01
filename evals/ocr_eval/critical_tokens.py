@@ -119,7 +119,9 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         # 'kullanılmamalıdır' vs 'kullanılmalıdır' is the sharpest meaning
         # flip in clinical prose, so missing this paradigm is the costliest
         # false negative in the whole detector (ANA-PLAN §10.5).
-        r"\w+?m[ae](?:z|y[ae]n|d[ıi]|m[ıi]ş|m[ae]l[ıi]|y[ae]c[ae]k|m[ae])\w*"
+        #   -mayız/-meyiz    kullanmayız              (1st person plural aorist,
+        #                                             buffered with y)
+        r"\w+?m[ae](?:z|y[ıi]z|y[ae]n|d[ıi]|m[ıi]ş|m[ae]l[ıi]|y[ae]c[ae]k|m[ae])\w*"
         # Converbs and conditional, which carry the same reversal:
         #   -madan/-meden    verilmeden çekim yapılır
         #   -masa/-mese      kullanmasa da
@@ -176,19 +178,35 @@ def _fold_preserving_length(text: str) -> str:
 _TR_LOWER_MAP_LOCAL = str.maketrans({"I": "ı", "İ": "i"})
 
 
+def _is_letter(ch: str) -> bool:
+    return ch.isalpha()
+
+
 def _wordlist_matches(text: str, names: Iterable[str], token_class: str) -> list[CriticalToken]:
+    """Find configured names, refusing matches that start mid-word.
+
+    A bare substring search reports 'adrenalin' inside 'noradrenalin', so the
+    gold span for a passage about noradrenalin becomes the wrong drug — and a
+    hypothesis that really says 'adrenalin' then agrees with it, letting a drug
+    substitution through both critical-token directions. Requiring a non-letter
+    before the match blocks that, while trailing letters stay allowed so
+    Turkish suffixes ('adrenalindir') still count as the drug.
+    """
     found: list[CriticalToken] = []
     lowered = _fold_preserving_length(text)
     for name in names:
         needle = _fold_preserving_length(nfc(name))
+        if not needle:
+            continue
         start = 0
         while True:
             idx = lowered.find(needle, start)
             if idx == -1:
                 break
             end = idx + len(needle)
-            found.append(CriticalToken(text[idx:end], token_class, idx, end))
-            start = end
+            if idx == 0 or not _is_letter(lowered[idx - 1]):
+                found.append(CriticalToken(text[idx:end], token_class, idx, end))
+            start = idx + 1
     return found
 
 

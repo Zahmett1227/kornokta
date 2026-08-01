@@ -96,6 +96,15 @@ class TestTurkishSemanticClasses:
 
     @pytest.mark.parametrize(
         "text",
+        ["beta bloker kullanmayız", "bu yaklaşımı önermeyiz", "tercih etmeyiz"],
+    )
+    def test_first_person_plural_negative_aorist(self, text):
+        # 'kullanmayız' vs 'kullanırız' reverses the instruction; the buffered
+        # -mayız/-meyiz ending must flag just like plain -maz/-mez.
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
         [
             "kontrendike değildir",
             "değildi",
@@ -207,6 +216,17 @@ class TestWordlists:
 
     def test_empty_wordlist_no_flag(self):
         assert "drug_name" not in classes_of("İlk seçenek adrenalindir")
+
+    def test_name_is_not_read_out_of_a_longer_name(self):
+        # 'noradrenalin' is a different drug; reporting 'adrenalin' here would
+        # make a substitution look like agreement between source and OCR.
+        wl = Wordlists(drug_names={"adrenalin"})
+        assert detect_critical_tokens("noradrenalin verildi", wl) == []
+
+    def test_inflected_name_still_matches(self):
+        wl = Wordlists(drug_names={"adrenalin"})
+        tokens = detect_critical_tokens("adrenalindir", wl)
+        assert [t.text for t in tokens] == ["adrenalin"]
 
 
 class TestOffsets:
