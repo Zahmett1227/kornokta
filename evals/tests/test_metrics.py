@@ -165,6 +165,22 @@ class TestCriticalTokenErrorRate:
 
     @pytest.mark.parametrize(
         "gold, hypothesis",
+        [("sağ", "Tedavi akım sağlar"), ("sol", "akım sollar")],
+    )
+    def test_plural_does_not_form_a_homographic_verb(self, gold, hypothesis):
+        # 'sağlar' is the verb "provides"; reading it as 'sağ' + plural would
+        # let a lost laterality pass whenever that verb appears nearby.
+        assert critical_token_error_rate([gold], hypothesis) == 1.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
+        [("hiperkalemi", "hiperkalemilerde"), ("adrenalin", "adrenalinlerden")],
+    )
+    def test_plural_still_allowed_on_longer_roots(self, gold, hypothesis):
+        assert critical_token_error_rate([gold], hypothesis) == 0.0
+
+    @pytest.mark.parametrize(
+        "gold, hypothesis",
         [
             ("g", "doz 5 q / gün"),   # 'gün' is not the unit 'g' plus a suffix
             ("mg", "mgr değil"),

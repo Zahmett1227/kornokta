@@ -109,15 +109,23 @@ _CASE = (
 #: be scored as a critical-token error.
 _COPULA = "y?(?:dir|dır|dur|dür|tir|tır|tur|tür|di|dı|du|dü|ti|tı|tu|tü)"
 
-_SUFFIX_CHAIN = (
-    f"(?:{_PLURAL})?(?:{_POSSESSIVE})?(?:{_CASE})?(?:{_COPULA})?"
-)
-
 #: Below this length a token is matched exactly, with no suffix tolerance.
 #: Unit symbols are short and are not inflected in running text, while ordinary
 #: words readily start with the same letters: applying the suffix policy to the
 #: unit 'g' lets 'gün' ("day") satisfy it and hides a lost unit.
 _MIN_LENGTH_FOR_SUFFIXES = 3
+
+#: Plural is only allowed from this length up. '-lar/-ler' turns many short
+#: roots into an unrelated word — 'sağlar' is the verb "provides", not the
+#: plural of the laterality 'sağ' — so a lost 'sağ' would be satisfied by a
+#: sentence that merely contains that verb. Longer roots ('hiperkalemiler',
+#: 'adrenalinler') do not have this collision.
+_MIN_LENGTH_FOR_PLURAL = 5
+
+
+def _suffix_chain(token: str) -> str:
+    plural = f"(?:{_PLURAL})?" if len(token) >= _MIN_LENGTH_FOR_PLURAL else ""
+    return f"{plural}(?:{_POSSESSIVE})?(?:{_CASE})?(?:{_COPULA})?"
 
 
 def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
@@ -147,7 +155,7 @@ def _token_occurrence_pattern(token: str) -> re.Pattern[str]:
     if token[-1:].isdigit():
         right = r"(?!\d)(?![.,]\d)"
     elif token[-1:].isalpha():
-        chain = _SUFFIX_CHAIN if len(token) >= _MIN_LENGTH_FOR_SUFFIXES else ""
+        chain = _suffix_chain(token) if len(token) >= _MIN_LENGTH_FOR_SUFFIXES else ""
         right = f"{chain}(?!{_LETTER})"
 
     return re.compile(left + re.escape(token) + right)

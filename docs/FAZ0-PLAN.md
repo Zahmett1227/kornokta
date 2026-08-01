@@ -87,6 +87,26 @@ Sonuç: `ilacı kullanma` (olumsuz emir) ile `ilaç kullanma` (isim tamlaması) 
 
 `config.json` içindeki tüm eşikler sentetik görüntülerle doğrulandı. Gerçek kağıt dokusu, gölge, tarayıcı gürültüsü ve kurşun kalem çok daha zor; §9.3 ağırlıkları ve `decisionThresholds` altın set gelince yeniden ayarlanmalı (yukarıdaki kalibrasyon planı).
 
+### F2-5 — Kritik token tespiti tek başına düzenli ifadeye bırakılmamalı
+
+Bu PR'ın kod incelemesi sekiz tur sürdü ve bulguların ezici çoğunluğu iki dosyada toplandı: `critical_tokens.py` ve `metrics.py`. Sebep tek tek dikkatsizlik değil, yapısal: **Türkçe biçimbilimini sözlüksüz düzenli ifadeyle çözmek uzun kuyruklu bir iş.** Her tur yeni bir çekim biçimi veya eşyazımlı sözcük çıktı:
+
+- `solunum` = `sol` + `un` + `um` diye ayrışıyordu
+- `sağlıklı` türetme ekiyle `sağ` sanılıyordu
+- `sağlar` (fiil) `sağ` + çoğul sanılıyordu
+- `gün`, `g` birimi + ek sanılıyordu
+- `noradrenalin` içinde `adrenalin` bulunuyordu
+
+Her biri ayrı ayrı düzeltildi ve regresyon testine bağlandı, ama kuyruğun bittiğine dair bir kanıt yok — bir sözlük ve gerçek biçimbilimsel çözümleyici olmadan `sağlar`ı `sağ`dan ayırmanın genel bir yolu yok.
+
+**Öneri:** Bu katman ANA-PLAN §10.4'teki LLM uzlaştırma adımıyla birlikte konumlandırılmalı. Regex katmanı "kesin karar veren" değil **aday üreten** olarak görülürse kuyruk risk olmaktan çıkar:
+
+- Regex geniş tarafta kalır (yanlış pozitif ucuz, yanlış negatif pahalı).
+- Anlam değiştiren uyuşmazlığın nihai kararı, sözdizimsel bağlamı görebilen modele bırakılır.
+- Altın set bu iki katmanın **birlikte** doğruluğunu ölçer; tek başına regex'in F1'i hedef değildir.
+
+Faz 2/3'te bu ayrım netleştirilmeli. Şu anki testler regex katmanının bilinen sınırlarını sabitliyor; kapsam iddiası taşımıyorlar.
+
 ### F2-4 — Sentetik görüntüler gerçek geometriyi temsil etmiyor
 
 `synthetic.py` metni koyu dikdörtgenlerle taklit ediyor; glif şekilleri, taban çizgisi altına inen harfler (g, y, p, ç) ve satır aralığı düzensizliği yok. Taban çizgisi altı bandı gerçek inen harflerle test edilmedi — alt çizgi tespitinde yanlış pozitif kaynağı olabilir. Gerçek görseller geldiğinde ilk bakılacak yerlerden biri.
