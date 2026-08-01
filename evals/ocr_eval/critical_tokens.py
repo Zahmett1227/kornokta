@@ -115,6 +115,14 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         # flip in clinical prose, so missing this paradigm is the costliest
         # false negative in the whole detector (ANA-PLAN §10.5).
         r"\w+?m[ae](?:z|y[ae]n|d[ıi]|m[ıi]ş|m[ae]l[ıi]|y[ae]c[ae]k|m[ae])\w*"
+        # Converbs and conditional, which carry the same reversal:
+        #   -madan/-meden    verilmeden çekim yapılır
+        #   -masa/-mese      kullanmasa da
+        #   -mayarak/-meyerek ilacı kullanmayarak
+        #   -maksızın        beklemeksizin
+        # All require a word boundary so 'maden', 'masa' and noun+conditional
+        # forms are not swept in.
+        r"|\w+?m[ae](?:d[ae]n|s[ae]|y[ae]r[ae]k|ks[ıi]z[ıi]n)\b"
         # -masın/-mesin needs a word boundary: without it the positive verbal
         # noun plus case ending ('kullanılmasında') would match too.
         r"|\w+?m[ae]s[ıi]n\b"
@@ -125,6 +133,15 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         r"|\b(?:var|yok|yoktur|vardır)\b"
         r"|\b(?:yapar|artar|artırır|azalır|azaltır|görülür|izlenir|saptanır"
         r"|yükselir|yükseltir|düşer|düşürür|çoğalır|gerileri?r|bozar|engeller)\b",
+        # Deliberately NOT matched: bare -ma/-me with no following suffix.
+        # It is homographic with the (positive) verbal noun, which is pervasive
+        # in medical prose — kanama, uygulama, gelişme, büyüme, yayılma,
+        # bulaşma, beslenme, daralma. Flagging it would mark almost every
+        # passage as critical and make confirmation meaningless, defeating the
+        # low-intervention goal in ANA-PLAN §24.2. The bare negative imperative
+        # ('ilacı kullanma') is not separable from the noun by morphology
+        # alone; it needs the syntactic context available to the LLM
+        # reconciliation step (§10.4), not this lexical pass.
         re.IGNORECASE,
     )),
     ("laterality", re.compile(r"\b(?:sağ|sol)\b", re.IGNORECASE)),

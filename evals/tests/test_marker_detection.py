@@ -9,7 +9,11 @@ from evals.spikes.marker_detection.detector import (
     load_config,
     selected_line_ids,
 )
-from evals.spikes.marker_detection.synthetic import draw_table_rule, make_page
+from evals.spikes.marker_detection.synthetic import (
+    draw_overhanging_underline,
+    draw_table_rule,
+    make_page,
+)
 
 
 @pytest.fixture(scope="module")
@@ -151,6 +155,46 @@ class TestTableRuleRejection:
         target = next(d for d in detections if d.line_id == "line_04")
         assert target.detail["rejected_spans_beyond_line"] is False
         assert target.selection_type == "underline"
+
+    def test_hand_underline_may_overhang_a_tight_box(self, cfg):
+        # OCR often returns a snug box around a short phrase while the stroke
+        # runs a little past both ends; that is a pen mark, not a rule.
+        page = make_page(n_lines=6)
+        tight = draw_overhanging_underline(page, line_index=2, overhang_px=18)
+        lines = [tight] + [l for l in page.lines if l.line_id != tight.line_id]
+        detections = analyze_page(page.image_bgr, lines, document_quality=0.95, cfg=cfg)
+        target = next(d for d in detections if d.line_id == tight.line_id)
+        assert target.detail["rejected_spans_beyond_line"] is False
+        assert target.selection_type == "underline"
+
+
+class TestUnobservableOverrun:
+    """When no margin beside the line is visible the overrun signal carries no
+    information; it must read as unknown, never as 'no overrun' (§19.2)."""
+
+    def _edge_line_over_rule(self, cfg):
+        page = make_page(n_lines=6)
+        draw_table_rule(page, below_line_index=2, thickness=3)
+        original = page.lines[2]
+        edge = LineBox(
+            original.line_id, 0, original.y, page.image_bgr.shape[1], original.height, 0.95
+        )
+        lines = [edge] + [l for l in page.lines if l.line_id != edge.line_id]
+        return page, lines, edge
+
+    def test_clipped_margin_marks_overrun_unobserved(self, cfg):
+        page, lines, edge = self._edge_line_over_rule(cfg)
+        detections = analyze_page(page.image_bgr, lines, document_quality=1.0, cfg=cfg)
+        target = next(d for d in detections if d.line_id == edge.line_id)
+        assert target.detail["underline_overrun_observed"] is False
+
+    def test_clipped_margin_never_auto_accepted(self, cfg):
+        # A cropped full-width table rule is indistinguishable from an
+        # underline here, so it must not slip through as an auto candidate.
+        page, lines, edge = self._edge_line_over_rule(cfg)
+        detections = analyze_page(page.image_bgr, lines, document_quality=1.0, cfg=cfg)
+        target = next(d for d in detections if d.line_id == edge.line_id)
+        assert target.decision != "auto_candidate"
 
 
 class TestConfidenceComponents:

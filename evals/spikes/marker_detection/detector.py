@@ -108,9 +108,16 @@ def _highlight_mask(hsv_roi: np.ndarray, cfg: dict) -> np.ndarray:
 
 
 def _region(image: np.ndarray, x: int, y: int, w: int, h: int) -> np.ndarray:
+    """Crop, clamped to the image. Returns an empty array when the requested
+    rectangle lies wholly outside it — clamping alone is not enough, because a
+    negative upper bound would be read as an offset from the far edge and slice
+    a large unrelated region.
+    """
     H, W = image.shape[:2]
     x0, y0 = max(0, x), max(0, y)
     x1, y1 = min(W, x + w), min(H, y + h)
+    if x1 <= x0 or y1 <= y0:
+        return image[0:0, 0:0]
     return image[y0:y1, x0:x1]
 
 
@@ -130,6 +137,10 @@ class UnderlineEvidence:
     extent_ratio: float
     thickness_ratio: float
     overrun_ratio: float
+    #: False when no margin beside the line was visible (line touches the image
+    #: edge / cropped page). Then overrun_ratio carries no information and must
+    #: be read as "unknown", never as "no overrun".
+    overrun_observed: bool = True
 
 
 def _dark_mask(region: np.ndarray) -> np.ndarray:
@@ -149,7 +160,7 @@ def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> Underli
     band_height = band_h + 2
     band = _region(image_bgr, line.x, band_top, line.width, band_height)
     if band.size == 0:
-        return UnderlineEvidence(0.0, 0.0, 0.0, 0.0)
+        return UnderlineEvidence(0.0, 0.0, 0.0, 0.0, overrun_observed=False)
 
     dark = _dark_mask(band)
     dark_ratio = float(dark.mean())
@@ -168,11 +179,17 @@ def detect_underline(image_bgr: np.ndarray, line: LineBox, cfg: dict) -> Underli
     # table border or page rule runs the full column width regardless of where
     # the text stops; a pen underline starts and ends at the text. Thickness
     # alone cannot separate a 3px table rule from a 3px pen stroke — this can.
-    overrun_ratio = _horizontal_overrun(
-        image_bgr, line, band_top, band_height, ucfg["overrunMarginRatio"]
+    overrun_ratio, overrun_observed = _horizontal_overrun(
+        image_bgr, line, band_top, band_height, ucfg
     )
 
-    return UnderlineEvidence(dark_ratio, extent_ratio, float(thickness_ratio), overrun_ratio)
+    return UnderlineEvidence(
+        dark_ratio,
+        extent_ratio,
+        float(thickness_ratio),
+        overrun_ratio,
+        overrun_observed=overrun_observed,
+    )
 
 
 def _horizontal_overrun(
@@ -180,24 +197,43 @@ def _horizontal_overrun(
     line: LineBox,
     band_top: int,
     band_height: int,
-    margin_ratio: float,
-) -> float:
-    """Fraction of the margins beside the line that continue the dark mark.
+    ucfg: dict,
+) -> tuple[float, bool]:
+    """How strongly the mark continues past the ends of the text line.
 
-    Measured on both sides and combined with min(), so a mark must overrun in
-    BOTH directions to look like a rule. A line that merely sits near the page
-    edge, or an underline that runs slightly long on one side, does not trip it.
+    Returns (overrun_ratio, observed).
+
+    A hand underline often overhangs a tight OCR box by a little, so the zone
+    immediately beside the line is *skipped*: only the region past that
+    tolerance is sampled. A pen stroke dies out there; a ruled border does not.
+
+    Sides are combined with min() so a mark must continue in BOTH directions to
+    read as a rule. When a side is off-image (cropped page, line at the edge)
+    the visible side is used alone, and when neither side is visible `observed`
+    is False — the caller must treat that as unknown rather than as evidence of
+    no overrun.
     """
-    margin = max(4, int(round(line.width * margin_ratio)))
-    left = _region(image_bgr, line.x - margin, band_top, margin, band_height)
-    right = _region(image_bgr, line.x2, band_top, margin, band_height)
+    # Both distances scale with line HEIGHT, not length: how far a hand stroke
+    # overshoots depends on the size of the text, not on how long the line is.
+    # Scaling by width made the tolerance on a full-width line so large that it
+    # swallowed the whole page margin and the signal was never observable.
+    tolerance = max(2, int(round(line.height * ucfg["penOverhangToleranceRatio"])))
+    margin = max(6, int(round(line.height * ucfg["overrunMarginRatio"])))
+
+    left = _region(image_bgr, line.x - tolerance - margin, band_top, margin, band_height)
+    right = _region(image_bgr, line.x2 + tolerance, band_top, margin, band_height)
 
     coverages = []
     for side in (left, right):
-        if side.size == 0:
-            return 0.0  # Cannot see past the line on one side — no evidence.
+        # Require most of the intended margin to be on-image; a sliver gives an
+        # unreliable coverage figure.
+        if side.size == 0 or side.shape[1] < margin // 2:
+            continue
         coverages.append(float(_dark_mask(side).any(axis=0).mean()))
-    return min(coverages)
+
+    if not coverages:
+        return 0.0, False
+    return min(coverages), True
 
 
 def _longest_run(flags: np.ndarray) -> int:
@@ -246,7 +282,10 @@ def analyze_line(
     # a filled dark region (shadow, graphic) is too thick, and a ruled table
     # border is thin enough to look like a pen stroke but runs past the text.
     too_thick = evidence.thickness_ratio > ucfg["maxComponentThicknessRatio"]
-    spans_beyond_line = evidence.overrun_ratio > ucfg["maxOutsideOverrunRatio"]
+    spans_beyond_line = (
+        evidence.overrun_observed
+        and evidence.overrun_ratio > ucfg["maxOutsideOverrunRatio"]
+    )
     rejected = too_thick or spans_beyond_line
     is_underline = (
         dark_ratio >= ucfg["minDarkPixelRatio"]
@@ -287,9 +326,15 @@ def analyze_line(
     )
 
     thresholds = cfg["decisionThresholds"]
+    # An underline whose margins were not visible cannot be told apart from a
+    # cropped table rule, so it must not be auto-accepted however high the other
+    # components score — unknown is routed to the user, not silently trusted
+    # (ANA-PLAN §19.2, P3).
+    overrun_unknown = selection_type == "underline" and not evidence.overrun_observed
+
     if selection_type == "none":
         decision = "user_selection"
-    elif confidence >= thresholds["autoCandidate"]:
+    elif confidence >= thresholds["autoCandidate"] and not overrun_unknown:
         decision = "auto_candidate"
     elif confidence >= thresholds["quickConfirm"]:
         decision = "quick_confirm"
@@ -312,6 +357,7 @@ def analyze_line(
             "underline_extent_ratio": round(extent_ratio, 4),
             "underline_thickness_ratio": round(evidence.thickness_ratio, 4),
             "underline_overrun_ratio": round(evidence.overrun_ratio, 4),
+            "underline_overrun_observed": bool(evidence.overrun_observed),
             "rejected_too_thick": bool(too_thick),
             "rejected_spans_beyond_line": bool(spans_beyond_line),
         },

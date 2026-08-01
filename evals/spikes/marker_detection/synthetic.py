@@ -100,6 +100,28 @@ def draw_table_rule(page: SyntheticPage, below_line_index: int, thickness: int =
     page.image_bgr[top: top + thickness, :] = 20
 
 
+def draw_overhanging_underline(
+    page: SyntheticPage,
+    line_index: int,
+    overhang_px: int = 18,
+    thickness: int = 3,
+) -> LineBox:
+    """Underline a short phrase, overhanging a tight OCR box at both ends.
+
+    Returns a LineBox tightened around the phrase, reproducing the common case
+    where OCR reports a snug box and the hand stroke runs a little past it.
+    """
+    line = page.lines[line_index]
+    phrase_w = line.width // 3
+    tight = LineBox(line.line_id, line.x, line.y, phrase_w, line.height, line.ocr_confidence)
+    uy = tight.y2 + 3
+    page.image_bgr[
+        uy: uy + thickness,
+        max(0, tight.x - overhang_px): tight.x2 + overhang_px,
+    ] = 25
+    return tight
+
+
 def save_png(page: SyntheticPage, path: str) -> None:
     rgb = page.image_bgr[..., ::-1]
     Image.fromarray(rgb).save(path)

@@ -29,8 +29,9 @@
     "minDarkPixelRatio": 0.12,
     "minHorizontalExtentRatio": 0.40,
     "maxComponentThicknessRatio": 0.25,
-    "_overrunComment": "Tablo/sayfa cetveli metin satırının iki yanına da taşar; kalem alt çizgisi taşmaz. Kalınlık ince cetveli kalemden ayıramadığı için taşma ayrı bir kanıt olarak ölçülür.",
-    "overrunMarginRatio": 0.20,
+    "_overrunComment": "Tablo/sayfa cetveli metin satırının iki yanına da taşar; kalem alt çizgisi taşmaz. Kalınlık ince cetveli kalemden ayıramadığı için taşma ayrı bir kanıt olarak ölçülür. penOverhangToleranceRatio elle çizilen çizginin dar OCR kutusunu biraz aşmasına izin verir: bu bölge atlanıp yalnız ötesi ölçülür. Her iki oran da satır YÜKSEKLİĞİ ile çarpılır, genişlikle değil: taşma metin boyutuyla ölçeklenir, satır uzunluğuyla değil.",
+    "penOverhangToleranceRatio": 0.60,
+    "overrunMarginRatio": 1.00,
     "maxOutsideOverrunRatio": 0.60
   }
 }

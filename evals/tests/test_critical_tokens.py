@@ -148,6 +148,35 @@ class TestTurkishSemanticClasses:
     def test_negation_paradigm_does_not_overmatch(self, text):
         assert "negation_pair" not in classes_of(text)
 
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Kontrast verilmeden çekim yapılır",  # -meden converb
+            "Hasta kullanmasa da",                # -masa conditional
+            "ilacı kullanmayarak",                # -mayarak converb
+            "beklemeksizin uygulanır",            # -meksizin
+        ],
+    )
+    def test_converb_and_conditional_negation(self, text):
+        assert "negation_pair" in classes_of(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            # Bare -ma/-me is the positive verbal noun and must NOT be flagged,
+            # or almost every medical passage would demand confirmation.
+            "kanama odağı",
+            "ilaç uygulaması",
+            "gelişme geriliği",
+            "yayılma riski",
+            "beslenme desteği",
+            "maden suyu",
+            "masa başı",
+        ],
+    )
+    def test_bare_verbal_noun_not_flagged(self, text):
+        assert "negation_pair" not in classes_of(text)
+
     def test_laterality(self):
         assert "laterality" in classes_of("sol alt kadran ağrısı")
 
