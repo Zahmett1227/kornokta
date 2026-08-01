@@ -1,0 +1,33 @@
+{
+  "_comment": "İşaret algılama spike eşikleri (ANA-PLAN §9.3). Bu değerler ÜRÜN KARARI DEĞİL, ilk kalibrasyon başlangıcıdır; altın test setiyle güncellenmelidir. Kod içine gömülmez (§0.6).",
+  "confidenceWeights": {
+    "markerOverlap": 0.30,
+    "lineGeometry": 0.25,
+    "localOCRConfidence": 0.20,
+    "documentQuality": 0.15,
+    "neighboringLineSeparation": 0.10
+  },
+  "decisionThresholds": {
+    "autoCandidate": 0.92,
+    "quickConfirm": 0.75
+  },
+  "highlight": {
+    "_comment": "HSV eşikleri (OpenCV ölçeği: H 0-179, S 0-255, V 0-255). Fosforlu kalem yüksek doygunluk + yüksek parlaklıkla ayrışır.",
+    "minSaturation": 60,
+    "minValue": 90,
+    "colorHueRangesHSV": {
+      "yellow": [[20, 45]],
+      "green": [[45, 85]],
+      "pink": [[150, 179], [0, 10]],
+      "blue": [[90, 130]]
+    },
+    "minOverlapRatio": 0.25
+  },
+  "underline": {
+    "_comment": "Metin taban çizgisinin hemen altındaki koyu, yatay bileşenler. Hough tek başına kullanılmaz (§9.2).",
+    "bandHeightRatio": 0.35,
+    "minDarkPixelRatio": 0.12,
+    "minHorizontalExtentRatio": 0.40,
+    "maxComponentThicknessRatio": 0.25
+  }
+}
