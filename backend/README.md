@@ -153,25 +153,53 @@ değişkenine JSON olarak gömülür.
      cat ~/Desktop/kornokta-xxxxx.json | jq -c . | pbcopy
      ```
      `jq` yoksa: `python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))" dosya.json`
-3. **Dağıt.** `backend/` içinden `vercel deploy` (veya Vercel'in GitHub
+3. **Üretim dalı.** Settings → Git → "Production Branch", dağıtmak
+   istediğin dal olmalı. Değilse push'lar **Preview** olarak dağıtılır ve
+   `<proje>.vercel.app` eski sürümü servis etmeye devam eder — dağıtım
+   "Ready" göründüğü hâlde. Tek dağıtımı yayına almak için: Deployments →
+   ilgili satır → `...` → "Promote to Production".
+4. **Dağıt.** `backend/` içinden `vercel deploy` (veya Vercel'in GitHub
    entegrasyonu, push'ta otomatik dağıtır).
-4. **Doğrula.** Yayındaki adresle:
+5. **Doğrula.** Yayındaki adresle:
    ```bash
-   curl https://<proje>.vercel.app/health
+   curl https://<proje>.vercel.app/health          # {"ok":true}
+   curl https://<proje>.vercel.app/api/ocr         # 405, "Yalnızca POST."
+   curl -X POST https://<proje>.vercel.app/api/ocr # 401, "Yetkisiz."
+   ```
+   Bu üçü birlikte anlamlı: `/api/ocr`'ın 405 vermesi bağımlılıkların
+   kurulabildiğini, yani ortam değişkenlerinin eksiksiz ve
+   `GOOGLE_CREDENTIALS_JSON`'ın ayrıştırılabilir olduğunu gösterir.
+   Token'sız POST'un **401** (500 değil) dönmesi `DEVICE_TOKEN`'ın
+   tanımlı ve yeterince uzun olduğunu gösterir — `api/_auth.ts` tanımsız
+   token'ı sunucu hatası sayar.
+
+   Uçtan uca son sınama, gerçek token ve gerçek bir sayfayla:
+   ```bash
    curl -X POST https://<proje>.vercel.app/api/ocr \
      -H "Authorization: Bearer $DEVICE_TOKEN" \
      -H 'Content-Type: application/json' \
      -d "{\"jobId\":\"deneme\",\"mimeType\":\"image/jpeg\",\"imageBase64\":\"$(base64 -i bir-sayfa.jpg)\"}"
    ```
-   `/health` 200 dönüyor ama `/api/ocr` 404 veriyorsa, `vercel.json`
-   dağıtıma dahil olmamış demektir — dosyanın `backend/` kökünde olduğunu
-   kontrol et.
+   Yalnız bu adım Google kimlik doğrulamasının gerçekten çalıştığını
+   gösterir; yukarıdakiler JSON'ın ayrıştığını gösterir, jetonun
+   alınabildiğini değil.
 
-Bu adımlar **doğrulanmadı** — burada gerçek bir Vercel hesabı yok. `vercel.json`
-ve dosya adlandırması Vercel'in belgelenen kurallarına göre yazıldı
-(alt çizgili dosyalar rota sayılmaz, `functions`/`rewrites` biçimi), ama ilk
-gerçek dağıtım bunun için sınama sayılmalı. Bir adım tutmazsa hata mesajını
-buraya yapıştır.
+### İlk dağıtımda çıkan tuzaklar
+
+Hepsi gerçek bir dağıtımda yaşandı ve düzeltildi:
+
+- **`vercel.json` → `functions`** altındaki girdi boş obje olamaz
+  (`"api/index.ts": {}` → "Function must contain at least one property").
+  `maxDuration` verilmiş durumda.
+- **Dışa aktarım biçimi.** `export default handler` **çalışmaz**: Vercel
+  bunu eski `(req, res) => void` imzası sanar ve döndürülen `Response`'u
+  yok sayar; istek yanıtsız kalıp zaman aşımına düşer. Doğrusu
+  `export default { fetch: handler }`. Aynı yanlış biçim, ayrı bir hata
+  gibi görünen `ERR_INVALID_URL`'e de yol açıyordu: eski imzada ilk
+  argüman Node `IncomingMessage`'dır ve `.url`'i mutlak değil, çıplak
+  yoldur. `tests/router.test.ts` bu biçimi sabitliyor.
+- **Production Branch** (yukarıda 3. madde) — en çok zaman kaybettiren
+  madde, çünkü hata mesajı vermez.
 
 ## Henüz yok
 

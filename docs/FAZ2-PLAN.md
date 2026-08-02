@@ -116,17 +116,28 @@ bir testle — mevcut testler yalnız "kabul edilen sayfa" yolunu sınıyordu,
 - Apple Vision satır kutularının geometrik olarak güvenilir olup olmadığı
   (metni yanlış ama kutuları doğru mu?) — F2-6 buna dayanıyor
 - Google'ın Türkçe el yazısındaki başarısı (§10.6)
-- Vercel'e dağıtımın gerçekten çalıştığı — yapılandırma yazıldı
-  (`backend/vercel.json`, `docs/GOOGLE-CLOUD-KURULUM.md`'ye eklenecek
-  adımlar) ama gerçek bir Vercel hesabıyla hiç denenmedi; ilk dağıtım
-  hem ilk doğrulama olacak
+- Uçtan uca gerçek bir OCR çağrısı: aşağıdaki dağıtım doğrulaması
+  kimlik bilgisinin **ayrıştığını** gösteriyor, Google'dan jeton
+  **alınabildiğini** değil. Bunu ancak gerçek token ve gerçek bir
+  sayfayla yapılan tek bir POST gösterir (`backend/README.md`, 5. adım).
 
-**Güncelleme:** `swift test` artık gerçek bir Mac'te **114/114** geçiyor
-(2026-08-02). İlk gerçek derleme üç hata çıkardı — hepsi düzeltildi ve
-kayda geçti (madde 4-8 yukarıda, artı `Bundle.module`'ün public bir
-fonksiyonun varsayılan argümanı olamaması ve `CGColor(red:green:blue:
-alpha:)`'nın rengi bağlamın renk uzayından bağımsız, örtük bir uzayda
-oluşturması — ikincisi `PixelBuffer`'ın okuduğu piksel değerlerini
-gerçekten bozuyordu, yalnız bir test kusuru değildi). Elle inceleme artık
-gerçek bir derleyiciyle doğrulandı; kod tarafı için kalan tek şey Vercel
-dağıtımı ve altın set ölçümü.
+**Güncelleme 1 — Swift derlendi.** `swift test` artık gerçek bir Mac'te
+**114/114** geçiyor (2026-08-02). İlk gerçek derleme üç hata çıkardı —
+hepsi düzeltildi ve kayda geçti (madde 4-8 yukarıda, artı
+`Bundle.module`'ün public bir fonksiyonun varsayılan argümanı olamaması
+ve `CGColor(red:green:blue:alpha:)`'nın rengi bağlamın renk uzayından
+bağımsız, örtük bir uzayda oluşturması — ikincisi `PixelBuffer`'ın
+okuduğu piksel değerlerini gerçekten bozuyordu, yalnız bir test kusuru
+değildi).
+
+**Güncelleme 2 — Vercel dağıtımı yayında.** `/health` 200,
+`/api/ocr` token'sız 401, yanlış metodla 405 (2026-08-02). Üçü birlikte
+ortam değişkenlerinin eksiksiz, `GOOGLE_CREDENTIALS_JSON`'ın
+ayrıştırılabilir ve `DEVICE_TOKEN`'ın tanımlı olduğunu gösteriyor.
+Yolda dört tuzak çıktı, hepsi `backend/README.md`'de yazılı; en pahalısı
+**dışa aktarım biçimiydi** — `export default handler` sessizce eski
+`(req, res)` imzası sanılıyor ve dönen `Response` yok sayılıyor. Bunu
+teşhis etmek uzun sürdü çünkü iki farklı belirti üretiyordu
+(`ERR_INVALID_URL`, sonra 60 sn zaman aşımı) ve yığın izi fonksiyonun
+çağrıldığını gösterdiği için biçim masum görünüyordu. `tests/router.test.ts`
+artık biçimi sabitliyor: tip kontrolü de davranış testleri de yakalamıyordu.
