@@ -115,11 +115,8 @@ bir testle — mevcut testler yalnız "kabul edilen sayfa" yolunu sınıyordu,
 - İşaret tespitinin gerçek sayfalarda tek-dokunuş oranı (§25 Faz 0 kapısı)
 - Apple Vision satır kutularının geometrik olarak güvenilir olup olmadığı
   (metni yanlış ama kutuları doğru mu?) — F2-6 buna dayanıyor
-- Google'ın Türkçe el yazısındaki başarısı (§10.6)
-- Uçtan uca gerçek bir OCR çağrısı: aşağıdaki dağıtım doğrulaması
-  kimlik bilgisinin **ayrıştığını** gösteriyor, Google'dan jeton
-  **alınabildiğini** değil. Bunu ancak gerçek token ve gerçek bir
-  sayfayla yapılan tek bir POST gösterir (`backend/README.md`, 5. adım).
+- Google'ın Türkçe el yazısındaki başarısı (§10.6) — el yazısı için
+  hâlâ ölçülmedi, yalnız basılı metin için doğrulandı (aşağıya bakın)
 
 **Güncelleme 1 — Swift derlendi.** `swift test` artık gerçek bir Mac'te
 **114/114** geçiyor (2026-08-02). İlk gerçek derleme üç hata çıkardı —
@@ -141,3 +138,21 @@ teşhis etmek uzun sürdü çünkü iki farklı belirti üretiyordu
 (`ERR_INVALID_URL`, sonra 60 sn zaman aşımı) ve yığın izi fonksiyonun
 çağrıldığını gösterdiği için biçim masum görünüyordu. `tests/router.test.ts`
 artık biçimi sabitliyor: tip kontrolü de davranış testleri de yakalamıyordu.
+
+**Güncelleme 3 — uçtan uca gerçek çağrı doğrulandı.** Gerçek bir kitap
+sayfası fotoğrafıyla (2026-08-02), gerçek `DEVICE_TOKEN` ve gerçek
+Google kimlik bilgisiyle yapılan bir `POST /api/ocr` Türkçe metni doğru
+döndürdü ("HÜCRE ÖLÜMÜ ve", "NADPH Oksidaz" — ı ş ğ İ ü ö ç dahil),
+8.7 saniyede. Bu, Faz 0'ın ölçtüğü şeyin ("Google Türkçe okuyor, Apple
+Vision okumuyor") gerçek dağıtımda da geçerli olduğunu kanıtlıyor —
+yalnızca yerel `npm run ocr` ile değil.
+
+Yol boyunca beşinci bir tuzak çıktı: telefonun tam çözünürlüklü çekimi
+(~5.6 MB) base64'e çevrilince Vercel'in gövde sınırını (~4.5 MB) aşıp
+`FUNCTION_PAYLOAD_TOO_LARGE` veriyor — tam olarak `UploadImageEncoder`'ın
+(F2-4) var olma sebebi. Elle test için görüntü `sips` ile küçültüldü;
+uygulama bunu otomatik yapıyor.
+
+**Faz 2'nin kod ve dağıtım tarafı artık tamamen doğrulandı.** Geriye
+yalnız 20 görüntülük altın set ölçümü kalıyor (§25 Faz 2 çıkış kapısı) —
+yukarıdaki üç madde.
