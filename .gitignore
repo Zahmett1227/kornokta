@@ -1,6 +1,9 @@
 # --- Secrets: never commit keys or credentials (ANA-PLAN §0.7, §24.6) ---
 .env
 .env.*
+# ...but the template carries no secrets and has to be committed, or nobody
+# knows which variables exist.
+!.env.example
 *.pem
 *.p8
 *.p12

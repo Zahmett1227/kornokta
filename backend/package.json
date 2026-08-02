@@ -1,0 +1,22 @@
+{
+  "name": "cizgi-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Çizgi backend — sağlayıcı proxy'si (ANA-PLAN §7)",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "ocr": "tsx scripts/ocr.ts"
+  },
+  "dependencies": {
+    "google-auth-library": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

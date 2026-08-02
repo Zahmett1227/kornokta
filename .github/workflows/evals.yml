@@ -1,15 +1,20 @@
 name: evals
 
+# `ios/**` is in the trigger because `evals/tests/test_swift_contract_sync.py`
+# reads the Swift enums and checks them against the §14 schema. Without it,
+# editing an enum would skip the very check that exists to catch that edit.
 on:
   push:
     paths:
       - "evals/**"
       - "backend/schemas/**"
+      - "ios/**"
       - ".github/workflows/evals.yml"
   pull_request:
     paths:
       - "evals/**"
       - "backend/schemas/**"
+      - "ios/**"
 
 jobs:
   test:
