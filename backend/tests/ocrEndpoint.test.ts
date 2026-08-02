@@ -307,3 +307,100 @@ describe("POST /api/ocr", () => {
     });
   });
 });
+
+describe("reconciliation in the response", () => {
+  it("is absent when the request carried no local reading", async () => {
+    const response = await handleOcrRequest(
+      post({ jobId: "j", mimeType: "image/jpeg", imageBase64: IMAGE }),
+      deps(),
+    );
+    const body = (await response.json()) as { reconciliation?: unknown };
+    expect(body.reconciliation).toBeUndefined();
+  });
+
+  it("compares against the phone's own reading when one is sent", async () => {
+    const { recognizer } = stubRecognizer(pageWith(["0,5 mg IM adrenalin"]));
+    const response = await handleOcrRequest(
+      post({
+        jobId: "j",
+        mimeType: "image/jpeg",
+        imageBase64: IMAGE,
+        localLines: [{ lineId: "line_00", text: "0,5 mg IV adrenalin", confidence: 0.9 }],
+      }),
+      deps({ recognizer }),
+    );
+    const body = (await response.json()) as { reconciliation?: { decision: string; criticalLineIds: string[] } };
+    // IM vs IV is a route disagreement and must never be recorded silently.
+    expect(body.reconciliation?.decision).toBe("quick_confirm");
+    expect(body.reconciliation?.criticalLineIds).toEqual(["line_00"]);
+  });
+
+  it("auto-accepts when the two readings agree", async () => {
+    const { recognizer } = stubRecognizer(pageWith(["0,5 mg IM adrenalin"]));
+    const response = await handleOcrRequest(
+      post({
+        jobId: "j",
+        mimeType: "image/jpeg",
+        imageBase64: IMAGE,
+        localLines: [{ lineId: "line_00", text: "0,5 mg IM adrenalin", confidence: 0.9 }],
+      }),
+      deps({ recognizer }),
+    );
+    const body = (await response.json()) as { reconciliation?: { decision: string } };
+    expect(body.reconciliation?.decision).toBe("auto_accept");
+  });
+
+  it("ignores a malformed local reading rather than losing the page", async () => {
+    // The image has already been paid for by the time this runs; failing the
+    // whole request because the second opinion was garbled is the worse
+    // outcome.
+    for (const localLines of ["not an array", 42, [{ nope: true }], []]) {
+      const response = await handleOcrRequest(
+        post({ jobId: "j", mimeType: "image/jpeg", imageBase64: IMAGE, localLines }),
+        deps(),
+      );
+      expect(response.status, JSON.stringify(localLines)).toBe(200);
+      const body = (await response.json()) as { reconciliation?: unknown };
+      expect(body.reconciliation).toBeUndefined();
+    }
+  });
+
+  it("keeps the partial local reading when only some entries are malformed", async () => {
+    const { recognizer } = stubRecognizer(pageWith(["birinci satır", "ikinci satır"]));
+    const response = await handleOcrRequest(
+      post({
+        jobId: "j",
+        mimeType: "image/jpeg",
+        imageBase64: IMAGE,
+        localLines: [
+          { lineId: "line_00", text: "birinci satır", confidence: 0.9 },
+          { text: "kimliksiz" },
+        ],
+      }),
+      deps({ recognizer }),
+    );
+    const body = (await response.json()) as { reconciliation?: { lines: unknown[] } };
+    expect(body.reconciliation).toBeDefined();
+  });
+
+  it("logs the decision but still no content", async () => {
+    const secret = "0,5 mg IM adrenalin";
+    const { recognizer } = stubRecognizer(pageWith([secret]));
+    const d = deps({ recognizer });
+    await handleOcrRequest(
+      post({
+        jobId: "j",
+        mimeType: "image/jpeg",
+        imageBase64: IMAGE,
+        localLines: [{ lineId: "line_00", text: "0,5 mg IV adrenalin", confidence: 0.9 }],
+      }),
+      d,
+    );
+    const serialized = JSON.stringify(d.logged);
+    expect(serialized).not.toContain(secret);
+    expect(serialized).not.toContain("IV adrenalin");
+    // A decision is a category, not content, and it is what makes "why did
+    // this ask me?" answerable later.
+    expect(d.logged[0]).toMatchObject({ decision: "quick_confirm", hadLocalReading: true });
+  });
+});

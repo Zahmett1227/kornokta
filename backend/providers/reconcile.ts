@@ -56,11 +56,71 @@ export interface ReconcileOptions {
 
 const DEFAULT_MIN_PRIMARY_CONFIDENCE = 0.5;
 
-/** Pairs lines by `lineId`, which both engines number in reading order. */
+/**
+ * Minimum box overlap for two lines to be considered the same line.
+ *
+ * Intersection over union, so a short line inside a long one does not pair
+ * just because it is contained.
+ */
+export const MIN_LINE_OVERLAP = 0.3;
+
+function overlap(a: OCRLine, b: OCRLine): number {
+  const left = Math.max(a.x, b.x);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const top = Math.max(a.y, b.y);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= left || bottom <= top) return 0;
+
+  const intersection = (right - left) * (bottom - top);
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function hasGeometry(lines: readonly OCRLine[]): boolean {
+  return lines.some((line) => line.width > 0 && line.height > 0);
+}
+
+/**
+ * Pairs each primary line with the secondary line covering the same part of
+ * the page.
+ *
+ * **Not by `lineId`.** Each engine numbers its own lines in reading order and
+ * they do not find the same number of them — on the Faz 0 test page Google
+ * found 156 where Apple Vision found 148, so `line_07` is a different physical
+ * line in each. Pairing by id would compare unrelated lines and report
+ * critical-token disagreements that do not exist, flooding quick_confirm with
+ * noise (§24.2).
+ *
+ * Falls back to id-matching only when neither side carries geometry, which is
+ * the case for a caller that sends text alone.
+ */
 function pairLines(primary: OCRPage, secondary: OCRPage | null): Array<[OCRLine, OCRLine | null]> {
-  const byId = new Map<string, OCRLine>();
-  for (const line of secondary?.lines ?? []) byId.set(line.lineId, line);
-  return primary.lines.map((line) => [line, byId.get(line.lineId) ?? null]);
+  const candidates = secondary?.lines ?? [];
+  if (candidates.length === 0) return primary.lines.map((line) => [line, null]);
+
+  if (!hasGeometry(primary.lines) || !hasGeometry(candidates)) {
+    const byId = new Map<string, OCRLine>();
+    for (const line of candidates) byId.set(line.lineId, line);
+    return primary.lines.map((line) => [line, byId.get(line.lineId) ?? null]);
+  }
+
+  // Greedy best-overlap, each secondary line used at most once so two primary
+  // lines cannot both claim the same reading.
+  const taken = new Set<string>();
+  return primary.lines.map((line): [OCRLine, OCRLine | null] => {
+    let best: OCRLine | null = null;
+    let bestScore = MIN_LINE_OVERLAP;
+    for (const candidate of candidates) {
+      if (taken.has(candidate.lineId)) continue;
+      const score = overlap(line, candidate);
+      if (score > bestScore) {
+        bestScore = score;
+        best = candidate;
+      }
+    }
+    if (best) taken.add(best.lineId);
+    return [line, best];
+  });
 }
 
 /**

@@ -9,9 +9,15 @@ struct SettingsView: View {
     @Query private var cards: [Card]
     @Query private var pages: [CapturedPage]
 
+    @State private var deviceToken = ""
+    @State private var tokenSaved = false
+    @State private var tokenError: String?
+
     var body: some View {
         NavigationStack {
             Form {
+                backendSection
+
                 Section("Yakalama") {
                     TextField("Varsayılan ders", text: Binding(
                         get: { environment.settings.defaultSubject },
@@ -47,16 +53,102 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Aşama", value: "Faz 1 — yerel iskelet")
+                    LabeledContent("Aşama", value: "Faz 2 — bulut OCR")
+                    LabeledContent("Metin tanıma", value: environment.isBackendConfigured ? "Google Document AI" : "Yalnız cihaz (Türkçe okumaz)")
                     LabeledContent("Kart üretimi", value: "Sahte sağlayıcı")
                     LabeledContent("Tekrar algoritması", value: "Geçici (FSRS Faz 4)")
                 } header: {
                     Text("Durum")
                 } footer: {
-                    Text("Bu sürümde bulut OCR ve gerçek kart üretimi yok; her şey cihazda ve çevrimdışı çalışır. Kartlar taslak niteliğindedir.")
+                    Text("Kart üretimi hâlâ sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır.")
                 }
             }
             .navigationTitle("Ayarlar")
+            .onAppear {
+                // Shown as a placeholder, never as text: reading the stored
+                // token back into an on-screen field would put it somewhere a
+                // screenshot or a shoulder can reach (§7.3).
+                deviceToken = ""
+            }
         }
+    }
+
+    /// Cloud OCR setup (§7.2, §7.3).
+    @ViewBuilder
+    private var backendSection: some View {
+        Section {
+            TextField("https://sunucu-adresin", text: Binding(
+                get: { environment.settings.backendURL },
+                set: {
+                    environment.settings.backendURL = $0
+                    environment.settings.save()
+                    environment.backendChanged()
+                }
+            ))
+            .textContentType(.URL)
+            .autocorrectionDisabled()
+            #if os(iOS)
+            .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            #endif
+
+            SecureField(hasStoredToken ? "Kayıtlı — değiştirmek için yaz" : "Cihaz anahtarı", text: $deviceToken)
+                .autocorrectionDisabled()
+                #if os(iOS)
+                .textInputAutocapitalization(.never)
+                #endif
+
+            HStack {
+                Button("Anahtarı kaydet") { saveToken() }
+                    .disabled(deviceToken.trimmingCharacters(in: .whitespaces).isEmpty)
+                Spacer()
+                if hasStoredToken {
+                    Button("Sil", role: .destructive) { clearToken() }
+                }
+            }
+
+            LabeledContent("Durum") {
+                Label(
+                    environment.isBackendConfigured ? "Bağlı" : "Ayarlanmadı",
+                    systemImage: environment.isBackendConfigured ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+                )
+                .foregroundStyle(environment.isBackendConfigured ? .green : .orange)
+            }
+
+            if let tokenError {
+                Text(tokenError).font(.footnote).foregroundStyle(.red)
+            } else if tokenSaved {
+                Text("Anahtar kaydedildi.").font(.footnote).foregroundStyle(.green)
+            }
+        } header: {
+            Text("Bulut OCR")
+        } footer: {
+            Text("Apple Vision Türkçe okumuyor; ı, ş, ğ ve İ harflerini hiç üretemiyor. Bu yüzden metin tanıma sunucu üzerinden yapılıyor. Anahtar yalnız bu cihazın Keychain'inde durur, uygulamanın içine gömülmez.")
+        }
+    }
+
+    private var hasStoredToken: Bool {
+        environment.tokenStore.read()?.isEmpty == false
+    }
+
+    private func saveToken() {
+        do {
+            try environment.tokenStore.write(deviceToken)
+            deviceToken = ""
+            tokenError = nil
+            tokenSaved = true
+            environment.backendChanged()
+        } catch {
+            tokenSaved = false
+            tokenError = "Anahtar kaydedilemedi: \(error)"
+        }
+    }
+
+    private func clearToken() {
+        try? environment.tokenStore.clear()
+        deviceToken = ""
+        tokenSaved = false
+        tokenError = nil
+        environment.backendChanged()
     }
 }

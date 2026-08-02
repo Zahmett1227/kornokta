@@ -16,7 +16,8 @@
 import { authorize } from "./auth.js";
 import type { DocumentAIConfig } from "../config.js";
 import { DocumentAIError } from "../providers/documentAI.js";
-import type { OCRPage, TextRecognizer } from "../providers/ocrTypes.js";
+import type { OCRLine, OCRPage, TextRecognizer } from "../providers/ocrTypes.js";
+import { reconcile, type Reconciliation } from "../providers/reconcile.js";
 
 /** Upload ceiling. A phone photo is ~2–5 MB; 20 MB is generous and bounded. */
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -38,11 +39,70 @@ export interface OcrRequestBody {
    * request. Never used to look anything up — the backend stores nothing.
    */
   jobId?: unknown;
+  /**
+   * The phone's own on-device reading of the same page, if it has one.
+   *
+   * Sent so reconciliation happens here rather than being reimplemented in
+   * Swift: the gate, the route vocabulary and the verdict wording would then
+   * exist in a third place, and this project has already been bitten by
+   * keeping one behaviour in two. Optional — Apple Vision cannot read Turkish,
+   * so for many pages there is no second opinion at all (§10.3).
+   */
+  localLines?: unknown;
 }
 
 export interface OcrSuccess {
   jobId: string;
   page: OCRPage;
+  /** Present only when the request carried a local reading to compare against. */
+  reconciliation?: Reconciliation;
+}
+
+/**
+ * One line of the phone's own reading.
+ *
+ * Geometry is included because reconciliation pairs lines by where they sit on
+ * the page, not by id: the two engines number their own lines independently
+ * and do not find the same number of them.
+ */
+interface LocalLine {
+  lineId: string;
+  text: string;
+  confidence: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Reads the optional local reading, ignoring anything malformed.
+ *
+ * A bad `localLines` must not fail the request: the image is the valuable
+ * part, it has already been paid for by the time this runs, and losing the
+ * page because the second opinion was garbled would be a worse outcome than
+ * proceeding without a second opinion.
+ */
+export function parseLocalLines(value: unknown): LocalLine[] | null {
+  if (!Array.isArray(value)) return null;
+  const lines: LocalLine[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const candidate = entry as Record<string, unknown>;
+    if (typeof candidate.lineId !== "string" || typeof candidate.text !== "string") continue;
+    const number = (key: string) =>
+      typeof candidate[key] === "number" && Number.isFinite(candidate[key]) ? (candidate[key] as number) : 0;
+    lines.push({
+      lineId: candidate.lineId,
+      text: candidate.text,
+      confidence: number("confidence"),
+      x: number("x"),
+      y: number("y"),
+      width: number("width"),
+      height: number("height"),
+    });
+  }
+  return lines.length > 0 ? lines : null;
 }
 
 export interface OcrFailure {
@@ -93,6 +153,23 @@ export function decodeImage(base64: string): Uint8Array | null {
   const normalize = (value: string) => value.replace(/=+$/, "");
   if (normalize(reencoded) !== normalize(cleaned)) return null;
   return new Uint8Array(bytes);
+}
+
+/** Wraps the phone's lines in the page shape reconciliation expects. */
+function asPage(reference: OCRPage, lines: LocalLine[]): OCRPage {
+  return {
+    ...reference,
+    engineVersion: "AppleVision",
+    lines: lines.map((line): OCRLine => ({
+      lineId: line.lineId,
+      text: line.text,
+      confidence: line.confidence,
+      x: line.x,
+      y: line.y,
+      width: line.width,
+      height: line.height,
+    })),
+  };
 }
 
 export async function handleOcrRequest(
@@ -154,16 +231,26 @@ export async function handleOcrRequest(
       mimeType,
     });
 
-    // Metrics only. No text, no bytes, no line contents (§7.3).
+    const localLines = parseLocalLines(body.localLines);
+    const reconciliation = localLines
+      ? reconcile(page, asPage(page, localLines))
+      : undefined;
+
+    // Metrics only. No text, no bytes, no line contents (§7.3). The decision
+    // is a category, not content, so it is safe to record and is what makes a
+    // "why did this ask me?" question answerable later.
     deps.log?.({
       jobId,
       event: "ocr.ok",
       bytes: image.length,
       lineCount: page.lines.length,
+      hadLocalReading: localLines !== null,
+      decision: reconciliation?.decision,
+      criticalLineCount: reconciliation?.criticalLineIds.length,
       elapsedMs: Date.now() - started,
     });
 
-    return json({ jobId, page } satisfies OcrSuccess, 200);
+    return json({ jobId, page, reconciliation } satisfies OcrSuccess, 200);
   } catch (error) {
     const documentAIError = error instanceof DocumentAIError ? error : null;
 

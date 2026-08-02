@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// What one pipeline run produced. Returned rather than written directly so the
 /// pipeline stays free of SwiftData and can be tested without a store.
@@ -68,17 +69,33 @@ public struct CapturePipeline: Sendable {
     private let selector: any MarkerSelecting
     private let generator: any CardGenerating
     private let maxCards: Int
+    /// Cloud OCR. Optional because the app must still work with no backend
+    /// configured — capture and local OCR do not depend on it (§24.1).
+    private let backend: (any BackendCalling)?
 
     public init(
         recognizer: any TextRecognizing,
         selector: any MarkerSelecting = ManualSelectionOnly(),
         generator: any CardGenerating = MockCardProvider(),
-        maxCards: Int = 4
+        maxCards: Int = 4,
+        backend: (any BackendCalling)? = nil
     ) {
         self.recognizer = recognizer
         self.selector = selector
         self.generator = generator
         self.maxCards = maxCards
+        self.backend = backend
+    }
+
+    /// Same pipeline with cloud OCR attached.
+    public func withBackend(_ backend: (any BackendCalling)?) -> CapturePipeline {
+        CapturePipeline(
+            recognizer: recognizer,
+            selector: selector,
+            generator: generator,
+            maxCards: maxCards,
+            backend: backend
+        )
     }
 
     /// Same pipeline with a different line selector. The confirmation screen
@@ -88,7 +105,8 @@ public struct CapturePipeline: Sendable {
             recognizer: recognizer,
             selector: selector,
             generator: generator,
-            maxCards: maxCards
+            maxCards: maxCards,
+            backend: backend
         )
     }
 
@@ -101,7 +119,8 @@ public struct CapturePipeline: Sendable {
             recognizer: recognizer,
             selector: selector,
             generator: generator,
-            maxCards: max(1, maxCards)
+            maxCards: max(1, maxCards),
+            backend: backend
         )
     }
 
@@ -151,7 +170,37 @@ public struct CapturePipeline: Sendable {
             )
         }
 
-        let passage = Self.passage(from: recognized, lineIds: selected)
+        // Cloud OCR (§10.2). The local reading is only a preview: Apple Vision
+        // does not support Turkish and produces no ı ş ğ İ at all, so a passage
+        // built from it would carry defects into every card
+        // (docs/ADR-002-birincil-ocr-secimi.md).
+        var passage = Self.passage(from: recognized, lineIds: selected)
+        var cloudDecision: RemoteDecision?
+
+        if let backend {
+            do {
+                let remote = try await Self.cloudReading(
+                    backend: backend,
+                    jobId: jobId,
+                    imageURL: imageURL,
+                    recognized: recognized,
+                    selected: selected
+                )
+                passage = remote.passage
+                cloudDecision = remote.decision
+            } catch let error as BackendError {
+                return Self.outcome(for: error, jobId: jobId, recognized: recognized, selected: selected)
+            } catch {
+                return PipelineOutcome(
+                    jobId: jobId,
+                    finalState: .temporaryFailure,
+                    recognized: recognized,
+                    selectedLineIds: selected,
+                    failure: .providerUnavailable
+                )
+            }
+        }
+
         guard !passage.isEmpty else {
             return PipelineOutcome(
                 jobId: jobId,
@@ -159,6 +208,32 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selectedLineIds: selected
             )
+        }
+
+        // §19.3 and §10.5.1: a rejected page never becomes a card, and a
+        // critical-token disagreement is asked about rather than recorded.
+        // Checked before generation so a disputed passage never reaches the
+        // model — and never costs a call.
+        switch cloudDecision {
+        case .reject:
+            return PipelineOutcome(
+                jobId: jobId,
+                finalState: .permanentFailure,
+                recognized: recognized,
+                selectedLineIds: selected,
+                passage: passage,
+                failure: .invalidResponse
+            )
+        case .quickConfirm:
+            return PipelineOutcome(
+                jobId: jobId,
+                finalState: .confirmationRequired,
+                recognized: recognized,
+                selectedLineIds: selected,
+                passage: passage
+            )
+        case .autoAccept, nil:
+            break
         }
 
         do {
@@ -237,6 +312,101 @@ public struct CapturePipeline: Sendable {
         case .providerUnavailable: return .providerUnavailable
         case .sourceInsufficient: return .invalidResponse
         }
+    }
+
+    /// Sends the page to the backend and builds the passage from the reading
+    /// that comes back.
+    ///
+    /// The selected lines are matched to the cloud reading by **overlap**, not
+    /// by id: the backend reconciles the same way, and for the same reason —
+    /// each engine numbers its own lines and they do not find the same number
+    /// of them.
+    private static func cloudReading(
+        backend: any BackendCalling,
+        jobId: String,
+        imageURL: URL,
+        recognized: RecognizedPage,
+        selected: [String]
+    ) async throws -> (passage: String, decision: RemoteDecision?) {
+        let imageData = try Data(contentsOf: imageURL)
+        let remote = try await backend.recognize(
+            jobId: jobId,
+            imageData: imageData,
+            mimeType: Self.mimeType(for: imageURL),
+            localLines: recognized.lines.map(LocalLine.init)
+        )
+
+        let selectedBoxes = recognized.lines
+            .filter { selected.contains($0.id) }
+            .map(\.box)
+        let cloudText = remote.page.lines
+            .filter { line in
+                selectedBoxes.contains { box in
+                    Self.overlaps(box: box, x: line.x, y: line.y, width: line.width, height: line.height)
+                }
+            }
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If nothing overlapped, the cloud reading found the page but not the
+        // marked region. Falling back to the local text would quietly ship the
+        // reading we know is wrong for Turkish, so the passage stays empty and
+        // the caller asks the user (§19.2).
+        return (cloudText, remote.reconciliation?.decision)
+    }
+
+    /// Fraction of the smaller box that has to be covered for two boxes to be
+    /// the same line. Deliberately loose: the engines crop lines differently,
+    /// and a missed pairing costs a confirmation tap while a wrong one would
+    /// silently mix two lines together.
+    static let lineOverlapThreshold = 0.3
+
+    static func overlaps(box: CGRect, x: Double, y: Double, width: Double, height: Double) -> Bool {
+        let other = CGRect(x: x, y: y, width: width, height: height)
+        let intersection = box.intersection(other)
+        guard !intersection.isNull, intersection.width > 0, intersection.height > 0 else {
+            return false
+        }
+        let smaller = min(box.width * box.height, other.width * other.height)
+        guard smaller > 0 else { return false }
+        return Double(intersection.width * intersection.height) / Double(smaller) >= lineOverlapThreshold
+    }
+
+    static func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "png": return "image/png"
+        case "tif", "tiff": return "image/tiff"
+        case "webp": return "image/webp"
+        case "pdf": return "application/pdf"
+        default: return "image/jpeg"
+        }
+    }
+
+    /// Maps a backend failure onto the pipeline's own vocabulary (§17).
+    private static func outcome(
+        for error: BackendError,
+        jobId: String,
+        recognized: RecognizedPage,
+        selected: [String]
+    ) -> PipelineOutcome {
+        let failure: FailureKind
+        switch error {
+        case .unauthorized, .notConfigured:
+            // Neither is fixed by waiting; both need the user to set something.
+            failure = .configuration
+        case .permanent:
+            failure = .invalidResponse
+        case .transient:
+            failure = .providerUnavailable
+        }
+        return PipelineOutcome(
+            jobId: jobId,
+            finalState: failure.resultingState,
+            recognized: recognized,
+            selectedLineIds: selected,
+            failure: failure
+        )
     }
 
     /// Joins the selected lines in page order, so a passage reads the way it

@@ -11,7 +11,9 @@ import CizgiCore
 final class ProcessingQueue: ObservableObject {
     private let container: ModelContainer
     private let imageStore: ImageStore
-    private let pipeline: CapturePipeline
+    /// `var` because the cloud client is attached and detached as the user
+    /// edits Settings; the rest of the pipeline never changes.
+    private var pipeline: CapturePipeline
     private let retryPolicy = RetryPolicy()
 
     @Published private(set) var isRunning = false
@@ -20,6 +22,13 @@ final class ProcessingQueue: ObservableObject {
         self.container = container
         self.imageStore = imageStore
         self.pipeline = pipeline
+    }
+
+    /// Attaches or removes cloud OCR. Called when the backend URL or the
+    /// device token changes, so the next page uses the new setting rather than
+    /// waiting for a relaunch.
+    func setBackend(_ backend: (any BackendCalling)?) {
+        pipeline = pipeline.withBackend(backend)
     }
 
     /// Registers a freshly captured image. Returns once the bytes are on disk —

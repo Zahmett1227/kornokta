@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { reconcile } from "../providers/reconcile.js";
 import type { OCRLine, OCRPage } from "../providers/ocrTypes.js";
 
+/**
+ * Each line gets a distinct vertical band derived from its index, so pairing
+ * has real geometry to work with. An earlier version gave every line the same
+ * box, which left the pairing tests unable to tell a correct pairing from a
+ * wrong one.
+ */
 function page(lines: Array<[string, string, number?]>): OCRPage {
   return {
     imagePath: "job",
@@ -12,15 +18,33 @@ function page(lines: Array<[string, string, number?]>): OCRPage {
     usesLanguageCorrection: false,
     engineVersion: "test",
     elapsedMs: 1,
-    lines: lines.map(([lineId, text, confidence]): OCRLine => ({
+    lines: lines.map(([lineId, text, confidence], index): OCRLine => ({
       lineId,
       text,
       confidence: confidence ?? 0.97,
       x: 0.1,
-      y: 0.1,
+      y: 0.1 + index * 0.1,
       width: 0.8,
-      height: 0.04,
+      height: 0.05,
     })),
+  };
+}
+
+/** A page whose lines sit exactly where the third element says. */
+function positioned(entries: Array<[string, string, number]>): OCRPage {
+  const base = page(entries.map(([id, text]) => [id, text] as [string, string]));
+  return {
+    ...base,
+    lines: base.lines.map((line, index) => ({ ...line, y: entries[index]![2] })),
+  };
+}
+
+/** A page with no geometry at all, as a text-only caller would send. */
+function flat(lines: Array<[string, string]>): OCRPage {
+  const base = page(lines);
+  return {
+    ...base,
+    lines: base.lines.map((line) => ({ ...line, x: 0, y: 0, width: 0, height: 0 })),
   };
 }
 
@@ -178,14 +202,46 @@ describe("reconcile", () => {
   });
 
   describe("line pairing", () => {
-    it("pairs by lineId, not by position", () => {
-      const apple = page([
-        ["line_01", "0,3–0,5 mg IM adrenalindir."],
-        ["line_00", "Anafilakside ilk seçenek tedavi"],
+    it("pairs by where a line sits, not by its id", () => {
+      // The engines number their own lines independently and do not find the
+      // same number of them — on the Faz 0 test page Google found 156 where
+      // Vision found 148. Here the ids are deliberately wrong relative to
+      // position: pairing by id would compare the dose line against the
+      // heading and report a disagreement that does not exist.
+      const apple = positioned([
+        ["line_99", "Anafilakside ilk seçenek tedavi", 0.1],
+        ["line_00", "0,3–0,5 mg IM adrenalindir.", 0.2],
       ]);
       const result = reconcile(GOOGLE, apple);
       expect(result.decision).toBe("auto_accept");
       expect(result.lines.every((line) => line.agrees)).toBe(true);
+      expect(result.criticalLineIds).toEqual([]);
+    });
+
+    it("does not pair lines that sit in different places", () => {
+      const elsewhere = positioned([["line_00", "bambaşka bir satır", 0.8]]);
+      const result = reconcile(GOOGLE, elsewhere);
+      // Nothing overlaps, so nothing pairs — and an unpaired line has no
+      // second opinion rather than a disagreement.
+      expect(result.lines.every((line) => line.secondaryText === null)).toBe(true);
+      expect(result.criticalLineIds).toEqual([]);
+    });
+
+    it("gives each secondary line to at most one primary line", () => {
+      const google = positioned([
+        ["line_00", "birinci satır", 0.10],
+        ["line_01", "ikinci satır", 0.16],
+      ]);
+      const apple = positioned([["a", "birinci satır", 0.11]]);
+      const result = reconcile(google, apple);
+      const paired = result.lines.filter((line) => line.secondaryText !== null);
+      expect(paired).toHaveLength(1);
+    });
+
+    it("falls back to ids when neither side carries geometry", () => {
+      const result = reconcile(flat([["line_00", "0,5 mg IM"]]), flat([["line_00", "0,5 mg IV"]]));
+      expect(result.decision).toBe("quick_confirm");
+      expect(result.criticalLineIds).toEqual(["line_00"]);
     });
 
     it("handles a line the secondary engine did not find", () => {
