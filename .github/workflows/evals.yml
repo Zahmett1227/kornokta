@@ -30,6 +30,13 @@ jobs:
         run: python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
       - name: Run unit tests
         run: python -m pytest evals -q
+      # The backend runs a generated copy of the detector. These fail if the
+      # Python source changed without regenerating, which would leave the two
+      # implementations quietly applying different rules.
+      - name: Generated patterns are current
+        run: python -m evals.ocr_eval.export_patterns --check
+      - name: Shared detector cases are current
+        run: python -m evals.ocr_eval.export_cases --check
       - name: Marker-detection smoke test
         run: python -m evals.spikes.marker_detection.run --demo
       - name: Provider-compare dry run (no keys)
