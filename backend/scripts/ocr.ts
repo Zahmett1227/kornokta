@@ -112,7 +112,13 @@ function parseArguments(argv: string[]): Options | null {
 async function collectImages(target: string): Promise<string[]> {
   const info = await stat(target);
   if (!info.isDirectory()) return [target];
-  const entries = await readdir(target);
+  // Recursive: a gold-set capture is organized into category subfolders
+  // (evals/fixtures/highlight/, .../pencil/, ...), and pointing this at the
+  // parent has to find all of them rather than silently seeing none because
+  // they are one level too deep. Directory entries recursive mode also
+  // returns (e.g. "highlight" itself, alongside "highlight/a.jpg") fall out
+  // of the extension filter below on their own — they have none.
+  const entries = await readdir(target, { recursive: true });
   return entries
     .map((entry) => join(target, entry))
     .filter((path) => {

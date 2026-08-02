@@ -78,6 +78,14 @@ func parseArguments() -> (input: URL, output: URL, languages: [String], correcti
 
 let imageExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "heif", "tif", "tiff"]
 
+/// Walks `url` recursively — a gold-set capture is organized into category
+/// subfolders (`fixtures/highlight/`, `fixtures/pencil/`, ...), and pointing
+/// this at the parent has to pick all of them up rather than silently seeing
+/// zero images because they are one level too deep.
+///
+/// Sorted by the full path, not just the filename: two categories could
+/// otherwise both contain a `page_01.jpg`, and comparing only the last
+/// component would not give every file a distinct place in the order.
 func collectImages(at url: URL) -> [URL] {
     var isDirectory: ObjCBool = false
     guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
@@ -86,12 +94,17 @@ func collectImages(at url: URL) -> [URL] {
     if !isDirectory.boolValue {
         return imageExtensions.contains(url.pathExtension.lowercased()) ? [url] : []
     }
-    let contents = (try? FileManager.default.contentsOfDirectory(
-        at: url, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
-    )) ?? []
-    return contents
-        .filter { imageExtensions.contains($0.pathExtension.lowercased()) }
-        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    guard let enumerator = FileManager.default.enumerator(
+        at: url, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]
+    ) else { return [] }
+
+    var results: [URL] = []
+    for case let fileURL as URL in enumerator {
+        let isRegularFile = (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile ?? false
+        guard isRegularFile, imageExtensions.contains(fileURL.pathExtension.lowercased()) else { continue }
+        results.append(fileURL)
+    }
+    return results.sorted { $0.path < $1.path }
 }
 
 // Handled before argument validation so it works without --input/--output.
