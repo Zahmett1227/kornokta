@@ -83,6 +83,18 @@ guard !images.isEmpty else {
     exit(1)
 }
 
+// Prepare the destination *before* running OCR. Discovering an unwritable
+// output path after recognizing every page throws away all of that work.
+let outputDirectory = options.output.deletingLastPathComponent()
+do {
+    try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+} catch {
+    FileHandle.standardError.write(
+        "Çıktı klasörü oluşturulamadı: \(outputDirectory.path)\n\(error)\n".data(using: .utf8)!
+    )
+    exit(1)
+}
+
 let ocr = VisionOCR(languages: options.languages, usesLanguageCorrection: options.correction)
 var pages: [OCRPage] = []
 
@@ -102,7 +114,9 @@ encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes
 
 do {
     let data = try encoder.encode(run)
-    try data.write(to: options.output)
+    // .atomic so an interrupted run cannot leave a half-written report that
+    // the Python scorer would then fail to parse.
+    try data.write(to: options.output, options: .atomic)
     print("\nYazıldı: \(options.output.path)  (\(pages.count) sayfa)")
     if !options.correction {
         print("Not: dil düzeltmesi KAPALI — sessiz düzeltme yapılmasın diye (§0.5).")
