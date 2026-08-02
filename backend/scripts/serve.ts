@@ -20,7 +20,7 @@ if (existsSync(".env")) {
   }
 }
 
-const { default: handler } = await import("../api/index.js");
+const { handler } = await import("../api/index.js");
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";

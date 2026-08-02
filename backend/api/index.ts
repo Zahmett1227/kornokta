@@ -48,10 +48,14 @@ export function resetDependencies(): void {
 }
 
 /**
- * Fetch-style entry point. Vercel Functions calls this shape directly, and so
- * does the local dev server in `scripts/serve.ts`.
+ * Fetch-style entry point. Exported by name (not as the default) because
+ * Vercel's documented shape for a plain, non-framework `/api` file is a
+ * default export of `{ fetch(request) {...} }`, not a bare default function —
+ * a bare default crashed every request in production (`FUNCTION_INVOCATION_FAILED`
+ * on `/health`, which has no logic beyond this). `scripts/serve.ts` imports
+ * this named export directly and calls it the same way Vercel's wrapper does.
  */
-export default async function handler(request: Request): Promise<Response> {
+export async function handler(request: Request): Promise<Response> {
   const url = new URL(request.url);
 
   if (url.pathname === "/health" || url.pathname === "/api/health") {
@@ -84,3 +88,6 @@ export default async function handler(request: Request): Promise<Response> {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+/** What Vercel actually looks for on a plain (non-framework) `/api` file. */
+export default { fetch: handler };
