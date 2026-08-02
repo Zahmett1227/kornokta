@@ -39,10 +39,48 @@ export interface CostConfig {
   usdPer1000Pages: number;
   /** Refuse to start a run that would exceed this. 0 disables the check. */
   maxUsdPerRun: number;
+  /**
+   * Per-token pricing for cost estimation (§20.3, §16.8 `estimatedCostUSD`).
+   * Default 0 rather than a guessed figure: no verified price exists for a
+   * model this spec names ahead of its own release, and a fabricated number
+   * would look authoritative in a cost log. Fill in from the provider's own
+   * pricing page once known — same "reference, not contract" caveat as
+   * `usdPer1000Pages` above.
+   */
+  openaiUsdPerMillionInputTokens: number;
+  openaiUsdPerMillionOutputTokens: number;
+  geminiUsdPerMillionInputTokens: number;
+  geminiUsdPerMillionOutputTokens: number;
+  /** Refuse to start a card-generation call that would exceed this. 0 disables the check. */
+  maxUsdPerCardGeneration: number;
+}
+
+export interface OpenAIConfig {
+  /** Model id (§11.3). Never hardcoded at the call site (§0.6). */
+  model: string;
+  /** Passed through to the Responses API verbatim; not validated here. */
+  reasoningEffort: string;
+  maxOutputTokens: number;
+  /**
+   * §11.3 names this per generation call; §13.2 states the same number as
+   * "en fazla dört kartı, pasaj başına" — one passage produces the knowledge
+   * units and cards of one request, so the two readings are the same cap.
+   */
+  maxCardsPerKnowledgeUnit: number;
+  timeoutMs: number;
+}
+
+export interface GeminiConfig {
+  /** Handwriting second-opinion model (§11.1); only called for uncertain spans (§10.4). */
+  model: string;
+  maxOutputTokens: number;
+  timeoutMs: number;
 }
 
 export interface Config {
   documentAI: DocumentAIConfig;
+  openai: OpenAIConfig;
+  gemini: GeminiConfig;
   cost: CostConfig;
 }
 
@@ -91,9 +129,26 @@ export function loadConfig(): Config {
         .filter(Boolean),
       timeoutMs: numeric("DOCUMENTAI_TIMEOUT_MS", 60_000),
     },
+    openai: {
+      model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
+      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "low"),
+      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 700),
+      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
+      timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),
+    },
+    gemini: {
+      model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
+      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 700),
+      timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000),
+    },
     cost: {
       usdPer1000Pages: numeric("DOCUMENTAI_USD_PER_1000_PAGES", 1.5),
       maxUsdPerRun: numeric("MAX_USD_PER_RUN", 0),
+      openaiUsdPerMillionInputTokens: numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0),
+      openaiUsdPerMillionOutputTokens: numeric("OPENAI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
+      geminiUsdPerMillionInputTokens: numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0),
+      geminiUsdPerMillionOutputTokens: numeric("GEMINI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
+      maxUsdPerCardGeneration: numeric("MAX_USD_PER_CARD_GENERATION", 0),
     },
   };
 }

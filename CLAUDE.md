@@ -25,19 +25,20 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | Başlamadı. Sıradaki iş. |
+| Faz 3 — AI kart üretimi | 🔶 Backend tarafı (config, promptlar, §14 şema doğrulayıcı, kart kalite kapısı, OpenAI/Gemini sağlayıcıları, `POST /api/cards`) yazıldı ve test edildi. **Gerçek bir OpenAI/Gemini anahtarıyla hiç çağrılmadı**, iOS istemci entegrasyonu yok, çıkış kapısı (gold pasaj kart rubriği) ölçülmedi. Ayrıntı: `docs/FAZ3-PLAN.md`. |
 | Faz 4 — FSRS tekrar motoru | Başlamadı |
 | Faz 5 — Sertleştirme | Başlamadı |
 
-**Dal durumu:** Her şey `main`'de. Önceki oturumlar `claude/faz1-ios-iskelet`
-ve `claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bu ikisi `main`'e
-ileri sarıldı (fast-forward, kayıp yok). Yeni bir görev dalı açarken bunu
-bilerek aç; eski dal isimlerine bağlı kalman gerekmiyor.
+**Dal durumu:** `main` Faz 2 sonrasıyla (`ccf5985`) aynı. Faz 3'ün backend
+kodu `claude/proje-analizi-planlama-r7lxw4` dalında, henüz `main`'e
+alınmadı. Önceki oturumlar `claude/faz1-ios-iskelet` ve
+`claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bunlar zaten `main`'e
+ileri sarılmıştı.
 
 **Test durumu (hepsi yeşil):**
-- Python (`evals/`): 431 test — `python -m pytest evals -q`
+- Python (`evals/`): 435 test — `python -m pytest evals -q`
 - Swift (`ios/CizgiCore/`): 114 test, **gerçek bir Mac'te doğrulandı** — `swift test`
-- Backend (`backend/`): 313 test — `npm test`
+- Backend (`backend/`): 416 test — `npm test`
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
 doğrulandı — gerçek bir kitap sayfası fotoğrafı Google Document AI'dan doğru
@@ -102,21 +103,29 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/ARCHITECTURE.md` — bileşenler, işlem hattı, anti-drift mekanizması
 - `docs/FAZ2-PLAN.md` — Faz 2'nin tam kaydı: ne yapıldı, hangi hatalar
   bulundu/düzeltildi, çıkış kapısının neden atlandığı
+- `docs/FAZ3-PLAN.md` — Faz 3'ün tam kaydı: backend'de ne yazıldı, hangi
+  tasarım kararları alındı, çıkış kapısının neden henüz ölçülemediği
+- `docs/OPENAI-GEMINI-KURULUM.md` — OpenAI/Gemini anahtarlarını edinme adımları
 - `docs/MAC-ADIMLARI.md` — altın set ölçümü istenirse adım adım rehber
   (araçlar hazır, hiç çalıştırılmadı)
-- `backend/README.md` — backend yapısı, Vercel dağıtımında çıkan beş gerçek
-  tuzak ve çözümleri
+- `backend/README.md` — backend yapısı, Vercel dağıtımında çıkan gerçek
+  tuzaklar ve çözümleri
 - `ios/README.md` — iOS yapısı, cihazda elle kontrol listesi
 - `docs/PRIVACY.md`, `docs/MODEL-CARD.md` — gizlilik kuralları, model stratejisi
 - `docs/FAZ0-*.md`, `docs/FAZ1-DURUM.md` — tarihsel kayıtlar (güncel durum
   için değil, o anki karar gerekçelerini görmek için)
 
-## Sıradaki iş: Faz 3 — AI kart üretimi
+## Sıradaki iş: Faz 3 — AI kart üretimi devamı
 
-Kapsam (ANA-PLAN §25): OpenAI Responses API + Structured Outputs, kart
-şeması/kalite doğrulama, kaynağa sadık kartlar, token/maliyet kaydı. Yeni bir
-API anahtarı (OpenAI) gerekiyor — Google Cloud kurulumunda izlenen yol
-tekrarlanır (`docs/GOOGLE-CLOUD-KURULUM.md` örnek alınabilir).
+Backend tarafı yazıldı (`docs/FAZ3-PLAN.md`): config, promptlar, §14 şema
+doğrulayıcı, kart kalite kapısı, OpenAI/Gemini sağlayıcıları, `POST
+/api/cards`. Sırada:
 
-Çıkış kapısı (§25): "Gold pasajlardan üretilen kartların kalite rubriği kabul
-sınırını geçmelidir."
+1. OpenAI ve Gemini anahtarlarını edin (`docs/OPENAI-GEMINI-KURULUM.md`) —
+   Google Cloud kurulumunda izlenen yolun aynısı, anahtar hiçbir zaman
+   sohbete veya koda girmez.
+2. Tek küçük pasajla canlı doğrulama — Responses/Gemini API'ye yazılan istek
+   şekli hiç gerçek bir çağrıyla sınanmadı.
+3. iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8).
+4. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
+   pasajlardan üretilen kartların kalite rubriği kabul sınırını geçmelidir."

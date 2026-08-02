@@ -19,7 +19,7 @@ adım orada.
 | **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
 | **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
 | **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
-| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs) | Başlamadı |
+| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu ve testleri tamam — **gerçek bir anahtarla hiç çağrılmadı**, iOS entegrasyonu ve çıkış kapısı ölçümü yok. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | Başlamadı |
 | **Faz 5** | Sertleştirme | Başlamadı |
 
@@ -27,7 +27,7 @@ Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulan
 gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
 (`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te 114/114 test geçiyor.
 
-Ayrıntılı özet: [`docs/FAZ2-PLAN.md`](docs/FAZ2-PLAN.md).
+Ayrıntılı özet: [`docs/FAZ2-PLAN.md`](docs/FAZ2-PLAN.md), [`docs/FAZ3-PLAN.md`](docs/FAZ3-PLAN.md).
 
 ## Repo yapısı
 
@@ -42,7 +42,7 @@ Ana plan §26'daki yapı izlenir:
 │   ├── fixtures/                  # Gerçek sayfa görselleri — YEREL, commit edilmez
 │   ├── ocr_eval/                  # Metrikler, kritik token, doğrulayıcı, raporlar
 │   ├── spikes/                    # marker_detection (işaret tespiti referansı)
-│   └── tests/                     # pytest birim testleri (431 test)
+│   └── tests/                     # pytest birim testleri (435 test)
 └── docs/         # Mimari, gizlilik, faz planları, kurulum rehberleri
 ```
 
@@ -50,7 +50,7 @@ Ana plan §26'daki yapı izlenir:
 
 ```bash
 pip install -r evals/requirements.txt
-python -m pytest evals                                    # 431 test
+python -m pytest evals                                    # 435 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
 ```
 
@@ -63,7 +63,7 @@ cd ios/CizgiCore && swift test                             # 114 test
 ## Backend'i çalıştırma
 
 ```bash
-cd backend && npm install && npm test                      # 313 test
+cd backend && npm install && npm test                      # 416 test
 npm run serve                                               # yerel sunucu, 127.0.0.1:8787
 ```
 

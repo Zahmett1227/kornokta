@@ -2,10 +2,10 @@
  * Composition root: builds the real dependencies from the environment and
  * exposes a plain fetch handler.
  *
- * This is the only file that touches `DEVICE_TOKEN`. `config.ts` deliberately
- * carries no credential (a test asserts it), so the secret is read here and
- * handed straight to the authorizer without being stored, echoed or logged
- * (§0.7, §7.3).
+ * This is the only file that touches `DEVICE_TOKEN` or `OPENAI_API_KEY`.
+ * `config.ts` deliberately carries no credential (a test asserts it), so each
+ * secret is read here and handed straight to its consumer without being
+ * stored, echoed or logged (§0.7, §7.3).
  */
 
 import { GoogleAuth } from "google-auth-library";
@@ -13,7 +13,9 @@ import { GoogleAuth } from "google-auth-library";
 import { loadConfig } from "../config.js";
 import { DocumentAIRecognizer, googleAuthTokenSource } from "../providers/documentAI.js";
 import { googleAuthOptions } from "../providers/googleAuth.js";
+import { OpenAICardGenerator } from "../providers/openai.js";
 import { handleOcrRequest, type Dependencies } from "./_ocr.js";
+import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
 
 /**
  * Built once per process, not per request: constructing `GoogleAuth` reads the
@@ -42,9 +44,36 @@ export function buildDependencies(): Dependencies {
   return cached;
 }
 
+/** Built once per process; separate from `cached` because it needs a different key (`OPENAI_API_KEY`). */
+let cachedCards: CardsDependencies | null = null;
+
+export function buildCardsDependencies(): CardsDependencies {
+  if (cachedCards) return cachedCards;
+
+  const config = loadConfig();
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    // Named explicitly rather than left to fail inside the provider on the
+    // first call, same reasoning as `loadConfig`'s own missing-variable
+    // errors: a config problem should say which variable, not surface as an
+    // opaque 401 from OpenAI (§0.6).
+    throw new Error("Eksik ortam değişkeni: OPENAI_API_KEY. backend/.env.example dosyasına bak.");
+  }
+
+  cachedCards = {
+    generator: new OpenAICardGenerator(config.openai, apiKey, config.cost),
+    openai: config.openai,
+    cost: config.cost,
+    deviceToken: process.env.DEVICE_TOKEN,
+    log: (entry) => console.log(JSON.stringify(entry)),
+  };
+  return cachedCards;
+}
+
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
   cached = null;
+  cachedCards = null;
 }
 
 /**
@@ -100,6 +129,19 @@ export async function handler(request: Request): Promise<Response> {
       );
     }
     return handleOcrRequest(request, dependencies);
+  }
+
+  if (url.pathname === "/api/cards" || url.pathname === "/cards") {
+    let dependencies: CardsDependencies;
+    try {
+      dependencies = buildCardsDependencies();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: (error as Error).message, retryable: false }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleCardsRequest(request, dependencies);
   }
 
   return new Response(JSON.stringify({ error: "Bulunamadı.", retryable: false }), {

@@ -10,7 +10,23 @@ const KEYS = [
   "DOCUMENTAI_TIMEOUT_MS",
   "DOCUMENTAI_USD_PER_1000_PAGES",
   "MAX_USD_PER_RUN",
+  "OPENAI_MODEL",
+  "OPENAI_REASONING_EFFORT",
+  "OPENAI_MAX_OUTPUT_TOKENS",
+  "OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT",
+  "OPENAI_TIMEOUT_MS",
+  "OPENAI_USD_PER_MILLION_INPUT_TOKENS",
+  "OPENAI_USD_PER_MILLION_OUTPUT_TOKENS",
+  "GEMINI_MODEL",
+  "GEMINI_MAX_OUTPUT_TOKENS",
+  "GEMINI_TIMEOUT_MS",
+  "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
+  "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
+  "MAX_USD_PER_CARD_GENERATION",
 ];
+
+/** Read directly at the composition root, never through `loadConfig()` (§0.7). */
+const CREDENTIAL_KEYS = ["GOOGLE_APPLICATION_CREDENTIALS", "OPENAI_API_KEY", "GEMINI_API_KEY"];
 
 let saved: Record<string, string | undefined> = {};
 
@@ -83,6 +99,47 @@ describe("loadConfig", () => {
     expect(serialized).not.toContain("gizli");
     expect(serialized).not.toContain("key.json");
   });
+
+  it("defaults the OpenAI card-generation settings from §11.3", () => {
+    const { openai } = loadConfig();
+    expect(openai.model).toBe("gpt-5.6-sol");
+    expect(openai.reasoningEffort).toBe("low");
+    expect(openai.maxOutputTokens).toBe(700);
+    expect(openai.maxCardsPerKnowledgeUnit).toBe(4);
+  });
+
+  it("lets the OpenAI model be swapped without a code change (§0.6, §27)", () => {
+    process.env.OPENAI_MODEL = "gpt-5.6-sol-2026-09-01";
+    expect(loadConfig().openai.model).toBe("gpt-5.6-sol-2026-09-01");
+  });
+
+  it("defaults the Gemini handwriting fallback settings", () => {
+    expect(loadConfig().gemini.model).toBe("gemini-3.5-flash");
+    expect(loadConfig().gemini.maxOutputTokens).toBe(700);
+  });
+
+  it("defaults per-token cost to 0 rather than a guessed price", () => {
+    // No verified OpenAI/Gemini price exists for a model ANA-PLAN names ahead
+    // of its own release; a fabricated number would look authoritative in a
+    // cost log (§20.3).
+    const { cost } = loadConfig();
+    expect(cost.openaiUsdPerMillionInputTokens).toBe(0);
+    expect(cost.openaiUsdPerMillionOutputTokens).toBe(0);
+    expect(cost.geminiUsdPerMillionInputTokens).toBe(0);
+    expect(cost.geminiUsdPerMillionOutputTokens).toBe(0);
+    expect(cost.maxUsdPerCardGeneration).toBe(0);
+  });
+
+  it("never reads OPENAI_API_KEY or GEMINI_API_KEY into config", () => {
+    // Same rule as GOOGLE_APPLICATION_CREDENTIALS above (§0.7): a provider key
+    // is read directly at the composition root, never through this module.
+    process.env.OPENAI_API_KEY = "sk-gizli-openai";
+    process.env.GEMINI_API_KEY = "gizli-gemini";
+    const serialized = JSON.stringify(loadConfig());
+    expect(serialized).not.toContain("gizli");
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+  });
 });
 
 describe(".env.example", () => {
@@ -96,7 +153,7 @@ describe(".env.example", () => {
       fileURLToPath(new URL("../.env.example", import.meta.url)),
       "utf-8",
     );
-    for (const key of [...KEYS, "GOOGLE_APPLICATION_CREDENTIALS"]) {
+    for (const key of [...KEYS, ...CREDENTIAL_KEYS]) {
       expect(template, `${key} .env.example içinde yok`).toContain(key);
     }
   });
@@ -108,11 +165,12 @@ describe(".env.example", () => {
       fileURLToPath(new URL("../.env.example", import.meta.url)),
       "utf-8",
     );
-    const credentialLine = template
-      .split("\n")
-      .find((line) => line.startsWith("GOOGLE_APPLICATION_CREDENTIALS="));
-    expect(credentialLine).toBe("GOOGLE_APPLICATION_CREDENTIALS=");
+    for (const key of CREDENTIAL_KEYS) {
+      const credentialLine = template.split("\n").find((line) => line.startsWith(`${key}=`));
+      expect(credentialLine, `${key} boş bir şablon satırı olmalı`).toBe(`${key}=`);
+    }
     expect(template).not.toContain("private_key");
     expect(template).not.toContain("BEGIN PRIVATE KEY");
+    expect(template).not.toContain("sk-");
   });
 });

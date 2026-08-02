@@ -57,4 +57,13 @@ describe("handler", () => {
     expect(bare.status).toBe(404);
     expect(absolute.status).toBe(404);
   });
+
+  it("routes /api/cards to a handler rather than 404ing (§25 Faz 3)", async () => {
+    // No device token or OpenAI key is configured in this test process, so
+    // this cannot reach 200 — it only has to prove the path is wired to
+    // *some* handler (a config error, 500) rather than falling through to the
+    // catch-all 404 the way an unrouted path would.
+    const response = await handler(new Request("http://127.0.0.1:8787/api/cards", { method: "POST" }));
+    expect(response.status).not.toBe(404);
+  });
 });

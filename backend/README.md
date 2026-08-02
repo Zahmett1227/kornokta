@@ -1,7 +1,12 @@
 # Çizgi backend
 
-Sağlayıcı proxy'si (ANA-PLAN §7). Şu an tek sağlayıcı var: **Google Document AI**,
-Türkçe metnin birincil OCR'ı (`docs/ADR-002-birincil-ocr-secimi.md`).
+Sağlayıcı proxy'si (ANA-PLAN §7). Üç sağlayıcı var: **Google Document AI**
+(Türkçe metnin birincil OCR'ı, `docs/ADR-002-birincil-ocr-secimi.md`),
+**OpenAI** (kaynağa sadık kart üretimi, §11.2) ve **Gemini** (el yazısı ikinci
+görüşü, §10.4 — yalnız gerçek uyuşmazlıkta çağrılır). OpenAI/Gemini tarafı Faz
+3'te eklendi; kod ve testler hazır ama **gerçek bir anahtarla hiç
+çağrılmadı** — ayrıntı ve kurulum: `docs/FAZ3-PLAN.md`,
+`docs/OPENAI-GEMINI-KURULUM.md`.
 
 ## Neden var
 
@@ -111,10 +116,17 @@ alıp tekrar denemeli, kalıcı olanı denememeli (§17).
 | `config.ts` | Tüm ayarlar tek yerde, ortamdan okunur (§0.6). Kimlik bilgisi buraya girmez. |
 | `api/_auth.ts` | Cihaz tokenı doğrulaması (§7.3) |
 | `api/_ocr.ts` | `POST /api/ocr` — saf handler, sunucudan bağımsız, testte doğrudan çağrılıyor |
-| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`'a dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
+| `api/_cards.ts` | `POST /api/cards` — kart üretimi uç noktası; zaten uzlaştırılmış `cleanText` bekler, OCR yapmaz |
+| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN` ve `OPENAI_API_KEY`'e dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
 | `providers/ocrTypes.ts` | Motorlar arası ortak OCR sonucu biçimi |
 | `providers/documentAI.ts` | Document AI sağlayıcısı |
 | `providers/googleAuth.ts` | Google kimlik bilgisi kaynağı — yerelde dosya, dağıtımda satır içi JSON |
+| `providers/openai.ts` | OpenAI Responses API sağlayıcısı — kaynağa sadık kart üretimi (§11.2, §14) |
+| `providers/gemini.ts` | Gemini el yazısı ikinci görüşü — dar sözleşme, kart üretmez (§10.4, §15.3) |
+| `providers/cardGate.ts` | Kart üretimi sonrası deterministik kalite kapısı (§19) |
+| `prompts/*.ts` | Versiyonlanmış sistem promptları (§15.1–15.3), ANA-PLAN'dan birebir |
+| `schemas/llmOutputTypes.ts` | §14 şemasının TypeScript karşılığı; `RiskFlag`/`CardType` Swift'le senkron tutuluyor |
+| `schemas/validateLlmOutput.ts` | §14 şemasının ajv ile çalışma zamanı doğrulayıcısı |
 | `vercel.json` | Tüm yollar `api/index.ts`'e yönlendirilir; diğer `api/` dosyaları rota olarak taranmaz |
 | `scripts/serve.ts` | Yerel geliştirme sunucusu |
 | `scripts/ocr.ts` | Yerel ölçüm aracı (üretim yolu değil) |
@@ -203,9 +215,12 @@ Hepsi gerçek bir dağıtımda yaşandı ve düzeltildi:
 
 ## Henüz yok
 
-- Kritik token motoru ve OCR uzlaştırma (§10.3, §10.5) — Faz 2'nin sonraki adımı
-- Maliyet kaydı ve bütçe sınırı uygulaması (§11) — sadece çalıştırma öncesi tahmin var
-- Kart üretimi sağlayıcısı (§13) — Faz 3
+- Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama — `docs/FAZ3-PLAN.md`
+- Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı)
+- Transkripsiyon uzlaştırmasının Gemini'ye yükselmesi (§5.2 adım 5) — bugün
+  `providers/reconcile.ts` tamamen deterministik, Gemini sağlayıcısı yazıldı
+  ama hiçbir akışa bağlı değil
+- iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8)
 - Fotoğrafların işlem biter bitmez silinmesi (§7.3) — şu an istek belleği
   ötesinde hiçbir yerde tutulmuyor zaten (görüntü asla diske yazılmıyor),
   ama bu davranış henüz ayrı bir testle güvence altına alınmadı
