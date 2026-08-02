@@ -92,7 +92,7 @@ struct SettingsView: View {
             .keyboardType(.URL)
             #endif
 
-            SecureField(hasStoredToken ? "Kayıtlı — değiştirmek için yaz" : "Cihaz anahtarı", text: $deviceToken)
+            SecureField(environment.hasDeviceToken ? "Kayıtlı — değiştirmek için yaz" : "Cihaz anahtarı", text: $deviceToken)
                 .autocorrectionDisabled()
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -102,7 +102,7 @@ struct SettingsView: View {
                 Button("Anahtarı kaydet") { saveToken() }
                     .disabled(deviceToken.trimmingCharacters(in: .whitespaces).isEmpty)
                 Spacer()
-                if hasStoredToken {
+                if environment.hasDeviceToken {
                     Button("Sil", role: .destructive) { clearToken() }
                 }
             }
@@ -125,10 +125,6 @@ struct SettingsView: View {
         } footer: {
             Text("Apple Vision Türkçe okumuyor; ı, ş, ğ ve İ harflerini hiç üretemiyor. Bu yüzden metin tanıma sunucu üzerinden yapılıyor. Anahtar yalnız bu cihazın Keychain'inde durur, uygulamanın içine gömülmez.")
         }
-    }
-
-    private var hasStoredToken: Bool {
-        environment.tokenStore.read()?.isEmpty == false
     }
 
     private func saveToken() {

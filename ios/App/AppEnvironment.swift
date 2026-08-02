@@ -16,6 +16,11 @@ final class AppEnvironment: ObservableObject {
     let tokenStore: any DeviceTokenStoring
 
     @Published var settings: AppSettings
+    /// Published rather than recomputed: SwiftUI re-runs `body` often, and
+    /// deriving this on demand meant a Keychain query and a client
+    /// construction on every render of the settings screen.
+    @Published private(set) var isBackendConfigured = false
+    @Published private(set) var hasDeviceToken = false
 
     init(container: ModelContainer) throws {
         let store = try ImageStore(root: try ImageStore.defaultRoot())
@@ -46,6 +51,7 @@ final class AppEnvironment: ObservableObject {
                 backend: Self.makeBackend(settings: self.settings, tokens: tokens)
             )
         )
+        refreshBackendState()
     }
 
     /// On-device marker detection, falling back to manual selection if the
@@ -88,10 +94,12 @@ final class AppEnvironment: ObservableObject {
     /// user edits the backend URL or the token.
     func backendChanged() {
         queue.setBackend(Self.makeBackend(settings: settings, tokens: tokenStore))
+        refreshBackendState()
     }
 
-    var isBackendConfigured: Bool {
-        Self.makeBackend(settings: settings, tokens: tokenStore) != nil
+    private func refreshBackendState() {
+        hasDeviceToken = tokenStore.read()?.isEmpty == false
+        isBackendConfigured = Self.makeBackend(settings: settings, tokens: tokenStore) != nil
     }
 }
 

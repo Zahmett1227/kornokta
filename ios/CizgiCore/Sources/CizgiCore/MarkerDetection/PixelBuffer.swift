@@ -30,27 +30,46 @@ public struct PixelBuffer: Sendable {
         let height = cgImage.height
         guard width > 0, height > 0 else { throw LoadError.emptyImage }
 
-        var bytes = [UInt8](repeating: 0, count: width * height * 4)
-        // premultipliedLast + sRGB: the same interpretation every time,
-        // whatever the source image was.
-        guard
-            let context = bytes.withUnsafeMutableBytes({ raw -> CGContext? in
-                CGContext(
-                    data: raw.baseAddress,
-                    width: width,
-                    height: height,
-                    bitsPerComponent: 8,
-                    bytesPerRow: width * 4,
-                    space: CGColorSpaceCreateDeviceRGB(),
-                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-                )
-            })
-        else { throw LoadError.contextUnavailable }
+        let count = width * height * 4
+        // Allocated explicitly rather than handed an Array's buffer.
+        // `withUnsafeMutableBytes` only guarantees its pointer for the
+        // duration of the closure, so a CGContext built inside one and drawn
+        // into afterwards writes through a pointer that is no longer
+        // guaranteed to address that array — and copy-on-write could have
+        // moved the storage in between.
+        let storage = UnsafeMutableRawPointer.allocate(
+            byteCount: count,
+            alignment: MemoryLayout<UInt8>.alignment
+        )
+        defer { storage.deallocate() }
+        storage.initializeMemory(as: UInt8.self, repeating: 0, count: count)
 
+        // `noneSkipLast` rather than a premultiplied format: the fourth byte
+        // is padding, so the colour channels read back as written instead of
+        // being scaled by an alpha this detector does not use.
+        guard let context = CGContext(
+            data: storage,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { throw LoadError.contextUnavailable }
+
+        // White first: a source with transparency would otherwise composite
+        // onto black, and a page that reads as black everywhere looks like
+        // solid ink to the underline detector.
+        context.setFillColor(gray: 1, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
         self.width = width
         self.height = height
-        self.pixels = bytes
+        self.pixels = [UInt8](UnsafeBufferPointer(
+            start: storage.assumingMemoryBound(to: UInt8.self),
+            count: count
+        ))
     }
 
     /// Red, green, blue at a pixel. Out-of-bounds reads return black rather
