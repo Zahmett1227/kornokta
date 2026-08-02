@@ -49,6 +49,10 @@ struct ConfirmationView: View {
     private var content: some View {
         VStack(spacing: 0) {
             List {
+                if page.lastError != nil || !page.confirmationFlags.isEmpty {
+                    disagreementSection
+                }
+
                 Section {
                     ForEach(lines) { line in
                         Button {
@@ -105,6 +109,33 @@ struct ConfirmationView: View {
             .padding(.bottom, 8)
         }
         .background(.bar)
+    }
+
+    /// Why the page is here (§19.2).
+    ///
+    /// A confirmation with no reason attached is one the user cannot answer
+    /// well: "check this page" invites a reflexive tap, while "IM okundu, IV
+    /// yazıyor" is a question with an answer. The flags are shown verbatim —
+    /// they name both readings, which is the whole point of the ordered
+    /// comparison producing them.
+    @ViewBuilder
+    private var disagreementSection: some View {
+        Section {
+            if let reason = page.lastError, !reason.isEmpty {
+                Label(reason, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline)
+            }
+            ForEach(page.confirmationFlags, id: \.self) { flag in
+                Text(flag)
+                    .font(.footnote.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Neden soruluyor")
+        } footer: {
+            Text("İki okuma bu değerlerde ayrıştı. Kaynak sayfaya bakıp doğru olanı seç; hiçbir değer senin onayın olmadan kaydedilmiyor.")
+        }
     }
 
     private var passagePreview: String {

@@ -11,6 +11,13 @@ public struct PipelineOutcome: Sendable, Equatable {
     public let passage: String?
     public let knowledge: GeneratedKnowledge?
     public let failure: FailureKind?
+    /// What the backend concluded about the two readings, when there was one.
+    ///
+    /// Carried through so the confirmation screen can say *what* disagreed
+    /// rather than just asking the user to look again — §19.2 requires the
+    /// confirmation, and a confirmation with no reason attached is one the
+    /// user cannot answer well.
+    public let reconciliation: RemoteReconciliation?
 
     public init(
         jobId: String,
@@ -19,7 +26,8 @@ public struct PipelineOutcome: Sendable, Equatable {
         selectedLineIds: [String] = [],
         passage: String? = nil,
         knowledge: GeneratedKnowledge? = nil,
-        failure: FailureKind? = nil
+        failure: FailureKind? = nil,
+        reconciliation: RemoteReconciliation? = nil
     ) {
         self.jobId = jobId
         self.finalState = finalState
@@ -28,6 +36,7 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.passage = passage
         self.knowledge = knowledge
         self.failure = failure
+        self.reconciliation = reconciliation
     }
 }
 
@@ -176,6 +185,7 @@ public struct CapturePipeline: Sendable {
         // (docs/ADR-002-birincil-ocr-secimi.md).
         var passage = Self.passage(from: recognized, lineIds: selected)
         var cloudDecision: RemoteDecision?
+        var reconciliation: RemoteReconciliation?
 
         if let backend {
             do {
@@ -187,7 +197,8 @@ public struct CapturePipeline: Sendable {
                     selected: selected
                 )
                 passage = remote.passage
-                cloudDecision = remote.decision
+                cloudDecision = remote.reconciliation?.decision
+                reconciliation = remote.reconciliation
             } catch let error as BackendError {
                 return Self.outcome(for: error, jobId: jobId, recognized: recognized, selected: selected)
             } catch {
@@ -206,7 +217,8 @@ public struct CapturePipeline: Sendable {
                 jobId: jobId,
                 finalState: .confirmationRequired,
                 recognized: recognized,
-                selectedLineIds: selected
+                selectedLineIds: selected,
+                reconciliation: reconciliation
             )
         }
 
@@ -222,7 +234,8 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selectedLineIds: selected,
                 passage: passage,
-                failure: .invalidResponse
+                failure: .invalidResponse,
+                reconciliation: reconciliation
             )
         case .quickConfirm:
             return PipelineOutcome(
@@ -230,7 +243,8 @@ public struct CapturePipeline: Sendable {
                 finalState: .confirmationRequired,
                 recognized: recognized,
                 selectedLineIds: selected,
-                passage: passage
+                passage: passage,
+                reconciliation: reconciliation
             )
         case .autoAccept, nil:
             break
@@ -327,7 +341,7 @@ public struct CapturePipeline: Sendable {
         imageURL: URL,
         recognized: RecognizedPage,
         selected: [String]
-    ) async throws -> (passage: String, decision: RemoteDecision?) {
+    ) async throws -> (passage: String, reconciliation: RemoteReconciliation?) {
         let imageData = try Data(contentsOf: imageURL)
         let remote = try await backend.recognize(
             jobId: jobId,
@@ -353,7 +367,7 @@ public struct CapturePipeline: Sendable {
         // marked region. Falling back to the local text would quietly ship the
         // reading we know is wrong for Turkish, so the passage stays empty and
         // the caller asks the user (§19.2).
-        return (cloudText, remote.reconciliation?.decision)
+        return (cloudText, remote.reconciliation)
     }
 
     /// Fraction of the smaller box that has to be covered for two boxes to be

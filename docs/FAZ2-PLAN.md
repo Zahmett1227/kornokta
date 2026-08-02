@@ -14,13 +14,15 @@ Sıra, en çok şeyi açan işten başlıyor.
 
 | Adım | İş | Nerede çalışır | Durum |
 |---|---|---|---|
-| **F2-1** | Backend HTTP ucu + cihaz tokenı | Vercel Functions (§7.2) | ▶ sırada |
-| **F2-2** | Kritik token motoru (TypeScript) | Backend | bekliyor |
-| **F2-3** | OCR uzlaştırma (Apple ↔ Google) | Backend | bekliyor |
-| **F2-4** | iOS istemcisi; kuyruğa bağlama | Uygulama | bekliyor |
-| **F2-5** | İşaret tespiti (OpenCV spike'ın Swift'e taşınması) | Cihaz | bekliyor |
-| **F2-6** | Satır eşleştirme (işaret ↔ OCR satır kutusu) | Cihaz | bekliyor |
-| **F2-7** | Onay ekranının gerçek verilerle çalışması | Uygulama | bekliyor |
+| **F2-1** | Backend HTTP ucu + cihaz tokenı | Vercel Functions (§7.2) | ✅ |
+| **F2-2** | Kritik token motoru (TypeScript) | Backend | ✅ |
+| **F2-3** | OCR uzlaştırma (Apple ↔ Google) | Backend | ✅ |
+| **F2-4** | iOS istemcisi; kuyruğa bağlama | Uygulama | ✅ |
+| **F2-5** | İşaret tespiti (OpenCV spike'ın Swift'e taşınması) | Cihaz | ✅ |
+| **F2-6** | Satır eşleştirme (işaret ↔ OCR satır kutusu) | Cihaz | ✅ |
+| **F2-7** | Onay ekranının gerçek verilerle çalışması | Uygulama | ✅ |
+
+**Kod tarafı tamam; çıkış kapısı değil.** Aşağıya bakın.
 
 Sayfa düzeltme (§25'in ilk kalemi) Faz 1'de bitti: `VNDocumentCameraViewController`
 kenar algılama ve perspektif düzeltmeyi zaten yapıyor.
@@ -57,6 +59,24 @@ Algoritma `evals/spikes/marker_detection/` içinde Python/OpenCV olarak
 prototiplendi ve sentetik görüntülerde çalışıyor. Swift'e taşınması F2-5.
 
 ---
+
+## Yol boyunca bulunan hatalar
+
+Ortak vaka dosyaları yazılırken üç gerçek hata çıktı. Üçü de "aynı davranış
+birden fazla yerde, yalnız biri güncel" kalıbının örneği:
+
+1. **Yol eş anlamlıları üç ölçüden yalnız ikisinde katlanıyordu.** "damar içi"
+   yazan bir sayfa doğru şekilde "IV" okunduğunda sıralı karşılaştırma ve
+   fazlalık ölçüsü temiz derken eksik-oranı %100 kayıp diyordu. Doğru bir okuma
+   quick_confirm'e giderdi — §24.2'nin tam tersi.
+2. **Satırlar `lineId` ile eşleştiriliyordu.** İki motor kendi satırlarını
+   bağımsız numaralandırıyor: Google 156, Vision 148. Alakasız satırlar
+   karşılaştırılıp var olmayan uyuşmazlıklar üretilirdi.
+3. **Kalıp üreticisi `\w`'yi karakter sınıfının içinde de değiştiriyordu**,
+   geçersiz regex çıkıyordu.
+
+Birincisini ortak kapı vakaları, ikincisini kendi tasarım incelemem,
+üçüncüsünü ortak dedektör vakaları yakaladı.
 
 ## Ölçüm hâlâ eksik
 

@@ -141,7 +141,13 @@ final class ProcessingQueue: ObservableObject {
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired
-            page.lastError = nil
+            // Not an error, but the reason has to survive: §19.2 requires the
+            // confirmation, and a confirmation with no reason attached is one
+            // the user cannot answer well. `lastError` is the field the queue
+            // and the confirmation screen already read.
+            page.lastError = outcome.reconciliation?.reason
+            page.confirmationFlags = outcome.reconciliation?.lines
+                .flatMap(\.criticalTokenFlags) ?? []
 
         case .temporaryFailure:
             page.retryCount += 1

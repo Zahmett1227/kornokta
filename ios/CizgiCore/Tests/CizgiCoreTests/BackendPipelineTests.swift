@@ -292,3 +292,101 @@ final class MimeTypeTests: XCTestCase {
         XCTAssertEqual(CapturePipeline.mimeType(for: URL(fileURLWithPath: "/a/b.heic")), "image/jpeg")
     }
 }
+
+final class ReconciliationPassthroughTests: XCTestCase {
+    private var imageURL: URL!
+
+    override func setUpWithError() throws {
+        imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]).write(to: imageURL)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: imageURL)
+    }
+
+    private let local = [
+        RecognizedLine(id: "line_00", text: "0,3-0,5 mg IM adrenalindir.",
+                       confidence: 0.9, box: CGRect(x: 0.1, y: 0.16, width: 0.8, height: 0.04))
+    ]
+
+    private func reply(decision: RemoteDecision, reason: String, flags: [String]) -> RemoteRecognition {
+        RemoteRecognition(
+            jobId: "job",
+            page: RemotePage(
+                imageWidth: 1600, imageHeight: 1200, elapsedMs: 300,
+                lines: [RemoteLine(lineId: "g0", text: "0,3–0,5 mg IV adrenalindir.",
+                                   confidence: 0.97, x: 0.1, y: 0.16, width: 0.8, height: 0.04)]
+            ),
+            reconciliation: RemoteReconciliation(
+                decision: decision,
+                reason: reason,
+                text: "0,3–0,5 mg IV adrenalindir.",
+                lines: [RemoteLineReconciliation(
+                    lineId: "g0",
+                    primaryText: "0,3–0,5 mg IV adrenalindir.",
+                    secondaryText: "0,3-0,5 mg IM adrenalindir.",
+                    agrees: false,
+                    criticalTokenFlags: flags
+                )],
+                criticalLineIds: ["g0"]
+            )
+        )
+    }
+
+    func testTheReasonReachesTheCaller() async {
+        // §19.2: a confirmation with no reason attached is one the user cannot
+        // answer well. "check this page" invites a reflexive tap.
+        let flag = "replace: kaynak [IM (route)] -> okuma [IV (route)]"
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: local),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            backend: StubBackend(.success(reply(
+                decision: .quickConfirm,
+                reason: "1 satırda kritik değer uyuşmazlığı",
+                flags: [flag]
+            )))
+        )
+        let outcome = await pipeline.run(jobId: "job-r1", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .confirmationRequired)
+        XCTAssertEqual(outcome.reconciliation?.reason, "1 satırda kritik değer uyuşmazlığı")
+        // The flag names BOTH readings, which is what makes it answerable.
+        let flags = outcome.reconciliation?.lines.flatMap(\.criticalTokenFlags) ?? []
+        XCTAssertEqual(flags, [flag])
+        XCTAssertTrue(flag.contains("IM"))
+        XCTAssertTrue(flag.contains("IV"))
+    }
+
+    func testTheReasonSurvivesARejection() async {
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: local),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            backend: StubBackend(.success(reply(decision: .reject, reason: "Okunabilir satır yok.", flags: [])))
+        )
+        let outcome = await pipeline.run(jobId: "job-r2", imageURL: imageURL)
+        XCTAssertEqual(outcome.finalState, .permanentFailure)
+        XCTAssertEqual(outcome.reconciliation?.reason, "Okunabilir satır yok.")
+    }
+
+    func testAnAcceptedPageStillCarriesItsReconciliation() async {
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: local),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            backend: StubBackend(.success(reply(decision: .autoAccept, reason: "İki motor da aynı metni okudu.", flags: [])))
+        )
+        let outcome = await pipeline.run(jobId: "job-r3", imageURL: imageURL)
+        XCTAssertEqual(outcome.finalState, .ready)
+        XCTAssertNotNil(outcome.reconciliation)
+    }
+
+    func testWithoutABackendThereIsNoReconciliationToShow() async {
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: local),
+            selector: FixedSelection(lineIds: ["line_00"])
+        )
+        let outcome = await pipeline.run(jobId: "job-r4", imageURL: imageURL)
+        XCTAssertNil(outcome.reconciliation)
+    }
+}

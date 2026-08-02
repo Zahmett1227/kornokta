@@ -49,6 +49,10 @@ public final class CapturedPage {
     public var documentQualityScore: Double
     public var processingStateRaw: String
     public var lastError: String?
+    /// Critical-token disagreements the backend reported, kept so the
+    /// confirmation screen can say what changed rather than only that
+    /// something did (§19.2).
+    public var confirmationFlags: [String]
     public var retryCount: Int
     /// Set when the job may next be retried after a temporary failure (§17).
     public var nextAttemptAt: Date?
@@ -75,6 +79,7 @@ public final class CapturedPage {
         self.captureDate = captureDate
         self.documentQualityScore = documentQualityScore
         self.processingStateRaw = state.rawValue
+        self.confirmationFlags = []
         self.retryCount = 0
         self.regions = []
     }
