@@ -26,10 +26,10 @@ public struct PixelBuffer: Sendable {
     }
 
     /// A named, fixed colour space, deliberately not
-    /// `CGColorSpaceCreateDeviceRGB()` — see the comment in `init(cgImage:)`.
-    /// Force-unwrapped because sRGB is one of the handful of spaces the
-    /// system always provides by name; unlike a bundled resource, there is no
-    /// real-world condition under which this is absent.
+    /// `CGColorSpaceCreateDeviceRGB()` (see `init(cgImage:)`). Force-unwrapped
+    /// because sRGB is one of the handful of spaces the system always
+    /// provides by name; unlike a bundled resource, there is no real-world
+    /// condition under which this is absent.
     static let pixelColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
     public init(cgImage: CGImage) throws {
@@ -53,13 +53,10 @@ public struct PixelBuffer: Sendable {
 
         // Explicit sRGB, not `CGColorSpaceCreateDeviceRGB()`: "device" RGB is
         // not a fixed space, it means "whatever this display's current
-        // profile is", so CoreGraphics colour-manages against it when drawing
-        // an image in — and that transform can mix channels. Measured on a
-        // real Mac: a pure (255, 0, 0) source read back with green at 38, not
-        // 0. Left in, every hue/saturation threshold in the shared config
-        // (`highlight.colorHueRangesHSV`) would be calibrated against colours
-        // that shift with the screen the calibration happened to run on,
-        // which is the opposite of the reproducibility §9.3 needs.
+        // profile is", which is the opposite of the reproducibility §9.3
+        // needs — a threshold in the shared config
+        // (`highlight.colorHueRangesHSV`) would then only be valid on the
+        // screen the calibration happened to run on.
         guard let context = CGContext(
             data: storage,
             width: width,
@@ -72,8 +69,9 @@ public struct PixelBuffer: Sendable {
 
         // White first: a source with transparency would otherwise composite
         // onto black, and a page that reads as black everywhere looks like
-        // solid ink to the underline detector.
-        context.setFillColor(gray: 1, alpha: 1)
+        // solid ink to the underline detector. `CGColor.sRGB` rather than
+        // `setFillColor(gray:alpha:)` — see its doc comment.
+        context.setFillColor(CGColor.sRGB(1, 1, 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
@@ -155,5 +153,27 @@ public struct PixelRegion: Sendable, Equatable {
         self.y = y0
         self.width = x1 - x0
         self.height = y1 - y0
+    }
+}
+
+extension CGColor {
+    /// A colour explicitly tagged with `PixelBuffer.pixelColorSpace`, rather
+    /// than the untagged convenience initializers (`CGColor(red:green:blue:alpha:)`,
+    /// `setFillColor(gray:alpha:)`).
+    ///
+    /// Those construct the colour in an implicit "generic RGB" space that is
+    /// not necessarily the space a context was created with — so filling with
+    /// one forces a conversion on every fill, and that conversion is not the
+    /// identity. Measured directly: bisecting a case where `PixelBuffer` read
+    /// back a stray green channel showed the drift was already present in the
+    /// *source* image, before `PixelBuffer` ever touched it — filling an
+    /// explicitly-sRGB context with `CGColor(red: 1, green: 0, blue: 0, alpha:
+    /// 1)` alone was enough to read back green at 38, not 0.
+    static func sRGB(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, alpha: CGFloat = 1) -> CGColor {
+        CGColor(colorSpace: PixelBuffer.pixelColorSpace, components: [red, green, blue, alpha])!
+    }
+
+    static func sRGBGray(_ value: CGFloat, alpha: CGFloat = 1) -> CGColor {
+        sRGB(value, value, value, alpha: alpha)
     }
 }

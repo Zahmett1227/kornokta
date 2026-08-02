@@ -135,10 +135,10 @@ private func syntheticPage(
     height: Int = 120,
     draw: (CGContext) -> Void
 ) throws -> PixelBuffer {
-    // Named sRGB, not `CGColorSpaceCreateDeviceRGB()`: the latter is tied to
-    // the display's current profile, so a colour set here can drift by the
-    // time `PixelBuffer` reads it back — this is what caught the bug
-    // `PixelBuffer.pixelColorSpace`'s doc comment describes.
+    // Named sRGB, not `CGColorSpaceCreateDeviceRGB()`, for the same
+    // reproducibility reason `PixelBuffer.pixelColorSpace` is. The actual
+    // colour-drift bug this suite caught was elsewhere — see `CGColor.sRGB`
+    // — but there is no reason for the context itself to stay ambiguous too.
     guard let context = CGContext(
         data: nil,
         width: width,
@@ -150,7 +150,7 @@ private func syntheticPage(
     ) else {
         throw XCTSkip("CGContext oluşturulamadı")
     }
-    context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+    context.setFillColor(CGColor.sRGB(1, 1, 1, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     draw(context)
     guard let image = context.makeImage() else { throw XCTSkip("CGImage üretilemedi") }
@@ -164,57 +164,9 @@ private func flipped(_ rect: CGRect, in height: Int) -> CGRect {
 }
 
 final class PixelBufferTests: XCTestCase {
-    /// Diagnostic, not a real regression test: bisects where the drift in
-    /// `testReadsBackTheColourItWasGiven` actually happens. Switching both
-    /// sides of the redraw to a matching named colour space did not change
-    /// the failure at all (still exactly green=38), which rules out a
-    /// colour-space mismatch between source and destination — so this reads
-    /// the CGImage `syntheticPage` hands to `PixelBuffer` directly, with no
-    /// `PixelBuffer` involved, to see whether the drift is already there
-    /// before `PixelBuffer.init` ever runs.
-    func testWhatTheSourceImageActuallyContainsBeforePixelBufferTouchesIt() throws {
-        guard let context = CGContext(
-            data: nil, width: 10, height: 10, bitsPerComponent: 8, bytesPerRow: 10 * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { throw XCTSkip("CGContext oluşturulamadı") }
-
-        // Exactly `syntheticPage`'s sequence: white full-canvas, then red
-        // full-canvas — the same two fills the failing test goes through.
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
-        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
-
-        guard let image = context.makeImage() else { throw XCTSkip("CGImage üretilemedi") }
-        guard
-            let data = image.dataProvider?.data,
-            let pointer = CFDataGetBytePtr(data)
-        else { throw XCTSkip("Ham bayt okunamadı") }
-
-        let bytesPerRow = image.bytesPerRow
-        let bytesPerPixel = image.bitsPerPixel / 8
-        let offset = 5 * bytesPerRow + 5 * bytesPerPixel
-        let byte0 = pointer[offset]
-        let byte1 = bytesPerPixel > 1 ? pointer[offset + 1] : 255
-        let byte2 = bytesPerPixel > 2 ? pointer[offset + 2] : 255
-        let byte3 = bytesPerPixel > 3 ? pointer[offset + 3] : 255
-
-        // Printed unconditionally — this is diagnostic output, not something
-        // that should only appear when the assertion below fails.
-        print(
-            "KAYNAK GÖRÜNTÜ TANISI: bitsPerPixel=\(image.bitsPerPixel) " +
-            "bytesPerRow=\(bytesPerRow) bitmapInfo=\(image.bitmapInfo.rawValue) " +
-            "alphaInfo=\(image.alphaInfo.rawValue) " +
-            "byte0=\(byte0) byte1=\(byte1) byte2=\(byte2) byte3=\(byte3)"
-        )
-
-        XCTAssertEqual(byte0, 255, "kaynak görüntünün 0. baytı (beklenen: R=255)")
-    }
-
     func testReadsBackTheColourItWasGiven() throws {
         let buffer = try syntheticPage(width: 10, height: 10) { context in
-            context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+            context.setFillColor(CGColor.sRGB(1, 0, 0, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
         }
         let (r, g, b) = buffer.rgb(x: 5, y: 5)
@@ -227,7 +179,7 @@ final class PixelBufferTests: XCTestCase {
         // The shared thresholds are written for 0–179; on a 0–360 scale every
         // hue range would silently point at the wrong colour.
         let yellow = try syntheticPage(width: 4, height: 4) { context in
-            context.setFillColor(CGColor(red: 1, green: 1, blue: 0, alpha: 1))
+            context.setFillColor(CGColor.sRGB(1, 1, 0, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
         }
         let (h, s, v) = yellow.hsv(x: 2, y: 2)
@@ -278,7 +230,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
 
     func testFindsAYellowHighlightOverTheLine() throws {
         let page = try syntheticPage { context in
-            context.setFillColor(CGColor(red: 1, green: 0.95, blue: 0.1, alpha: 1))
+            context.setFillColor(CGColor.sRGB(1, 0.95, 0.1, alpha: 1))
             context.fill(flipped(CGRect(x: 20, y: 40, width: 120, height: 16), in: 120))
         }
         XCTAssertGreaterThan(detector.highlightOverlap(in: page, line: line), 0.9)
@@ -286,7 +238,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
 
     func testPlainTextIsNotAHighlight() throws {
         let page = try syntheticPage { context in
-            context.setFillColor(CGColor(gray: 0.2, alpha: 1))
+            context.setFillColor(CGColor.sRGBGray(0.2, alpha: 1))
             context.fill(flipped(CGRect(x: 20, y: 44, width: 120, height: 8), in: 120))
         }
         XCTAssertLessThan(detector.highlightOverlap(in: page, line: line), 0.05)
@@ -294,7 +246,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
 
     func testFindsAnUnderlineJustBelowTheBaseline() throws {
         let page = try syntheticPage { context in
-            context.setFillColor(CGColor(gray: 0.15, alpha: 1))
+            context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
             context.fill(flipped(CGRect(x: 20, y: 56, width: 120, height: 2), in: 120))
         }
         let evidence = detector.underlineEvidence(in: page, line: line)
@@ -312,7 +264,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
         // §19.2/P3: unknown must be routed to the user, not read as "no
         // overrun". A line flush against the edge has no visible margin.
         let page = try syntheticPage(width: 140, height: 120) { context in
-            context.setFillColor(CGColor(gray: 0.15, alpha: 1))
+            context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
             context.fill(flipped(CGRect(x: 0, y: 56, width: 140, height: 2), in: 120))
         }
         let edgeLine = LineBox(lineId: "edge", x: 0, y: 40, width: 140, height: 16)
@@ -335,7 +287,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
 
     func testARuleThatRunsPastTheTextIsSeenAsOverrunning() throws {
         let page = try syntheticPage { context in
-            context.setFillColor(CGColor(gray: 0.15, alpha: 1))
+            context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
             // Spans the whole page, well beyond the text line.
             context.fill(flipped(CGRect(x: 0, y: 56, width: 200, height: 2), in: 120))
         }
@@ -346,7 +298,7 @@ final class MarkerDetectorPixelTests: XCTestCase {
 
     func testAPenStrokeThatStopsAtTheTextDoesNotOverrun() throws {
         let page = try syntheticPage { context in
-            context.setFillColor(CGColor(gray: 0.15, alpha: 1))
+            context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
             context.fill(flipped(CGRect(x: 20, y: 56, width: 120, height: 2), in: 120))
         }
         let evidence = detector.underlineEvidence(in: page, line: line)

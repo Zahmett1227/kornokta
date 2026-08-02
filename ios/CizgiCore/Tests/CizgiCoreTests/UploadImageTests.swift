@@ -19,11 +19,11 @@ private func jpegData(width: Int, height: Int, quality: Double = 0.9) throws -> 
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ) else { throw XCTSkip("CGContext oluşturulamadı") }
 
-    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.setFillColor(CGColor.sRGBGray(1, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: width, height: height))
     // Some structure, so the encoder has something to compress and the result
     // is not a degenerate few-byte file.
-    context.setFillColor(CGColor(gray: 0.15, alpha: 1))
+    context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
     for row in stride(from: 0, to: height, by: 8) {
         context.fill(CGRect(x: 0, y: row, width: width, height: 3))
     }
