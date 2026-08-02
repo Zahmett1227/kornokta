@@ -71,7 +71,17 @@ public struct MarkerConfig: Codable, Sendable, Equatable {
     /// Throws rather than falling back to built-in numbers: a silent fallback
     /// would mean the phone detecting with values nobody chose, and the
     /// mismatch with the measured report would be invisible.
-    public static func bundled(bundle: Bundle = .module) throws -> MarkerConfig {
+    ///
+    /// Takes no parameter because it cannot: the resource accessor SwiftPM
+    /// generates, `Bundle.module`, is internal, and a public function's
+    /// default argument value must be at least as accessible as the function
+    /// itself — `bundle: Bundle = .module` fails to compile for exactly that
+    /// reason. `bundled(bundle:)` below is the injectable seam for tests.
+    public static func bundled() throws -> MarkerConfig {
+        try bundled(bundle: .module)
+    }
+
+    static func bundled(bundle: Bundle) throws -> MarkerConfig {
         guard let url = bundle.url(forResource: "marker-detection-config", withExtension: "json") else {
             throw LoadError.missingResource
         }
