@@ -93,12 +93,12 @@ class TestTranslation:
             to_javascript_source(r"[abc")
 
 
-class TestGeneratedPatternFile:
-    @pytest.fixture(scope="class")
-    @classmethod
-    def payload(cls):
-        return json.loads(PATTERNS_JSON.read_text(encoding="utf-8"))
+@pytest.fixture(scope="module")
+def payload():
+    return json.loads(PATTERNS_JSON.read_text(encoding="utf-8"))
 
+
+class TestGeneratedPatternFile:
     def test_no_ascii_only_constructs_survive(self, payload):
         # `\w` and `\b` are ASCII-only in JavaScript. One surviving would make
         # the detector go quiet on Turkish text — silently, with no error.
@@ -141,12 +141,12 @@ class TestGeneratedPatternFile:
             assert payload["routeSynonyms"][code] == list(surfaces)
 
 
-class TestSharedCases:
-    @pytest.fixture(scope="class")
-    @classmethod
-    def cases(cls):
-        return json.loads(CASES_JSON.read_text(encoding="utf-8"))["cases"]
+@pytest.fixture(scope="module")
+def cases():
+    return json.loads(CASES_JSON.read_text(encoding="utf-8"))["cases"]
 
+
+class TestSharedCases:
     def test_python_still_produces_the_frozen_expectations(self, cases):
         """The reference must agree with the file it generated. This fails if
         the detector changed and the file was not regenerated."""
