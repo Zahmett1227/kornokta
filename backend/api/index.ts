@@ -56,7 +56,15 @@ export function resetDependencies(): void {
  * this named export directly and calls it the same way Vercel's wrapper does.
  */
 export async function handler(request: Request): Promise<Response> {
-  const url = new URL(request.url);
+  // A base, not just `new URL(request.url)`: measured directly on Vercel,
+  // whatever it hands the `{ fetch }` export has `.url` set to the bare path
+  // ("/", "/favicon.ico"), not the absolute URL the Fetch API's `Request`
+  // promises — `new URL("/")` alone throws `ERR_INVALID_URL`, which crashed
+  // every request including `/health`. The base is inert when the first
+  // argument already is absolute, which is what `scripts/serve.ts` and every
+  // test send, so this is correct for both shapes rather than a Vercel-only
+  // patch. Its host/scheme are never read below, only `pathname`.
+  const url = new URL(request.url, "http://localhost");
 
   if (url.pathname === "/health" || url.pathname === "/api/health") {
     // Deliberately unauthenticated and deliberately empty: it answers "is the

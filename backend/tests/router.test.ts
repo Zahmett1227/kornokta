@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+
+import { handler } from "../api/index.js";
+
+describe("handler", () => {
+  // Vercel's own docs promise the `request` a `{ fetch }` export receives is
+  // a Web-standard `Request`, whose `.url` is always absolute. Measured on a
+  // real deployment it was not: `.url` was the bare path ("/", "/favicon.ico"),
+  // and `new URL(request.url)` alone threw `ERR_INVALID_URL` on every single
+  // request — including `/health`, which has no logic beyond that line. This
+  // reproduces that exact shape without a live deployment; a real `Request`
+  // cannot even be constructed with a relative URL, so the fake has to be a
+  // plain object.
+  it("survives a request whose url is a bare path, not an absolute URL", async () => {
+    const bareRequest = {
+      url: "/health",
+      method: "GET",
+      headers: new Headers(),
+    } as Request;
+
+    const response = await handler(bareRequest);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("still answers correctly when the url genuinely is absolute", async () => {
+    // What `scripts/serve.ts` and every other test in this suite send — the
+    // fix must not have narrowed to only the broken shape.
+    const response = await handler(new Request("http://127.0.0.1:8787/health"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("404s on an unknown path either way", async () => {
+    const bare = await handler({ url: "/nope", method: "GET", headers: new Headers() } as Request);
+    const absolute = await handler(new Request("http://127.0.0.1:8787/nope"));
+
+    expect(bare.status).toBe(404);
+    expect(absolute.status).toBe(404);
+  });
+});
