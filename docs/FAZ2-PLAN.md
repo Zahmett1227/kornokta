@@ -120,5 +120,13 @@ bir testle — mevcut testler yalnız "kabul edilen sayfa" yolunu sınıyordu,
   (`backend/vercel.json`, `docs/GOOGLE-CLOUD-KURULUM.md`'ye eklenecek
   adımlar) ama gerçek bir Vercel hesabıyla hiç denenmedi; ilk dağıtım
   hem ilk doğrulama olacak
-- `swift test`'in gerçekten geçtiği — Swift ilk kez bir derleyicide
-  çalışacak; bu döngüdeki gözden geçirme derleyicisiz yapıldı
+
+**Güncelleme:** `swift test` artık gerçek bir Mac'te **114/114** geçiyor
+(2026-08-02). İlk gerçek derleme üç hata çıkardı — hepsi düzeltildi ve
+kayda geçti (madde 4-8 yukarıda, artı `Bundle.module`'ün public bir
+fonksiyonun varsayılan argümanı olamaması ve `CGColor(red:green:blue:
+alpha:)`'nın rengi bağlamın renk uzayından bağımsız, örtük bir uzayda
+oluşturması — ikincisi `PixelBuffer`'ın okuduğu piksel değerlerini
+gerçekten bozuyordu, yalnız bir test kusuru değildi). Elle inceleme artık
+gerçek bir derleyiciyle doğrulandı; kod tarafı için kalan tek şey Vercel
+dağıtımı ve altın set ölçümü.
