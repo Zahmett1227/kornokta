@@ -217,6 +217,22 @@ describe("OpenAICardGenerator", () => {
     await expect(generator.generateCards(REQUEST)).rejects.toThrow(/reddetti/);
   });
 
+  it("treats status:'incomplete' as untrustworthy rather than parsing the truncated JSON fragment", async () => {
+    // Confirmed live: a reasoning-capable model can spend part of
+    // max_output_tokens on hidden reasoning before emitting any JSON, and
+    // the truncated fragment that's left fails JSON.parse with a message
+    // that doesn't say why. This checks status first so the real cause
+    // (a token ceiling, not a malformed response) is what the caller sees.
+    const { transport } = stubTransport(200, {
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [{ type: "message", content: [{ type: "output_text", text: '{"schemaVersion":"1.0"' }] }],
+      usage: { input_tokens: 500, output_tokens: 700 },
+    });
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    await expect(generator.generateCards(REQUEST)).rejects.toThrow(/max_output_tokens/);
+  });
+
   it("throws on output_text that is not valid JSON", async () => {
     const { transport } = stubTransport(200, {
       output: [{ type: "message", content: [{ type: "output_text", text: "{not json" }] }],

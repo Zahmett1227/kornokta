@@ -18,12 +18,12 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-2** | Versiyonlanmış prompt modülleri (§15.1–15.3, metin ANA-PLAN'dan birebir) | ✅ |
 | **F3-3** | §14 şemasının çalışma zamanı doğrulayıcısı (ajv) + paylaşılan TS tipleri + anti-drift senkron testi | ✅ |
 | **F3-4** | Kart üretimi sonrası deterministik kalite kapısı (§19) | ✅ |
-| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | ✅ kod + test; sahte anahtarla canlı istek şekli sınandı, **gerçek anahtarla hiç çağrılmadı** |
-| **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ kod + test; sahte anahtarla canlı denemede gerçek bir şema hatası bulundu ve düzeltildi (aşağıya bakın). **Hiçbir uç noktaya bağlı değil** (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
-| **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ |
-| **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — tek gerçek çağrı yapar, sahte anahtarla test edildi |
+| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | 🔶 Kod + test tamam, gerçek anahtarla auth'u geçti; **hâlâ tam bir kart üretimi görülmedi** — model üretimi `max_output_tokens`'a takılıyor (aşağıya bakın) |
+| **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ **gerçek anahtarla uçtan uca doğrulandı** — gerçek transkripsiyon, gerçek token sayıları. Hâlâ hiçbir uç noktaya/akışa bağlı değil (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
+| **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ kod + test; gerçek bir OpenAI çağrısı henüz uçtan uca tamamlanmadığı için bu uç nokta üzerinden hiç canlı denenmedi |
+| **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — ikisi de gerçek anahtarla iki gerçek hata buldurdu (şema, token bütçesi) |
 | **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | ❌ başlamadı |
-| **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | 🔶 Anahtarlar kullanıcının yerelinde/Vercel'de; bu ortamda değil — sıradaki adım kullanıcının `npm run cards`/`npm run handwriting` çalıştırması |
+| **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | 🔶 Gemini tamam; OpenAI auth'u geçti ama `max_output_tokens` tartışmasına takıldı (aşağıya bakın) |
 | **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ F3-9'a bağımlı |
 
 ---
@@ -226,10 +226,42 @@ hata** çıkardı; ikisi de düzeltildi.
    dosyasındaki `GEMINI_MAX_OUTPUT_TOKENS=700` satırı elle güncellenmeli**,
    kod varsayılanının değişmesi onu geçersiz kılmaz.
 
-**Hâlâ doğrulanmayı bekleyen:** kullanıcının bu iki düzeltmeyi çekip
-(`git pull`) tekrar çalıştırması. Başarılı olursa gerçek bir kart çıktısı ve
-gerçek bir el yazısı ikinci görüşü ilk kez görülmüş olacak — gold pasaj
-ölçümüne (F3-10) geçmeden önceki son adım.
+**Sonuç:** `npm run handwriting` **başarıyla tamamlandı** — gerçek bir Gemini
+çağrısı, gerçek transkripsiyon (`kreatinin ...`), gerçek token sayıları
+(1230/17). Gemini ikinci görüş sağlayıcısı artık uçtan uca doğrulandı.
+
+`npm run cards` yeni bir hatayla durdu:
+
+3. **OpenAI: model üretimi hiç JSON döndürmeden bitti (`Model yanıtı geçerli
+   JSON değil`), 11 saniyelik gerçek işlem süresinden sonra.** Şema hatası
+   değildi — schema artık kabul ediliyor (11 saniyelik çağrı, anında
+   dönen bir 400 değil). En olası açıklama Gemini'dekiyle aynı sınıf:
+   `gpt-5.6-sol` görünüşe göre reasoning-yetenekli bir model ve
+   `max_output_tokens=700`'ün bir kısmını görünür JSON'dan önceki kendi iç
+   muhakemesine harcıyor olabilir, geriye JSON'u bitirecek token kalmıyor.
+
+   Responses API bunu `status: "incomplete"` + `incomplete_details.reason`
+   alanlarıyla açıkça bildiriyor; `providers/openai.ts` artık JSON
+   ayrıştırmayı denemeden önce bu alanı kontrol ediyor ve nedeni (örn.
+   `max_output_tokens`) doğrudan hata mesajına yazıyor — bir sonraki
+   denemede "geçerli JSON değil" yerine ne olduğunu söyleyen bir hata
+   görülecek. Regresyon testi eklendi.
+
+   **Bilerek değiştirmediğim şey:** `OPENAI_MAX_OUTPUT_TOKENS`'ın varsayılanı
+   (700). Gemini'nin 700'ü Faz 3'te benim seçtiğim keyfi bir sayıydı ve
+   düzeltmek bana aitti; OpenAI'ınki ANA-PLAN §20.3'ün kendisinin belirlediği
+   bir maliyet sınırı ("Maksimum 4 kart ve 700 output token"). Eğer gerçek
+   model reasoning token'larını da bu bütçeden düşüyorsa, §20.3'ün yazıldığı
+   andaki varsayım (700 token = görünür kart içeriğine yeter) gerçek modelde
+   geçerli olmayabilir — bu, benim sessizce çözeceğim bir kod hatası değil,
+   kullanıcının bilerek karar vereceği bir maliyet/ürün ödünleşimi.
+
+**Sıradaki adım:** Kullanıcı `.env`'inde **geçici olarak**
+`OPENAI_MAX_OUTPUT_TOKENS`'ı yükseltip (örn. 4096) `npm run cards`'ı tekrar
+denemeli. Eğer bu düzeltirse, kalıcı değer ANA-PLAN sahibiyle birlikte
+kararlaştırılmalı — büyük ihtimalle 700'den yüksek bir sayı, gerçek maliyet
+(`OPENAI_USD_PER_MILLION_*` alanları hâlâ 0) ve `MAX_USD_PER_CARD_GENERATION`
+sınırıyla birlikte.
 
 ## Test durumu
 

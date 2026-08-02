@@ -108,6 +108,9 @@ interface ResponsesApiOutputItem {
 }
 
 interface ResponsesApiBody {
+  /** "completed" | "incomplete" | "failed" | ... */
+  status?: string;
+  incomplete_details?: { reason?: string };
   output?: ResponsesApiOutputItem[];
   usage?: { input_tokens?: number; output_tokens?: number };
   error?: { message?: string };
@@ -246,6 +249,28 @@ export class OpenAICardGenerator {
     }
 
     const parsedBody = response.body as ResponsesApiBody;
+
+    // Checked before parsing: an "incomplete" response's output_text is a
+    // truncated JSON fragment, and parsing it would fail with a message that
+    // does not say why. Confirmed live: a reasoning-capable model can spend
+    // part of `max_output_tokens` on its own hidden reasoning before ever
+    // emitting the JSON, so a token ceiling that looks generous for the
+    // visible answer can still truncate the response (§20.3's cost cap
+    // versus the model's actual token accounting is a real tension, not a
+    // bug in this parsing step — see docs/FAZ3-PLAN.md).
+    if (parsedBody.status === "incomplete") {
+      const reason = parsedBody.incomplete_details?.reason ?? "bilinmeyen";
+      throw new OpenAIError(
+        `Model üretimi tamamlamadı: ${reason}. ` +
+          (reason === "max_output_tokens"
+            ? "OPENAI_MAX_OUTPUT_TOKENS bu model için yetersiz olabilir " +
+              "(reasoning token'ları da bu bütçeden düşülüyor)."
+            : ""),
+        undefined,
+        false,
+      );
+    }
+
     const text = extractOutputText(parsedBody);
 
     let modelJson: unknown;
