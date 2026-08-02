@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { handler } from "../api/index.js";
+import handlerModule, { handler } from "../api/index.js";
+
+describe("export shape", () => {
+  it("is the Web-handler object Vercel dispatches, not a bare function", () => {
+    // This has been changed the wrong way twice, and neither the type checker
+    // nor any behavioural test catches it: a bare `export default handler`
+    // compiles, passes every test here, and deploys — then Vercel reads it as
+    // the legacy `(req, res) => void` signature, discards the returned
+    // `Response`, and every request hangs until the 60s timeout.
+    expect(typeof handlerModule).toBe("object");
+    expect(typeof handlerModule.fetch).toBe("function");
+  });
+
+  it("routes through the same function the named export exposes", () => {
+    // Otherwise the suite below could be green while the deployed path is not.
+    expect(handlerModule.fetch).toBe(handler);
+  });
+});
 
 describe("handler", () => {
   // Vercel's own docs promise the `request` a `{ fetch }` export receives is
