@@ -22,7 +22,9 @@ Sıra, en çok şeyi açan işten başlıyor.
 | **F2-6** | Satır eşleştirme (işaret ↔ OCR satır kutusu) | Cihaz | ✅ |
 | **F2-7** | Onay ekranının gerçek verilerle çalışması | Uygulama | ✅ |
 
-**Kod tarafı tamam; çıkış kapısı değil.** Aşağıya bakın.
+**Kod tarafı tamam; çıkış kapısı bilinçli olarak atlanarak Faz 3'e geçildi.**
+Aşağıdaki "Çıkış kapısı bilinçli olarak geçilmeden Faz 3'e geçildi" bölümüne
+bakın.
 
 Sayfa düzeltme (§25'in ilk kalemi) Faz 1'de bitti: `VNDocumentCameraViewController`
 kenar algılama ve perspektif düzeltmeyi zaten yapıyor.
@@ -156,3 +158,25 @@ uygulama bunu otomatik yapıyor.
 **Faz 2'nin kod ve dağıtım tarafı artık tamamen doğrulandı.** Geriye
 yalnız 20 görüntülük altın set ölçümü kalıyor (§25 Faz 2 çıkış kapısı) —
 yukarıdaki üç madde.
+
+## Çıkış kapısı bilinçli olarak geçilmeden Faz 3'e geçildi
+
+ANA-PLAN §25 Faz 2 için: "Çıkış kapısı: Altın test OCR ve selection eşikleri
+karşılanmalıdır." Bu kapı **karşılanmadı** — 20 görüntü çekildi, Vision ve
+Google ile işlendi (`evals/reports/vision.json`, `.../google.json`,
+2026-08-02), ama elle etiketleme (`docs/MAC-ADIMLARI.md` Adım 4 — her görüntü
+için birebir transkripsiyon, kritik token listesi, kart örnekleri) 60-90
+dakika sürüyordu ve kullanıcı bilinçli olarak atlamayı seçti: gerçek kullanım
+verisiyle kalibre etmek, sentetik bir altın setle uğraşmaktan daha değerli.
+
+Bunun anlamı: `evals/spikes/marker_detection/config.json`'daki eşikler
+(`decisionThresholds.autoCandidate = 0.92` vb.) hâlâ "ilk kalibrasyon
+başlangıcı" — gerçek tek-dokunuş oranı, gerçek yanlış-pozitif oranı
+**ölçülmedi**. Kod çalışıyor ve testleri geçiyor (bu ayrı bir garanti), ama
+eşiklerin gerçek sayfalarda ne kadar isabetli olduğu bilinmiyor.
+
+Araçlar hazır kalıyor — `evals/ocr_eval/gold_marker_report.py`,
+`evals/ocr_eval/vision_report.py` — ileride gerçek kullanım verisi
+birikince (ya da yine 20 görüntü etiketlenmek istenirse) aynı komutlarla
+çalışır. `evals/reports/vision.json` ve `.../google.json` de yerelde duruyor;
+etiketleme yarım bırakılıp sonra tamamlanabilir, baştan başlamak gerekmez.
