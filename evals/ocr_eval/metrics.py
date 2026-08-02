@@ -181,31 +181,91 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     # Not diacritic-folded, matching `_canonical` — a lost diacritic is a
     # transcription error the gate must report, not forgive (§24.3).
     haystack = normalize_for_compare(hypothesis)
-    route_haystack = nfc(hypothesis)
 
     # Canonicalize *before* counting. Keying on the raw spelling would split
     # 'IM' and 'im' into two groups that each find the same single occurrence,
     # so a passage listing two routes would score clean after one was lost.
     def key_of(token: str) -> tuple[str, str]:
         if _is_route(token):
-            return ("route", nfc(token).strip().upper())
+            # The canonical code, not the surface. §10.5.1: every accepted
+            # spelling of one route *is* that route, so gold 'intravenöz' has
+            # to be satisfied by a reading of 'IV'.
+            return ("route", _canonical_route(token))
         return ("plain", normalize_for_compare(token))
+
+    # Routes in the hypothesis, counted by canonical code.
+    #
+    # A textual search for the gold surface was wrong here: it made this
+    # measure the only one of the three that did not fold synonyms, so
+    # 'damar içi' read correctly as 'IV' scored 1.0 missing while the ordered
+    # comparison and the surplus measure both called it clean. A correct
+    # reading would have been sent to quick_confirm (§24.2).
+    from .critical_tokens import detect_critical_tokens
+
+    hypothesis_routes = Counter(
+        _canonical_route(token.text)
+        for token in detect_critical_tokens(nfc(hypothesis))
+        if token.token_class == "route"
+    )
 
     required = Counter(key_of(t) for t in tokens)
     missing = 0
     for (kind, value), needed in required.items():
         if kind == "route":
-            # Routes fold on case, and Turkish lowercasing would not make the
-            # two spellings meet ('IM' -> 'ım' but 'im' -> 'im'), so they are
-            # matched case-insensitively against the un-lowercased text.
-            pattern = re.compile(
-                _token_occurrence_pattern(value).pattern, re.IGNORECASE
-            )
-            available = len(pattern.findall(route_haystack))
+            available = hypothesis_routes.get(value, 0)
         else:
             available = len(_token_occurrence_pattern(value).findall(haystack))
         missing += max(0, needed - available)
     return missing / len(tokens)
+
+
+def _canonical_route(token: str) -> str:
+    from .critical_tokens import canonical_route
+
+    return canonical_route(token)
+
+
+def critical_token_recall_loss(gold_text: str, hypothesis: str) -> float:
+    """Fraction of the source's critical tokens the reading did not reproduce,
+    with **both sides detected** rather than one side supplied.
+
+    Companion to `critical_token_error_rate`, not a replacement — they answer
+    different questions and both are needed:
+
+    `critical_token_error_rate(gold_tokens, hypothesis)`
+        The gold-set measure. `gold_tokens` are the values a human annotated in
+        the manifest, and the question is "did the reading reproduce what the
+        annotator marked?". It searches for those surfaces in the text, so a
+        gold '1' is satisfied by a reading of '1–2 mg' — the annotated value is
+        still there.
+
+    `critical_token_recall_loss(gold_text, hypothesis)`
+        The reconciliation measure (§10.3). Two OCR engines both produce
+        hypotheses; neither is annotated and neither is authoritative. Tokens
+        are detected on both sides and compared as tokens, so '1' against
+        '1–2' is a *different value*, not a satisfied one.
+
+    Using the manifest measure for reconciliation would silently accept a
+    widened dose range, which is the failure §24.3 exists to prevent.
+
+    Repeated values are matched to distinct occurrences, so one surviving '5'
+    cannot satisfy both doses of '5 mg sabah, 5 mg akşam'.
+    """
+    gold = _canonical_token_counter(gold_text)
+    if not gold:
+        return 0.0
+    available = _canonical_token_counter(hypothesis)
+    missing = sum((gold - available).values())
+    return missing / sum(gold.values())
+
+
+def _canonical_token_counter(text: str) -> Counter:
+    from .critical_tokens import detect_critical_tokens
+
+    return Counter(
+        (token.token_class, _canonical(token.text, token.token_class))
+        for token in detect_critical_tokens(nfc(text))
+    )
 
 
 def _is_route(token: str) -> bool:

@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from evals.ocr_eval.export_cases import main as export_cases_main
+from evals.ocr_eval.export_gate_cases import main as export_gate_cases_main
 from evals.ocr_eval.export_patterns import (
     JS_WORD_BOUNDARY,
     JS_WORD_CHAR,
@@ -35,6 +36,12 @@ class TestGeneratedFilesAreCurrent:
         assert export_patterns_main(["--check"]) == 0, (
             "criticalTokenPatterns.json güncel değil. "
             "Çalıştır: python -m evals.ocr_eval.export_patterns"
+        )
+
+    def test_gate_case_file_matches_its_source(self):
+        assert export_gate_cases_main(["--check"]) == 0, (
+            "gate-cases.json güncel değil. "
+            "Çalıştır: python -m evals.ocr_eval.export_gate_cases"
         )
 
     def test_case_file_matches_its_source(self):
