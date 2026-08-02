@@ -381,6 +381,28 @@ final class ReconciliationPassthroughTests: XCTestCase {
         XCTAssertNotNil(outcome.reconciliation)
     }
 
+    func testTheReasonSurvivesAGenerationFailure() async {
+        // The reason belongs to the page, not to the happy path. A capture that
+        // stops for some *other* reason still has to be able to say what the
+        // two readings disagreed about — otherwise the confirmation screen asks
+        // a question the user cannot answer (§19.2). Every exit after the cloud
+        // step has to carry it, which is easy to drop one return at a time.
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: local),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            generator: FailingGenerator(error: .providerUnavailable("ağ yok")),
+            backend: StubBackend(.success(reply(
+                decision: .autoAccept,
+                reason: "İki motor da aynı metni okudu.",
+                flags: []
+            )))
+        )
+        let outcome = await pipeline.run(jobId: "job-r5", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .temporaryFailure)
+        XCTAssertEqual(outcome.reconciliation?.reason, "İki motor da aynı metni okudu.")
+    }
+
     func testWithoutABackendThereIsNoReconciliationToShow() async {
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: local),

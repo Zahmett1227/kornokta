@@ -265,7 +265,8 @@ public struct CapturePipeline: Sendable {
                     finalState: .confirmationRequired,
                     recognized: recognized,
                     selectedLineIds: selected,
-                    passage: passage
+                    passage: passage,
+                    reconciliation: reconciliation
                 )
             }
             let needsApproval = knowledge.cards.contains { $0.requiresUserApproval }
@@ -276,7 +277,8 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selectedLineIds: selected,
                 passage: passage,
-                knowledge: knowledge
+                knowledge: knowledge,
+                reconciliation: reconciliation
             )
         } catch let error as CardGenerationError {
             if case .sourceInsufficient = error {
@@ -288,7 +290,8 @@ public struct CapturePipeline: Sendable {
                     finalState: .confirmationRequired,
                     recognized: recognized,
                     selectedLineIds: selected,
-                    passage: passage
+                    passage: passage,
+                    reconciliation: reconciliation
                 )
             }
             // Let `FailureKind` decide transient vs permanent rather than
@@ -301,7 +304,8 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selectedLineIds: selected,
                 passage: passage,
-                failure: kind
+                failure: kind,
+                reconciliation: reconciliation
             )
         } catch {
             // An error the generator does not declare. Treat as transient so a
@@ -312,7 +316,8 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selectedLineIds: selected,
                 passage: passage,
-                failure: .providerUnavailable
+                failure: .providerUnavailable,
+                reconciliation: reconciliation
             )
         }
     }

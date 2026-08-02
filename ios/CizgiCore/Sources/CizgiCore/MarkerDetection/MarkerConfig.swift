@@ -45,15 +45,20 @@ public struct MarkerConfig: Codable, Sendable, Equatable {
     public let highlight: Highlight
     public let underline: Underline
 
-    /// Every hue range, flattened. Built once because the mask test runs per
-    /// pixel and re-walking the dictionary there would dominate the cost.
+    /// Every hue range, flattened. Hoisted out of the per-pixel loop by the
+    /// caller, because re-walking the dictionary there would dominate the cost.
+    ///
+    /// Written as a loop rather than `flatMap`/`compactMap`: the labelled tuple
+    /// element type has to survive two nested closures, and an array of
+    /// unlabelled tuples is not convertible to an array of labelled ones.
     public var hueRanges: [(low: Double, high: Double)] {
-        highlight.colorHueRangesHSV.values.flatMap { ranges in
-            ranges.compactMap { range in
-                guard range.count == 2 else { return nil }
-                return (range[0], range[1])
+        var result: [(low: Double, high: Double)] = []
+        for ranges in highlight.colorHueRangesHSV.values {
+            for range in ranges where range.count == 2 {
+                result.append((low: range[0], high: range[1]))
             }
         }
+        return result
     }
 
     public enum LoadError: Error, Sendable {
