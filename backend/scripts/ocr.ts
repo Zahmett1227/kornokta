@@ -12,9 +12,29 @@
 
 import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
 import { dirname, extname, join, basename } from "node:path";
+import { existsSync } from "node:fs";
+import { config as loadEnvFile } from "dotenv";
 import { GoogleAuth } from "google-auth-library";
 
 import { loadConfig, ConfigError } from "../config.js";
+
+// Populates process.env from `.env` in the current directory *before*
+// loadConfig() reads it below. Without this, filling in `.env` by hand does
+// nothing — `config.ts` reads `process.env` directly and nothing else ever
+// puts the file's contents there.
+//
+// A missing `.env` is not an error here (CI and a shell that exports the
+// variables directly have none), but a *present and broken* one is — silently
+// running with none of it applied is how a typo would look identical to
+// "everything is fine" (§0.6: config must be visibly wrong, not silently
+// ignored).
+if (existsSync(".env")) {
+  const result = loadEnvFile();
+  if (result.error) {
+    console.error(`.env okunamadı: ${result.error.message}`);
+    process.exit(1);
+  }
+}
 import { DocumentAIRecognizer, DocumentAIError, googleAuthTokenSource } from "../providers/documentAI.js";
 import type { OCRPage, OCRRun } from "../providers/ocrTypes.js";
 
