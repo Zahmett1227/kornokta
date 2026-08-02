@@ -25,7 +25,7 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | 🔶 Backend tarafı (config, promptlar, §14 şema doğrulayıcı, kart kalite kapısı, OpenAI/Gemini sağlayıcıları, `POST /api/cards`) yazıldı ve test edildi. **Gerçek bir OpenAI/Gemini anahtarıyla hiç çağrılmadı**, iOS istemci entegrasyonu yok, çıkış kapısı (gold pasaj kart rubriği) ölçülmedi. Ayrıntı: `docs/FAZ3-PLAN.md`. |
+| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). Kalan: iOS istemci entegrasyonu, gold pasaj kart kalite rubriği ölçümü (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
 | Faz 4 — FSRS tekrar motoru | Başlamadı |
 | Faz 5 — Sertleştirme | Başlamadı |
 
@@ -38,7 +38,7 @@ ileri sarılmıştı.
 **Test durumu (hepsi yeşil):**
 - Python (`evals/`): 435 test — `python -m pytest evals -q`
 - Swift (`ios/CizgiCore/`): 114 test, **gerçek bir Mac'te doğrulandı** — `swift test`
-- Backend (`backend/`): 416 test — `npm test`
+- Backend (`backend/`): 418 test — `npm test`
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
 doğrulandı — gerçek bir kitap sayfası fotoğrafı Google Document AI'dan doğru
@@ -117,15 +117,14 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş: Faz 3 — AI kart üretimi devamı
 
-Backend tarafı yazıldı (`docs/FAZ3-PLAN.md`): config, promptlar, §14 şema
-doğrulayıcı, kart kalite kapısı, OpenAI/Gemini sağlayıcıları, `POST
-/api/cards`. Sırada:
+Backend tarafı yazıldı VE gerçek anahtarla uçtan uca doğrulandı
+(`docs/FAZ3-PLAN.md`): config, promptlar, §14 şema doğrulayıcı, kart kalite
+kapısı, OpenAI/Gemini sağlayıcıları, `POST /api/cards`, `npm run
+cards`/`npm run handwriting`. Sırada:
 
-1. OpenAI ve Gemini anahtarlarını edin (`docs/OPENAI-GEMINI-KURULUM.md`) —
-   Google Cloud kurulumunda izlenen yolun aynısı, anahtar hiçbir zaman
-   sohbete veya koda girmez.
-2. Tek küçük pasajla canlı doğrulama — Responses/Gemini API'ye yazılan istek
-   şekli hiç gerçek bir çağrıyla sınanmadı.
-3. iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8).
-4. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
+1. iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8).
+2. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
    pasajlardan üretilen kartların kalite rubriği kabul sınırını geçmelidir."
+3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+   hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
+   sayfasından doldurulmalı.

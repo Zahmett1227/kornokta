@@ -104,7 +104,11 @@ describe("loadConfig", () => {
     const { openai } = loadConfig();
     expect(openai.model).toBe("gpt-5.6-sol");
     expect(openai.reasoningEffort).toBe("low");
-    expect(openai.maxOutputTokens).toBe(700);
+    // Not §20.3's reference 700: that number covers only the visible card
+    // content. A real call confirmed the model's own hidden reasoning tokens
+    // are spent from the same budget — 700 truncated (status: "incomplete"),
+    // 4096 completed a real card comfortably (571 output tokens used).
+    expect(openai.maxOutputTokens).toBe(4096);
     expect(openai.maxCardsPerKnowledgeUnit).toBe(4);
   });
 

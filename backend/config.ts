@@ -60,6 +60,16 @@ export interface OpenAIConfig {
   model: string;
   /** Passed through to the Responses API verbatim; not validated here. */
   reasoningEffort: string;
+  /**
+   * §20.3's reference number (700) is the visible-card budget; it does not
+   * cover a reasoning-capable model's own hidden reasoning tokens, which are
+   * spent from the same ceiling. Confirmed live: a real call failed with
+   * `status: "incomplete"` at 700 and produced one real card comfortably
+   * (571 output tokens used) at 4096. Kept configurable, not baked in
+   * (§0.6) — this is a cost/product tradeoff, not just an implementation
+   * default, and should be revisited once real per-token pricing is filled
+   * in (`OPENAI_USD_PER_MILLION_*`, currently 0).
+   */
   maxOutputTokens: number;
   /**
    * §11.3 names this per generation call; §13.2 states the same number as
@@ -139,7 +149,7 @@ export function loadConfig(): Config {
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
       reasoningEffort: optional("OPENAI_REASONING_EFFORT", "low"),
-      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 700),
+      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 4096),
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),
     },

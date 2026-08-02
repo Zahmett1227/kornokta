@@ -19,7 +19,7 @@ adım orada.
 | **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
 | **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
 | **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
-| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu ve testleri tamam — **gerçek bir anahtarla hiç çağrılmadı**, iOS entegrasyonu ve çıkış kapısı ölçümü yok. Bkz. `docs/FAZ3-PLAN.md` |
+| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu, testleri ve **gerçek anahtarla uçtan uca doğrulaması** tamam (gerçek kart, gerçek transkripsiyon). iOS entegrasyonu ve çıkış kapısı (gold pasaj kart rubriği) ölçümü kalıyor. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | Başlamadı |
 | **Faz 5** | Sertleştirme | Başlamadı |
 
@@ -63,7 +63,7 @@ cd ios/CizgiCore && swift test                             # 114 test
 ## Backend'i çalıştırma
 
 ```bash
-cd backend && npm install && npm test                      # 416 test
+cd backend && npm install && npm test                      # 418 test
 npm run serve                                               # yerel sunucu, 127.0.0.1:8787
 ```
 

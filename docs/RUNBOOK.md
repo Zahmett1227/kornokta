@@ -37,7 +37,7 @@ Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir
 cd backend
 npm install
 npm run typecheck
-npm test                                                          # 416 test
+npm test                                                          # 418 test
 ```
 
 Yerel sunucu (yalnız 127.0.0.1, dışarıya açılmaz):

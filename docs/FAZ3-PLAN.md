@@ -18,13 +18,13 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-2** | Versiyonlanmış prompt modülleri (§15.1–15.3, metin ANA-PLAN'dan birebir) | ✅ |
 | **F3-3** | §14 şemasının çalışma zamanı doğrulayıcısı (ajv) + paylaşılan TS tipleri + anti-drift senkron testi | ✅ |
 | **F3-4** | Kart üretimi sonrası deterministik kalite kapısı (§19) | ✅ |
-| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | 🔶 Kod + test tamam, gerçek anahtarla auth'u geçti; **hâlâ tam bir kart üretimi görülmedi** — model üretimi `max_output_tokens`'a takılıyor (aşağıya bakın) |
+| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | ✅ **gerçek anahtarla uçtan uca doğrulandı** — gerçek kart, gerçek token sayıları (aşağıya bakın) |
 | **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ **gerçek anahtarla uçtan uca doğrulandı** — gerçek transkripsiyon, gerçek token sayıları. Hâlâ hiçbir uç noktaya/akışa bağlı değil (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
-| **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ kod + test; gerçek bir OpenAI çağrısı henüz uçtan uca tamamlanmadığı için bu uç nokta üzerinden hiç canlı denenmedi |
-| **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — ikisi de gerçek anahtarla iki gerçek hata buldurdu (şema, token bütçesi) |
+| **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ kod + test; sağlayıcı gerçek anahtarla doğrulandı ama bu HTTP uç noktası üzerinden (yalnız `scripts/cards.ts` üzerinden) henüz canlı denenmedi |
+| **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — üç gerçek hata buldurdu (OpenAI şema, Gemini token bütçesi, OpenAI token bütçesi), sonunda ikisi de başarıyla tamamlandı |
 | **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | ❌ başlamadı |
-| **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | 🔶 Gemini tamam; OpenAI auth'u geçti ama `max_output_tokens` tartışmasına takıldı (aşağıya bakın) |
-| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ F3-9'a bağımlı |
+| **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | ✅ **tamamlandı** — ikisi de gerçek bir çıktı üretti |
+| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ altyapı hazır; gold set ve çok-pasajlı ölçüm kalıyor |
 
 ---
 
@@ -123,7 +123,12 @@ yapılmadan önce** kontrol ediliyor (§21.3).
 
 ---
 
-## Ölçüm hâlâ eksik — Faz 2'yle aynı kalıp
+## Canlı doğrulama — ilerleme kaydı (kronolojik)
+
+> Bu bölüm zaman sırasıyla yazıldı ve öyle bırakıldı — Faz 2'nin
+> `docs/FAZ2-PLAN.md`'sinde olduğu gibi, o anki durumun kaydı sonradan
+> geçersiz olsa bile silinmiyor. Güncel özet: F3-9 tamamlandı (aşağıda,
+> "F3-9 artık tamamlandı" başlığı altında).
 
 Faz 2'nin çıkış kapısı "20 görüntülük altın set etiketlemesi" adımında
 bilinçli olarak atlanmıştı; Faz 3'ün eksiği daha temel: **bu geliştirme
@@ -256,18 +261,31 @@ hata** çıkardı; ikisi de düzeltildi.
    geçerli olmayabilir — bu, benim sessizce çözeceğim bir kod hatası değil,
    kullanıcının bilerek karar vereceği bir maliyet/ürün ödünleşimi.
 
-**Sıradaki adım:** Kullanıcı `.env`'inde **geçici olarak**
-`OPENAI_MAX_OUTPUT_TOKENS`'ı yükseltip (örn. 4096) `npm run cards`'ı tekrar
-denemeli. Eğer bu düzeltirse, kalıcı değer ANA-PLAN sahibiyle birlikte
-kararlaştırılmalı — büyük ihtimalle 700'den yüksek bir sayı, gerçek maliyet
-(`OPENAI_USD_PER_MILLION_*` alanları hâlâ 0) ve `MAX_USD_PER_CARD_GENERATION`
-sınırıyla birlikte.
+**Sonuç — ilk gerçek kart üretildi.** Kullanıcı `.env`'de
+`OPENAI_MAX_OUTPUT_TOKENS=4096` ile tekrar denedi: `npm run cards`
+**başarıyla tamamlandı** — 1 gerçek kart, kalite kapısından `quick_confirm`
+kararı (beklenen: örnek cümle bir doz/kritik değer içeriyor), 1012/571
+girdi/çıktı tokeni. ANA-PLAN sahibiyle görüşülüp varsayılan **4096 olarak
+kalıcı yapıldı** (`config.ts`, `.env.example`, `config.test.ts`) — 700,
+§20.3'ün öngördüğü gibi yalnızca görünür kart içeriğine yeterliydi, modelin
+kendi reasoning token'larını hesaba katmıyordu.
+
+**F3-9 artık tamamlandı:** hem OpenAI kart üretimi hem Gemini el yazısı
+ikinci görüşü gerçek anahtarla, gerçek bir çağrıyla doğrulandı. Kalan iki
+gerçek eksik: F3-8 (iOS entegrasyonu) ve F3-10 (gold pasajlarla kart kalite
+rubriği ölçümü, §25 çıkış kapısı — artık altyapı hazır, yalnız gold set ve
+birden fazla pasajlık ölçüm kalıyor).
+
+**Not — maliyet:** `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+hâlâ 0; gerçek harcama oluyor ama tahmini maliyet alanı bunu yansıtmıyor.
+Gerçek fiyat, sağlayıcının kendi hesap/fiyatlandırma sayfasından
+doldurulmalı (`docs/OPENAI-GEMINI-KURULUM.md`).
 
 ## Test durumu
 
 ```
 $ npm test   (backend/)
-416 passed
+418 passed
 $ python -m pytest evals -q
 435 passed
 ```
