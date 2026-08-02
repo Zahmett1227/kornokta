@@ -446,23 +446,41 @@ Bu değerler ürün kararı değil, ilk kalibrasyon başlangıcıdır.
 
 ### 10.1 Apple Vision
 
+> **Ölçümle daraltıldı (2026-08-02).** Apple Vision **Türkçe'yi desteklemiyor.**
+> Cihazda doğrulandı: `AppleVisionSpike --list-languages` çıktısında Türkçe yok
+> ve 148 satırlık gerçek bir sayfada `ı ş ğ İ` harfleri sıfır kez üretildi
+> (`docs/FAZ0-BULGULAR.md`). Bu bir kalite sorunu değil; fotoğraf, çözünürlük
+> veya eşik değişikliğiyle düzelmez.
+>
+> Sonuç olarak Apple Vision **metnin kaynağı değildir**. Rolü yerleşimle
+> sınırlıdır. Karar: `docs/ADR-002-birincil-ocr-secimi.md`.
+
 Amaç:
 
 - Anlık önizleme
-- Satır kutuları
-- Basılı metin için ilk transkripsiyon
+- Satır kutuları (geometri; işaret tespitinin dayandığı katman)
 - İnternet yokken çekimi tamamlayabilme
 
-Apple Vision nihai doğruluk kaynağı değildir.
+Apple Vision nihai doğruluk kaynağı değildir ve Türkçe metin için ilk
+transkripsiyon kaynağı da değildir.
 
 ### 10.2 Google Enterprise Document OCR
+
+> **Birincil OCR (2026-08-02).** §10.1'deki ölçümden sonra bu katman isteğe
+> bağlı doğruluk katmanı olmaktan çıkıp **Türkçe metnin tek kaynağı** oldu ve
+> Faz 2'den öne alındı. Karar: `docs/ADR-002-birincil-ocr-secimi.md`.
+>
+> Bunun kabul edilen bedelleri: kart üretimi internet gerektirir (tekrar
+> çevrimdışı kalır, §24.5; çekim yine anında biter, §24.1), anahtar proxy'si
+> için backend öne çekilir (§0.7, §7.3), ve §11'deki bütçe sınırları ilk
+> günden anlamlıdır.
 
 Amaç:
 
 - Basılı ve el yazılı metni belge bağlamında okumak
 - Satır/kelime/sembol konumları
 - Perspektif/rotasyon sonrası belge yapısı
-- İkinci bağımsız OCR sonucu
+- **Türkçe transkripsiyonun birincil kaynağı** (§10.1 artık bunu veremiyor)
 
 Tahmini fiyat referansı, 1 Ağustos 2026: 1.000 sayfa başına yaklaşık 1,50 USD. Fiyat ve ürün sürümü config/env üzerinden güncellenebilir olmalıdır.
 

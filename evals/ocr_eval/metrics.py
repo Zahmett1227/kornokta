@@ -178,6 +178,8 @@ def critical_token_error_rate(gold_tokens: Iterable[str], hypothesis: str) -> fl
     tokens = [t for t in gold_tokens if t.strip()]
     if not tokens:
         return 0.0
+    # Not diacritic-folded, matching `_canonical` — a lost diacritic is a
+    # transcription error the gate must report, not forgive (§24.3).
     haystack = normalize_for_compare(hypothesis)
     route_haystack = nfc(hypothesis)
 
@@ -221,6 +223,18 @@ def _canonical(text: str, token_class: str | None = None) -> str:
         from .critical_tokens import canonical_route
 
         return canonical_route(text)
+    # Diacritics are deliberately NOT folded here.
+    #
+    # The *detector* folds, so a critical token is still found in ASCII-fied
+    # Turkish — 'sag' is recognized as laterality rather than vanishing. The
+    # comparison must not: the chosen OCR (Google Document AI) can write
+    # Turkish, so 'sağ' read as 'sag' is a real transcription defect and §24.3
+    # requires it to be reported. Folding here would report it as clean.
+    #
+    # The split is the point. Detection folding closes a safety hole — an
+    # undetected negation cannot be compared at all, so 'kullanılmamalıdır'
+    # read as 'kullanilmamalidir' would look like a passage with no negation
+    # in it. Comparison folding would open a different one.
     return re.sub(r"\s+", "", normalize_for_compare(text))
 
 
@@ -380,16 +394,25 @@ def added_critical_tokens(
     """
     from .critical_tokens import detect_critical_tokens
 
-    def counted(text: str) -> Counter:
+    def key(token) -> tuple[str, str]:
         # Key on (class, canonical value) using the same class-aware
         # canonicalization as the ordered gate. Several patterns accept
-        # optional spacing — '%40' and '% 40', 'q8h' and 'q8 h' — and routes
-        # fold on case, so keying on the raw surface would report an unchanged
-        # value as newly introduced.
-        return Counter(
-            (t.token_class, _canonical(t.text, t.token_class))
-            for t in detect_critical_tokens(text, wordlists)
-        )
+        # optional spacing — '%40' and '% 40', 'q8h' and 'q8 h' — routes fold
+        # on case, and diacritics fold, so keying on the raw surface would
+        # report an unchanged value as newly introduced.
+        return (token.token_class, _canonical(token.text, token.token_class))
 
-    surplus = counted(hypothesis) - counted(gold_text)
-    return sorted(value for _cls, value in surplus.elements())
+    hypothesis_tokens = detect_critical_tokens(hypothesis, wordlists)
+    surplus = (
+        Counter(key(t) for t in hypothesis_tokens)
+        - Counter(key(t) for t in detect_critical_tokens(gold_text, wordlists))
+    )
+
+    # Report the surface **as the hypothesis wrote it**, not the canonical key.
+    # The key is lowercased, space-stripped and diacritic-folded; showing that
+    # would tell the reader the OCR produced 'degildir' when it produced
+    # 'değildir', which is a claim about the output that is simply untrue.
+    surfaces: dict[tuple[str, str], str] = {}
+    for token in hypothesis_tokens:
+        surfaces.setdefault(key(token), token.text)
+    return sorted(surfaces.get(entry, entry[1]) for entry in surplus.elements())

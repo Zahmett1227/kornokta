@@ -27,6 +27,36 @@ def turkish_lower(text: str) -> str:
     return nfc(text).translate(_TR_LOWER_MAP).lower()
 
 
+# Turkish-only letters and their ASCII twins. Strictly one character to one
+# character, so folding never shifts an offset.
+_DIACRITIC_MAP = str.maketrans({
+    "ı": "i", "İ": "I",
+    "ş": "s", "Ş": "S",
+    "ğ": "g", "Ğ": "G",
+    "ç": "c", "Ç": "C",
+    "ö": "o", "Ö": "O",
+    "ü": "u", "Ü": "U",
+})
+
+
+def fold_diacritics(text: str) -> str:
+    """Map Turkish diacritics onto ASCII, preserving length.
+
+    Used **only** for matching and comparison, never to produce text a human
+    reads or that gets stored (§0.5) — the caller slices its surface from the
+    original string.
+
+    This exists because an OCR engine may be unable to emit these letters at
+    all. Apple Vision produced `ı ş ğ İ` exactly zero times across 148 lines of
+    Turkish medical text (docs/FAZ0-BULGULAR.md), turning `görülmemiştir` into
+    `gorulmemistir` and `sağ` into `sag`. Without folding, negation and
+    laterality — two of the sharpest meaning-flip classes in §10.5 — would stop
+    being detected on such output, and the gate would fall silent exactly where
+    it matters most.
+    """
+    return text.translate(_DIACRITIC_MAP)
+
+
 def collapse_whitespace(text: str) -> str:
     return _WHITESPACE_RE.sub(" ", text).strip()
 

@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from .normalize import nfc
+from .normalize import fold_diacritics, nfc
 
 TOKEN_CLASSES = (
     "number_decimal",
@@ -236,6 +236,20 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     )),
 ]
 
+#: The same patterns with their Turkish letters folded to ASCII, for matching
+#: output from an engine that cannot produce those letters. Derived from
+#: `_PATTERNS` rather than written out again, so a new pattern is covered
+#: automatically instead of silently escaping the second pass.
+#:
+#: Folding maps letters to letters and leaves every metacharacter alone, so the
+#: rewritten source stays a valid regex: 'm[ıi]ş' becomes 'm[ii]s' and
+#: '\bdeğil\w*' becomes '\bdegil\w*'. Case is preserved, so '[IVX]' and '\W'
+#: are untouched.
+_FOLDED_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (token_class, re.compile(fold_diacritics(pattern.pattern), pattern.flags))
+    for token_class, pattern in _PATTERNS
+]
+
 
 def _fold_preserving_length(text: str) -> str:
     """Case-fold for matching with a guaranteed 1:1 character mapping.
@@ -249,7 +263,10 @@ def _fold_preserving_length(text: str) -> str:
     for ch in text:
         lowered = ch.translate(_TR_LOWER_MAP_LOCAL).lower()
         out.append(lowered if len(lowered) == 1 else ch.lower()[:1] or ch)
-    return "".join(out)
+    # Diacritics are folded too, so a wordlist entry matches OCR output that
+    # could not represent them ('asetilsalisilik' vs 'asetilsalisilik' with the
+    # dotted/dotless i). The map is 1:1, so offsets are still exact.
+    return fold_diacritics("".join(out))
 
 
 _TR_LOWER_MAP_LOCAL = str.maketrans({"I": "ı", "İ": "i"})
@@ -302,11 +319,31 @@ def detect_critical_tokens(text: str, wordlists: Wordlists | None = None) -> lis
     """
     text = nfc(text)
 
+    # Two passes: the patterns as written over the text as written, then the
+    # diacritic-folded patterns over the diacritic-folded text.
+    #
+    # Folding only the text would not help — the *patterns* are what carry the
+    # diacritics ('değil', 'sağ', 'm[ıi]ş'), so ASCII-fied input like
+    # 'gorulmemistir' or 'sag' matches neither side unless both are folded.
+    # An OCR engine that cannot emit ı/ş/ğ/İ produces exactly that
+    # (docs/FAZ0-BULGULAR.md), and negation and laterality would go undetected.
+    #
+    # Folding is 1:1, so `match.start()`/`end()` still address the original
+    # string, and the reported surface is sliced from `text` — the detector
+    # reports what was written and never rewrites it (§0.5).
+    passes = ((text, _PATTERNS), (fold_diacritics(text), _FOLDED_PATTERNS))
+
     tokens: list[CriticalToken] = []
-    for token_class, pattern in _PATTERNS:
-        for match in pattern.finditer(text):
-            if match.group(0).strip():
-                tokens.append(CriticalToken(match.group(0), token_class, match.start(), match.end()))
+    for haystack, patterns in passes:
+        for token_class, pattern in patterns:
+            for match in pattern.finditer(haystack):
+                if match.group(0).strip():
+                    tokens.append(CriticalToken(
+                        text[match.start():match.end()],
+                        token_class,
+                        match.start(),
+                        match.end(),
+                    ))
 
     if wordlists is not None:
         tokens.extend(_wordlist_matches(text, wordlists.drug_names, "drug_name"))
