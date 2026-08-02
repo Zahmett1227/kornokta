@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_TOKEN_LENGTH } from "../api/auth.js";
+import { MIN_TOKEN_LENGTH } from "../api/_auth.js";
 import {
   ACCEPTED_MIME_TYPES,
   MAX_IMAGE_BYTES,
   decodeImage,
   handleOcrRequest,
   type Dependencies,
-} from "../api/ocr.js";
+} from "../api/_ocr.js";
 import { DocumentAIError } from "../providers/documentAI.js";
 import type { OCRPage, RecognizeOptions, TextRecognizer } from "../providers/ocrTypes.js";
 

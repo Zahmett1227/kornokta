@@ -12,7 +12,8 @@ import { GoogleAuth } from "google-auth-library";
 
 import { loadConfig } from "../config.js";
 import { DocumentAIRecognizer, googleAuthTokenSource } from "../providers/documentAI.js";
-import { handleOcrRequest, type Dependencies } from "./ocr.js";
+import { googleAuthOptions } from "../providers/googleAuth.js";
+import { handleOcrRequest, type Dependencies } from "./_ocr.js";
 
 /**
  * Built once per process, not per request: constructing `GoogleAuth` reads the
@@ -25,9 +26,9 @@ export function buildDependencies(): Dependencies {
   if (cached) return cached;
 
   const config = loadConfig();
-  const auth = new GoogleAuth({
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
+  // Options rather than a literal, because the credential is a file path
+  // locally and inline JSON on a host — and neither form may be logged.
+  const auth = new GoogleAuth(googleAuthOptions());
 
   cached = {
     recognizer: new DocumentAIRecognizer(config.documentAI, googleAuthTokenSource(auth)),

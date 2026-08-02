@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MIN_TOKEN_LENGTH, authorize } from "../api/auth.js";
+import { MIN_TOKEN_LENGTH, authorize } from "../api/_auth.js";
 
 const GOOD_TOKEN = "x".repeat(MIN_TOKEN_LENGTH);
 

@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Çizgi backend — sağlayıcı proxy'si (ANA-PLAN §7)",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

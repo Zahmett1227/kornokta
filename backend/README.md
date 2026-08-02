@@ -109,18 +109,75 @@ alıp tekrar denemeli, kalıcı olanı denememeli (§17).
 | Dosya | İş |
 |---|---|
 | `config.ts` | Tüm ayarlar tek yerde, ortamdan okunur (§0.6). Kimlik bilgisi buraya girmez. |
-| `api/auth.ts` | Cihaz tokenı doğrulaması (§7.3) |
-| `api/ocr.ts` | `POST /api/ocr` — saf handler, sunucudan bağımsız, testte doğrudan çağrılıyor |
-| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`'a dokunan tek dosya |
+| `api/_auth.ts` | Cihaz tokenı doğrulaması (§7.3) |
+| `api/_ocr.ts` | `POST /api/ocr` — saf handler, sunucudan bağımsız, testte doğrudan çağrılıyor |
+| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`'a dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
 | `providers/ocrTypes.ts` | Motorlar arası ortak OCR sonucu biçimi |
 | `providers/documentAI.ts` | Document AI sağlayıcısı |
+| `providers/googleAuth.ts` | Google kimlik bilgisi kaynağı — yerelde dosya, dağıtımda satır içi JSON |
+| `vercel.json` | Tüm yollar `api/index.ts`'e yönlendirilir; diğer `api/` dosyaları rota olarak taranmaz |
 | `scripts/serve.ts` | Yerel geliştirme sunucusu |
 | `scripts/ocr.ts` | Yerel ölçüm aracı (üretim yolu değil) |
 | `scripts/token.ts` | Cihaz tokenı üretici |
 
+`api/_auth.ts` ve `api/_ocr.ts` alt çizgiyle başlıyor: Vercel `api/` altındaki
+her dosyayı ayrı bir uç nokta sanır, ama bu ikisi `index.ts`'in içeri aktardığı
+sıradan modüller — kendi başlarına bir `Request`/`Response` işleyicisi
+dışa vermiyorlar. Alt çizgi, Vercel'e "bu bir rota değil" demenin standart
+yolu. `vercel.json`'daki `rewrites` de aynı nedenle var: telefon
+`/api/ocr`'a, `/health`'e ayrı ayrı gidiyor gibi konuşuyor, ama gerçekte
+hepsi `api/index.ts` içindeki tek işleyiciye düşüyor — kendi yol ayrımını o
+yapıyor.
+
+## Vercel'e dağıtım
+
+Yerelde çalışan aynı `handler`, bir sunucusuz platformda da çalışır (§7.2).
+Fark, kimlik bilgisinin nereden geldiği: laptopta bir dosya yolu var,
+dağıtılan sunucuda o dosya yok — o yüzden orada anahtar bir ortam
+değişkenine JSON olarak gömülür.
+
+1. **Proje kökü.** Vercel projesinin "Root Directory" ayarını `backend`
+   yap — depo `ios/` ve `backend/`'i birlikte tutuyor, Vercel yalnız
+   ikincisini görmeli.
+2. **Ortam değişkenleri.** Vercel proje ayarlarında (`.env` dosyası olarak
+   değil — o depo dışında kalıyor):
+   - `GOOGLE_PROJECT_ID`, `DOCUMENTAI_LOCATION`, `DOCUMENTAI_PROCESSOR_ID`,
+     `DOCUMENTAI_LANGUAGE_HINTS` — `.env.example`'daki değerlerin aynısı, gizli değil.
+   - `DEVICE_TOKEN` — `npm run token` çıktısı.
+   - `GOOGLE_CREDENTIALS_JSON` — indirdiğin servis hesabı dosyasının **tüm
+     içeriği**, tek satır JSON olarak. `GOOGLE_APPLICATION_CREDENTIALS`
+     burada **kullanılmaz**: o bir dosya yolu ister, dağıtılan sunucuda o
+     dosya yok.
+     ```bash
+     # Dosyayı tek satıra çevirip panoya kopyalar (macOS):
+     cat ~/Desktop/kornokta-xxxxx.json | jq -c . | pbcopy
+     ```
+     `jq` yoksa: `python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))))" dosya.json`
+3. **Dağıt.** `backend/` içinden `vercel deploy` (veya Vercel'in GitHub
+   entegrasyonu, push'ta otomatik dağıtır).
+4. **Doğrula.** Yayındaki adresle:
+   ```bash
+   curl https://<proje>.vercel.app/health
+   curl -X POST https://<proje>.vercel.app/api/ocr \
+     -H "Authorization: Bearer $DEVICE_TOKEN" \
+     -H 'Content-Type: application/json' \
+     -d "{\"jobId\":\"deneme\",\"mimeType\":\"image/jpeg\",\"imageBase64\":\"$(base64 -i bir-sayfa.jpg)\"}"
+   ```
+   `/health` 200 dönüyor ama `/api/ocr` 404 veriyorsa, `vercel.json`
+   dağıtıma dahil olmamış demektir — dosyanın `backend/` kökünde olduğunu
+   kontrol et.
+
+Bu adımlar **doğrulanmadı** — burada gerçek bir Vercel hesabı yok. `vercel.json`
+ve dosya adlandırması Vercel'in belgelenen kurallarına göre yazıldı
+(alt çizgili dosyalar rota sayılmaz, `functions`/`rewrites` biçimi), ama ilk
+gerçek dağıtım bunun için sınama sayılmalı. Bir adım tutmazsa hata mesajını
+buraya yapıştır.
+
 ## Henüz yok
 
-- Vercel'e dağıtım (§7.2) — şu an yalnız yerelde çalışıyor
 - Kritik token motoru ve OCR uzlaştırma (§10.3, §10.5) — Faz 2'nin sonraki adımı
 - Maliyet kaydı ve bütçe sınırı uygulaması (§11) — sadece çalıştırma öncesi tahmin var
 - Kart üretimi sağlayıcısı (§13) — Faz 3
+- Fotoğrafların işlem biter bitmez silinmesi (§7.3) — şu an istek belleği
+  ötesinde hiçbir yerde tutulmuyor zaten (görüntü asla diske yazılmıyor),
+  ama bu davranış henüz ayrı bir testle güvence altına alınmadı

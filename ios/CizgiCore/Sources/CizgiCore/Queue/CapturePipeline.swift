@@ -347,11 +347,17 @@ public struct CapturePipeline: Sendable {
         recognized: RecognizedPage,
         selected: [String]
     ) async throws -> (passage: String, reconciliation: RemoteReconciliation?) {
-        let imageData = try Data(contentsOf: imageURL)
+        // Downscaled before sending: a full-resolution scan base64s to more
+        // than a serverless host will accept, and the platform rejects it
+        // before our own endpoint can say why (see `UploadImageEncoder`).
+        let upload = try UploadImageEncoder.prepare(
+            contentsOf: imageURL,
+            mimeType: Self.mimeType(for: imageURL)
+        )
         let remote = try await backend.recognize(
             jobId: jobId,
-            imageData: imageData,
-            mimeType: Self.mimeType(for: imageURL),
+            imageData: upload.data,
+            mimeType: upload.mimeType,
             localLines: recognized.lines.map(LocalLine.init)
         )
 

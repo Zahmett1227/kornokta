@@ -78,6 +78,34 @@ birden fazla yerde, yalnız biri güncel" kalıbının örneği:
 Birincisini ortak kapı vakaları, ikincisini kendi tasarım incelemem,
 üçüncüsünü ortak dedektör vakaları yakaladı.
 
+Swift ilk kez derlendiğinde (elle inceleme, derleyici olmadığı için) beş
+tane daha çıktı, hepsi §0's "küçük adım, ayrı doğrulama" ilkesinin aynı
+ihlali — tek yerde değişip diğerini güncellemeyi unutmak:
+
+4. **Uzlaştırma gerekçesi bulut adımından sonraki dönüşlerin çoğunda
+   kayboluyordu.** En çok görüleni: üretici bir kartı onaya düşürdüğünde
+   `.confirmationRequired`'a giden dönüş `reconciliation`'ı taşımıyordu —
+   ekran "neden soruluyor" bölümünü oradan okuyor, §19.2'nin yasakladığı
+   gerekçesiz onay ekranı ortaya çıkıyordu.
+5. **`MarkerConfig.hueRanges` derlenmiyordu.** İç içe iki kapanıştan geçen
+   etiketli demet elemanı, etiketsiz demet dizisine dönüşmüyor.
+6. **Tam çözünürlük bir sayfa base64'lendiğinde sunucusuz platformun kabul
+   ettiği gövde boyutunu aşıyordu** (Vercel ~4,5 MB) — telefon kendi
+   uç noktasının mesajını değil, platformun opak reddini görecekti.
+   `UploadImageEncoder` yükleme öncesi 2600 px uzun kenara indiriyor.
+7. **`GOOGLE_APPLICATION_CREDENTIALS` bir dosya yolu ister, dağıtılan
+   sunucuda o dosya yok.** `providers/googleAuth.ts` ikinci bir yol açtı:
+   `GOOGLE_CREDENTIALS_JSON` ortam değişkeninde satır içi JSON.
+8. **`api/` altındaki her dosyayı Vercel ayrı bir rota sanır** — `_ocr.ts`
+   ve `_auth.ts` kendi başlarına bir işleyici dışa vermediği için dağıtım
+   derlemesi patlardı. Alt çizgi öneki ve `vercel.json`'daki `rewrites`
+   çözdü; ayrıntı `backend/README.md`.
+
+Beşini de gerçek testler yakaladı: 5, 6, 7, 8 birer regresyon testiyle
+geldi; 4'ü ise onay ekranını üreten her çıkış yolunu tek tek sınayan yeni
+bir testle — mevcut testler yalnız "kabul edilen sayfa" yolunu sınıyordu,
+üretim hatası yolunu değil.
+
 ## Ölçüm hâlâ eksik
 
 Şu ana kadarki her şey **bir** fotoğrafla doğrulandı. Faz 2 çıkış kapısı için
@@ -88,3 +116,9 @@ Birincisini ortak kapı vakaları, ikincisini kendi tasarım incelemem,
 - Apple Vision satır kutularının geometrik olarak güvenilir olup olmadığı
   (metni yanlış ama kutuları doğru mu?) — F2-6 buna dayanıyor
 - Google'ın Türkçe el yazısındaki başarısı (§10.6)
+- Vercel'e dağıtımın gerçekten çalıştığı — yapılandırma yazıldı
+  (`backend/vercel.json`, `docs/GOOGLE-CLOUD-KURULUM.md`'ye eklenecek
+  adımlar) ama gerçek bir Vercel hesabıyla hiç denenmedi; ilk dağıtım
+  hem ilk doğrulama olacak
+- `swift test`'in gerçekten geçtiği — Swift ilk kez bir derleyicide
+  çalışacak; bu döngüdeki gözden geçirme derleyicisiz yapıldı

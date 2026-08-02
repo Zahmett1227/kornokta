@@ -13,7 +13,7 @@
  *   * it holds the uploaded bytes only for the duration of the call (§7.3)
  */
 
-import { authorize } from "./auth.js";
+import { authorize } from "./_auth.js";
 import type { DocumentAIConfig } from "../config.js";
 import { DocumentAIError } from "../providers/documentAI.js";
 import type { OCRLine, OCRPage, TextRecognizer } from "../providers/ocrTypes.js";

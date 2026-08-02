@@ -128,14 +128,16 @@ export function googleAuthTokenSource(auth: GoogleAuth): TokenSource {
         // retries fixes, and the caller needs to be told which one it is.
         throw new DocumentAIError(
           `Google kimlik doğrulaması başarısız: ${(error as Error).message}. ` +
-            "GOOGLE_APPLICATION_CREDENTIALS doğru dosyayı gösteriyor mu?",
+            "Yerelde GOOGLE_APPLICATION_CREDENTIALS doğru dosyayı gösteriyor mu, " +
+            "sunucuda GOOGLE_CREDENTIALS_JSON tanımlı mı?",
           undefined,
           false,
         );
       }
       if (!token) {
         throw new DocumentAIError(
-          "Google erişim jetonu alınamadı. GOOGLE_APPLICATION_CREDENTIALS doğru mu?",
+          "Google erişim jetonu alınamadı. Kimlik bilgisi doğru mu " +
+            "(GOOGLE_APPLICATION_CREDENTIALS ya da GOOGLE_CREDENTIALS_JSON)?",
           undefined,
           false,
         );
