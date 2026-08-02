@@ -4,6 +4,14 @@
 **Durum:** Yazıldı, **cihazda denenmedi**
 **Hedef (ANA-PLAN §25):** Uygulama çevrimdışı fotoğraf alıp sahte kart oluşturabilmeli ve tekrar edebilmelidir.
 
+> **Tarihsel kayıt — güncel değil.** Bu belge Faz 1'in yazıldığı ana ait bir
+> anlık görüntü: Swift henüz hiç derlenmemişti, Faz 2 henüz yoktu. İkisi de
+> artık değişti — Swift gerçek bir Mac'te 114/114 test geçiyor, Faz 2
+> (bulut OCR, işaret tespiti) tamamlandı. Güncel durum için `README.md`,
+> `CLAUDE.md` ve `docs/FAZ2-PLAN.md`'ye bakın. Aşağısı olduğu gibi bırakıldı —
+> o anki inceleme ve bulgular hâlâ doğru, yalnız "yarın yapılacaklar" ve
+> "cihazda denenmedi" ifadeleri artık geçerli değil.
+
 ---
 
 ## Bu faz bir varsayım üzerine yazıldı

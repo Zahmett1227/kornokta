@@ -16,7 +16,11 @@ Model kimlikleri merkezi config'te tutulur (§11.3); kod içine gömülmez. Üre
 
 ## Değerlendirme durumu
 
-Faz 0'da GPT-5.6 Sol / Gemini / Claude adayları aynı altın set üzerinde §27'deki 8 boyutta karşılaştırılacak. Sonuçlar bu dosyaya işlenecek. Henüz çalıştırılmadı — altın set toplanıyor (bkz. [GOLD-SET-GUIDE](GOLD-SET-GUIDE.md)).
+OCR tarafı ölçüldü: Apple Vision Türkçe desteklemiyor (`docs/FAZ0-BULGULAR.md`),
+Google Document AI birincil OCR olarak seçildi ve gerçek bir sayfayla uçtan
+uca doğrulandı (`docs/FAZ2-PLAN.md`). Kart üretimi tarafı (GPT-5.6 Sol /
+Gemini / Claude adaylarının §27'deki 8 boyutta karşılaştırılması) Faz 3
+kapsamında, henüz başlamadı.
 
 ## Bilinen sınırlar
 

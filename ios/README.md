@@ -1,23 +1,39 @@
-# Çizgi — iOS (Faz 1)
+# Çizgi — iOS (Faz 1 + Faz 2 tamam)
 
-Faz 1 hedefi (ANA-PLAN §25): **uygulama çevrimdışı fotoğraf alıp sahte kart oluşturabilmeli ve tekrar edebilmelidir.** Bulut OCR, gerçek kart üretimi ve FSRS bu fazda yok.
+Faz 1 hedefi (ANA-PLAN §25) tamam: uygulama çevrimdışı fotoğraf alıp kart
+oluşturabiliyor ve tekrar edebiliyor. Faz 2 de tamam: cihaz üstü işaret
+tespiti (fosforlu/alt çizgi), bulut OCR (backend üzerinden Google Document
+AI) ve iki motorun uzlaştırması çalışıyor. Kart üretimi hâlâ sahte
+(gerçek üretim Faz 3'te), tekrar aralıkları hâlâ geçici (FSRS Faz 4'te).
 
-> ⚠️ **Varsayım:** Bu faz, Faz 0 çıkış kapılarının geçildiği **varsayılarak** yazıldı. Apple Vision ölçümü (`docs/MAC-ADIMLARI.md`) henüz yapılmadı. Ölçüm beklenenden kötü çıkarsa etkilenecek yer `CizgiCore/Sources/CizgiCore/OCR/` ve onay ekranıdır; veri modeli ve kuyruk etkilenmez.
+`swift test` gerçek bir Mac'te **114/114** geçiyor (2026-08-02) — kod elle
+incelendi ve ayrıca gerçek derleyicide doğrulandı. Bulunan hatalar ve
+düzeltmeleri `docs/FAZ2-PLAN.md`'de.
+
+## Apple Vision Türkçe okumuyor — bilerek
+
+`docs/ADR-002-birincil-ocr-secimi.md`: Apple Vision Türkçe metin tanımayı
+desteklemiyor (ölçüldü — `ı ş ğ İ` sıfır kez). Bu yüzden Vision'ın metni
+hiçbir zaman karta gitmiyor; yalnız canlı önizleme ve işaret tespitinin
+çalıştığı satır geometrisi için kullanılıyor. Gerçek metin backend
+üzerinden Google Document AI'dan geliyor (`CizgiCore/Backend/BackendClient.swift`).
 
 ## Yapı
 
 ```
 ios/
 ├── CizgiCore/          Swift paketi — mantık, Xcode'suz test edilebilir
-│   ├── Models/         SwiftData modelleri (§16)
-│   ├── Queue/          Durum makinesi ve işlem hattı (§17)
-│   ├── OCR/            TextRecognizing + Vision uygulaması (§10.1)
-│   ├── Providers/      Kart üretimi protokolü + sahte sağlayıcı
-│   ├── Scheduling/     Tekrar planlama (FSRS Faz 4'te gelecek)
-│   └── Storage/        Görüntü deposu (§8.3)
+│   ├── Models/             SwiftData modelleri (§16)
+│   ├── Queue/              Durum makinesi ve işlem hattı (§17)
+│   ├── OCR/                TextRecognizing + Vision uygulaması — önizleme/geometri (§10.1)
+│   ├── Backend/             BackendClient, DeviceTokenStore (Keychain), UploadImageEncoder
+│   ├── MarkerDetection/     İşaret tespiti — evals/spikes/marker_detection'ın Swift portu (§9)
+│   ├── Providers/          Kart üretimi protokolü + sahte sağlayıcı
+│   ├── Scheduling/         Tekrar planlama (FSRS Faz 4'te gelecek)
+│   └── Storage/            Görüntü deposu (§8.3)
 ├── App/                SwiftUI uygulaması
-│   ├── Features/Capture, ProcessingQueue, Confirmation, Review, Library, Settings
-├── spikes/AppleVisionSpike/   Faz 0 ölçüm aracı
+│   └── Features/Capture, ProcessingQueue, Confirmation, Review, Library, Settings
+├── spikes/AppleVisionSpike/   Ölçüm aracı — --input bir klasörü özyinelemeli tarar
 └── project.yml         XcodeGen spec
 ```
 
@@ -28,7 +44,10 @@ cd ios/CizgiCore
 swift test
 ```
 
-Bu, durum makinesi, işlem hattı, planlayıcı ve görüntü deposunu kapsar. Kamera ve SwiftUI dışarıda kalır — onlar cihazda denenir.
+114 test: durum makinesi, işlem hattı, planlayıcı, görüntü deposu, backend
+istemcisi, işaret tespiti (paylaşılan Python vakalarına karşı sabitlenmiş),
+yükleme sıkıştırma. Kamera ve SwiftUI dışarıda kalır — onlar cihazda
+denenir.
 
 ## Uygulamayı çalıştır
 
@@ -77,16 +96,23 @@ Cihazda sırayla:
 - [ ] Uygulamayı tamamen kapat, tekrar aç → kartlar ve kuyruk duruyor (§24.1)
 - [ ] Bilgilerim'de kart görünüyor, askıya alma çalışıyor
 
-Hepsi geçerse Faz 1 kapısı geçilmiş sayılır.
+Hepsi geçerse Faz 1 kapısı geçilmiş sayılır. Faz 2 için Ayarlar'a backend
+URL'i ve cihaz tokenı gir (`backend/README.md`) — girilmezse uygulama yerel
+moda düşer, işaret tespiti ve satır seçimi çalışır ama pasaj Vision'ın
+(Türkçe okumayan) metniyle dolar; bu bilerek böyle, sessizce yanlış metin
+göndermektense hiç göndermemeyi seçiyor.
 
-## Bu fazda bilinçli olarak yok
+## Bilinçli olarak henüz yok
 
 | Eksik | Nerede |
 |---|---|
-| Cihaz üstü işaret tespiti | Faz 2 — prototip `evals/spikes/marker_detection/` |
-| Google Document AI | Faz 2 |
-| Gerçek kart üretimi (GPT-5.6 Sol) | Faz 3 |
+| Gerçek kart üretimi (yapay zeka) | Faz 3 |
 | FSRS | Faz 4 — şu an `PlaceholderScheduler` |
 | Bildirimler, dışa aktarma, maliyet limiti | Faz 4/5 |
 
-İşaret tespiti olmadığı için **her çekim onay ekranına düşer** ve pasajı elle seçersin. Bu bilinçli: §19.3, işaret algılanmayan ve elle seçilmeyen bir çekimin karta dönüşmesini yasaklıyor.
+İşaret tespiti kararsız kaldığında (`quick_confirm`) ya da hiçbir şey
+bulamadığında (`user_selection`) çekim onay ekranına düşer, pasajı elle
+seçersin. Bu bilinçli: §19.3, işaret algılanmayan ve elle seçilmeyen bir
+çekimin karta dönüşmesini yasaklıyor. Eşikler
+(`evals/spikes/marker_detection/config.json`) "ilk kalibrasyon başlangıcı" —
+gerçek sayfalarda ne kadar isabetli olduğu henüz ölçülmedi (`docs/FAZ2-PLAN.md`).

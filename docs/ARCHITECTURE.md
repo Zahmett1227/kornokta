@@ -1,22 +1,46 @@
 # Mimari
 
-> Taslak — ayrıntılar için ana kaynak: [ANA-PLAN](../Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md) §7 (teknik mimari), §16 (veri modeli), §17 (iş kuyruğu ve durum makinesi).
+> Ayrıntılar için ana kaynak: [ANA-PLAN](../Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md) §7 (teknik mimari), §16 (veri modeli), §17 (iş kuyruğu ve durum makinesi).
 
 ## Bileşenler
 
-- **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme, işaret tespiti, kuyruk, FSRS tekrar. Faz 1'de başlar.
-- **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar, Google Document AI / OpenAI / Gemini çağrılarını orkestre eder, §14 kanonik şemasını doğrular, maliyet kaydeder. Faz 3'te başlar. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır.
-- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları. Faz 0'ın merkezi; sonraki fazlarda regresyon kapısı olarak kalır.
+- **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, tekrar (FSRS Faz 4'te). Faz 1'de başladı, Faz 2'de tamamlandı.
+- **Backend** (`backend/`): Vercel Functions. Google kimlik bilgisini saklar, Document AI çağrısını yapar, iki motorun okumasını uzlaştırır, kritik token karşılaştırması yapar. Faz 2'de başladı, dağıtık ve uçtan uca doğrulandı. Faz 3'te OpenAI/Gemini kart üretimi eklenecek. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır.
+- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları. Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (431 Python testi).
+
+## Apple Vision yalnız önizleme ve geometri için — metin için değil
+
+`docs/ADR-002-birincil-ocr-secimi.md`: Apple Vision Türkçe metin tanımayı
+**desteklemiyor** (`ı ş ğ İ` sıfır kez üretiyor, ölçüldü). Bu yüzden:
+
+- Vision'ın **metni** hiçbir zaman karta gitmiyor — yalnız canlı önizleme ve
+  işaret tespitinin çalıştığı satır kutuları için kullanılıyor.
+- Google Document AI **birincil ve tek metin kaynağı**.
+- İki motorun satırları farklı numaralandığı için (`line_00` her ikisinde de
+  farklı fiziksel satırı gösterebilir) eşleştirme id ile değil, **geometrik
+  örtüşmeyle (IoU)** yapılıyor — hem backend'de hem iOS'ta aynı eşik (0.3).
 
 ## İşlem hattı (özet)
 
 ```text
-kamera/fotoğraf → yerel sayfa düzeltme → Apple Vision OCR → işaret tespiti
-  → Google Document AI OCR → uzlaştırma → [onay | kart üretimi (GPT-5.6 Sol)]
-  → kalite doğrulama → [onay | hazır] → SwiftData + FSRS
+kamera/fotoğraf → yerel sayfa düzeltme → Apple Vision (önizleme + satır geometrisi)
+  → cihaz üstü işaret tespiti → Google Document AI OCR (backend) → uzlaştırma
+  → [onay | kart üretimi (Faz 3)] → kalite doğrulama → [onay | hazır] → SwiftData + FSRS
 ```
 
 Durum makinesi ve hata dalları: ANA-PLAN §17. Tüm adımlar idempotent; tekrar planlama LLM'siz, deterministik kodda (§0.8, P6).
+
+## Aynı davranış iki yerde — anti-drift disiplini
+
+Kritik token motoru hem Python'da (referans, `evals/ocr_eval/critical_tokens.py`)
+hem TypeScript'te (backend, üretimde çalışan) var. İşaret tespiti hem Python'da
+(`evals/spikes/marker_detection/`) hem Swift'te (`ios/CizgiCore/Sources/CizgiCore/MarkerDetection/`)
+var. İkisinin ayrışmaması için:
+
+- Regex kalıpları Python'dan üretilip `backend/providers/criticalTokenPatterns.json`'a yazılıyor.
+- Davranış, Python'dan üretilen paylaşılan vaka dosyalarıyla (`evals/shared/*.json`) her iki dilde de sabitleniyor.
+- Eşikler (`evals/spikes/marker_detection/config.json`) byte-birebir aynı kopya olarak `ios/CizgiCore/Sources/CizgiCore/Resources/`'a taşınıyor; bir Python testi ayrışırsa kırılıyor.
+- Her üretici `--check` modunda çalışıp CI'da doğrulanıyor.
 
 ## Kanonik sözleşmeler
 

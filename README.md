@@ -1,66 +1,82 @@
 # Çizgi — Kişisel Tıbbi Hafıza Uygulaması
 
-Kitapta işaretlenen (altı çizili / fosforlu) tıbbi bilgiyi fotoğraftan güvenli biçimde yakalayan, el yazısını gerektiğinde çoklu doğrulamadan geçiren, kaynak-sadık öğrenme kartlarına dönüştüren ve bilgiyi FSRS ile unutmadan önce yeniden soran **kişisel** iOS uygulaması.
+Kitapta işaretlenen (altı çizili / fosforlu) tıbbi bilgiyi fotoğraftan güvenli
+biçimde yakalayan, kaynak-sadık öğrenme kartlarına dönüştüren ve bilgiyi FSRS
+ile unutmadan önce yeniden soran **kişisel** iOS uygulaması.
 
-Ana şartname: [`Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md`](Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md) — tüm ürün, mimari ve kalite kararlarının kaynağıdır.
+Ana şartname:
+[`Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md`](Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md)
+— tüm ürün, mimari ve kalite kararlarının kaynağıdır.
 
-## Mevcut durum: Faz 0 — Risk azaltma
+**Yeni bir oturuma (Claude Code veya başka biri) başlıyorsan önce
+[`CLAUDE.md`](CLAUDE.md)'yi oku** — güncel durum, açık kararlar ve sıradaki
+adım orada.
 
-Ana plan §25 ve §32 uyarınca önce alt çizgi / OCR / el yazısı riski çözülür; ürün ekranlarına henüz yatırım yapılmaz. Bu repoda şu an:
+## Mevcut durum (2026-08-02)
 
-- **Altın test seti manifest şeması** ve doğrulayıcısı (`evals/`)
-- **OCR/işaret değerlendirme metrikleri** (CER, WER, kritik token hata oranı, seçim P/R/F1)
-- **Kritik token detektörü** (ana plan §10.5 sınıfları)
-- **İşaret algılama spike'ı** (fosforlu/alt çizgi, OpenCV; sentetik görüntülerle test edilebilir)
-- **Sağlayıcı karşılaştırma iskeleti** (ana plan §27; anahtarlar yalnız env üzerinden)
-- **Apple Vision spike'ı** (`ios/spikes/AppleVisionSpike/`) ve çıktısını puanlayan `vision_report`
-- **Faz 0 çalışma planı**: [`docs/FAZ0-PLAN.md`](docs/FAZ0-PLAN.md)
-- **Durum özeti**: [`docs/FAZ0-STATUS.md`](docs/FAZ0-STATUS.md)
-- **Mac'te sıradaki adımlar**: [`docs/MAC-ADIMLARI.md`](docs/MAC-ADIMLARI.md)
-- **Altın set çekim/etiketleme rehberi**: [`docs/GOLD-SET-GUIDE.md`](docs/GOLD-SET-GUIDE.md)
-- **Türkçe morfoloji kararı**: [`docs/ADR-001-hibrit-turkce-morfoloji.md`](docs/ADR-001-hibrit-turkce-morfoloji.md)
+| Faz | Kapsam | Durum |
+|---|---|---|
+| **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
+| **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
+| **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
+| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs) | Başlamadı |
+| **Faz 4** | FSRS tekrar motoru | Başlamadı |
+| **Faz 5** | Sertleştirme | Başlamadı |
 
-iOS (`ios/`) ve backend (`backend/`) dizinleri şimdilik iskelettir; Faz 0 çıkış kapıları geçilmeden doldurulmayacaktır.
+Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulandı:
+gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
+(`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te 114/114 test geçiyor.
+
+Ayrıntılı özet: [`docs/FAZ2-PLAN.md`](docs/FAZ2-PLAN.md).
 
 ## Repo yapısı
 
 Ana plan §26'daki yapı izlenir:
 
 ```text
-├── ios/          # SwiftUI uygulaması (Faz 1+)
-├── backend/      # Vercel Functions, sağlayıcı orkestrasyonu (Faz 3+)
-│   └── schemas/  # Kanonik LLM çıktı sözleşmesi (§14) — şimdiden tanımlı
-├── evals/        # Altın test seti, metrikler, spike'lar (Faz 0 — aktif)
-│   ├── gold-manifest.json         # Altın set manifesti (başlangıç)
+├── ios/          # SwiftUI uygulaması — CizgiCore (mantık) + App (arayüz)
+├── backend/      # Vercel Functions — Google Document AI proxy'si, dağıtık
+├── evals/        # Altın test seti, OCR/işaret metrikleri, spike'lar
+│   ├── gold-manifest.json         # Altın set manifesti
 │   ├── gold-manifest.schema.json  # Manifest JSON şeması
 │   ├── fixtures/                  # Gerçek sayfa görselleri — YEREL, commit edilmez
-│   ├── ocr_eval/                  # Metrikler, normalizasyon, kritik token, doğrulayıcı
-│   ├── card-quality/              # Kart kalite rubriği (§23.3)
-│   ├── spikes/                    # Faz 0 risk azaltma prototipleri
-│   └── tests/                     # pytest birim testleri
-└── docs/         # Mimari, gizlilik, Faz 0 planı, rehberler
+│   ├── ocr_eval/                  # Metrikler, kritik token, doğrulayıcı, raporlar
+│   ├── spikes/                    # marker_detection (işaret tespiti referansı)
+│   └── tests/                     # pytest birim testleri (431 test)
+└── docs/         # Mimari, gizlilik, faz planları, kurulum rehberleri
 ```
 
 ## Değerlendirme araçlarını çalıştırma
 
-Gereksinimler: Python 3.11+
-
 ```bash
 pip install -r evals/requirements.txt
-
-# Tüm birim testleri
-python -m pytest evals
-
-# Manifesti şemaya ve tutarlılık kurallarına karşı doğrula
+python -m pytest evals                                    # 431 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
-
-# İşaret algılama spike'ını sentetik görüntüyle dene
-python -m evals.spikes.marker_detection.run --demo
 ```
+
+## iOS mantığını test etme
+
+```bash
+cd ios/CizgiCore && swift test                             # 114 test
+```
+
+## Backend'i çalıştırma
+
+```bash
+cd backend && npm install && npm test                      # 313 test
+npm run serve                                               # yerel sunucu, 127.0.0.1:8787
+```
+
+Ayrıntı ve Vercel'e dağıtım: [`backend/README.md`](backend/README.md).
 
 ## Güvenlik kuralları (bağlayıcı — ana plan §0, §7.3, §24.6)
 
-- **API anahtarı repoya veya iOS uygulamasına asla konmaz.** Anahtarlar yalnız backend ortam değişkenlerinde yaşar; spike betikleri anahtarları sadece env'den okur.
-- `evals/fixtures/` içine **telifli kitap sayfası commit edilmez**; gerçek görseller yerelde tutulur (`.gitignore` ile korunur).
-- Loglarda görüntü içeriği veya tam OCR metni saklanmaz.
+- **API anahtarı repoya veya iOS uygulamasına asla konmaz.** Anahtarlar
+  yalnız backend ortam değişkenlerinde (Vercel env / yerel `.env`, gitignore'lu)
+  yaşar.
+- `evals/fixtures/` içine **telifli kitap sayfası commit edilmez**; gerçek
+  görseller yerelde tutulur (`.gitignore` ile korunur).
+- Sunucu loglarında görüntü içeriği veya tam OCR metni saklanmaz.
 - Hasta verisi hiçbir akışta işlenmez; içerik yalnız kişisel eğitim içindir.
+- Cihaz tokenı (`DEVICE_TOKEN`) yalnız iki yerde durur: backend ortam
+  değişkeni ve telefonun Keychain'i. Üçüncü kopya yok.
