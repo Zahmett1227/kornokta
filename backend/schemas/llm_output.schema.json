@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "requestId", "transcription", "knowledgeUnits", "cards", "quality", "usage"],
   "properties": {
-    "schemaVersion": { "const": "1.0" },
+    "schemaVersion": { "type": "string", "const": "1.0" },
     "requestId": { "type": "string", "minLength": 1 },
     "transcription": {
       "type": "object",
@@ -65,7 +65,7 @@
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "knowledgeUnitId": { "type": "string", "minLength": 1 },
-          "type": { "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
+          "type": { "type": "string", "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
           "front": { "type": "string", "minLength": 1 },
           "back": { "type": "string", "minLength": 1 },
           "explanation": { "type": "string" },
@@ -108,6 +108,7 @@
   },
   "$defs": {
     "riskFlag": {
+      "type": "string",
       "enum": [
         "ocr_disagreement",
         "handwriting_uncertain",

@@ -201,6 +201,36 @@ gibi) mantıklı.
 `/api/ocr` ile paylaşılıyor. Görüntü + reasoning içeren bir kart üretimi
 çağrısı Document AI'dan daha uzun sürebilir; canlı ölçümde ilk bakılacak yer.
 
+## Güncelleme — gerçek anahtarla ilk iki çağrı (kullanıcının Mac'inde)
+
+Kullanıcı anahtarları kendi yerel `.env`'ine girip `npm run cards` ve
+`npm run handwriting`'i çalıştırdı. İkisi de kimlik doğrulamayı geçti (model
+adlarının ikisi de — `gpt-5.6-sol`, `gemini-3.5-flash` — gerçek API'lerde
+tanınıyor, aksi halde 404/"model not found" alınırdı) ve **iki ayrı gerçek
+hata** çıkardı; ikisi de düzeltildi.
+
+1. **OpenAI: `400 Invalid schema for response_format 'cizgi_llm_output':
+   In context=('properties', 'schemaVersion'), schema must have a 'type'
+   key.`** Düz JSON Schema `const`/`enum` yanında `type` şart koşmaz — ajv
+   bunu sorunsuz kabul ediyordu — ama OpenAI'ın Structured Outputs'u daha
+   kısıtlı bir alt küme kullanıyor ve şart koşuyor. `llm_output.schema.json`
+   içinde üç yer etkileniyordu: `schemaVersion` (`const`), `cards.items.type`
+   (`enum`), `$defs.riskFlag` (`enum`) — üçüne de `"type": "string"` eklendi.
+   Regresyon: `openai.test.ts`, üretilen model şemasını özyinelemeli gezip
+   `type` içermeyen bir `const`/`enum` düğümü kalmadığını doğruluyor.
+2. **Gemini: `MAX_TOKENS`** — `GEMINI_MAX_OUTPUT_TOKENS=700`'de model hiç
+   çıktı üretmeden token sınırına çarptı. Görünür yanıt (§15.3: metin + birkaç
+   belirsiz span) bu kadar büyük olamayacağına göre, model bütçenin bir
+   kısmını kendi iç muhakemesine harcıyor olmalı. Varsayılan `4096`'ya
+   yükseltildi (`config.ts`, `.env.example`); **zaten var olan bir `.env`
+   dosyasındaki `GEMINI_MAX_OUTPUT_TOKENS=700` satırı elle güncellenmeli**,
+   kod varsayılanının değişmesi onu geçersiz kılmaz.
+
+**Hâlâ doğrulanmayı bekleyen:** kullanıcının bu iki düzeltmeyi çekip
+(`git pull`) tekrar çalıştırması. Başarılı olursa gerçek bir kart çıktısı ve
+gerçek bir el yazısı ikinci görüşü ilk kez görülmüş olacak — gold pasaj
+ölçümüne (F3-10) geçmeden önceki son adım.
+
 ## Test durumu
 
 ```

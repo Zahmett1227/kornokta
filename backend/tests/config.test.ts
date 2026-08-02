@@ -115,7 +115,10 @@ describe("loadConfig", () => {
 
   it("defaults the Gemini handwriting fallback settings", () => {
     expect(loadConfig().gemini.model).toBe("gemini-3.5-flash");
-    expect(loadConfig().gemini.maxOutputTokens).toBe(700);
+    // Not 700: a live call at 700 hit MAX_TOKENS before producing any output
+    // (the model spends part of its budget on internal reasoning), so the
+    // default has headroom above what the visible §15.3 payload needs.
+    expect(loadConfig().gemini.maxOutputTokens).toBe(4096);
   });
 
   it("defaults per-token cost to 0 rather than a guessed price", () => {

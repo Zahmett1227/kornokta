@@ -115,6 +115,31 @@ describe("buildModelResponseSchema", () => {
     const second = buildModelResponseSchema(4) as { properties: { cards: { maxItems?: number } } };
     expect(second.properties.cards.maxItems).toBe(4);
   });
+
+  it("never leaves a const/enum node without an explicit 'type' — OpenAI's Structured Outputs rejects that", () => {
+    // Confirmed with a real (keyed) call: OpenAI returned
+    // `400 Invalid schema for response_format ...: schema must have a 'type'
+    // key` for `schemaVersion: { const: "1.0" }`. Plain JSON Schema does not
+    // require `type` alongside `const`/`enum` — ajv accepted it happily —
+    // but OpenAI's stricter subset does, so this has to be checked
+    // separately from `validateLlmOutput`.
+    function assertNoBareConstOrEnum(node: unknown, path: string): void {
+      if (typeof node !== "object" || node === null) return;
+      const obj = node as Record<string, unknown>;
+      if (("const" in obj || "enum" in obj) && !("type" in obj)) {
+        throw new Error(`${path}: 'const'/'enum' node without a 'type' key`);
+      }
+      for (const [key, value] of Object.entries(obj)) {
+        if (Array.isArray(value)) {
+          value.forEach((item, index) => assertNoBareConstOrEnum(item, `${path}.${key}[${index}]`));
+        } else {
+          assertNoBareConstOrEnum(value, `${path}.${key}`);
+        }
+      }
+    }
+
+    expect(() => assertNoBareConstOrEnum(buildModelResponseSchema(4), "$")).not.toThrow();
+  });
 });
 
 describe("estimateOpenAICostUSD", () => {

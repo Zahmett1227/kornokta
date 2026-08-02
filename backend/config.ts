@@ -73,6 +73,13 @@ export interface OpenAIConfig {
 export interface GeminiConfig {
   /** Handwriting second-opinion model (§11.1); only called for uncertain spans (§10.4). */
   model: string;
+  /**
+   * Higher than the visible §15.3 payload (text + a few uncertain spans)
+   * would suggest on its own. Confirmed live: at 700 a real call hit
+   * `MAX_TOKENS` before producing any output — this model spends part of its
+   * output budget on its own internal reasoning before the JSON, so the
+   * ceiling has to cover that too, not just the answer.
+   */
   maxOutputTokens: number;
   timeoutMs: number;
 }
@@ -138,7 +145,7 @@ export function loadConfig(): Config {
     },
     gemini: {
       model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
-      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 700),
+      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096),
       timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000),
     },
     cost: {
