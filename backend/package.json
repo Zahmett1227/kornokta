@@ -12,6 +12,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "ocr": "tsx scripts/ocr.ts",
+    "cards": "tsx scripts/cards.ts",
+    "handwriting": "tsx scripts/handwriting.ts",
     "serve": "tsx scripts/serve.ts",
     "token": "tsx scripts/token.ts"
   },

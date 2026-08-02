@@ -18,11 +18,12 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-2** | Versiyonlanmış prompt modülleri (§15.1–15.3, metin ANA-PLAN'dan birebir) | ✅ |
 | **F3-3** | §14 şemasının çalışma zamanı doğrulayıcısı (ajv) + paylaşılan TS tipleri + anti-drift senkron testi | ✅ |
 | **F3-4** | Kart üretimi sonrası deterministik kalite kapısı (§19) | ✅ |
-| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | ✅ kod + test; **gerçek anahtarla hiç çağrılmadı** |
-| **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ kod + test; **hiçbir uç noktaya bağlı değil** (aşağıya bakın) |
+| **F3-5** | OpenAI Responses API sağlayıcısı (kart üretimi) | ✅ kod + test; sahte anahtarla canlı istek şekli sınandı, **gerçek anahtarla hiç çağrılmadı** |
+| **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ kod + test; sahte anahtarla canlı denemede gerçek bir şema hatası bulundu ve düzeltildi (aşağıya bakın). **Hiçbir uç noktaya bağlı değil** (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
 | **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ |
+| **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — tek gerçek çağrı yapar, sahte anahtarla test edildi |
 | **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | ❌ başlamadı |
-| **F3-9** | Gerçek bir OpenAI anahtarıyla canlı doğrulama | ❌ anahtar yok |
+| **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | 🔶 Anahtarlar kullanıcının yerelinde/Vercel'de; bu ortamda değil — sıradaki adım kullanıcının `npm run cards`/`npm run handwriting` çalıştırması |
 | **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ F3-9'a bağımlı |
 
 ---
@@ -125,25 +126,76 @@ yapılmadan önce** kontrol ediliyor (§21.3).
 ## Ölçüm hâlâ eksik — Faz 2'yle aynı kalıp
 
 Faz 2'nin çıkış kapısı "20 görüntülük altın set etiketlemesi" adımında
-bilinçli olarak atlanmıştı; Faz 3'ün eksiği daha temel: **bu ortamda hiçbir
-OpenAI veya Gemini anahtarı yok**, dolayısıyla:
+bilinçli olarak atlanmıştı; Faz 3'ün eksiği daha temel: **bu geliştirme
+ortamında OPENAI_API_KEY/GEMINI_API_KEY hiç yok** (kullanıcı bunları yalnız
+kendi yerel `.env`'ine ve Vercel'e girdi — ayrıntı aşağıda). Dolayısıyla:
 
-1. Responses API'ye yazılan istek gövdesi (`reasoning.effort`, `text.format.type:
-   "json_schema"`, `input_image` parçası) belgelenmiş API sözleşmesine göre
-   yazıldı ama **gerçek bir çağrıyla hiç doğrulanmadı**. ANA-PLAN'ın adlandırdığı
-   model (`gpt-5.6-sol`) bu belgenin yazıldığı tarihte henüz yayınlanmamış bir
-   isim; gerçek modelin bu şekle tam uyup uymadığı bilinmiyor.
-2. Aynısı Gemini için de geçerli: `generateContent` gövdesi ve `responseSchema`
-   biçimi güncel genel API'ye göre yazıldı, canlı doğrulanmadı.
-3. §25 Faz 3 çıkış kapısı ("gold pasajlardan üretilen kartların kalite rubriği
-   kabul sınırını geçmesi") bir gold set + gerçek API çağrısı gerektirir;
-   ikisi de bu oturumda yok.
+1. §25 Faz 3 çıkış kapısı ("gold pasajlardan üretilen kartların kalite
+   rubriği kabul sınırını geçmesi") bir gold set + gerçek, kimliği doğrulanmış
+   bir API çağrısı gerektirir; anahtar bu ortamda hiç olmadı.
+2. ANA-PLAN'ın adlandırdığı modeller (`gpt-5.6-sol`, `gemini-3.5-flash`) bu
+   belgenin yazıldığı tarihte gerçek API'lerde var olup olmadığı
+   doğrulanmamış isimler — kullanıcının hesabında erişilebilir gerçek bir
+   model kimliğiyle eşleşip eşleşmediği yalnızca gerçek bir anahtarla
+   anlaşılabilir.
 
-**Önerilen ilk adım, anahtar elde edildiğinde:** Faz 2'nin
-`npm run ocr -- --limit 1` alışkanlığının aynısı — tek bir küçük pasajla tek
-bir gerçek çağrı yapıp yalnız istek/yanıt şeklinin doğru olduğunu doğrulamak,
-gold set ölçümüne geçmeden önce. Anahtar kurulumu:
-[`docs/OPENAI-GEMINI-KURULUM.md`](OPENAI-GEMINI-KURULUM.md).
+**Yapılabilen kısmı yapıldı — sahte anahtarla iki gerçek çağrı:** Bu ortamdan
+`api.openai.com` ve `generativelanguage.googleapis.com`'a ağ erişimi var
+(proxy üzerinden), ama gerçek bir anahtar yok. Bilerek **geçersiz** bir
+anahtarla her iki sağlayıcıya da gerçek birer istek gönderildi — amaç
+kimlik doğrulamayı geçmek değil, **istek gövdesinin şeklini** canlı API'ye
+karşı sınamaktı:
+
+- **OpenAI:** `401 Incorrect API key provided` döndü — yani istek OpenAI'ın
+  kimlik doğrulama katmanına düzgün ulaştı. Model adının (`gpt-5.6-sol`)
+  geçerli olup olmadığı bundan **anlaşılamadı**: OpenAI kimlik doğrulamayı
+  gövde/model kontrolünden önce yapıyor.
+- **Gemini gerçek bir hata buldu ve düzeltildi:** İlk deneme
+  `400 Invalid JSON payload ... Unknown name "additionalProperties" ...
+  Cannot find field.` döndürdü. Gemini'nin `responseSchema`'sı JSON
+  Schema'nın kısıtlı bir alt kümesi ve `additionalProperties` anahtar
+  kelimesini **desteklemiyor** — `providers/gemini.ts`'teki `RESPONSE_SCHEMA`
+  bunu içeriyordu. Düzeltme: API'ye gönderilen şema artık bu anahtar
+  kelimeyi taşımıyor; kendi bağımsız doğrulamamızın ihtiyaç duyduğu
+  "beklenmeyen alan sızmasın" garantisi (§15.3: kart üretmemeli) ayrı bir
+  yerel şemada (`localValidationSchema()`) korunuyor — API'ye giden ve bizim
+  ajv ile doğruladığımız artık iki farklı nesne, kasıtlı olarak. Düzeltmeden
+  sonra aynı sahte anahtarla tekrar denendiğinde istek şema doğrulamasını
+  geçti ve beklendiği gibi `400 API key not valid` ile durdu — yani Gemini'nin
+  geçersiz anahtar hatası **400** kodunda geliyor, OpenAI'ın 401'inden farklı;
+  `scripts/handwriting.ts`'in hata ipucu mesaj içeriğine bakıyor, yalnız
+  status koduna değil.
+
+Bu, canlı bir anahtarla ilk denemede çıkması muhtemel hatalardan birini
+(ve yalnızca birini) önceden temizledi. **Model adının kendisinin
+geçerliliği ve OpenAI'ın istek gövdesinin geri kalanının kabul edilip
+edilmediği hâlâ bilinmiyor** — bunlar için gerçek bir anahtar şart.
+
+**Sıradaki adım — kullanıcı kendi `.env`'i üzerinden çalıştırmalı:**
+
+```bash
+cd backend
+npm run cards         # tek bir gerçek OpenAI kart üretimi çağrısı
+npm run handwriting    # tek bir gerçek Gemini ikinci görüş çağrısı
+```
+
+İkisi de tek bir gerçek çağrı yapar, sahte bir görüntüyle (gerçek bir sayfa
+değil — amaç yalnızca istek/yanıt şeklini sınamak), ve terminale yalnız
+metrik yazar (kart sayısı, kalite kapısı kararları, token/maliyet, hata
+durumunda sağlayıcının kendi hata mesajı ve status kodu) — hiçbir zaman
+anahtarı veya tam kart/transkripsiyon metnini basmaz; tam yanıt yerel,
+gitignore'lu bir JSON'a yazılır. Model adı geçersizse hata mesajı bunu
+söyleyecek; `.env`'deki `OPENAI_MODEL`/`GEMINI_MODEL` değeri kodda gömülü
+olmadığı için (§0.6) yeniden denemek yalnızca bir `.env` düzenlemesi.
+
+**Vercel tarafı:** Bu dal (`claude/proje-analizi-planlama-r7lxw4`) Vercel'de
+zaten bir Preview dağıtımına derlendi (build başarılı — kodun Vercel'in
+gerçek derleme hattında da çalıştığının ayrı bir kanıtı), ama proje SSO
+korumasını "custom domain dışındaki her yer"de açık tutuyor, yani Preview
+URL'i doğrudan `curl` ile test edilemiyor. Bu yüzden ilk doğrulama için
+yerel `.env` yolu öneriliyor; Vercel üzerinden uçtan uca test, bu kod
+`main`'e alınıp prod'a çıktıktan sonra (Faz 2'de `/api/ocr` için yapıldığı
+gibi) mantıklı.
 
 **Ayrıca gözden geçirilecek:** `backend/vercel.json`'daki `maxDuration: 60`,
 `/api/ocr` ile paylaşılıyor. Görüntü + reasoning içeren bir kart üretimi

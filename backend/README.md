@@ -74,6 +74,25 @@ mkdir -p evals/fixtures/deneme-jpg
 sips -s format jpeg evals/fixtures/deneme/*.HEIC --out evals/fixtures/deneme-jpg
 ```
 
+## OpenAI/Gemini'yi tek bir gerçek çağrıyla sınamak (Faz 3)
+
+Anahtarları `.env`'e koyduktan sonra (`docs/OPENAI-GEMINI-KURULUM.md`), gold
+set ölçümüne geçmeden önce Document AI için yapılan aynı alışkanlık: tek bir
+gerçek çağrı, gerçek bir sayfa olmadan yalnızca istek/yanıt şeklini sınamak
+için.
+
+```bash
+npm run cards         # tek bir gerçek OpenAI kart üretimi çağrısı
+npm run handwriting    # tek bir gerçek Gemini ikinci görüş çağrısı
+```
+
+İkisi de terminale yalnız metrik yazar (kart/span sayısı, token, maliyet,
+hata durumunda sağlayıcının status kodu ve mesajı) — anahtarı veya tam
+içeriği asla basmaz; tam yanıt `evals/reports/*-smoke-test.json`'a yazılır
+(gitignore'lu). Bu araçlarla sahte bir anahtar denendiğinde Gemini'nin
+`responseSchema`'sının `additionalProperties` anahtar kelimesini kabul
+etmediği bulundu ve düzeltildi — ayrıntı `docs/FAZ3-PLAN.md`.
+
 ## HTTP ucu (telefonun konuştuğu yer)
 
 Önce bir cihaz tokenı üret — telefonun "bu benim" demesini sağlayan uzun
@@ -129,7 +148,9 @@ alıp tekrar denemeli, kalıcı olanı denememeli (§17).
 | `schemas/validateLlmOutput.ts` | §14 şemasının ajv ile çalışma zamanı doğrulayıcısı |
 | `vercel.json` | Tüm yollar `api/index.ts`'e yönlendirilir; diğer `api/` dosyaları rota olarak taranmaz |
 | `scripts/serve.ts` | Yerel geliştirme sunucusu |
-| `scripts/ocr.ts` | Yerel ölçüm aracı (üretim yolu değil) |
+| `scripts/ocr.ts` | Yerel Document AI ölçüm aracı (üretim yolu değil) |
+| `scripts/cards.ts` | `npm run cards` — tek bir gerçek OpenAI çağrısıyla istek/yanıt şeklini doğrular |
+| `scripts/handwriting.ts` | `npm run handwriting` — tek bir gerçek Gemini çağrısıyla istek/yanıt şeklini doğrular |
 | `scripts/token.ts` | Cihaz tokenı üretici |
 
 `api/_auth.ts` ve `api/_ocr.ts` alt çizgiyle başlıyor: Vercel `api/` altındaki

@@ -98,10 +98,18 @@ export interface HandwritingSecondOpinionResult {
  * than `llm_output.schema.json`: this call never produces cards, knowledge
  * units, or a cost estimate, so asking for the full §14 shape would let a
  * bug silently smuggle card content in through the "second opinion" path.
+ *
+ * No `additionalProperties` here — confirmed with a real (fake-key) call
+ * against the live API: Gemini's `responseSchema` is a constrained subset of
+ * JSON Schema and rejects that keyword outright (`Unknown name
+ * "additionalProperties" ... Cannot find field.`, HTTP 400). This is the
+ * object sent to Gemini; `LOCAL_VALIDATION_SCHEMA` below adds the keyword
+ * back for our own independent check, since the constraint we actually want
+ * (no unannounced extra field, e.g. a smuggled "cards") is not a request-shape
+ * concern and does not need to survive the trip to Google's validator.
  */
 const RESPONSE_SCHEMA = {
   type: "object",
-  additionalProperties: false,
   required: ["text", "uncertainSpans"],
   properties: {
     text: { type: "string" },
@@ -109,7 +117,6 @@ const RESPONSE_SCHEMA = {
       type: "array",
       items: {
         type: "object",
-        additionalProperties: false,
         required: ["text", "alternatives", "reason", "critical", "requiresUserConfirmation"],
         properties: {
           text: { type: "string" },
@@ -123,8 +130,18 @@ const RESPONSE_SCHEMA = {
   },
 };
 
+function localValidationSchema(): Record<string, unknown> {
+  const clone = structuredClone(RESPONSE_SCHEMA) as {
+    additionalProperties?: boolean;
+    properties: { uncertainSpans: { items: { additionalProperties?: boolean } } };
+  };
+  clone.additionalProperties = false;
+  clone.properties.uncertainSpans.items.additionalProperties = false;
+  return clone as Record<string, unknown>;
+}
+
 const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validateShape = ajv.compile(RESPONSE_SCHEMA);
+const validateShape = ajv.compile(localValidationSchema());
 
 /** Status codes worth another attempt (§17), same convention as `documentAI.ts`/`openai.ts`. */
 function isTransientStatus(status: number): boolean {
