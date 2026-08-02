@@ -14,6 +14,43 @@ enum VisionOCRError: Error, CustomStringConvertible {
 }
 
 struct VisionOCR {
+    /// Height of one ordering band, as a fraction of the page.
+    static let bandHeight = 0.01
+
+    /// Vision returns observations in no guaranteed reading order, so they are
+    /// sorted top-to-bottom then left-to-right for stable `lineId` numbering.
+    ///
+    /// The vertical position is **quantized into bands** rather than compared
+    /// with a tolerance. `abs(ay - by) > epsilon` is not a strict weak
+    /// ordering: `a ≈ b` and `b ≈ c` can hold while `a < c` does too, and
+    /// `sorted(by:)` given such a predicate returns an arbitrary permutation.
+    /// On a dense page that scrambles the whole transcript. Rounding to a band
+    /// is transitive, so the sort is well-defined.
+    static func inReadingOrder(
+        _ observations: [VNRecognizedTextObservation]
+    ) -> [VNRecognizedTextObservation] {
+        func band(_ observation: VNRecognizedTextObservation) -> Int {
+            // Flip to a top-left origin first, so band 0 is the top of the page.
+            Int(((1.0 - observation.boundingBox.maxY) / bandHeight).rounded())
+        }
+        return observations.sorted { a, b in
+            let bandA = band(a), bandB = band(b)
+            if bandA != bandB { return bandA < bandB }
+            return a.boundingBox.minX < b.boundingBox.minX
+        }
+    }
+
+    /// Languages this device can actually recognize. Vision silently ignores a
+    /// requested language it does not support, which looks like poor accuracy
+    /// rather than an unsupported language — §0.5 says that kind of silent
+    /// substitution must be surfaced, not hidden.
+    static func supportedLanguages() throws -> [String] {
+        try VNRecognizeTextRequest.supportedRecognitionLanguages(
+            for: .accurate,
+            revision: VNRecognizeTextRequest.currentRevision
+        )
+    }
+
     var languages: [String]
     /// Off by default. Language correction rewrites text towards ordinary
     /// vocabulary, which is exactly the silent "fix" ANA-PLAN §0.5 forbids —
@@ -43,15 +80,7 @@ struct VisionOCR {
         let width = cgImage.width
         let height = cgImage.height
 
-        // Vision returns observations in no guaranteed reading order; sort
-        // top-to-bottom then left-to-right so lineId numbering is stable
-        // across runs and comparable with the gold manifest.
-        let ordered = observations.sorted { a, b in
-            let ay = 1.0 - a.boundingBox.maxY
-            let by = 1.0 - b.boundingBox.maxY
-            if abs(ay - by) > 0.005 { return ay < by }
-            return a.boundingBox.minX < b.boundingBox.minX
-        }
+        let ordered = Self.inReadingOrder(observations)
 
         let lines: [OCRLine] = ordered.enumerated().compactMap { index, observation in
             guard let candidate = observation.topCandidates(1).first else { return nil }

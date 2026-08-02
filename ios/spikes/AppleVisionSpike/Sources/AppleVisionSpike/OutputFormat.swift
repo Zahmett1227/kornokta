@@ -31,5 +31,12 @@ struct OCRPage: Codable {
 
 struct OCRRun: Codable {
     let generatedBy: String
+    /// What the run asked Vision for.
+    let requestedLanguages: [String]
+    /// What this device can actually recognize.
+    let supportedLanguages: [String]
+    /// Requested but unavailable — Vision drops these without complaining, so
+    /// the report has to carry the caveat or the numbers read as pure accuracy.
+    let unsupportedLanguages: [String]
     let pages: [OCRPage]
 }
