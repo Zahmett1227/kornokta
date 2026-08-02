@@ -116,17 +116,31 @@ export interface TokenSource {
 export function googleAuthTokenSource(auth: GoogleAuth): TokenSource {
   return {
     async getToken() {
-      const client = await auth.getClient();
-      const token = await client.getAccessToken();
-      const value = typeof token === "string" ? token : token?.token;
-      if (!value) {
+      let token: string | null | undefined;
+      try {
+        const client = await auth.getClient();
+        const accessToken = await client.getAccessToken();
+        token = typeof accessToken === "string" ? accessToken : accessToken?.token;
+      } catch (error) {
+        // The auth library throws its own error type when it cannot find or
+        // read a credential. Left unwrapped it surfaces as "unexpected error,
+        // retryable" — but a missing key is a setup problem that no number of
+        // retries fixes, and the caller needs to be told which one it is.
+        throw new DocumentAIError(
+          `Google kimlik doğrulaması başarısız: ${(error as Error).message}. ` +
+            "GOOGLE_APPLICATION_CREDENTIALS doğru dosyayı gösteriyor mu?",
+          undefined,
+          false,
+        );
+      }
+      if (!token) {
         throw new DocumentAIError(
           "Google erişim jetonu alınamadı. GOOGLE_APPLICATION_CREDENTIALS doğru mu?",
           undefined,
           false,
         );
       }
-      return value;
+      return token;
     },
   };
 }

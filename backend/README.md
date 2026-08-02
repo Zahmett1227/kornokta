@@ -69,17 +69,58 @@ mkdir -p evals/fixtures/deneme-jpg
 sips -s format jpeg evals/fixtures/deneme/*.HEIC --out evals/fixtures/deneme-jpg
 ```
 
+## HTTP ucu (telefonun konuştuğu yer)
+
+Önce bir cihaz tokenı üret — telefonun "bu benim" demesini sağlayan uzun
+rastgele değer (§7.3):
+
+```bash
+npm run token
+```
+
+Çıkan değeri `.env` içinde `DEVICE_TOKEN=` satırına yapıştır. Aynı değer sonra
+iPhone'un Keychain'ine de girecek. **Üçüncü bir kopya bırakma.**
+
+Sunucuyu başlat:
+
+```bash
+npm run serve
+```
+
+Yalnız `127.0.0.1`'e bağlanır — süreç bir Google anahtarı tutuyor, her arayüze
+açmak onu bulunduğun ağa açardı.
+
+Denemek için:
+
+```bash
+curl http://127.0.0.1:8787/health
+
+curl -X POST http://127.0.0.1:8787/api/ocr \
+  -H "Authorization: Bearer $DEVICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{\"jobId\":\"deneme\",\"mimeType\":\"image/jpeg\",\"imageBase64\":\"$(base64 -i bir-sayfa.jpg)\"}"
+```
+
+Cevaplar her zaman `retryable` alanı taşır: telefon geçici bir arızayı kuyruğa
+alıp tekrar denemeli, kalıcı olanı denememeli (§17).
+
 ## Yapı
 
 | Dosya | İş |
 |---|---|
 | `config.ts` | Tüm ayarlar tek yerde, ortamdan okunur (§0.6). Kimlik bilgisi buraya girmez. |
+| `api/auth.ts` | Cihaz tokenı doğrulaması (§7.3) |
+| `api/ocr.ts` | `POST /api/ocr` — saf handler, sunucudan bağımsız, testte doğrudan çağrılıyor |
+| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`'a dokunan tek dosya |
 | `providers/ocrTypes.ts` | Motorlar arası ortak OCR sonucu biçimi |
 | `providers/documentAI.ts` | Document AI sağlayıcısı |
+| `scripts/serve.ts` | Yerel geliştirme sunucusu |
 | `scripts/ocr.ts` | Yerel ölçüm aracı (üretim yolu değil) |
+| `scripts/token.ts` | Cihaz tokenı üretici |
 
 ## Henüz yok
 
-- HTTP uç noktası ve cihaz tokenı (§7.3) — telefon şu an backend'e bağlanmıyor
+- Vercel'e dağıtım (§7.2) — şu an yalnız yerelde çalışıyor
+- Kritik token motoru ve OCR uzlaştırma (§10.3, §10.5) — Faz 2'nin sonraki adımı
 - Maliyet kaydı ve bütçe sınırı uygulaması (§11) — sadece çalıştırma öncesi tahmin var
 - Kart üretimi sağlayıcısı (§13) — Faz 3

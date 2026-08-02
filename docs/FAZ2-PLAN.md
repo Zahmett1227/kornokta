@@ -1,0 +1,70 @@
+# Faz 2 — OCR ve işaret algılama
+
+**Dal:** `claude/faz1-ios-iskelet` (Faz 1'in üstüne)
+**ANA-PLAN:** §25 Faz 2
+**Çıkış kapısı:** Altın test OCR ve seçim eşikleri karşılanmalı.
+
+---
+
+## Neden bölünüyor
+
+§25 Faz 2'yi yedi kalem olarak sayıyor. Hepsi tek seferde yazılırsa hiçbiri
+ayrı ayrı doğrulanamaz; §0 "işi küçük ve doğrulanabilir adımlara böl" diyor.
+Sıra, en çok şeyi açan işten başlıyor.
+
+| Adım | İş | Nerede çalışır | Durum |
+|---|---|---|---|
+| **F2-1** | Backend HTTP ucu + cihaz tokenı | Vercel Functions (§7.2) | ▶ sırada |
+| **F2-2** | Kritik token motoru (TypeScript) | Backend | bekliyor |
+| **F2-3** | OCR uzlaştırma (Apple ↔ Google) | Backend | bekliyor |
+| **F2-4** | iOS istemcisi; kuyruğa bağlama | Uygulama | bekliyor |
+| **F2-5** | İşaret tespiti (OpenCV spike'ın Swift'e taşınması) | Cihaz | bekliyor |
+| **F2-6** | Satır eşleştirme (işaret ↔ OCR satır kutusu) | Cihaz | bekliyor |
+| **F2-7** | Onay ekranının gerçek verilerle çalışması | Uygulama | bekliyor |
+
+Sayfa düzeltme (§25'in ilk kalemi) Faz 1'de bitti: `VNDocumentCameraViewController`
+kenar algılama ve perspektif düzeltmeyi zaten yapıyor.
+
+---
+
+## Kritik token motoru neden backend'de
+
+Motor bugün Python'da (`evals/ocr_eval/critical_tokens.py`, 385 test). Üç
+seçenek vardı:
+
+| Nerede | Artı | Eksi |
+|---|---|---|
+| Python'da kalsın | Yazılmış ve test edilmiş | iPhone'da Python çalışmıyor; yalnız ölçüm aracı olarak kalır |
+| Swift'e taşı | Çevrimdışı çalışır | Uzlaştırmanın ihtiyaç duyduğu Google sonucu zaten ağdan geliyor; çevrimdışı olması bir şey kazandırmıyor |
+| **TypeScript'e taşı (seçilen)** | Google sonucu zaten backend'de; uzlaştırma tek yerde olur | Port işi ve iki uygulamanın ayrışma riski |
+
+Ayrışma riski somut bir önlemle karşılanıyor: Python sürümü **referans** kabul
+edilecek ve TypeScript portu aynı vaka listesine karşı test edilecek. Vaka
+listesi tek bir JSON dosyasında tutulup iki taraftan da okunacak, böylece bir
+tarafa vaka eklenip diğerinin unutulması mümkün olmayacak.
+
+Bu, daha önce iki kez düştüğümüz tuzağın aynısı: aynı davranışı iki yerde
+uygulayıp yalnız birini güncellemek.
+
+## İşaret tespiti neden cihazda
+
+§24.1 çekimin anında bitmesini istiyor ve §19.3 işaret bulunamayınca kullanıcıya
+sorulmasını. İkisi de kullanıcı sayfaya bakarken olup bitmeli; ağ turu beklemek
+akışı bozar. Ayrıca işaret tespiti görüntü işleme — model çağrısı değil — yani
+§0.8 gereği deterministik kodda kalmalı.
+
+Algoritma `evals/spikes/marker_detection/` içinde Python/OpenCV olarak
+prototiplendi ve sentetik görüntülerde çalışıyor. Swift'e taşınması F2-5.
+
+---
+
+## Ölçüm hâlâ eksik
+
+Şu ana kadarki her şey **bir** fotoğrafla doğrulandı. Faz 2 çıkış kapısı için
+20 görüntülük etiketli set gerekiyor (`docs/GOLD-SET-GUIDE.md`,
+`docs/MAC-ADIMLARI.md`). Özellikle ölçülmemiş olan:
+
+- İşaret tespitinin gerçek sayfalarda tek-dokunuş oranı (§25 Faz 0 kapısı)
+- Apple Vision satır kutularının geometrik olarak güvenilir olup olmadığı
+  (metni yanlış ama kutuları doğru mu?) — F2-6 buna dayanıyor
+- Google'ın Türkçe el yazısındaki başarısı (§10.6)

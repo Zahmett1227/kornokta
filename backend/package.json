@@ -8,7 +8,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "ocr": "tsx scripts/ocr.ts"
+    "ocr": "tsx scripts/ocr.ts",
+    "serve": "tsx scripts/serve.ts",
+    "token": "tsx scripts/token.ts"
   },
   "dependencies": {
     "dotenv": "^17.4.2",

@@ -134,5 +134,52 @@ Kritik token karşılaştırması diakritik kaybına karşı dayanıklı hale ge
 `-ma-` morfemi diakritik gerektirmiyor. Bunları katlanmış uzayda karşılaştırmak
 metni düzeltmek değil; CER/WER diakritik kaybını hata olarak saymaya devam eder.
 
-**Karar bekliyor.** 20 görüntülük altın set hâlâ gerekli — ama artık "Apple
-Vision yeterli mi?" sorusunu değil, seçilecek OCR'ın kalitesini ölçmek için.
+**Karar verildi:** Google Document AI birincil OCR
+(`docs/ADR-002-birincil-ocr-secimi.md`).
+
+---
+
+## 6. Google Document AI ölçümü (aynı sayfa)
+
+Kararın ardından **aynı fotoğraf** (`IMG_4236`) Document AI'dan geçirildi, böylece
+karşılaştırma tek değişkenli: aynı görüntü, aynı sayfa, farklı motor.
+
+| | Apple Vision | Google Document AI |
+|---|---|---|
+| Tanınan satır | 148 | 148 |
+| `ı ş ğ İ Ş Ğ` (yalnızca Türkçe) | **0** | **85** |
+| `ü ö ç Ü Ö Ç` (paylaşılan) | 77 | 82 |
+| Güven < 0,6 olan satır | 24 (%16) | **1** (%0,7) |
+| Gecikme | 779 ms (cihazda) | 17 130 ms (ilk çağrı, ağ + kimlik doğrulama) |
+
+Apple Vision'ın bozduğu kelimelerin hepsi düzeldi:
+
+| Kaynakta | Apple Vision | Google |
+|---|---|---|
+| parçalanır | parçalan**i**r | parçalanır |
+| şişme | **s**i**s**me | şişme |
+| Yağlar | Ya**j**lar | Yağlar |
+| MORFOLOJİSİ | MORFOLOJ**IS**i | MORFOLOJİSİ |
+| kümeleşme | kümele**s**me | kümeleşme |
+
+**Kimyasal simgeler de düzeldi:** `Fe*3` → `Fe+3`, `H,0g*` → `H₂O₂`,
+`H20г` → `H₂O`. Apple Vision'da `O₂`'nin `0,` (sıfır-virgül) olarak okunup bir
+*sayıya* dönüşmesi kritik token açısından en tehlikeli hataydı; Google'da bu yok.
+
+### Kalan pürüzler
+
+Bunlar sıradan OCR gürültüsü — Türkçe'yi hiç okuyamamakla aynı kategoride değil:
+
+- El yazısı kenar notları hâlâ zayıf (`Porcolenirga`, `mitokondrit lizoton`,
+  `kullonile-`). §10.6 kişisel sözlüğü buraya gerekiyor.
+- Bazı satırlar bölünmüş veya tekrarlanmış (`membran ran ve ve organeller
+  organeller`).
+- `superoksid (0,5)` — kaynakta `(O₂⁻)`. Tek kalan "sayıya dönüşen simge"
+  örneği; altın sette izlenmeli.
+
+### Sonuç
+
+Bu tek sayfa, "Apple Vision Türkçe için yeterli mi" sorusunu kapatıyor: hayır,
+ve Google evet. 20 görüntülük altın set hâlâ gerekli, ama artık motor seçmek
+için değil — seçilen motorun eşikleri karşıladığını göstermek için (§25 Faz 2
+çıkış kapısı).
