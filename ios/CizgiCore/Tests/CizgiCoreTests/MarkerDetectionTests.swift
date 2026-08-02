@@ -164,6 +164,54 @@ private func flipped(_ rect: CGRect, in height: Int) -> CGRect {
 }
 
 final class PixelBufferTests: XCTestCase {
+    /// Diagnostic, not a real regression test: bisects where the drift in
+    /// `testReadsBackTheColourItWasGiven` actually happens. Switching both
+    /// sides of the redraw to a matching named colour space did not change
+    /// the failure at all (still exactly green=38), which rules out a
+    /// colour-space mismatch between source and destination — so this reads
+    /// the CGImage `syntheticPage` hands to `PixelBuffer` directly, with no
+    /// `PixelBuffer` involved, to see whether the drift is already there
+    /// before `PixelBuffer.init` ever runs.
+    func testWhatTheSourceImageActuallyContainsBeforePixelBufferTouchesIt() throws {
+        guard let context = CGContext(
+            data: nil, width: 10, height: 10, bitsPerComponent: 8, bytesPerRow: 10 * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { throw XCTSkip("CGContext oluşturulamadı") }
+
+        // Exactly `syntheticPage`'s sequence: white full-canvas, then red
+        // full-canvas — the same two fills the failing test goes through.
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 10, height: 10))
+
+        guard let image = context.makeImage() else { throw XCTSkip("CGImage üretilemedi") }
+        guard
+            let data = image.dataProvider?.data,
+            let pointer = CFDataGetBytePtr(data)
+        else { throw XCTSkip("Ham bayt okunamadı") }
+
+        let bytesPerRow = image.bytesPerRow
+        let bytesPerPixel = image.bitsPerPixel / 8
+        let offset = 5 * bytesPerRow + 5 * bytesPerPixel
+        let byte0 = pointer[offset]
+        let byte1 = bytesPerPixel > 1 ? pointer[offset + 1] : 255
+        let byte2 = bytesPerPixel > 2 ? pointer[offset + 2] : 255
+        let byte3 = bytesPerPixel > 3 ? pointer[offset + 3] : 255
+
+        // Printed unconditionally — this is diagnostic output, not something
+        // that should only appear when the assertion below fails.
+        print(
+            "KAYNAK GÖRÜNTÜ TANISI: bitsPerPixel=\(image.bitsPerPixel) " +
+            "bytesPerRow=\(bytesPerRow) bitmapInfo=\(image.bitmapInfo.rawValue) " +
+            "alphaInfo=\(image.alphaInfo.rawValue) " +
+            "byte0=\(byte0) byte1=\(byte1) byte2=\(byte2) byte3=\(byte3)"
+        )
+
+        XCTAssertEqual(byte0, 255, "kaynak görüntünün 0. baytı (beklenen: R=255)")
+    }
+
     func testReadsBackTheColourItWasGiven() throws {
         let buffer = try syntheticPage(width: 10, height: 10) { context in
             context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
