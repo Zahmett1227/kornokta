@@ -48,22 +48,26 @@ export function resetDependencies(): void {
 }
 
 /**
- * Fetch-style entry point. Exported by name (not as the default) because
- * Vercel's documented shape for a plain, non-framework `/api` file is a
- * default export of `{ fetch(request) {...} }`, not a bare default function —
- * a bare default crashed every request in production (`FUNCTION_INVOCATION_FAILED`
- * on `/health`, which has no logic beyond this). `scripts/serve.ts` imports
- * this named export directly and calls it the same way Vercel's wrapper does.
+ * Fetch-style entry point, exported both by name (for `scripts/serve.ts` and
+ * the tests) and as the default (for Vercel).
+ *
+ * Vercel's docs also document `export default { fetch(request) {...} }`, and an
+ * earlier commit here switched to it on the theory that the export shape was
+ * why production returned `FUNCTION_INVOCATION_FAILED`. That theory was wrong:
+ * the production stack trace read `at handler (api/index.ts:55:15)`, i.e.
+ * Vercel had invoked the bare default function perfectly well and the throw
+ * came from inside it. A bare default is therefore the shape actually
+ * observed working on this deployment, so it is the one kept.
  */
 export async function handler(request: Request): Promise<Response> {
-  // A base, not just `new URL(request.url)`: measured directly on Vercel,
-  // whatever it hands the `{ fetch }` export has `.url` set to the bare path
-  // ("/", "/favicon.ico"), not the absolute URL the Fetch API's `Request`
-  // promises — `new URL("/")` alone throws `ERR_INVALID_URL`, which crashed
-  // every request including `/health`. The base is inert when the first
-  // argument already is absolute, which is what `scripts/serve.ts` and every
-  // test send, so this is correct for both shapes rather than a Vercel-only
-  // patch. Its host/scheme are never read below, only `pathname`.
+  // A base, not just `new URL(request.url)`. The Fetch API says a `Request`'s
+  // `.url` is absolute, and locally it always is — but the object Vercel hands
+  // this function has `.url` set to the bare path ("/", "/health"), and
+  // `new URL("/")` on its own throws `ERR_INVALID_URL`. That threw on every
+  // single request in production, including `/health`, which has no other
+  // logic. The base is ignored whenever the first argument is already
+  // absolute, so this is right for both shapes rather than a Vercel-only
+  // patch. Nothing below reads the host or scheme, only `pathname`.
   const url = new URL(request.url, "http://localhost");
 
   if (url.pathname === "/health" || url.pathname === "/api/health") {
@@ -97,5 +101,4 @@ export async function handler(request: Request): Promise<Response> {
   });
 }
 
-/** What Vercel actually looks for on a plain (non-framework) `/api` file. */
-export default { fetch: handler };
+export default handler;
