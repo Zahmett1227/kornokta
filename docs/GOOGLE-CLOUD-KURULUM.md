@@ -52,6 +52,14 @@ istiyoruz — en dar yetki kuralı.
 3. İsim ver: `cizgi-backend`.
 4. Rol olarak **Document AI API User** (`roles/documentai.apiUser`) seç.
    Başka rol ekleme — sadece bu.
+
+   > Rol listesinde ilk bakışta görünmeyebilir. Rol kutusundaki **filtre
+   > alanına `API` yaz**, çıkacaktır. Gerçekten yoksa **Document AI Editor**
+   > kullan — çalışır, ama gereğinden geniş (işlemcileri silebilir de).
+   >
+   > **Viewer** seçme: salt okuma yetkisi belge işlemeye yetmez.
+   > **Administrator** seçme: anahtar sızarsa zarar en büyük olur.
+
 5. **Bitti / Done**.
 
 ## 6. Anahtar indir
