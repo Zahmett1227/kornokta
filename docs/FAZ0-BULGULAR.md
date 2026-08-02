@@ -33,13 +33,15 @@ Bu harfler tanınmıyor değil — **üretilemiyor**. Çıktıda karşılıklar�
 
 Test ettiğim 21 kelimenin **21'i** böyle. Rastgele hata değil, sistematik.
 
-En olası açıklama: Apple Vision'ın metin tanıma dilleri arasında Türkçe yok.
+Açıklama: Apple Vision'ın metin tanıma dilleri arasında Türkçe yok.
 `--languages tr-TR` istense bile Vision desteklemediği dili hata vermeden yok
 sayıyor, İngilizce modeliyle okuyor. Bu yüzden yalnızca Almanca/Fransızca'da da
 bulunan harfler çıkıyor.
 
-> **Doğrulanacak:** `AppleVisionSpike --list-languages` çıktısı. Harf kanıtı çok
-> güçlü ama API'nin kendi cevabı kesin olan. Bu satır o çıktıyla güncellenecek.
+> **Doğrulandı (2026-08-02).** `AppleVisionSpike --list-languages` cihazda
+> çalıştırıldı: *"Türkçe DESTEKLENMİYOR. --languages tr-TR istense de yok
+> sayılır."* Yani bu bir tanıma kalitesi sorunu değil, eksik dil desteği.
+> Fotoğrafı düzeltmek, çözünürlüğü artırmak veya eşik ayarlamak bunu çözmez.
 
 ### Neden önemli
 
@@ -112,5 +114,25 @@ doğru, ama sütun tespiti hâlâ yok — o Faz 2'ye ait.
 Öneri: Faz 2'de planlanan bulut OCR'ı öne almak ve Apple Vision'ı canlı önizleme
 + satır kutusu görevine indirmek. Karar ANA-PLAN sahibinin.
 
-**Henüz karar verilmedi.** 20 görüntülük altın set ve `--list-languages`
-çıktısıyla birlikte netleşecek.
+### Neyin çözmediği
+
+Bu bir ayar veya kalite sorunu olmadığı için şunlar işe yaramaz:
+
+- daha iyi/daha yüksek çözünürlüklü fotoğraf
+- `recognitionLevel` veya eşik değişikliği
+- dil düzeltmesini açmak (§0.5 zaten yasaklıyor, ve Türkçe sözlüğü yok)
+
+Türkçe diakritiklerini metinden geri üretmek (deasciifier) kısmi bir çare olur:
+sıradan kelimelerde işe yarar, ama **üç şeyi çözmez** — yok olan üst/alt simgeler
+(`Fe⁺³`, `O₂`), el yazısı, ve tahmin ürünü olduğu için §0.5'in kritik token
+sınıflarında kullanılamaması. Yani tek başına Faz 0 kapısını geçirmez.
+
+### Ölçüm altyapısına etkisi
+
+Kritik token karşılaştırması diakritik kaybına karşı dayanıklı hale getirilmeli:
+`kullanılmamalıdır` ile `kullanilmamalidir` **aynı olumsuzluğu** taşıyor, çünkü
+`-ma-` morfemi diakritik gerektirmiyor. Bunları katlanmış uzayda karşılaştırmak
+metni düzeltmek değil; CER/WER diakritik kaybını hata olarak saymaya devam eder.
+
+**Karar bekliyor.** 20 görüntülük altın set hâlâ gerekli — ama artık "Apple
+Vision yeterli mi?" sorusunu değil, seçilecek OCR'ın kalitesini ölçmek için.
