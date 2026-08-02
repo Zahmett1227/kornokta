@@ -25,6 +25,13 @@ public struct PixelBuffer: Sendable {
         case contextUnavailable
     }
 
+    /// A named, fixed colour space, deliberately not
+    /// `CGColorSpaceCreateDeviceRGB()` — see the comment in `init(cgImage:)`.
+    /// Force-unwrapped because sRGB is one of the handful of spaces the
+    /// system always provides by name; unlike a bundled resource, there is no
+    /// real-world condition under which this is absent.
+    static let pixelColorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+
     public init(cgImage: CGImage) throws {
         let width = cgImage.width
         let height = cgImage.height
@@ -44,16 +51,22 @@ public struct PixelBuffer: Sendable {
         defer { storage.deallocate() }
         storage.initializeMemory(as: UInt8.self, repeating: 0, count: count)
 
-        // `noneSkipLast` rather than a premultiplied format: the fourth byte
-        // is padding, so the colour channels read back as written instead of
-        // being scaled by an alpha this detector does not use.
+        // Explicit sRGB, not `CGColorSpaceCreateDeviceRGB()`: "device" RGB is
+        // not a fixed space, it means "whatever this display's current
+        // profile is", so CoreGraphics colour-manages against it when drawing
+        // an image in — and that transform can mix channels. Measured on a
+        // real Mac: a pure (255, 0, 0) source read back with green at 38, not
+        // 0. Left in, every hue/saturation threshold in the shared config
+        // (`highlight.colorHueRangesHSV`) would be calibrated against colours
+        // that shift with the screen the calibration happened to run on,
+        // which is the opposite of the reproducibility §9.3 needs.
         guard let context = CGContext(
             data: storage,
             width: width,
             height: height,
             bitsPerComponent: 8,
             bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
+            space: Self.pixelColorSpace,
             bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
         ) else { throw LoadError.contextUnavailable }
 

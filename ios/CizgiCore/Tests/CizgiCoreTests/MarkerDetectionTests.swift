@@ -135,13 +135,17 @@ private func syntheticPage(
     height: Int = 120,
     draw: (CGContext) -> Void
 ) throws -> PixelBuffer {
+    // Named sRGB, not `CGColorSpaceCreateDeviceRGB()`: the latter is tied to
+    // the display's current profile, so a colour set here can drift by the
+    // time `PixelBuffer` reads it back — this is what caught the bug
+    // `PixelBuffer.pixelColorSpace`'s doc comment describes.
     guard let context = CGContext(
         data: nil,
         width: width,
         height: height,
         bitsPerComponent: 8,
         bytesPerRow: width * 4,
-        space: CGColorSpaceCreateDeviceRGB(),
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
     ) else {
         throw XCTSkip("CGContext oluşturulamadı")

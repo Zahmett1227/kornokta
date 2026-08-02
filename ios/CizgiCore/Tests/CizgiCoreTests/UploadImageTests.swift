@@ -15,7 +15,7 @@ private func jpegData(width: Int, height: Int, quality: Double = 0.9) throws -> 
         height: height,
         bitsPerComponent: 8,
         bytesPerRow: width * 4,
-        space: CGColorSpaceCreateDeviceRGB(),
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
         bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
     ) else { throw XCTSkip("CGContext oluşturulamadı") }
 
