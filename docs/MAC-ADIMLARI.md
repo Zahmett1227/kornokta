@@ -1,19 +1,31 @@
-# Mac'te ilk 20 görsel ve Apple Vision denemesi
+# Mac'te 20 görsel — Faz 2 çıkış kapısı ölçümü
 
-Bu belge Faz 0'ın kalan kısmı için **senin** uygulayacağın adımları içerir. Test altyapısı yeterli; buradan sonrası gerçek veri.
+Bu belge Faz 2'nin kalan tek kalemi için **senin** uygulayacağın adımları içerir
+(`docs/FAZ2-PLAN.md`, "Ölçüm hâlâ eksik"). Kod ve dağıtım tarafı zaten
+doğrulandı — bu ölçüm, gerçek sayfalarla üç şeyi kanıtlayacak:
 
-Hedef: 20 görselle Apple Vision'ın gerçek performansını ölçmek ve eşikleri kalibre etmek. 100'lük tam set bu 20'den sonra, ölçüm mantıklı çıkarsa toplanır.
+1. İşaret tespitinin gerçek sayfalarda **tek-dokunuş oranı** (§25 Faz 2 kapısı)
+2. Apple Vision satır kutularının **geometrik olarak güvenilir** olup olmadığı
+   — metni Türkçe okumuyor, ama kutuları doğru yere mi oturuyor? F2-6 buna
+   dayanıyor
+3. Google Document AI'ın gerçek sayfalarda, özellikle el yazısında, ne kadar
+   iyi okuduğu
+
+> **Önceki sürümden fark:** Bu belge daha önce "Apple Vision'a mı Google'a mı
+> geçelim" kararını sormak için yazılmıştı. O karar verildi
+> (`docs/ADR-002-birincil-ocr-secimi.md`) — Google birincil. Adımlar artık
+> ona göre ve doğru sırada: **önce** Vision çalıştırılıyor (satır kimlikleri
+> üretmesi için), **sonra** etiketleme yapılıyor — tersi mümkün değil, çünkü
+> etiketlerken referans aldığın `line_XX` kimlikleri Vision'ın kendi çıktısı.
 
 ---
 
-## Adım 0 — Depoyu al (5 dk)
+## Adım 0 — Depoyu güncelle (2 dk)
 
 ```bash
-git clone https://github.com/Zahmett1227/kornokta.git
-cd kornokta
-git checkout claude/tibbi-hafiza-app-04elp1
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r evals/requirements.txt
+cd ~/Desktop/kornokta
+git pull origin claude/tibbi-hafiza-app-04elp1
+source .venv/bin/activate   # yoksa: python3 -m venv .venv && source .venv/bin/activate && pip install -r evals/requirements.txt
 python -m pytest evals -q
 ```
 
@@ -21,9 +33,11 @@ Beklenen: tüm testler geçer. Geçmezse buradan devam etme, bana yaz.
 
 ---
 
-## Adım 1 — 20 görsel çek (30–45 dk)
+## Adım 1 — 20 görsel çek, GERÇEK işaretle (30–45 dk)
 
-Kendi kitaplarından, kendi işaretleme tarzınla. Dağılım:
+Kendi kitaplarından, kendi işaretleme tarzınla. **Fosforlu kalem, tükenmez alt
+çizgi, kurşun kalem alt çizgisi gerçekten çekilmiş sayfalar olmalı** — işaret
+tespiti ölçülüyor, işaretsiz bir sayfa hiçbir şey ölçmez.
 
 | Adet | Kategori | Klasör |
 |---:|---|---|
@@ -34,18 +48,75 @@ Kendi kitaplarından, kendi işaretleme tarzınla. Dağılım:
 | 2 | Kötü açı / gölge / düşük ışık | `evals/fixtures/poor/` |
 
 Kurallar:
-- **Doz, birim, yön (sağ/sol), olumsuzluk veya uygulama yolu içeren pasajlar seç.** Ölçmek istediğimiz şey tam olarak bunlar; düz tanım cümleleri az bilgi verir.
+- **Doz, birim, yön (sağ/sol), olumsuzluk veya uygulama yolu içeren pasajlar
+  seç.** Ölçmek istediğimiz tam olarak bunlar; düz tanım cümleleri az bilgi
+  verir.
 - Hasta bilgisi içeren hiçbir şey çekme.
 - Aynı sayfayı iki kez çekme.
 - Dosya adları sade olsun: `highlight_01.jpg`, `pencil_03.jpg` gibi.
+- HEIC çekiyorsan sorun değil — Adım 2'deki araçlar ikisini de okuyor.
 
 Görseller `.gitignore` ile korunuyor; repoya gitmez.
 
 ---
 
-## Adım 2 — Etiketle (60–90 dk, en yorucu kısım)
+## Adım 2 — Apple Vision'ı çalıştır (10 dk)
 
-Her görsel için `evals/gold-manifest.json` içindeki `entries` dizisine bir girdi ekle. Şablon:
+Bunu **etiketlemeden önce** yapıyoruz: gold veriye gireceğin `line_XX`
+kimlikleri, aşağıdaki komutun ürettiği kimlikler olacak.
+
+```bash
+cd ~/Desktop/kornokta/ios/spikes/AppleVisionSpike
+swift build -c release
+mkdir -p ../../../evals/reports
+
+.build/release/AppleVisionSpike \
+  --input ../../../evals/fixtures \
+  --output ../../../evals/reports/vision.json
+cd ../../..
+```
+
+---
+
+## Adım 3 — Google Document AI'ı çalıştır (5–10 dk)
+
+Aynı 20 görsel, bu sefer gerçek OCR kaynağından.
+
+```bash
+cd ~/Desktop/kornokta/backend
+source .env
+npm run ocr -- --input ../evals/fixtures --output ../evals/reports/google.json
+cd ..
+```
+
+Her sayfa için `OK   dosya.jpg  satır=N  NNNN ms` satırı basmalı. Hata
+verirse (`DEVICE_TOKEN` ya da `GOOGLE_APPLICATION_CREDENTIALS` ile ilgili
+olabilir) bana yapıştır.
+
+---
+
+## Adım 4 — Etiketle (60–90 dk, en yorucu kısım)
+
+Her görsel için `evals/gold-manifest.json`'daki `entries` dizisine bir girdi
+ekle. Önce Vision'ın o görsel için ne bulduğuna bak — `line_XX` kimliklerini
+oradan alacaksın:
+
+```bash
+python3 -c "
+import json
+run = json.load(open('evals/reports/vision.json'))
+for page in run['pages']:
+    if 'highlight_01.jpg' in page['imagePath']:   # kendi dosya adını yaz
+        for l in page['lines']:
+            print(l['lineId'], repr(l['text']))
+"
+```
+
+Vision'ın metni muhtemelen yanlış olacak (Türkçe okumuyor) — önemli değil,
+yalnız hangi `line_XX`'in fiziksel olarak işaretlediğin satıra denk geldiğini
+bulmak için bakıyorsun (konum ve sıraya göre anlaşılır).
+
+Şablon:
 
 ```json
 {
@@ -85,7 +156,10 @@ Her görsel için `evals/gold-manifest.json` içindeki `entries` dizisine bir gi
 
 **En kritik iki alan:**
 
-1. `exactTranscription` — **birebir** yaz. Kitapta ne yazıyorsa o: virgül ondalık ayracı, uzun tire, `İ`/`ı` farkı, `IM`/`IV` büyük harfi. Buradaki her sapma ölçümü bozar.
+1. `exactTranscription` — **birebir** yaz. Kitapta ne yazıyorsa o: virgül
+   ondalık ayracı, uzun tire, `İ`/`ı` farkı, `IM`/`IV` büyük harfi. Bunu
+   Vision'ın çıktısından değil, kitabın kendisinden yaz — Vision Türkçe
+   okumuyor.
 2. `criticalTokens` — anlamı değiştirecek her şey. Aday üretmek için:
 
 ```bash
@@ -95,7 +169,12 @@ print([(t.text, t.token_class) for t in d('BURAYA TRANSKRİPSİYONU YAPIŞTIR')]
 "
 ```
 
-Çıkanları gözden geçir, eksik olanı (özellikle ilaç/mikroorganizma adları) elle ekle.
+Çıkanları gözden geçir, eksik olanı (özellikle ilaç/mikroorganizma adları)
+elle ekle.
+
+`poor_capture` kategorisindeki 2 görsel için `expectedOutcome` muhtemelen
+`needs_confirmation` ya da `reject` olacak — kötü çekim zaten öyle
+tasarlandı.
 
 Doğrula:
 
@@ -103,60 +182,58 @@ Doğrula:
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json --check-files
 ```
 
-`ERROR` kalmamalı. `WARN` satırları kota eksikliğidir, 20 görselde normal.
+`ERROR` kalmamalı. `WARN` satırları 100'lük hedef kotaya göredir, 20 görselde
+normal.
 
 ---
 
-## Adım 3 — Apple Vision denemesini çalıştır (10 dk)
+## Adım 5 — Puanla (5 dk)
+
+İki ayrı ölçüm, iki ayrı soruyu cevaplıyor.
+
+**İşaret tespiti — tek-dokunuş oranı ve Vision'ın satır kutusu güvenilirliği:**
 
 ```bash
-cd ios/spikes/AppleVisionSpike
-swift build -c release
-mkdir -p ../../../evals/reports
-
-.build/release/AppleVisionSpike \
-  --input ../../../evals/fixtures \
-  --output ../../../evals/reports/vision.json
-cd ../../..
+python -m evals.ocr_eval.gold_marker_report --vision evals/reports/vision.json
 ```
 
-Xcode'da açmak istersen `Package.swift` dosyasını `File > Open…` ile aç.
-
----
-
-## Adım 4 — Puanla (5 dk)
+**OCR/el yazısı kalitesi — Google'ın gerçek sayfalarda ne kadar doğru
+okuduğu:**
 
 ```bash
-python -m evals.ocr_eval.vision_report evals/reports/vision.json
-python -m evals.ocr_eval.vision_report evals/reports/vision.json --verbose
+python -m evals.ocr_eval.vision_report evals/reports/google.json --verbose
 ```
 
-Çıktı her görsel için CER, WER ve kritik token kapısı sonucu verir.
+(Bu araç adından "vision" görünse de motor bağımsızdır — yalnız
+`pages[].lines[].text` şeklini okur, hangi motorun ürettiğine bakmaz. Aynı
+komutu `vision.json`'a karşı da çalıştırıp iki motoru karşılaştırabilirsin.)
 
 ---
 
-## Adım 5 — Sonuca bak, birlikte karar verelim
+## Adım 6 — Sonucu bana ilet
 
-Bana şu üç şeyi ilet:
+Üç şeyi yapıştır:
 
-1. **Özet satırı** — kaç görsel kapıyı geçti, ortalama CER/WER
-2. **`--verbose` çıktısındaki kritik uyuşmazlıklar** — hangi tür hatalar çıkmış
-3. **Gecikme** — medyan ve en yüksek ms
+1. `gold_marker_report`'un özet satırları (tek-dokunuş %, ulaşılabilir %,
+   yanlış-pozitif sayısı)
+2. `vision_report --verbose` çıktısındaki kritik uyuşmazlıklar — hangi tür
+   hatalar çıkmış
+3. Google OCR çalıştırırken görünen gecikmeler (`npm run ocr` çıktısındaki
+   `ms` değerleri)
 
-Kabaca ne beklediğimiz:
-
-| Durum | Anlamı | Sonraki adım |
-|---|---|---|
-| Kapıyı geçen ≥ %80, CER < 0,05 | Apple Vision basılı metinde yeterli | 100'lük sete geç |
-| Kapıyı geçen %50–80 | Sınırda; hataların türüne bakalım | Eşik kalibrasyonu veya Google OCR karşılaştırması |
-| Kapıyı geçen < %50 | Tek başına Vision yetmiyor | Google Document AI'yı öne al (§10.2) |
-
-**Not:** Kapıda kalmak her zaman OCR hatası demek değil. Etiketlemede birebir olmayan bir transkripsiyon da kapıda kalır. `--verbose` çıktısındaki uyuşmazlık gerçekten OCR hatası mı, yoksa senin etiketin mi — ilk 20'de ikisini de göreceğiz, bu normal.
+**Not:** Düşük bir tek-dokunuş oranı her zaman kod hatası demek değil —
+`config.json`'daki eşikler "ilk kalibrasyon başlangıcı" (§9.3), gerçek
+veriyle güncellenmesi bekleniyor. `gold_marker_report`'un ayırdığı
+yanlış-pozitif/yanlış-negatif ayrımı burada önemli: yanlış-pozitif
+(işaretlenmemiş bir satırın onaysız seçilmesi) ciddi bir sorun, yanlış-negatif
+(işaretli bir satırın tek dokunuşta yakalanamaması) yalnızca eşiklerin sıkı
+olduğunu gösterir.
 
 ---
 
 ## Yapmayacağın şeyler
 
-- iOS uygulaması yazmaya başlama. Faz 0 çıkış kapıları geçilmeden ekran yok (ANA-PLAN §0.9, §25).
+- iOS uygulamasına yeni ekran ekleme. Faz 2 çıkış kapısı geçilmeden yeni
+  kapsam yok (ANA-PLAN §0.9, §25).
 - 100 görseli tek seferde etiketleme. Önce 20, sonra ölçüm, sonra karar.
-- API anahtarı gerektiren hiçbir şey çalıştırma; bu adımların hepsi cihaz üstünde ve ücretsiz.
+- Gerçek hasta bilgisi içeren hiçbir görsel çekme veya etiketleme.
