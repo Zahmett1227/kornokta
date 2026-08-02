@@ -1,6 +1,10 @@
 import SwiftUI
 import SwiftData
 import CizgiCore
+#if canImport(UIKit)
+// `UIImage(data:)` below is declared in UIKit, not SwiftUI.
+import UIKit
+#endif
 
 /// The processing queue (ANA-PLAN §6.3). Every item can be retried, and a
 /// failed provider call never loses the image or the local OCR (§21.2).

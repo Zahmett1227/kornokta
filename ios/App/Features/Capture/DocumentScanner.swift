@@ -1,6 +1,8 @@
 #if os(iOS)
 import SwiftUI
 import VisionKit
+// `jpegData(compressionQuality:)` on the scanned `UIImage` comes from UIKit.
+import UIKit
 
 /// Wraps `VNDocumentCameraViewController`.
 ///

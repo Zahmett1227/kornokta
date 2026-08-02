@@ -47,11 +47,8 @@ public struct MockCardProvider: CardGenerating {
     /// Turns a statement into a question without inventing content — the mock
     /// must not add anything the passage does not say (§12.1).
     static func recallQuestion(for passage: String) -> String {
-        let firstSentence = passage
-            .split(separator: ".", maxSplits: 1, omittingEmptySubsequences: true)
-            .first
-            .map(String.init)?
-            .trimmingCharacters(in: .whitespaces) ?? passage
+        let head = passage.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: true).first
+        let firstSentence = head.map { String($0).trimmingCharacters(in: .whitespaces) } ?? passage
         return "[Taslak] \(firstSentence) — bu ifadeyi tamamlayın."
     }
 
@@ -75,8 +72,17 @@ public struct MockCardProvider: CardGenerating {
     }
 }
 
+/// Why generation failed.
+///
+/// The pipeline maps each case onto a `FailureKind`, so the transient/permanent
+/// split is decided once (§17): a malformed response is a contract bug that
+/// replaying will reproduce, while an unreachable provider is worth retrying.
 public enum CardGenerationError: Error, Sendable, Equatable {
+    /// The passage does not carry enough to build a card from (§12.1, §19.3).
     case sourceInsufficient
+    /// The provider answered, but not in the shape §14 requires.
     case schemaInvalid(String)
+    /// The provider could not be reached, or failed for a transient reason.
+    case providerUnavailable(String)
     case budgetExceeded
 }

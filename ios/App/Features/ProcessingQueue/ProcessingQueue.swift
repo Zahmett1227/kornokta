@@ -93,11 +93,13 @@ final class ProcessingQueue: ObservableObject {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
 
-        let effectivePipeline: CapturePipeline
+        // Read the ceiling per run rather than caching it at init, so changing
+        // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
+        // of the next launch (§6.7). UserDefaults is the single stored copy of
+        // the setting, so this cannot drift from what the screen shows.
+        var effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPassage)
         if let selection, !selection.isEmpty {
-            effectivePipeline = pipeline.withSelector(FixedSelection(lineIds: selection))
-        } else {
-            effectivePipeline = pipeline
+            effectivePipeline = effectivePipeline.withSelector(FixedSelection(lineIds: selection))
         }
 
         page.processingState = .localOCR

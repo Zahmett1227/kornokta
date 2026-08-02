@@ -15,6 +15,31 @@ final class PlaceholderSchedulerTests: XCTestCase {
         XCTAssertLessThan(good.scheduledDays, easy.scheduledDays)
     }
 
+    func testTheIntervalTablesActuallyDriveScheduling() throws {
+        // Regression guard: both tables were once declared and then shadowed by
+        // hardcoded literals, so editing them changed nothing. If a table stops
+        // being read, this fails instead of drifting silently.
+        for rating in ReviewRating.allCases where rating != .again {
+            let expected = try XCTUnwrap(PlaceholderScheduler.firstIntervals[rating])
+            let actual = scheduler.schedule(rating: rating, state: SchedulingState(), now: now)
+            XCTAssertEqual(actual.scheduledDays, expected, "ilk aralık tablosu okunmuyor: \(rating)")
+        }
+
+        for rating in ReviewRating.allCases where rating != .again {
+            let growth = try XCTUnwrap(PlaceholderScheduler.growthFactors[rating])
+            let actual = scheduler.schedule(rating: rating, state: SchedulingState(stability: 10), now: now)
+            XCTAssertEqual(actual.scheduledDays, 10 * growth, accuracy: 0.0001,
+                           "büyüme tablosu okunmuyor: \(rating)")
+        }
+    }
+
+    func testEveryRatingHasAnEntryInBothTables() {
+        for rating in ReviewRating.allCases {
+            XCTAssertNotNil(PlaceholderScheduler.firstIntervals[rating], "eksik: \(rating)")
+            XCTAssertNotNil(PlaceholderScheduler.growthFactors[rating], "eksik: \(rating)")
+        }
+    }
+
     func testAgainComesBackWithinTheSessionNotImmediately() {
         let result = scheduler.schedule(rating: .again, state: SchedulingState(stability: 30), now: now)
         XCTAssertEqual(result.scheduledDays, 0)
@@ -88,10 +113,14 @@ final class ReviewSessionPlannerTests: XCTestCase {
     }
 
     func testLimitTrimsTheSession() {
+        // Annotated rather than inferred: the planner takes `UUID?` for the
+        // unit id, and Swift will not widen an inferred `[(… UUID …)]` array
+        // to match.
         let unit = UUID()
-        let cards = (0..<10).map {
-            (id: UUID(), dueDate: now.addingTimeInterval(Double(-$0)), knowledgeUnitId: unit, status: CardStatus.active)
-        }
+        let cards: [(id: UUID, dueDate: Date, knowledgeUnitId: UUID?, status: CardStatus)] =
+            (0..<10).map {
+                (id: UUID(), dueDate: now.addingTimeInterval(Double(-$0)), knowledgeUnitId: unit, status: .active)
+            }
         XCTAssertEqual(ReviewSessionPlanner.plan(cards: cards, now: now, limit: 3).count, 3)
     }
 

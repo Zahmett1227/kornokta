@@ -24,7 +24,10 @@ struct ReviewView: View {
             },
             now: .now
         )
-        let byId = Dictionary(uniqueKeysWithValues: allCards.map { ($0.id, $0) })
+        // `uniquingKeysWith` rather than `uniqueKeysWithValues`: the latter traps
+        // on a duplicate id, and a crash in the review screen is a far worse
+        // outcome than showing one of two rows.
+        let byId = Dictionary(allCards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return plan.compactMap { byId[$0] }
     }
 

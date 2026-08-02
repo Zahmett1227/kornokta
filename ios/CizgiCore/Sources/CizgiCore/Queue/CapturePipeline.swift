@@ -92,6 +92,19 @@ public struct CapturePipeline: Sendable {
         )
     }
 
+    /// Same pipeline with a different card ceiling, so the user's "cards per
+    /// passage" setting reaches the generator instead of the built-in default
+    /// (§6.7, §13.2). Clamped because a non-positive limit would silently
+    /// produce a page that generates nothing.
+    public func withMaxCards(_ maxCards: Int) -> CapturePipeline {
+        CapturePipeline(
+            recognizer: recognizer,
+            selector: selector,
+            generator: generator,
+            maxCards: max(1, maxCards)
+        )
+    }
+
     public func run(jobId: String, imageURL: URL, subject: String? = nil) async -> PipelineOutcome {
         let recognized: RecognizedPage
         do {
@@ -176,16 +189,34 @@ public struct CapturePipeline: Sendable {
                 passage: passage,
                 knowledge: knowledge
             )
-        } catch CardGenerationError.budgetExceeded {
+        } catch let error as CardGenerationError {
+            if case .sourceInsufficient = error {
+                // The passage itself is too thin. Retrying identical input can
+                // only fail again, so ask the user to widen the selection
+                // instead of burning attempts (§12.1, §19.3).
+                return PipelineOutcome(
+                    jobId: jobId,
+                    finalState: .confirmationRequired,
+                    recognized: recognized,
+                    selectedLineIds: selected,
+                    passage: passage
+                )
+            }
+            // Let `FailureKind` decide transient vs permanent rather than
+            // guessing per call site — that is the one place §17's retry rule
+            // is written down.
+            let kind = Self.failureKind(for: error)
             return PipelineOutcome(
                 jobId: jobId,
-                finalState: .permanentFailure,
+                finalState: kind.resultingState,
                 recognized: recognized,
                 selectedLineIds: selected,
                 passage: passage,
-                failure: .budgetExceeded
+                failure: kind
             )
         } catch {
+            // An error the generator does not declare. Treat as transient so a
+            // one-off is retried, but never silently drop the capture (§21.2).
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .temporaryFailure,
@@ -194,6 +225,17 @@ public struct CapturePipeline: Sendable {
                 passage: passage,
                 failure: .providerUnavailable
             )
+        }
+    }
+
+    /// Single mapping from a generator error to the retry classification.
+    static func failureKind(for error: CardGenerationError) -> FailureKind {
+        switch error {
+        case .budgetExceeded: return .budgetExceeded
+        // A response that violates §14 will violate it again on replay.
+        case .schemaInvalid: return .invalidResponse
+        case .providerUnavailable: return .providerUnavailable
+        case .sourceInsufficient: return .invalidResponse
         }
     }
 

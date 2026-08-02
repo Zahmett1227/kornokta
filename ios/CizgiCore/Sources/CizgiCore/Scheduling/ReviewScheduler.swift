@@ -52,7 +52,7 @@ public protocol ReviewScheduling: Sendable {
 public struct PlaceholderScheduler: ReviewScheduling {
     public init() {}
 
-    /// Intervals in days, indexed by rating.
+    /// Interval in days for a card with no history, by rating.
     static let firstIntervals: [ReviewRating: Double] = [
         .again: 0,        // same session
         .hard: 1,
@@ -60,20 +60,30 @@ public struct PlaceholderScheduler: ReviewScheduling {
         .easy: 4
     ]
 
+    /// How much an existing interval grows, by rating. `again` resets.
+    static let growthFactors: [ReviewRating: Double] = [
+        .again: 0,
+        .hard: 1.2,
+        .good: 2.0,
+        .easy: 3.0
+    ]
+
     public func schedule(rating: ReviewRating, state: SchedulingState, now: Date = .now) -> SchedulingResult {
         let previousDays = max(state.stability, 0)
+        // Both tables are read here; editing either one changes behaviour,
+        // which is the point of having them (they used to be shadowed by
+        // hardcoded literals below).
+        let first = Self.firstIntervals[rating] ?? 0
+        let growth = Self.growthFactors[rating] ?? 0
         let days: Double
 
-        switch rating {
-        case .again:
+        if rating == .again {
             // Back to the start of the ladder, and count the lapse.
             days = 0
-        case .hard:
-            days = previousDays > 0 ? max(1, previousDays * 1.2) : 1
-        case .good:
-            days = previousDays > 0 ? max(1, previousDays * 2.0) : 2
-        case .easy:
-            days = previousDays > 0 ? max(1, previousDays * 3.0) : 4
+        } else if previousDays > 0 {
+            days = max(1, previousDays * growth)
+        } else {
+            days = first
         }
 
         let cappedDays = min(days, 365)

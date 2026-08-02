@@ -22,6 +22,19 @@ struct FailingGenerator: CardGenerating {
     }
 }
 
+/// Records what the pipeline actually asked for. An actor because
+/// `CardGenerating` is Sendable and this one has mutable state.
+actor RecordingGenerator: CardGenerating {
+    private(set) var lastMaxCards: Int?
+    private(set) var lastPassage: String?
+
+    func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
+        lastMaxCards = request.maxCards
+        lastPassage = request.passage
+        return try await MockCardProvider().generate(request)
+    }
+}
+
 private func line(_ id: String, _ text: String, y: Double) -> RecognizedLine {
     RecognizedLine(
         id: id,
@@ -101,20 +114,74 @@ final class CapturePipelineTests: XCTestCase {
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: page),
             selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: CardGenerationError.schemaInvalid("bozuk"))
+            generator: FailingGenerator(error: .providerUnavailable("bağlantı yok"))
         )
         let outcome = await pipeline.run(jobId: "job-6", imageURL: imageURL)
 
         XCTAssertEqual(outcome.finalState, .temporaryFailure)
+        XCTAssertEqual(outcome.failure, .providerUnavailable)
         XCTAssertNotNil(outcome.recognized)
         XCTAssertEqual(outcome.passage, "Anafilakside ilk seçenek tedavi")
+    }
+
+    func testMalformedResponseIsNotRetriedForever() async {
+        // §17: a schema violation will violate the schema again on replay, so
+        // it must not go round the retry loop. This case used to be reported as
+        // transient, which contradicted `FailureKind.invalidResponse`.
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: page),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            generator: FailingGenerator(error: .schemaInvalid("bozuk"))
+        )
+        let outcome = await pipeline.run(jobId: "job-6b", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .permanentFailure)
+        XCTAssertEqual(outcome.failure, .invalidResponse)
+        // The capture and the local OCR survive either way (§21.2).
+        XCTAssertNotNil(outcome.recognized)
+        XCTAssertEqual(outcome.passage, "Anafilakside ilk seçenek tedavi")
+    }
+
+    func testThinPassageAsksTheUserRatherThanRetrying() async {
+        // §12.1/§19.3: too little source is not a machine failure — replaying
+        // it cannot help, so the user is asked to widen the selection.
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: page),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            generator: FailingGenerator(error: .sourceInsufficient)
+        )
+        let outcome = await pipeline.run(jobId: "job-6c", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .confirmationRequired)
+        XCTAssertNil(outcome.knowledge)
+        XCTAssertEqual(outcome.selectedLineIds, ["line_00"])
+    }
+
+    func testEveryGeneratorErrorHasARetryClassification() {
+        // Guards the mapping itself: a new error case must be classified
+        // deliberately, not fall into the catch-all as "transient".
+        let cases: [CardGenerationError] = [
+            .sourceInsufficient,
+            .schemaInvalid("x"),
+            .providerUnavailable("x"),
+            .budgetExceeded
+        ]
+        for error in cases {
+            let kind = CapturePipeline.failureKind(for: error)
+            switch error {
+            case .providerUnavailable:
+                XCTAssertTrue(kind.isTransient, "\(error) yeniden denenebilir olmalı")
+            default:
+                XCTAssertFalse(kind.isTransient, "\(error) sonsuza dek denenmemeli")
+            }
+        }
     }
 
     func testBudgetExceededDoesNotRetryForever() async {
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: page),
             selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: CardGenerationError.budgetExceeded)
+            generator: FailingGenerator(error: .budgetExceeded)
         )
         let outcome = await pipeline.run(jobId: "job-7", imageURL: imageURL)
         XCTAssertEqual(outcome.finalState, .permanentFailure)
@@ -130,6 +197,46 @@ final class CapturePipelineTests: XCTestCase {
         let first = await pipeline.run(jobId: "job-8", imageURL: imageURL)
         let second = await pipeline.run(jobId: "job-8", imageURL: imageURL)
         XCTAssertEqual(first, second)
+    }
+
+    func testMaxCardsSettingReachesTheGenerator() async {
+        // The "Pasaj başına kart" setting was displayed in Ayarlar but never
+        // reached the request, so changing it did nothing.
+        let recorder = RecordingGenerator()
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: page),
+            selector: FixedSelection(lineIds: ["line_00", "line_01"]),
+            generator: recorder
+        ).withMaxCards(2)
+
+        _ = await pipeline.run(jobId: "job-10", imageURL: imageURL)
+        let seen = await recorder.lastMaxCards
+        XCTAssertEqual(seen, 2)
+    }
+
+    func testMaxCardsIsClampedToAtLeastOne() async {
+        // A zero ceiling would produce a page that silently generates nothing.
+        let recorder = RecordingGenerator()
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: page),
+            selector: FixedSelection(lineIds: ["line_00"]),
+            generator: recorder
+        ).withMaxCards(0)
+
+        _ = await pipeline.run(jobId: "job-11", imageURL: imageURL)
+        let seen = await recorder.lastMaxCards
+        XCTAssertEqual(seen, 1)
+    }
+
+    func testWithMaxCardsKeepsTheSelector() async {
+        // `withSelector` and `withMaxCards` are both copy-with-change; one must
+        // not drop what the other set.
+        let pipeline = CapturePipeline(recognizer: StubRecognizer(lines: page))
+            .withSelector(FixedSelection(lineIds: ["line_00"]))
+            .withMaxCards(3)
+        let outcome = await pipeline.run(jobId: "job-12", imageURL: imageURL)
+        XCTAssertEqual(outcome.selectedLineIds, ["line_00"])
+        XCTAssertEqual(outcome.finalState, .ready)
     }
 
     func testUnknownLineIdsAreIgnored() async {
