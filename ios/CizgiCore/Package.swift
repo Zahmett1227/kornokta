@@ -10,7 +10,15 @@ let package = Package(
         .library(name: "CizgiCore", targets: ["CizgiCore"])
     ],
     targets: [
-        .target(name: "CizgiCore", path: "Sources/CizgiCore"),
+        .target(
+            name: "CizgiCore",
+            path: "Sources/CizgiCore",
+            // The marker-detection thresholds are a copy of
+            // evals/spikes/marker_detection/config.json, kept identical by a
+            // test in the Python suite. They are data, not code: §0.6 says
+            // thresholds must be changeable without editing source.
+            resources: [.process("Resources")]
+        ),
         .testTarget(
             name: "CizgiCoreTests",
             dependencies: ["CizgiCore"],

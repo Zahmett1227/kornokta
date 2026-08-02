@@ -39,6 +39,8 @@ jobs:
         run: python -m evals.ocr_eval.export_cases --check
       - name: Shared gate cases are current
         run: python -m evals.ocr_eval.export_gate_cases --check
+      - name: Shared marker-decision cases are current
+        run: python -m evals.ocr_eval.export_marker_cases --check
       - name: Marker-detection smoke test
         run: python -m evals.spikes.marker_detection.run --demo
       - name: Provider-compare dry run (no keys)

@@ -41,11 +41,21 @@ final class AppEnvironment: ObservableObject {
             imageStore: store,
             pipeline: CapturePipeline(
                 recognizer: recognizer,
-                selector: ManualSelectionOnly(),
+                selector: Self.makeSelector(),
                 generator: MockCardProvider(),
                 backend: Self.makeBackend(settings: self.settings, tokens: tokens)
             )
         )
+    }
+
+    /// On-device marker detection, falling back to manual selection if the
+    /// bundled thresholds cannot be read.
+    ///
+    /// The fallback asks the user for every page rather than guessing, which
+    /// is the behaviour §19.3 requires when no marker was detected. A detector
+    /// that silently selected everything would be the dangerous failure.
+    static func makeSelector() -> any MarkerSelecting {
+        (try? DetectedMarkerSelector()) ?? ManualSelectionOnly()
     }
 
     /// Builds the cloud OCR client, or nil when the user has not set it up.

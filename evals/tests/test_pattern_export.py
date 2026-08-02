@@ -179,3 +179,58 @@ class TestSharedCases:
         folded = [case for case in cases if case["group"].endswith("_katlanmis")]
         assert len(folded) > 20
         assert any(case["expected"] for case in folded)
+
+
+class TestMarkerCaseFile:
+    """The phone runs a port of the marker detector; its rules are pinned the
+    same way the token detector's are."""
+
+    def test_marker_case_file_matches_its_source(self):
+        from evals.ocr_eval.export_marker_cases import main as export_marker_cases_main
+
+        assert export_marker_cases_main(["--check"]) == 0, (
+            "marker-decision-cases.json güncel değil. "
+            "Çalıştır: python -m evals.ocr_eval.export_marker_cases"
+        )
+
+    def test_the_cases_cover_every_decision(self):
+        payload = json.loads(
+            (REPO_ROOT / "evals" / "shared" / "marker-decision-cases.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        decisions = {case["expected"]["decision"] for case in payload["cases"]}
+        assert decisions == {"auto_candidate", "quick_confirm", "user_selection"}
+
+    def test_the_cases_cover_the_rejection_rules(self):
+        """A mark can pass the darkness and extent tests and still not be an
+        underline: a shadow is too thick, a table rule runs past the text."""
+        payload = json.loads(
+            (REPO_ROOT / "evals" / "shared" / "marker-decision-cases.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        by_name = {case["name"]: case for case in payload["cases"]}
+        for name in ("kalin_golge_reddedilir", "tablo_cizgisi_reddedilir"):
+            assert by_name[name]["expected"]["selectionType"] == "none", name
+
+    def test_unknown_overrun_never_auto_accepts(self):
+        """§19.2/P3: an underline whose margins were not visible cannot be told
+        apart from a cropped table rule, so it goes to the user however high it
+        scores."""
+        payload = json.loads(
+            (REPO_ROOT / "evals" / "shared" / "marker-decision-cases.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        unknown = [
+            case
+            for case in payload["cases"]
+            if not case["input"]["underline"]["overrunObserved"]
+        ]
+        assert unknown, "kenarı görünmeyen vaka yok"
+        for case in unknown:
+            assert case["expected"]["decision"] != "auto_candidate", case["name"]
+        # ...and at least one of them scores high enough that only this rule
+        # keeps it out, or the test would pass for the wrong reason.
+        assert any(case["expected"]["selectionConfidence"] >= 0.92 for case in unknown)
