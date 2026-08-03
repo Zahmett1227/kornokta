@@ -29,10 +29,11 @@ yorumları **İngilizce**.
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | Başlamadı |
 
-**Dal durumu:** `main` Faz 2 sonrasıyla (`ccf5985`) aynı. Faz 3/4'ün kodu
-`claude/proje-analizi-planlama-r7lxw4` dalında, henüz `main`'e alınmadı.
-Önceki oturumlar `claude/faz1-ios-iskelet` ve `claude/tibbi-hafiza-app-04elp1`
-dallarında çalıştı, bunlar zaten `main`'e ileri sarılmıştı.
+**Dal durumu:** Faz 3/4'ün kodu `main`'e alındı (fast-forward merge, `20d71b2`,
+2026-08-03) — `main` ve `claude/proje-analizi-planlama-r7lxw4` şu an aynı
+commit'te. Önceki oturumlar `claude/faz1-ios-iskelet` ve
+`claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bunlar da zaten
+`main`'e ileri sarılmıştı.
 
 **Test durumu:**
 - Python (`evals/`): 503 test, yeşil — `python -m pytest evals -q`
@@ -138,6 +139,3 @@ artık ikisi de kod + test + Mac doğrulaması tamam. Kalan hiçbir kalem Faz
    ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
 4. Faz 5 — Sertleştirme (retry/idempotency, background recovery, maliyet
    sert limitleri, veri dışa aktarma) henüz başlamadı.
-5. `main` dalı hâlâ Faz 2 sonrasıyla aynı — Faz 3/4'ün kodu
-   `claude/proje-analizi-planlama-r7lxw4`'te. `main`'e alma (merge/PR) henüz
-   kullanıcıdan istenmedi.
