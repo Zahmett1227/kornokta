@@ -148,9 +148,6 @@ final class ProcessingQueue: ObservableObject {
             page.lastError = nil
             page.retryCount = 0
             page.nextAttemptAt = nil
-            if !AppSettings.load().keepOriginalPage {
-                try? imageStore.remove(relativePath: page.originalImagePath)
-            }
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired
@@ -180,7 +177,17 @@ final class ProcessingQueue: ObservableObject {
             page.processingState = outcome.finalState
         }
 
-        try? context.save()
+        // The original image is the only source if `context.save()` fails
+        // (e.g. storage full) — deleting it before persistence is confirmed
+        // would leave the page pointing at a file that no longer exists with
+        // none of the generated cards actually saved. Only remove it once
+        // the `.ready` state and its cards are durably on disk.
+        do {
+            try context.save()
+            if outcome.finalState == .ready, !AppSettings.load().keepOriginalPage {
+                try? imageStore.remove(relativePath: page.originalImagePath)
+            }
+        } catch {}
     }
 
     private func persist(
