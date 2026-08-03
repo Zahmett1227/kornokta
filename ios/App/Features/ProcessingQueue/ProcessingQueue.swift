@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 import CizgiCore
 
 /// Runs captured pages through the pipeline and writes the results to the store.
@@ -139,6 +140,20 @@ final class ProcessingQueue: ObservableObject {
     /// Runs one page. `selection` overrides the detector, which is how the
     /// confirmation screen resumes a job after the user picks the passage.
     func process(_ page: CapturedPage, selection: [String]? = nil) async {
+        await process(page, lineSelection: selection, selectionResult: nil)
+    }
+
+    /// Resumes a photo confirmation without reducing the user's selected
+    /// visual groups back to one flat list of OCR lines.
+    func process(_ page: CapturedPage, selection: MarkerSelectionResult) async {
+        await process(page, lineSelection: nil, selectionResult: selection)
+    }
+
+    private func process(
+        _ page: CapturedPage,
+        lineSelection: [String]?,
+        selectionResult: MarkerSelectionResult?
+    ) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
 
@@ -146,10 +161,7 @@ final class ProcessingQueue: ObservableObject {
         // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
         // of the next launch (§6.7). UserDefaults is the single stored copy of
         // the setting, so this cannot drift from what the screen shows.
-        var effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPassage)
-        if let selection, !selection.isEmpty {
-            effectivePipeline = effectivePipeline.withSelector(FixedSelection(lineIds: selection))
-        }
+        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPassage)
 
         page.processingState = .localOCR
         try? context.save()
@@ -157,7 +169,10 @@ final class ProcessingQueue: ObservableObject {
         let outcome = await effectivePipeline.run(
             jobId: page.id.uuidString,
             imageURL: imageURL,
-            subject: page.source?.subject
+            subject: page.source?.subject,
+            snapshot: decodedSnapshot(for: page),
+            selectionOverride: lineSelection,
+            selectionResultOverride: selectionResult
         )
 
         apply(outcome, to: page, context: context)
@@ -173,10 +188,20 @@ final class ProcessingQueue: ObservableObject {
 
         switch outcome.finalState {
         case .ready:
-            if let knowledge = outcome.knowledge, let passage = outcome.passage {
-                persist(knowledge: knowledge, passage: passage, outcome: outcome, page: page, context: context)
+            if !outcome.generatedGroups.isEmpty {
+                for generated in outcome.generatedGroups {
+                    persist(generated: generated, outcome: outcome, page: page, context: context)
+                }
+            } else if let knowledge = outcome.knowledge, let group = outcome.annotationGroups.first {
+                persist(
+                    generated: GeneratedAnnotationGroup(group: group, knowledge: knowledge),
+                    outcome: outcome,
+                    page: page,
+                    context: context
+                )
             }
             page.processingState = .ready
+            page.ocrSnapshotData = nil
             page.lastError = nil
             page.retryCount = 0
             page.nextAttemptAt = nil
@@ -186,6 +211,9 @@ final class ProcessingQueue: ObservableObject {
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired
+            if let snapshot = outcome.ocrSnapshot {
+                page.ocrSnapshotData = try? JSONEncoder().encode(snapshot)
+            }
             // Not an error, but the reason has to survive: §19.2 requires the
             // confirmation, and a confirmation with no reason attached is one
             // the user cannot answer well. `lastError` is the field the queue
@@ -235,20 +263,36 @@ final class ProcessingQueue: ObservableObject {
     }
 
     private func persist(
-        knowledge: GeneratedKnowledge,
-        passage: String,
+        generated: GeneratedAnnotationGroup,
         outcome: PipelineOutcome,
         page: CapturedPage,
         context: ModelContext
     ) {
+        let group = generated.group
+        let knowledge = generated.knowledge
+        let box = group.boundingBox
+        let sourceCropPath = cropPath(for: page, group: group)
         let region = TextRegion(
-            boundingBox: (0, 0, 1, 1),
-            lineIds: outcome.selectedLineIds,
-            finalText: passage,
-            confidence: page.documentQualityScore,
-            selectionType: .manual
+            boundingBox: (box.x, box.y, box.width, box.height),
+            lineIds: group.contextLineIds,
+            tokenIds: group.contextTokenIds,
+            evidenceIds: group.evidenceIds,
+            finalText: group.contextText,
+            selectedText: group.selectedText,
+            contextText: group.contextText,
+            handwrittenNotes: group.handwrittenNotes,
+            layoutKind: Self.persistedLayoutKind(group.layoutKind),
+            sourceCropPath: sourceCropPath,
+            confidence: group.confidence,
+            isHandwritten: !group.handwrittenNotes.isEmpty,
+            selectionType: Self.persistedSelectionType(group.selectionType),
+            requiresConfirmation: group.needsConfirmation
         )
-        region.appleOCRText = outcome.recognized?.fullText
+        region.appleOCRText = Self.localText(for: group, outcome: outcome)
+        region.googleOCRText = group.contextText
+        if outcome.ocrSnapshot?.userConfirmed == true {
+            region.confirmedAt = .now
+        }
         region.page = page
         context.insert(region)
 
@@ -282,7 +326,7 @@ final class ProcessingQueue: ObservableObject {
         // only on success — `persist` runs solely from the `.ready` branch of
         // `apply`, so a failed call never reaches here (a known, deliberate
         // gap: a failed generation is not yet given its own `ModelRun`).
-        if let metadata = outcome.modelRun {
+        if let metadata = knowledge.modelRun {
             let run = ModelRun(
                 requestId: metadata.requestId,
                 jobId: page.id.uuidString,
@@ -298,6 +342,71 @@ final class ProcessingQueue: ObservableObject {
             )
             context.insert(run)
         }
+    }
+
+    private func decodedSnapshot(for page: CapturedPage) -> OCRSnapshot? {
+        guard let data = page.ocrSnapshotData else { return nil }
+        return try? JSONDecoder().decode(OCRSnapshot.self, from: data)
+    }
+
+    private static func localText(for group: AnnotationGroup, outcome: PipelineOutcome) -> String? {
+        let evidenceLineIds = Set(
+            outcome.selection.evidence
+                .filter { group.evidenceIds.contains($0.id) }
+                .flatMap(\.lineIds)
+        )
+        let text = outcome.recognized?.lines
+            .filter { evidenceLineIds.contains($0.id) }
+            .map(\.text)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return text?.isEmpty == false ? text : nil
+    }
+
+    private static func persistedSelectionType(_ type: AnnotationType) -> SelectionType {
+        switch type {
+        case .highlight: return .highlight
+        case .underline: return .underline
+        case .marginMark: return .marginMark
+        case .handwriting: return .handwriting
+        case .manual: return .manual
+        }
+    }
+
+    private static func persistedLayoutKind(_ kind: AnnotationLayoutKind) -> LayoutKind {
+        switch kind {
+        case .paragraph: return .paragraph
+        case .bullet: return .bullet
+        case .column: return .column
+        case .tableCandidate: return .tableCandidate
+        case .unknown: return .unknown
+        }
+    }
+
+    /// Stores the selected source region, never the whole page under a crop
+    /// label. A failure leaves the region usable through its original page;
+    /// it must not turn a successful card into a failed capture.
+    private func cropPath(for page: CapturedPage, group: AnnotationGroup) -> String? {
+        guard
+            let image = UIImage(contentsOfFile: imageStore.url(forRelativePath: page.originalImagePath).path),
+            let cgImage = image.cgImage
+        else { return nil }
+
+        let padding = 0.015
+        let box = group.boundingBox
+        let x = max(0, box.x - padding)
+        let y = max(0, box.y - padding)
+        let right = min(1, box.x + box.width + padding)
+        let bottom = min(1, box.y + box.height + padding)
+        let pixelRect = CGRect(
+            x: x * Double(cgImage.width),
+            y: y * Double(cgImage.height),
+            width: max(1, (right - x) * Double(cgImage.width)),
+            height: max(1, (bottom - y) * Double(cgImage.height))
+        ).integral
+        guard let crop = cgImage.cropping(to: pixelRect) else { return nil }
+        guard let data = UIImage(cgImage: crop).jpegData(compressionQuality: 0.92) else { return nil }
+        return try? imageStore.store(data, id: UUID(), kind: .crop)
     }
 
     func cancel(_ page: CapturedPage) {

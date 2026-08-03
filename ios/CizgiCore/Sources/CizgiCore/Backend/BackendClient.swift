@@ -15,6 +15,52 @@ import Foundation
 /// find the same number of them, so `line_07` is a different physical line in
 /// each. Pairing by id would compare unrelated lines and raise disagreements
 /// that do not exist.
+public struct LocalToken: Codable, Sendable, Equatable, Identifiable {
+    public let tokenId: String
+    public let text: String
+    public let confidence: Double
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public var id: String { tokenId }
+
+    public init(
+        tokenId: String,
+        text: String,
+        confidence: Double,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
+    ) {
+        self.tokenId = tokenId
+        self.text = text
+        self.confidence = confidence
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    public init(_ token: RecognizedToken) {
+        self.init(
+            tokenId: token.id,
+            text: token.text,
+            confidence: token.confidence,
+            x: Double(token.box.minX),
+            y: Double(token.box.minY),
+            width: Double(token.box.width),
+            height: Double(token.box.height)
+        )
+    }
+
+    public init(_ token: LocalToken) {
+        self = token
+    }
+}
+
 public struct LocalLine: Codable, Sendable, Equatable {
     public let lineId: String
     public let text: String
@@ -24,6 +70,7 @@ public struct LocalLine: Codable, Sendable, Equatable {
     public let y: Double
     public let width: Double
     public let height: Double
+    public let tokens: [LocalToken]
 
     public init(
         lineId: String,
@@ -32,7 +79,8 @@ public struct LocalLine: Codable, Sendable, Equatable {
         x: Double,
         y: Double,
         width: Double,
-        height: Double
+        height: Double,
+        tokens: [LocalToken] = []
     ) {
         self.lineId = lineId
         self.text = text
@@ -41,6 +89,7 @@ public struct LocalLine: Codable, Sendable, Equatable {
         self.y = y
         self.width = width
         self.height = height
+        self.tokens = tokens
     }
 
     /// Builds the wire form from a local recognition result.
@@ -52,7 +101,8 @@ public struct LocalLine: Codable, Sendable, Equatable {
             x: Double(line.box.minX),
             y: Double(line.box.minY),
             width: Double(line.box.width),
-            height: Double(line.box.height)
+            height: Double(line.box.height),
+            tokens: line.tokens.map(LocalToken.init)
         )
     }
 }
@@ -66,6 +116,119 @@ public struct RemoteLine: Codable, Sendable, Equatable {
     public let y: Double
     public let width: Double
     public let height: Double
+    public let tokenIds: [String]
+
+    public init(
+        lineId: String,
+        text: String,
+        confidence: Double,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        tokenIds: [String] = []
+    ) {
+        self.lineId = lineId
+        self.text = text
+        self.confidence = confidence
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.tokenIds = tokenIds
+    }
+}
+
+public struct RemoteColor: Codable, Sendable, Equatable {
+    public let red: Double
+    public let green: Double
+    public let blue: Double
+    public let alpha: Double
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+}
+
+public struct RemoteToken: Codable, Sendable, Equatable, Identifiable {
+    public let tokenId: String
+    public let text: String
+    public let confidence: Double
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+    public let isHandwritten: Bool
+    public let isUnderlined: Bool
+    public let backgroundColor: RemoteColor?
+
+    public var id: String { tokenId }
+
+    public init(
+        tokenId: String,
+        text: String,
+        confidence: Double,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        isHandwritten: Bool = false,
+        isUnderlined: Bool = false,
+        backgroundColor: RemoteColor? = nil
+    ) {
+        self.tokenId = tokenId
+        self.text = text
+        self.confidence = confidence
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.isHandwritten = isHandwritten
+        self.isUnderlined = isUnderlined
+        self.backgroundColor = backgroundColor
+    }
+
+    public var boundingBox: NormalizedRect {
+        NormalizedRect(x: x, y: y, width: width, height: height)
+    }
+}
+
+public struct RemoteLayoutRegion: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let kind: AnnotationLayoutKind
+    public let text: String
+    public let confidence: Double
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(
+        id: String,
+        kind: AnnotationLayoutKind,
+        text: String,
+        confidence: Double,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
+    ) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.confidence = confidence
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    public var boundingBox: NormalizedRect {
+        NormalizedRect(x: x, y: y, width: width, height: height)
+    }
 }
 
 public struct RemotePage: Codable, Sendable, Equatable {
@@ -73,6 +236,30 @@ public struct RemotePage: Codable, Sendable, Equatable {
     public let imageHeight: Int
     public let elapsedMs: Int
     public let lines: [RemoteLine]
+    public let tokens: [RemoteToken]
+    public let paragraphs: [RemoteLayoutRegion]
+    public let blocks: [RemoteLayoutRegion]
+    public let tables: [RemoteLayoutRegion]
+
+    public init(
+        imageWidth: Int,
+        imageHeight: Int,
+        elapsedMs: Int,
+        lines: [RemoteLine],
+        tokens: [RemoteToken] = [],
+        paragraphs: [RemoteLayoutRegion] = [],
+        blocks: [RemoteLayoutRegion] = [],
+        tables: [RemoteLayoutRegion] = []
+    ) {
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.elapsedMs = elapsedMs
+        self.lines = lines
+        self.tokens = tokens
+        self.paragraphs = paragraphs
+        self.blocks = blocks
+        self.tables = tables
+    }
 }
 
 /// What the backend decided about the two readings (§19.2, §19.3).

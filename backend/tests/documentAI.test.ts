@@ -432,6 +432,87 @@ describe("DocumentAIRecognizer", () => {
     expect(calls[0]!.body.processOptions.ocrConfig.hints.languageHints).toEqual(["tr", "en"]);
   });
 
+  it("returns token style and layout geometry only when the explicit add-on is enabled", async () => {
+    const response: ProcessResponse = {
+      document: {
+        text: "hipoksi not",
+        pages: [
+          {
+            dimension: { width: 1600, height: 1200 },
+            lines: [
+              {
+                layout: {
+                  textAnchor: { textSegments: [{ endIndex: "11" }] },
+                  confidence: 0.98,
+                  boundingPoly: { normalizedVertices: [{ x: 0.1, y: 0.2 }, { x: 0.5, y: 0.24 }] },
+                },
+              },
+            ],
+            tokens: [
+              {
+                layout: {
+                  textAnchor: { textSegments: [{ endIndex: "7" }] },
+                  confidence: 0.99,
+                  boundingPoly: { normalizedVertices: [{ x: 0.1, y: 0.2 }, { x: 0.3, y: 0.24 }] },
+                },
+                styleInfo: { underlined: true },
+              },
+              {
+                layout: {
+                  textAnchor: { textSegments: [{ startIndex: "8", endIndex: "11" }] },
+                  confidence: 0.87,
+                  boundingPoly: { normalizedVertices: [{ x: 0.34, y: 0.2 }, { x: 0.5, y: 0.24 }] },
+                },
+                styleInfo: {
+                  handwritten: true,
+                  backgroundColor: { red: 1, green: 0.9, blue: 0.2, alpha: 0.6 },
+                },
+              },
+            ],
+            paragraphs: [
+              {
+                layout: {
+                  textAnchor: { textSegments: [{ endIndex: "11" }] },
+                  boundingPoly: { normalizedVertices: [{ x: 0.1, y: 0.18 }, { x: 0.5, y: 0.26 }] },
+                },
+              },
+            ],
+            tables: [
+              {
+                layout: {
+                  textAnchor: { textSegments: [{ endIndex: "11" }] },
+                  boundingPoly: { normalizedVertices: [{ x: 0.08, y: 0.16 }, { x: 0.55, y: 0.3 }] },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { transport, calls } = stubTransport(200, response);
+    const recognizer = new DocumentAIRecognizer({ ...CONFIG, computeStyleInfo: true }, TOKENS, transport);
+
+    const page = await recognizer.recognize(new Uint8Array([0]), {
+      imagePath: "/tmp/a.jpg",
+      mimeType: "image/jpeg",
+    });
+
+    expect(calls[0]!.body.processOptions.ocrConfig.premiumFeatures).toEqual({ computeStyleInfo: true });
+    expect(page.lines[0]!.tokenIds).toEqual(["token_000", "token_001"]);
+    expect(page.tokens).toMatchObject([
+      { tokenId: "token_000", text: "hipoksi", isUnderlined: true, isHandwritten: false },
+      {
+        tokenId: "token_001",
+        text: "not",
+        isUnderlined: false,
+        isHandwritten: true,
+        backgroundColor: { red: 1, green: 0.9, blue: 0.2, alpha: 0.6 },
+      },
+    ]);
+    expect(page.paragraphs?.[0]).toMatchObject({ kind: "paragraph", text: "hipoksi not" });
+    expect(page.tables?.[0]).toMatchObject({ kind: "table_candidate", text: "hipoksi not" });
+  });
+
   it("preserves Turkish characters verbatim", async () => {
     // The whole reason this provider exists (docs/ADR-002): Apple Vision
     // cannot emit ı ş ğ İ at all. Every one of them appears in this sentence,

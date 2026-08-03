@@ -11,7 +11,7 @@ enum ReviewNotificationManager {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
         guard enabled else { return }
-        guard try await ,center.requestAuthorization(options: [.alert, .sound, .badge]) else {
+        guard try await center.requestAuthorization(options: [.alert, .sound, .badge]) else {
             throw NotificationError.permissionDenied
         }
         let content = UNMutableNotificationContent()

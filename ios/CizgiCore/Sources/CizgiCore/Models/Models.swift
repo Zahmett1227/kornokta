@@ -63,6 +63,10 @@ public final class CapturedPage {
     /// image orphaned forever; `shouldProcess` never revisits a `.ready`
     /// page, so nothing else would ever retry the deletion.
     public var pendingOriginalImageDeletion: Bool = false
+    /// Device-local checkpoint of the completed primary OCR run. The data is
+    /// intentionally held only on the phone and is cleared after successful
+    /// persistence; the backend remains stateless (§7.2, §22).
+    public var ocrSnapshotData: Data?
 
     public var source: Source?
 
@@ -89,6 +93,7 @@ public final class CapturedPage {
         self.confirmationFlags = []
         self.retryCount = 0
         self.pendingOriginalImageDeletion = false
+        self.ocrSnapshotData = nil
         self.regions = []
     }
 }
@@ -101,10 +106,23 @@ public final class TextRegion {
     public var boundingBoxY: Double
     public var boundingBoxWidth: Double
     public var boundingBoxHeight: Double
+    /// Flattened x/y polygon coordinates when a non-rectangular source region
+    /// is available. Current detectors emit a rectangle, but this prevents a
+    /// later lasso selection from being forced back into a whole-page box.
+    public var boundingPolygon: [Double]
     public var lineIds: [String]
+    public var tokenIds: [String]
+    public var evidenceIds: [String]
     public var appleOCRText: String?
     public var googleOCRText: String?
     public var finalText: String
+    public var selectedText: String
+    public var contextText: String
+    public var handwrittenNotes: [String]
+    public var layoutKindRaw: String
+    /// Relative image-store path for the actual source crop, never an
+    /// absolute sandbox path.
+    public var sourceCropPath: String?
     public var confidence: Double
     public var isHandwritten: Bool
     public var selectionTypeRaw: String
@@ -121,11 +139,23 @@ public final class TextRegion {
         set { selectionTypeRaw = newValue.rawValue }
     }
 
+    public var layoutKind: LayoutKind {
+        get { LayoutKind(rawValue: layoutKindRaw) ?? .unknown }
+        set { layoutKindRaw = newValue.rawValue }
+    }
+
     public init(
         id: UUID = UUID(),
         boundingBox: (x: Double, y: Double, width: Double, height: Double),
         lineIds: [String],
+        tokenIds: [String] = [],
+        evidenceIds: [String] = [],
         finalText: String,
+        selectedText: String = "",
+        contextText: String = "",
+        handwrittenNotes: [String] = [],
+        layoutKind: LayoutKind = .unknown,
+        sourceCropPath: String? = nil,
         confidence: Double,
         isHandwritten: Bool = false,
         selectionType: SelectionType = .manual,
@@ -136,8 +166,21 @@ public final class TextRegion {
         self.boundingBoxY = boundingBox.y
         self.boundingBoxWidth = boundingBox.width
         self.boundingBoxHeight = boundingBox.height
+        self.boundingPolygon = [
+            boundingBox.x, boundingBox.y,
+            boundingBox.x + boundingBox.width, boundingBox.y,
+            boundingBox.x + boundingBox.width, boundingBox.y + boundingBox.height,
+            boundingBox.x, boundingBox.y + boundingBox.height,
+        ]
         self.lineIds = lineIds
+        self.tokenIds = tokenIds
+        self.evidenceIds = evidenceIds
         self.finalText = finalText
+        self.selectedText = selectedText
+        self.contextText = contextText
+        self.handwrittenNotes = handwrittenNotes
+        self.layoutKindRaw = layoutKind.rawValue
+        self.sourceCropPath = sourceCropPath
         self.confidence = confidence
         self.isHandwritten = isHandwritten
         self.selectionTypeRaw = selectionType.rawValue

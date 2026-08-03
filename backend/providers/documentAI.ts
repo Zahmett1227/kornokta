@@ -13,8 +13,11 @@
 import type { GoogleAuth } from "google-auth-library";
 import type { DocumentAIConfig } from "../config.js";
 import type {
+  OCRColor,
+  OCRLayoutRegion,
   OCRLine,
   OCRPage,
+  OCRToken,
   RecognizeOptions,
   TextRecognizer,
 } from "./ocrTypes.js";
@@ -35,8 +38,25 @@ interface RawLayout {
   };
 }
 
+interface RawColor {
+  red?: number;
+  green?: number;
+  blue?: number;
+  alpha?: number;
+}
+
+interface RawStyleInfo {
+  handwritten?: boolean;
+  underlined?: boolean;
+  backgroundColor?: RawColor;
+}
+
 interface RawBlock {
   layout?: RawLayout;
+}
+
+interface RawToken extends RawBlock {
+  styleInfo?: RawStyleInfo;
 }
 
 interface RawPage {
@@ -44,6 +64,8 @@ interface RawPage {
   lines?: RawBlock[];
   paragraphs?: RawBlock[];
   blocks?: RawBlock[];
+  tokens?: RawToken[];
+  tables?: RawBlock[];
 }
 
 interface RawDocument {
@@ -191,6 +213,17 @@ export function boundsOf(layout: RawLayout | undefined): Omit<OCRLine, "lineId" 
   };
 }
 
+/** Geometry-only correspondence between a line and a Document AI token. */
+function overlapOfSmallerArea(a: Positioned, b: Positioned): number {
+  const left = Math.max(a.x, b.x);
+  const top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const smaller = Math.min(a.width * a.height, b.width * b.height);
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
 /**
  * Picks the finest-grained set of blocks the response actually carries.
  *
@@ -202,6 +235,31 @@ export function blocksOf(page: RawPage): RawBlock[] {
   if (page.lines?.length) return page.lines;
   if (page.paragraphs?.length) return page.paragraphs;
   return page.blocks ?? [];
+}
+
+function colorOf(color: RawColor | undefined): OCRColor | undefined {
+  if (!color) return undefined;
+  const red = color.red ?? 0;
+  const green = color.green ?? 0;
+  const blue = color.blue ?? 0;
+  const alpha = color.alpha ?? 1;
+  return [red, green, blue, alpha].every(Number.isFinite)
+    ? { red, green, blue, alpha }
+    : undefined;
+}
+
+function layoutRegions(
+  fullText: string,
+  blocks: RawBlock[] | undefined,
+  kind: OCRLayoutRegion["kind"],
+): OCRLayoutRegion[] {
+  return (blocks ?? []).map((block, index) => ({
+    id: `${kind}_${String(index).padStart(2, "0")}`,
+    kind,
+    text: textForLayout(fullText, block.layout),
+    confidence: block.layout?.confidence ?? 0,
+    ...boundsOf(block.layout),
+  }));
 }
 
 /** Height of one reading-order band, as a fraction of the page. */
@@ -421,15 +479,19 @@ export class DocumentAIRecognizer implements TextRecognizer {
 
   async recognize(image: Uint8Array, options: RecognizeOptions): Promise<OCRPage> {
     const token = await this.tokens.getToken();
+    const ocrConfig = {
+      hints: { languageHints: this.config.languageHints },
+      ...(this.config.computeStyleInfo
+        ? { premiumFeatures: { computeStyleInfo: true } }
+        : {}),
+    };
     const body = {
       rawDocument: {
         content: Buffer.from(image).toString("base64"),
         mimeType: options.mimeType,
       },
       processOptions: {
-        ocrConfig: {
-          hints: { languageHints: this.config.languageHints },
-        },
+        ocrConfig,
       },
     };
 
@@ -468,6 +530,20 @@ export class DocumentAIRecognizer implements TextRecognizer {
     // merged into this one.
     const page = document.pages?.[0] ?? {};
 
+    const tokens: OCRToken[] = (page.tokens ?? [])
+      .map((token, index) => ({
+        tokenId: `token_${String(index).padStart(3, "0")}`,
+        text: textForLayout(fullText, token.layout),
+        confidence: token.layout?.confidence ?? 0,
+        ...boundsOf(token.layout),
+        isHandwritten: token.styleInfo?.handwritten === true,
+        isUnderlined: token.styleInfo?.underlined === true,
+        ...(colorOf(token.styleInfo?.backgroundColor)
+          ? { backgroundColor: colorOf(token.styleInfo?.backgroundColor) }
+          : {}),
+      }))
+      .filter((token) => token.text.trim().length > 0);
+
     const unordered = blocksOf(page)
       .map((block) => {
         const text = textForLayout(fullText, block.layout);
@@ -482,10 +558,17 @@ export class DocumentAIRecognizer implements TextRecognizer {
     // Same reading order as the Vision path (§10.1): column by column when
     // the page splits into columns, top-to-bottom-then-left-to-right
     // otherwise — see `orderByReadingPosition`.
-    const lines: OCRLine[] = orderByReadingPosition(unordered).map((line, index) => ({
-      lineId: `line_${String(index).padStart(2, "0")}`,
-      ...line,
-    }));
+    const lines: OCRLine[] = orderByReadingPosition(unordered).map((line, index) => {
+      const lineId = `line_${String(index).padStart(2, "0")}`;
+      const lineBox = { x: line.x, y: line.y, width: line.width, height: line.height };
+      return {
+        lineId,
+        ...line,
+        tokenIds: tokens
+          .filter((token) => overlapOfSmallerArea(lineBox, token) >= 0.3)
+          .map((token) => token.tokenId),
+      };
+    });
 
     return {
       imagePath: options.imagePath,
@@ -496,7 +579,10 @@ export class DocumentAIRecognizer implements TextRecognizer {
       engineVersion: this.name,
       elapsedMs,
       lines,
+      tokens,
+      paragraphs: layoutRegions(fullText, page.paragraphs, "paragraph"),
+      blocks: layoutRegions(fullText, page.blocks, "block"),
+      tables: layoutRegions(fullText, page.tables, "table_candidate"),
     };
   }
 }
-

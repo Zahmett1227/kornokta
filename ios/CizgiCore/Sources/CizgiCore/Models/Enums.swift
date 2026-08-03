@@ -38,7 +38,16 @@ public enum SelectionType: String, Codable, Sendable {
     case underline
     case highlight
     case marginMark = "margin_mark"
+    case handwriting
     case manual
+}
+
+public enum LayoutKind: String, Codable, Sendable {
+    case paragraph
+    case bullet
+    case column
+    case tableCandidate = "table_candidate"
+    case unknown
 }
 
 /// MVP card types (§13.1). Multiple choice is deliberately absent — §13.3 keeps

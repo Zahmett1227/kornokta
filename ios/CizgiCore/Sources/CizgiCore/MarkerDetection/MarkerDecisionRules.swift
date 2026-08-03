@@ -112,6 +112,9 @@ extension MarkerDetector {
 
         return LineDetection(
             lineId: measurement.lineId,
+            highlightOverlap: measurement.highlightOverlap,
+            underlineDarkRatio: evidence.darkRatio,
+            underlineExtentRatio: evidence.extentRatio,
             markerOverlap: markerOverlap,
             lineGeometry: lineGeometry,
             localOCRConfidence: measurement.ocrConfidence,
@@ -140,6 +143,33 @@ extension MarkerDetector {
                     ocrConfidence: line.ocrConfidence,
                     documentQuality: documentQuality,
                     neighboringSeparation: Self.neighboringSeparation(line, among: lines)
+                )
+            )
+        }
+    }
+
+    /// Token-level counterpart of `analyze(page:lines:)`. The calibrated
+    /// decision rules are deliberately reused: this adds no new threshold,
+    /// only applies the existing underline/highlight measurements to a word
+    /// box when Vision could provide one.
+    public func analyze(
+        page buffer: PixelBuffer,
+        tokens: [TokenBox],
+        documentQuality: Double = 0.9
+    ) -> [TokenDetection] {
+        tokens.map { token in
+            let box = token.lineBox
+            return TokenDetection(
+                token: token,
+                detection: judge(
+                    LineMeasurement(
+                        lineId: token.tokenId,
+                        highlightOverlap: highlightOverlap(in: buffer, line: box),
+                        underline: underlineEvidence(in: buffer, line: box),
+                        ocrConfidence: token.ocrConfidence,
+                        documentQuality: documentQuality,
+                        neighboringSeparation: 1.0
+                    )
                 )
             )
         }
