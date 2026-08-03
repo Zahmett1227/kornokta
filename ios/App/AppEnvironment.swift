@@ -154,9 +154,35 @@ struct AppSettings: Codable, Equatable {
     var maxCardsPerPassage: Int = 2
     var sourceFaithfulOnly: Bool = true
     var notificationHour: Int = 20
+    var notificationsEnabled: Bool = false
+    var dailyNewCardLimit: Int = 20
+    var quickSessionMinutes: Int = 5
     var keepOriginalPage: Bool = true
 
     static let storageKey = "cizgi.settings.v1"
+
+    private enum CodingKeys: String, CodingKey {
+        case backendURL, defaultSubject, maxCardsPerPassage, sourceFaithfulOnly
+        case notificationHour, notificationsEnabled, dailyNewCardLimit
+        case quickSessionMinutes, keepOriginalPage
+    }
+
+    init() {}
+
+    /// Decode each preference independently so adding a Faz 5 setting does
+    /// not reset existing backend or capture preferences after an upgrade.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        backendURL = try values.decodeIfPresent(String.self, forKey: .backendURL) ?? ""
+        defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
+        maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
+        sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
+        notificationHour = try values.decodeIfPresent(Int.self, forKey: .notificationHour) ?? 20
+        notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false
+        dailyNewCardLimit = try values.decodeIfPresent(Int.self, forKey: .dailyNewCardLimit) ?? 20
+        quickSessionMinutes = try values.decodeIfPresent(Int.self, forKey: .quickSessionMinutes) ?? 5
+        keepOriginalPage = try values.decodeIfPresent(Bool.self, forKey: .keepOriginalPage) ?? true
+    }
 
     static func load() -> AppSettings {
         guard

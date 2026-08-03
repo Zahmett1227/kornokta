@@ -146,6 +146,11 @@ final class ProcessingQueue: ObservableObject {
             }
             page.processingState = .ready
             page.lastError = nil
+            page.retryCount = 0
+            page.nextAttemptAt = nil
+            if !AppSettings.load().keepOriginalPage {
+                try? imageStore.remove(relativePath: page.originalImagePath)
+            }
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired

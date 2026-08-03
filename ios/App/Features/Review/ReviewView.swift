@@ -28,7 +28,17 @@ struct ReviewView: View {
         // on a duplicate id, and a crash in the review screen is a far worse
         // outcome than showing one of two rows.
         let byId = Dictionary(allCards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return plan.compactMap { byId[$0] }
+        let ordered = plan.compactMap { byId[$0] }
+        var newCards = 0
+        let dailyLimited = ordered.filter { card in
+            guard card.reviewCount == 0 else { return true }
+            guard newCards < environment.settings.dailyNewCardLimit else { return false }
+            newCards += 1
+            return true
+        }
+        // A conservative five cards/minute budget. It is a ceiling, never a
+        // promise that encourages rushing; unfinished due cards stay due.
+        return Array(dailyLimited.prefix(environment.settings.quickSessionMinutes * 5))
     }
 
     private var currentCard: Card? {

@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var deviceToken = ""
     @State private var tokenSaved = false
     @State private var tokenError: String?
+    @State private var notificationError: String?
+    @State private var exportURL: URL?
+    @State private var exportError: String?
 
     var body: some View {
         NavigationStack {
@@ -43,6 +46,34 @@ struct SettingsView: View {
                     Text("Açıkken kartlar yalnızca sayfada yazan bilgiye dayanır. Kapatmak zenginleştirilmiş içeriğe izin verir ve her ek bilgi ayrıca işaretlenir.")
                 }
 
+                Section("Tekrar") {
+                    Toggle("Günlük hatırlatıcı", isOn: Binding(
+                        get: { environment.settings.notificationsEnabled },
+                        set: { enabled in
+                            environment.settings.notificationsEnabled = enabled
+                            environment.settings.save()
+                            updateNotification()
+                        }
+                    ))
+                    Stepper(
+                        "Hatırlatma saati: \(environment.settings.notificationHour):00",
+                        value: Binding(
+                            get: { environment.settings.notificationHour },
+                            set: { environment.settings.notificationHour = $0; environment.settings.save(); updateNotification() }
+                        ), in: 0...23
+                    )
+                    .disabled(!environment.settings.notificationsEnabled)
+                    Stepper("Günlük yeni kart: \(environment.settings.dailyNewCardLimit)", value: Binding(
+                        get: { environment.settings.dailyNewCardLimit },
+                        set: { environment.settings.dailyNewCardLimit = $0; environment.settings.save() }
+                    ), in: 0...100)
+                    Stepper("Hızlı oturum: \(environment.settings.quickSessionMinutes) dk", value: Binding(
+                        get: { environment.settings.quickSessionMinutes },
+                        set: { environment.settings.quickSessionMinutes = $0; environment.settings.save() }
+                    ), in: 1...30)
+                    if let notificationError { Text(notificationError).font(.footnote).foregroundStyle(.red) }
+                }
+
                 Section("Veri") {
                     LabeledContent("Kart", value: "\(cards.count)")
                     LabeledContent("Çekilen sayfa", value: "\(pages.count)")
@@ -50,6 +81,13 @@ struct SettingsView: View {
                         get: { environment.settings.keepOriginalPage },
                         set: { environment.settings.keepOriginalPage = $0; environment.settings.save() }
                     ))
+                    Button("Yedeği hazırla") { prepareExport() }
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("JSON yedeğini paylaş", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    if let exportError { Text(exportError).font(.footnote).foregroundStyle(.red) }
                 }
 
                 Section {
@@ -150,5 +188,43 @@ struct SettingsView: View {
         tokenSaved = false
         tokenError = nil
         environment.backendChanged()
+    }
+
+    private func updateNotification() {
+        Task {
+            do {
+                try await ReviewNotificationManager.update(
+                    enabled: environment.settings.notificationsEnabled,
+                    hour: environment.settings.notificationHour
+                )
+                notificationError = nil
+            } catch {
+                environment.settings.notificationsEnabled = false
+                environment.settings.save()
+                notificationError = error.localizedDescription
+            }
+        }
+    }
+
+    private func prepareExport() {
+        do {
+            let records = cards.map { card in
+                BackupExporter.CardRecord(
+                    id: card.id, type: card.type.rawValue, front: card.front, back: card.back,
+                    explanation: card.explanation, sourceQuote: card.sourceQuote,
+                    subject: card.knowledgeUnit?.subject, status: card.status.rawValue,
+                    dueDate: card.dueDate, stability: card.stability, difficulty: card.difficulty,
+                    reviewCount: card.reviewCount, lapseCount: card.lapseCount
+                )
+            }
+            let data = try BackupExporter.encode(cards: records)
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("cizgi-yedek.json")
+            try data.write(to: url, options: .atomic)
+            exportURL = url
+            exportError = nil
+        } catch {
+            exportURL = nil
+            exportError = "Yedek hazırlanamadı: \(error.localizedDescription)"
+        }
     }
 }
