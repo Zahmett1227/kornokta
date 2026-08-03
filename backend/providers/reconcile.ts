@@ -143,8 +143,13 @@ export function reconcile(
     const agrees =
       second !== null && normalizeForCompare(first.text) === normalizeForCompare(second.text);
     // The gate runs per line so a flag points at the line the user has to
-    // look at, not at the page.
-    const flags = second === null || agrees ? [] : runGate(second.text, first.text).mismatches;
+    // look at, not at the page. `first` (primary/Google) is `gold` here —
+    // it is "the engine we treat as primary" per this file's own docstring
+    // above — and `second` (secondary/Apple) is `hypothesis`, so a verdict
+    // string's "kaynak" names the trustworthy reading and "okuma" names the
+    // one that cannot write Turkish, not the other way around. This is
+    // informational only now (see `decide`, below): it no longer gates.
+    const flags = second === null || agrees ? [] : runGate(first.text, second.text).mismatches;
     return {
       lineId: first.lineId,
       primaryText: first.text,
@@ -159,7 +164,10 @@ export function reconcile(
   const primaryText = primary.lines.map((line) => line.text).join("\n");
   const secondaryText = secondary?.lines.map((line) => line.text).join("\n") ?? "";
   // Page-level gate, so a value that moved between lines is still counted.
-  const gate = secondary ? runGate(secondaryText, primaryText) : runGate(primaryText, primaryText);
+  // `primaryText` (Google) is `gold`, `secondaryText` (Apple) is `hypothesis` —
+  // same direction as the per-line gate above, and same caveat: recorded on
+  // the result for audit, no longer a `decide` input (§10.2, §10.3).
+  const gate = secondary ? runGate(primaryText, secondaryText) : runGate(primaryText, primaryText);
 
   const criticalLineIds = lines
     .filter((line) => line.criticalTokenFlags.length > 0)
@@ -167,7 +175,6 @@ export function reconcile(
 
   const decision = decide({
     lines,
-    gate,
     hasSecondOpinion: secondary !== null,
     minConfidence,
     handwritten,
@@ -176,14 +183,32 @@ export function reconcile(
   return { ...decision, text: primaryText, lines, criticalLineIds, gate };
 }
 
+/**
+ * What gates and what doesn't, now that Google is the only engine that can
+ * write Turkish (ADR-002).
+ *
+ * Apple Vision's disagreement with Google — critical-token or not — used to
+ * force `quick_confirm` on its own. That treated a known-broken-for-Turkish
+ * reading as a second opinion worth interrupting the user for, which is
+ * backwards: Apple cannot corroborate *or* contradict Google in any way that
+ * should change what gets recorded. Its disagreement is still detected and
+ * carried on the result (`lines[].criticalTokenFlags`, `criticalLineIds`,
+ * `gate`) for audit, but it no longer blocks — the safety net for what
+ * actually reaches a card is `cardGate` checking each card's own
+ * `sourceQuote` (§19), not a fallible second engine here.
+ *
+ * What still gates, because it is about Google's *own* reading rather than
+ * Apple's: an illegible page, handwriting (§10.4 — two engines can be
+ * confidently wrong about the same scrawl, but Google is the only one either
+ * way), and Google's own low confidence.
+ */
 function decide(input: {
   lines: LineReconciliation[];
-  gate: GateResult;
   hasSecondOpinion: boolean;
   minConfidence: number;
   handwritten: Set<string>;
 }): { decision: Decision; reason: string } {
-  const { lines, gate, hasSecondOpinion, minConfidence, handwritten } = input;
+  const { lines, hasSecondOpinion, minConfidence, handwritten } = input;
 
   // §19.3: nothing legible means there is nothing to make a card from.
   if (lines.length === 0) {
@@ -191,25 +216,6 @@ function decide(input: {
   }
   if (lines.every((line) => !line.primaryText.trim())) {
     return { decision: "reject", reason: "Tanınan satırların hepsi boş." };
-  }
-
-  // §10.5.1 and §19.2: a critical-token disagreement is never recorded
-  // silently. Checked before confidence, because a high-confidence reading of
-  // the wrong route is exactly the case this rule exists for.
-  const critical = lines.filter((line) => line.criticalTokenFlags.length > 0);
-  if (critical.length > 0) {
-    return {
-      decision: "quick_confirm",
-      reason:
-        `${critical.length} satırda kritik değer uyuşmazlığı: ` +
-        critical[0]!.criticalTokenFlags[0],
-    };
-  }
-  if (!gate.passes) {
-    return {
-      decision: "quick_confirm",
-      reason: gate.mismatches[0] ?? "Sayfa genelinde kritik değer uyuşmazlığı.",
-    };
   }
 
   // §10.4: handwriting never auto-accepts, even when both engines agree —
@@ -243,12 +249,14 @@ function decide(input: {
 
   const disagreeing = lines.filter((line) => !line.agrees);
   if (disagreeing.length > 0) {
-    // Non-critical wording differences: the primary reading is kept and the
-    // difference is recorded, not surfaced. §24.2 wants few interruptions,
-    // and these do not change meaning.
+    // The primary (Google) reading is kept either way — Apple cannot write
+    // Turkish, so its disagreement, critical-looking or not, is recorded
+    // (`criticalTokenFlags` above) rather than surfaced. §24.2 wants few
+    // interruptions; a fallible second engine disagreeing is not new
+    // information about whether Google's reading is right.
     return {
       decision: "auto_accept",
-      reason: `${disagreeing.length} satırda kritik olmayan fark var; birincil okuma alındı.`,
+      reason: `${disagreeing.length} satırda ikincil (Apple) okumadan fark var; birincil (Google) okuma alındı.`,
     };
   }
 

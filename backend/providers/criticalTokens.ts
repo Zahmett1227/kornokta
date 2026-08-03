@@ -99,6 +99,26 @@ export function isRouteSurface(text: string): boolean {
 }
 
 /**
+ * Collapses a hipo/hiper token to just its polarity prefix.
+ *
+ * §10.5 makes the hipo/hiper *distinction* critical, not the rest of the
+ * word's spelling: 'hipersensitivite' misread as 'hipersenstvite' is an
+ * ordinary OCR typo in the suffix, not a polarity flip, and comparing full
+ * surfaces reported it as a critical mismatch it is not. 'hipokalemi' vs
+ * 'hiperkalemi' *does* change polarity and must still mismatch — this keeps
+ * that case exactly as sharp while dropping the suffix-typo false positive.
+ *
+ * Ported from `evals/ocr_eval/critical_tokens.canonical_hypo_hyper`, which
+ * stays the reference.
+ */
+export function canonicalHypoHyper(surface: string): string {
+  const folded = nfc(surface).toLowerCase();
+  if (folded.startsWith("hiper")) return "hiper";
+  if (folded.startsWith("hipo")) return "hipo";
+  return folded;
+}
+
+/**
  * Returns every critical span in `text`, sorted by position.
  *
  * Overlapping spans are kept — `0,5 mg/kg` yields dose_frequency,

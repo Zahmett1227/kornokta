@@ -43,9 +43,26 @@ sorunu değildi, üçü de koddaki gerçek hatalardı:
    ama gerçek boşluğu kesen bir ayraç) kullanıcı kararıyla düşük öncelikli
    olarak ertelendi. Ayrıntı: `docs/ADR-002-birincil-ocr-secimi.md`.
 
-Bu oturumda telefon backend'e **hâlâ bağlanmadı** — Ayarlar'da sunucu adresi
-ve cihaz anahtarı girilmesi gerekiyor (adımlar kullanıcıya anlatıldı, `CLAUDE.md`
-→ "Sıradaki iş"). Bağlanınca kartlar Mock'tan gerçek yapay zekaya geçecek.
+~~Bu oturumda telefon backend'e **hâlâ bağlanmadı**~~ **Güncelleme
+(2026-08-03, sonraki oturum):** kullanıcı Vercel cihaz tokenını girip
+telefonu backend'e bağladı ve 153/153 Swift testini bir Mac'te doğruladı.
+İlk gerçek bağlantılı çekimde ("Tip 4 hipersensitivite" sayfası) yeni bir
+bulgu çıktı:
+
+5. **Onay ekranı Apple Vision gürültüsüyle doluyordu (ADR-003).** Bağlantılı
+   ilk sayfada dört "kritik değer uyuşmazlığı" uyarısı göründü — hepsi
+   Apple Vision'ın bilinen Türkçe/sembol arızalarının yansımasıydı
+   (`hipersenstvite` = harf düşürme, `[12]`/`[K⁻]` = Apple'ın okuyamadığı
+   karakterler, `[1]` = Apple'ın uydurduğu sayı), gerçek bir tıbbi belirsizlik
+   değil. İki gerçek kod hatası bulundu: `reconcile.ts`'te "kaynak"/"okuma"
+   etiketleri ters yöndeydi (Apple'ın okuması "kaynak" olarak gösteriliyordu)
+   ve ADR-002'ye rağmen Apple'ın uyuşmazlığı hâlâ onay ekranını tetikliyordu.
+   Ek olarak `hypo_hyper` karşılaştırması polarite öneki yerine tüm kelimeyi
+   kıyaslıyordu. Üçü de düzeltildi — karar kaydı:
+   `docs/ADR-003-ocr-uzlastirma-kapisi-daraltildi.md`. Aynı oturumda kart
+   üretim promptu v1.1'e güncellendi (soru çerçevesi pasajın kazanımına göre,
+   `explanation`'da etiketli kaynak-dışı bağlam izni — ANA-PLAN §15.2'nin
+   güncellenmiş metni).
 
 ## Tamamlananlar
 

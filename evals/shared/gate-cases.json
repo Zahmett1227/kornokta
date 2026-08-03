@@ -389,6 +389,15 @@
       "passes": false
     },
     {
+      "group": "hipo_hiper",
+      "gold": "Tip 4 hipersensitivite örnekleri",
+      "reading": "Tip 4 hipersenstvite örnekleri",
+      "mismatches": [],
+      "missingRate": 0.0,
+      "added": [],
+      "passes": true
+    },
+    {
       "group": "iyon",
       "gold": "Na+ artışı",
       "reading": "Na- artışı",

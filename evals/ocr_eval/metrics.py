@@ -283,6 +283,14 @@ def _canonical(text: str, token_class: str | None = None) -> str:
         from .critical_tokens import canonical_route
 
         return canonical_route(text)
+    if token_class == "hypo_hyper":
+        # Only the hipo/hiper prefix is the critical distinction (§10.5); the
+        # rest of the word is an ordinary transcription detail. Comparing full
+        # surfaces turned a dropped letter in the suffix ('hipersensitivite'
+        # -> 'hipersenstvite') into a reported critical mismatch.
+        from .critical_tokens import canonical_hypo_hyper
+
+        return canonical_hypo_hyper(text)
     # Diacritics are deliberately NOT folded here.
     #
     # The *detector* folds, so a critical token is still found in ASCII-fied

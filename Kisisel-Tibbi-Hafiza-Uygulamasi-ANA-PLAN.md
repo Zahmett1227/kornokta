@@ -486,6 +486,14 @@ Tahmini fiyat referansı, 1 Ağustos 2026: 1.000 sayfa başına yaklaşık 1,50 
 
 ### 10.3 OCR uzlaştırma
 
+> **Kapsamı daraltıldı (2026-08-03).** Apple Vision'ın Google ile kritik-token
+> düzeyinde uyuşmazlığı artık tek başına onay ekranını tetiklemiyor — Apple
+> Türkçe okuyamadığı için (§10.1, ADR-002) bu bir ikinci görüş değil, ve
+> nihai metin zaten her zaman Google'dan geliyordu. Onay ekranı artık yalnız
+> Google'ın kendi düşük güveni, el yazısı (§10.4) veya okunamayan sayfa için
+> tetikleniyor; Apple-Google farkı hâlâ kayda geçiyor (denetim için), yalnız
+> kullanıcıyı durdurmuyor. Karar ve gerekçe: `docs/ADR-003-ocr-uzlastirma-kapisi-daraltildi.md`.
+
 Her kelime için mümkünse şu kayıt tutulur:
 
 ```json
@@ -802,17 +810,40 @@ Kaynakta bulunmayan kelime ekleme.
 
 ### 15.2 Kaynağa sadık kart üretim talimatı
 
+> **v1.1 (2026-08-03, ANA-PLAN sahibi kararı).** Orijinal metin yalnız
+> cevabın kaynağa sadık kalmasını söylüyordu, modele pasajın gerçekte neyi
+> öğretmek istediğini yorumlama payı bırakmıyordu — bu, cümle yapısını
+> mekanik biçimde soruya çeviren kartlar riski taşıyordu. İki ekleme yapıldı,
+> ikisi de §12.1'in asıl kuralını (cevap kaynağa bağlı kalır) değiştirmeden:
+> soru çerçevesini pasajın kazanımına göre kurma talimatı, ve `explanation`
+> alanında kaynak dışı bağlama izin (kart `enriched=true` işaretlenerek,
+> §12.2 zaten var olan onay zorunluluğuyla). Güncel metin aşağıda;
+> `backend/prompts/cardGeneration.ts`'teki `CARD_PROMPT_VERSION` bununla
+> birebir senkron tutulur.
+
 ```text
 Sen kişisel tıbbi öğrenme kartı editörüsün.
 Kartların bütün doğru cevapları yalnızca verilen kaynak metinden çıkarılabilir
 olmalıdır. Harici tıbbi bilgiyi cevap anahtarına ekleme. Kaynak yetersizse kart
 üretme ve source_insufficient işareti koy.
 
+Soruyu kurmadan önce pasajın gerçekte hangi bilgiyi kazandırmak istediğini
+belirle — yüzeysel cümle yapısını değil, kazanımın kendisini (ör. "bu pasaj
+X ile Y'yi ayırt etmeyi öğretiyor", "bu pasaj Z'nin mekanizmasını anlatıyor").
+Soruyu bu kazanıma göre kur, cümleyi birebir kırpıp soru haline getirme. Bu
+yorum yalnız sorunun çerçevesini belirler; cevap yine yalnızca kaynaktan
+çıkarılabilir kalmalıdır.
+
 Bir pasajdan en fazla dört, birbirinden anlamlı biçimde farklı kart üret.
 Öncelik sırası: doğrudan hatırlama, mekanizma (kaynak destekliyorsa),
 ayırt etme (kaynak destekliyorsa), istisna/tuzak (kaynak destekliyorsa).
 Sorular tek anlamlı ve yanıtlanabilir olsun. Aynı cevabı yüzeysel biçimde
 tekrarlayan kart oluşturma.
+
+explanation alanına kaynakta bulunmayan bağlam ekleyebilirsin (mekanizma,
+klinik önem, sık karıştırılan ayrım) — yalnız bu alanda, front/back'te değil.
+Böyle bir ekleme yaptığında kartı enriched=true işaretle; hiçbir kaynak dışı
+bilgi eklemediysen enriched=false bırak.
 
 Doz, sayı, birim, olumsuzluk veya özel isim içeren cevaplarda riskFlags doldur.
 Kaynakta olası hata görürsen sessizce düzeltme; sourceConcern alanına yaz.

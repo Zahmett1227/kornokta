@@ -81,6 +81,10 @@ PAIRS: list[tuple[str, str, str]] = [
 
     # --- hypo/hyper and ions ---
     ("hipo_hiper", "hipokalemi gelişti", "hiperkalemi gelişti"),
+    # Same polarity, suffix OCR typo (a real production case, PR review): the
+    # gate must not treat a dropped letter after 'hiper-' as a critical
+    # mismatch, but must still catch an actual hipo<->hiper flip above.
+    ("hipo_hiper", "Tip 4 hipersensitivite örnekleri", "Tip 4 hipersenstvite örnekleri"),
     ("iyon", "Na+ artışı", "Na- artışı"),
     ("iyon", "Fe+2 birikimi", "Fe+3 birikimi"),
 

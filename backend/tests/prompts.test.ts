@@ -40,6 +40,20 @@ describe("prompt contracts (§15)", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("sourceConcern");
   });
 
+  it("card prompt (v1.1) asks for the passage's teaching point before framing the question", () => {
+    // The question may be framed around what the passage is actually
+    // teaching, not just its sentence structure — but this must not loosen
+    // the answer's source-boundedness, which the prompt says explicitly.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("kazandırmak istediğini");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("cevap yine yalnızca kaynaktan");
+  });
+
+  it("card prompt (v1.1) confines non-source context to explanation, gated by enriched (§12.2, §19.2)", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("explanation alanına kaynakta bulunmayan bağlam");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("yalnız bu alanda, front/back'te değil");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("enriched=true");
+  });
+
   it("handwriting prompt asks for transcription only, never a card (§10.4, §15.3)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("Kart veya açıklama üretme");
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("en fazla üç aday");
