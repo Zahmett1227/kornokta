@@ -227,6 +227,20 @@ describe("columnBoundaries", () => {
     ];
     expect(columnBoundaries(items)).toEqual([]);
   });
+
+  it("rejects horizontally-separated regions that never coexist vertically", () => {
+    // Two right-aligned metadata lines at the very top, then unrelated
+    // left-aligned body text below: different x-ranges, but not a column
+    // layout — one region sits entirely above the other.
+    const metadata = [0.02, 0.05].map((y) => ({ x: 0.6, y, width: 0.35, height: 0.02 }));
+    const body = Array.from({ length: 6 }, (_, index) => ({
+      x: 0.05,
+      y: 0.15 + index * 0.05,
+      width: 0.5,
+      height: 0.03,
+    }));
+    expect(columnBoundaries([...metadata, ...body])).toEqual([]);
+  });
 });
 
 describe("orderByReadingPosition", () => {
@@ -261,6 +275,50 @@ describe("orderByReadingPosition", () => {
       "Apoptoz 1",
       "Apoptoz 2",
       "Apoptoz 3",
+    ]);
+  });
+
+  it("places a header before both columns rather than inside one of them", () => {
+    const header = { text: "Başlık", x: 0.05, y: 0.02, width: 0.9, height: 0.03 };
+    const items = [
+      header,
+      ...twoColumnRow(0.1, "Nekroz 1", "Apoptoz 1"),
+      ...twoColumnRow(0.2, "Nekroz 2", "Apoptoz 2"),
+      ...twoColumnRow(0.3, "Nekroz 3", "Apoptoz 3"),
+    ];
+
+    const ordered = orderByReadingPosition(items).map((item) => item.text);
+    expect(ordered).toEqual([
+      "Başlık",
+      "Nekroz 1",
+      "Nekroz 2",
+      "Nekroz 3",
+      "Apoptoz 1",
+      "Apoptoz 2",
+      "Apoptoz 3",
+    ]);
+  });
+
+  it("places a footer after both columns rather than between them", () => {
+    // The exact corruption Codex flagged: assigning a gutter-spanning line to
+    // a column purely by its center stranded a footer between the columns.
+    const footer = { text: "Dipnot", x: 0.05, y: 0.4, width: 0.9, height: 0.03 };
+    const items = [
+      ...twoColumnRow(0.1, "Nekroz 1", "Apoptoz 1"),
+      ...twoColumnRow(0.2, "Nekroz 2", "Apoptoz 2"),
+      ...twoColumnRow(0.3, "Nekroz 3", "Apoptoz 3"),
+      footer,
+    ];
+
+    const ordered = orderByReadingPosition(items).map((item) => item.text);
+    expect(ordered).toEqual([
+      "Nekroz 1",
+      "Nekroz 2",
+      "Nekroz 3",
+      "Apoptoz 1",
+      "Apoptoz 2",
+      "Apoptoz 3",
+      "Dipnot",
     ]);
   });
 });

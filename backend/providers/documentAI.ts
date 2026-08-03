@@ -226,6 +226,42 @@ const COLUMN_EDGE_MARGIN = 0.08;
 /** Every column a detected gutter implies must end up with at least this many
  * lines, or the "gutter" was probably one short/indented line, not a layout. */
 const MIN_LINES_PER_COLUMN = 2;
+/** Two candidate columns must share at least this fraction of the shorter
+ * one's vertical extent, or they are not side by side — they are two
+ * horizontally-separated but vertically-stacked regions (e.g. a right-aligned
+ * header above unrelated left-aligned body text), and reading them column by
+ * column would reorder the page instead of fixing it. */
+const MIN_VERTICAL_OVERLAP = 0.5;
+
+/** True if `item`'s span crosses one of `boundaries` rather than sitting
+ * entirely inside one column — a header or footer spanning the gutter. */
+function spansAGutter(item: Positioned, boundaries: number[]): boolean {
+  return boundaries.some((b) => item.x < b && item.x + item.width > b);
+}
+
+function columnOf(item: Positioned, boundaries: number[]): number {
+  const center = item.x + item.width / 2;
+  return boundaries.filter((b) => b < center).length;
+}
+
+/** The vertical [top, bottom] extent covered by `items`. */
+function verticalRange(items: Positioned[]): { top: number; bottom: number } {
+  return {
+    top: Math.min(...items.map((item) => item.y)),
+    bottom: Math.max(...items.map((item) => item.y + item.height)),
+  };
+}
+
+/** Whether two non-empty groups of items coexist over a meaningful shared
+ * vertical range, rather than one sitting entirely above the other. */
+function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
+  const rangeA = verticalRange(a);
+  const rangeB = verticalRange(b);
+  const overlap = Math.min(rangeA.bottom, rangeB.bottom) - Math.max(rangeA.top, rangeB.top);
+  const smallerSpan = Math.min(rangeA.bottom - rangeA.top, rangeB.bottom - rangeB.top);
+  if (smallerSpan <= 0) return false;
+  return overlap / smallerSpan >= MIN_VERTICAL_OVERLAP;
+}
 
 /**
  * Finds x-positions of vertical whitespace gutters wide and central enough to
@@ -234,7 +270,9 @@ const MIN_LINES_PER_COLUMN = 2;
  * instead of interleaving both columns' text row by row.
  *
  * A handful of full-width outliers (a header, a page number) are tolerated —
- * `crossingTolerance` — rather than blocking detection outright.
+ * `crossingTolerance` — rather than blocking detection outright, and excluded
+ * from the per-column checks below (they are not evidence for or against a
+ * column split, since they belong to neither column).
  */
 export function columnBoundaries(items: Positioned[]): number[] {
   if (items.length < 2 * MIN_LINES_PER_COLUMN) return [];
@@ -265,12 +303,14 @@ export function columnBoundaries(items: Positioned[]): number[] {
 
   if (!boundaries.length) return [];
 
-  const perColumn = new Array<number>(boundaries.length + 1).fill(0);
+  const perColumn: Positioned[][] = Array.from({ length: boundaries.length + 1 }, () => []);
   for (const item of items) {
-    const center = item.x + item.width / 2;
-    perColumn[boundaries.filter((b) => b < center).length]!++;
+    if (!spansAGutter(item, boundaries)) perColumn[columnOf(item, boundaries)]!.push(item);
   }
-  if (perColumn.some((count) => count < MIN_LINES_PER_COLUMN)) return [];
+  if (perColumn.some((column) => column.length < MIN_LINES_PER_COLUMN)) return [];
+  for (let i = 0; i < perColumn.length - 1; i++) {
+    if (!overlapsVertically(perColumn[i]!, perColumn[i + 1]!)) return [];
+  }
 
   return boundaries;
 }
@@ -285,6 +325,14 @@ export function columnBoundaries(items: Positioned[]): number[] {
  * Banding rather than a float tolerance, because a tolerance comparison is
  * not a strict weak ordering and produces an arbitrary permutation on a dense
  * page.
+ *
+ * A line spanning the gutter (a header or footer) is not assigned to either
+ * column: it is placed in the overall top-to-bottom sequence, flushing
+ * whatever each column has accumulated so far (in column order) immediately
+ * before it. That puts a header before both columns, a footer after both, and
+ * a mid-page divider between whatever came above it and below it — instead of
+ * always sorting into one column by its center, which could otherwise strand
+ * a footer between the columns it actually follows.
  */
 export function orderByReadingPosition<T extends Positioned>(items: T[]): T[] {
   const withinColumn = (a: Positioned, b: Positioned): number => {
@@ -294,15 +342,23 @@ export function orderByReadingPosition<T extends Positioned>(items: T[]): T[] {
     return a.x - b.x;
   };
 
+  const ordered = [...items].sort(withinColumn);
   const boundaries = columnBoundaries(items);
-  if (!boundaries.length) return [...items].sort(withinColumn);
+  if (!boundaries.length) return ordered;
 
-  const columns: T[][] = Array.from({ length: boundaries.length + 1 }, () => []);
-  for (const item of items) {
-    const center = item.x + item.width / 2;
-    columns[boundaries.filter((b) => b < center).length]!.push(item);
+  const buffers: T[][] = Array.from({ length: boundaries.length + 1 }, () => []);
+  const result: T[] = [];
+  for (const item of ordered) {
+    if (spansAGutter(item, boundaries)) {
+      for (const buffer of buffers) result.push(...buffer);
+      buffers.forEach((buffer) => (buffer.length = 0));
+      result.push(item);
+    } else {
+      buffers[columnOf(item, boundaries)]!.push(item);
+    }
   }
-  return columns.flatMap((column) => column.sort(withinColumn));
+  for (const buffer of buffers) result.push(...buffer);
+  return result;
 }
 
 /** Status codes worth another attempt (§17). */

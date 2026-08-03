@@ -44,8 +44,51 @@ enum ReadingOrder {
     /// many lines, or the "gutter" was probably one short/indented line, not
     /// a layout.
     static let minLinesPerColumn = 2
+    /// Two candidate columns must share at least this fraction of the shorter
+    /// one's vertical extent, or they are not side by side — they are two
+    /// horizontally-separated but vertically-stacked regions (e.g. a
+    /// right-aligned header above unrelated left-aligned body text), and
+    /// reading them column by column would reorder the page instead of
+    /// fixing it.
+    static let minVerticalOverlap = 0.5
+
+    /// True if `box`'s span crosses one of `boundaries` rather than sitting
+    /// entirely inside one column — a header or footer spanning the gutter.
+    private static func spansAGutter(_ box: Box, boundaries: [Double]) -> Bool {
+        boundaries.contains { boundary in box.minX < boundary && box.maxX > boundary }
+    }
+
+    private static func columnIndex(_ box: Box, boundaries: [Double]) -> Int {
+        let center = (box.minX + box.maxX) / 2
+        return boundaries.filter { $0 < center }.count
+    }
+
+    /// The vertical [top, bottom] extent covered by `boxes`, or `nil` if empty.
+    private static func verticalRange(_ boxes: [Box]) -> (top: Double, bottom: Double)? {
+        guard let top = boxes.map(\.minY).min(), let bottom = boxes.map(\.maxY).max() else { return nil }
+        return (top, bottom)
+    }
+
+    /// Whether two groups of boxes coexist over a meaningful shared vertical
+    /// range, rather than one sitting entirely above the other.
+    private static func overlapsVertically(_ a: [Box], _ b: [Box]) -> Bool {
+        guard let rangeA = verticalRange(a), let rangeB = verticalRange(b) else { return false }
+        let overlap = min(rangeA.bottom, rangeB.bottom) - max(rangeA.top, rangeB.top)
+        let smallerSpan = min(rangeA.bottom - rangeA.top, rangeB.bottom - rangeB.top)
+        guard smallerSpan > 0 else { return false }
+        return overlap / smallerSpan >= minVerticalOverlap
+    }
 
     /// Returns `boxes`' indices in reading order.
+    ///
+    /// A box spanning the gutter (a header or footer) is not assigned to
+    /// either column: it is placed in the overall top-to-bottom sequence,
+    /// flushing whatever each column has accumulated so far (in column order)
+    /// immediately before it. That puts a header before both columns, a
+    /// footer after both, and a mid-page divider between whatever came above
+    /// it and below it — instead of always sorting into one column by its
+    /// center, which could otherwise strand a footer between the columns it
+    /// actually follows.
     static func order(_ boxes: [Box]) -> [Int] {
         func band(_ box: Box) -> Int { Int((box.minY / bandHeight).rounded()) }
         func withinColumn(_ lhs: Int, _ rhs: Int) -> Bool {
@@ -55,22 +98,23 @@ enum ReadingOrder {
             return a.minX < b.minX
         }
 
-        let indices = Array(boxes.indices)
+        let ordered = Array(boxes.indices).sorted(by: withinColumn)
         let boundaries = columnBoundaries(for: boxes)
-        guard !boundaries.isEmpty else {
-            return indices.sorted(by: withinColumn)
-        }
+        guard !boundaries.isEmpty else { return ordered }
 
-        func columnIndex(_ box: Box) -> Int {
-            let center = (box.minX + box.maxX) / 2
-            return boundaries.filter { $0 < center }.count
+        var buffers = [[Int]](repeating: [], count: boundaries.count + 1)
+        var result: [Int] = []
+        for index in ordered {
+            if spansAGutter(boxes[index], boundaries: boundaries) {
+                buffers.forEach { result.append(contentsOf: $0) }
+                buffers = [[Int]](repeating: [], count: boundaries.count + 1)
+                result.append(index)
+            } else {
+                buffers[columnIndex(boxes[index], boundaries: boundaries)].append(index)
+            }
         }
-
-        var byColumn = [[Int]](repeating: [], count: boundaries.count + 1)
-        for index in indices {
-            byColumn[columnIndex(boxes[index])].append(index)
-        }
-        return byColumn.flatMap { $0.sorted(by: withinColumn) }
+        buffers.forEach { result.append(contentsOf: $0) }
+        return result
     }
 
     /// Finds x-positions of vertical whitespace gutters wide and central
@@ -78,7 +122,9 @@ enum ReadingOrder {
     ///
     /// A handful of full-width outliers (a header, a page number) are
     /// tolerated — `crossingTolerance` — rather than blocking detection
-    /// outright.
+    /// outright, and excluded from the per-column checks below (they are not
+    /// evidence for or against a column split, since they belong to neither
+    /// column).
     static func columnBoundaries(for boxes: [Box]) -> [Double] {
         guard boxes.count >= 2 * minLinesPerColumn else { return [] }
 
@@ -106,12 +152,14 @@ enum ReadingOrder {
 
         guard !boundaries.isEmpty else { return [] }
 
-        var perColumn = [Int](repeating: 0, count: boundaries.count + 1)
-        for box in boxes {
-            let center = (box.minX + box.maxX) / 2
-            perColumn[boundaries.filter { $0 < center }.count] += 1
+        var perColumn = [[Box]](repeating: [], count: boundaries.count + 1)
+        for box in boxes where !spansAGutter(box, boundaries: boundaries) {
+            perColumn[columnIndex(box, boundaries: boundaries)].append(box)
         }
-        guard perColumn.allSatisfy({ $0 >= minLinesPerColumn }) else { return [] }
+        guard perColumn.allSatisfy({ $0.count >= minLinesPerColumn }) else { return [] }
+        for i in 0..<(perColumn.count - 1) where !overlapsVertically(perColumn[i], perColumn[i + 1]) {
+            return []
+        }
 
         return boundaries
     }

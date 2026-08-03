@@ -51,6 +51,15 @@ final class ReadingOrderTests: XCTestCase {
         XCTAssertEqual(ReadingOrder.columnBoundaries(for: boxes), [])
     }
 
+    func testRejectsHorizontallySeparatedRegionsThatNeverCoexistVertically() {
+        // Two right-aligned metadata lines at the very top, then unrelated
+        // left-aligned body text below: different x-ranges, but not a column
+        // layout — one region sits entirely above the other.
+        let metadata = [0.02, 0.05].map { box(x: 0.6, y: $0, width: 0.35, height: 0.02) }
+        let body = (0..<6).map { box(x: 0.05, y: 0.15 + Double($0) * 0.05, width: 0.5) }
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: metadata + body), [])
+    }
+
     // MARK: - order
 
     func testFallsBackToTopToBottomThenLeftToRightWithNoDetectedColumns() {
@@ -74,5 +83,25 @@ final class ReadingOrderTests: XCTestCase {
         // Indices 0, 2, 4 are Nekroz; 1, 3, 5 are Apoptoz — column order means
         // all of Nekroz (top to bottom) before any of Apoptoz.
         XCTAssertEqual(ReadingOrder.order(boxes), [0, 2, 4, 1, 3, 5])
+    }
+
+    func testPlacesAHeaderBeforeBothColumnsRatherThanInsideOneOfThem() {
+        let header = box(x: 0.05, y: 0.02, width: 0.9)   // index 0
+        let nekroz = [0.1, 0.2, 0.3].map { box(x: 0.05, y: $0, width: 0.4) }   // indices 1, 2, 3
+        let apoptoz = [0.1, 0.2, 0.3].map { box(x: 0.55, y: $0, width: 0.4) }  // indices 4, 5, 6
+        let boxes = [header] + nekroz + apoptoz
+
+        XCTAssertEqual(ReadingOrder.order(boxes), [0, 1, 2, 3, 4, 5, 6])
+    }
+
+    func testPlacesAFooterAfterBothColumnsRatherThanBetweenThem() {
+        // The exact corruption a center-only assignment would cause: a footer
+        // stranded between the two columns it actually follows.
+        let nekroz = [0.1, 0.2, 0.3].map { box(x: 0.05, y: $0, width: 0.4) }   // indices 0, 1, 2
+        let apoptoz = [0.1, 0.2, 0.3].map { box(x: 0.55, y: $0, width: 0.4) }  // indices 3, 4, 5
+        let footer = box(x: 0.05, y: 0.4, width: 0.9)                          // index 6
+        let boxes = nekroz + apoptoz + [footer]
+
+        XCTAssertEqual(ReadingOrder.order(boxes), [0, 1, 2, 3, 4, 5, 6])
     }
 }

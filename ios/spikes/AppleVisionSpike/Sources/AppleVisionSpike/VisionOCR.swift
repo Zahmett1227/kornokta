@@ -29,6 +29,13 @@ struct VisionOCR {
     /// many lines, or the "gutter" was probably one short/indented line, not
     /// a layout.
     static let minLinesPerColumn = 2
+    /// Two candidate columns must share at least this fraction of the shorter
+    /// one's vertical extent, or they are not side by side — they are two
+    /// horizontally-separated but vertically-stacked regions (e.g. a
+    /// right-aligned header above unrelated left-aligned body text), and
+    /// reading them column by column would reorder the page instead of
+    /// fixing it.
+    static let minVerticalOverlap = 0.5
 
     /// Vision returns observations in no guaranteed reading order, so they are
     /// sorted top-to-bottom then left-to-right for stable `lineId` numbering —
@@ -43,6 +50,13 @@ struct VisionOCR {
     /// `sorted(by:)` given such a predicate returns an arbitrary permutation.
     /// On a dense page that scrambles the whole transcript. Rounding to a band
     /// is transitive, so the sort is well-defined.
+    ///
+    /// A box spanning the gutter (a header or footer) is not assigned to
+    /// either column: it is placed in the overall top-to-bottom sequence,
+    /// flushing whatever each column has accumulated so far (in column order)
+    /// immediately before it — otherwise a footer sorted into one column by
+    /// its center would end up stranded between the two columns it actually
+    /// follows.
     ///
     /// Kept identical to `CizgiCore.ReadingOrder` (same constants, same
     /// algorithm) — the Faz 0 measurement is only meaningful if a future
@@ -60,28 +74,54 @@ struct VisionOCR {
             return a.boundingBox.minX < b.boundingBox.minX
         }
 
+        let ordered = observations.sorted(by: withinColumn)
         let boundaries = columnBoundaries(for: observations)
-        guard !boundaries.isEmpty else {
-            return observations.sorted(by: withinColumn)
-        }
+        guard !boundaries.isEmpty else { return ordered }
 
-        func columnIndex(_ observation: VNRecognizedTextObservation) -> Int {
-            boundaries.filter { $0 < observation.boundingBox.midX }.count
+        var buffers = [[VNRecognizedTextObservation]](repeating: [], count: boundaries.count + 1)
+        var result: [VNRecognizedTextObservation] = []
+        for observation in ordered {
+            if spansAGutter(observation.boundingBox, boundaries: boundaries) {
+                buffers.forEach { result.append(contentsOf: $0) }
+                buffers = [[VNRecognizedTextObservation]](repeating: [], count: boundaries.count + 1)
+                result.append(observation)
+            } else {
+                buffers[columnIndex(observation.boundingBox, boundaries: boundaries)].append(observation)
+            }
         }
+        buffers.forEach { result.append(contentsOf: $0) }
+        return result
+    }
 
-        var byColumn: [Int: [VNRecognizedTextObservation]] = [:]
-        for observation in observations {
-            byColumn[columnIndex(observation), default: []].append(observation)
-        }
-        return (0...boundaries.count).flatMap { column in
-            (byColumn[column] ?? []).sorted(by: withinColumn)
-        }
+    /// True if `box`'s span crosses one of `boundaries` rather than sitting
+    /// entirely inside one column.
+    static func spansAGutter(_ box: CGRect, boundaries: [Double]) -> Bool {
+        boundaries.contains { boundary in box.minX < boundary && box.maxX > boundary }
+    }
+
+    static func columnIndex(_ box: CGRect, boundaries: [Double]) -> Int {
+        boundaries.filter { $0 < box.midX }.count
+    }
+
+    /// Whether two groups of boxes coexist over a meaningful shared vertical
+    /// range, rather than one sitting entirely above the other. Boxes are
+    /// bottom-left origin (Vision's native convention), so "top" is the
+    /// larger `maxY`.
+    static func overlapsVertically(_ a: [CGRect], _ b: [CGRect]) -> Bool {
+        guard let topA = a.map(\.maxY).max(), let bottomA = a.map(\.minY).min(),
+              let topB = b.map(\.maxY).max(), let bottomB = b.map(\.minY).min()
+        else { return false }
+        let overlap = min(topA, topB) - max(bottomA, bottomB)
+        let smallerSpan = min(topA - bottomA, topB - bottomB)
+        guard smallerSpan > 0 else { return false }
+        return overlap / smallerSpan >= minVerticalOverlap
     }
 
     /// Finds x-positions of vertical whitespace gutters wide and central
     /// enough to be column breaks rather than ordinary margins. A handful of
     /// full-width outliers (a header, a page number) are tolerated —
-    /// `crossingTolerance` — rather than blocking detection outright.
+    /// `crossingTolerance` — rather than blocking detection outright, and
+    /// excluded from the per-column checks below.
     static func columnBoundaries(for observations: [VNRecognizedTextObservation]) -> [Double] {
         guard observations.count >= 2 * minLinesPerColumn else { return [] }
 
@@ -110,12 +150,16 @@ struct VisionOCR {
 
         guard !boundaries.isEmpty else { return [] }
 
-        var perColumn = [Int](repeating: 0, count: boundaries.count + 1)
+        var perColumn = [[CGRect]](repeating: [], count: boundaries.count + 1)
         for observation in observations {
-            let center = observation.boundingBox.midX
-            perColumn[boundaries.filter { $0 < center }.count] += 1
+            let box = observation.boundingBox
+            guard !spansAGutter(box, boundaries: boundaries) else { continue }
+            perColumn[columnIndex(box, boundaries: boundaries)].append(box)
         }
-        guard perColumn.allSatisfy({ $0 >= minLinesPerColumn }) else { return [] }
+        guard perColumn.allSatisfy({ $0.count >= minLinesPerColumn }) else { return [] }
+        for i in 0..<(perColumn.count - 1) where !overlapsVertically(perColumn[i], perColumn[i + 1]) {
+            return []
+        }
 
         return boundaries
     }
