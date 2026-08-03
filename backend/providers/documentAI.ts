@@ -207,6 +207,190 @@ export function blocksOf(page: RawPage): RawBlock[] {
 /** Height of one reading-order band, as a fraction of the page. */
 export const READING_BAND = 0.01;
 
+/** A positioned item this module can put in reading order. */
+export interface Positioned {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Buckets used to scan for column gutters in `columnBoundaries`. */
+const COLUMN_BUCKETS = 100;
+/** A gutter narrower than this fraction of the page width is ordinary word
+ * spacing, not a column break. */
+const MIN_GUTTER_WIDTH = 0.02;
+/** A gutter this close to either edge is a margin, not a break between
+ * columns of text. */
+const COLUMN_EDGE_MARGIN = 0.08;
+/** Every column a detected gutter implies must end up with at least this many
+ * lines, or the "gutter" was probably one short/indented line, not a layout. */
+const MIN_LINES_PER_COLUMN = 2;
+/** Two candidate columns must have at least this fraction of each side's
+ * lines vertically near a line on the other side, or they are not side by
+ * side — they are two horizontally-separated but vertically-stacked regions
+ * (e.g. a right-aligned header above unrelated left-aligned body text), and
+ * reading them column by column would reorder the page instead of fixing it. */
+const MIN_VERTICAL_OVERLAP = 0.5;
+/** How far apart two lines' vertical extents may be and still count as "the
+ * same row" for `overlapsVertically` — roughly one line height, so two
+ * independently-typeset columns with staggered baselines (never pixel-aligned
+ * between columns in practice) still read as coexisting, while regions that
+ * are genuinely stacked with a real gap between them do not. */
+const MAX_BASELINE_STAGGER = 0.03;
+/** An item wider than this fraction of the page cannot fit inside a single
+ * column next to another — it is a page-spanning element (a header, footer,
+ * or page number), not evidence of a column's own text. Excluded from the gap
+ * scan below so any number of them, however many, never hide a real gutter. */
+const MAX_COLUMN_ITEM_WIDTH = 0.5;
+
+/** True if `item`'s span crosses one of `boundaries` rather than sitting
+ * entirely inside one column — a header or footer spanning the gutter. */
+function spansAGutter(item: Positioned, boundaries: number[]): boolean {
+  return boundaries.some((b) => item.x < b && item.x + item.width > b);
+}
+
+function columnOf(item: Positioned, boundaries: number[]): number {
+  const center = item.x + item.width / 2;
+  return boundaries.filter((b) => b < center).length;
+}
+
+/** Whether `a` and `b` sit close enough vertically to count as the same row,
+ * within `MAX_BASELINE_STAGGER` of slack in either direction. */
+function coexist(a: Positioned, b: Positioned): boolean {
+  return a.y - MAX_BASELINE_STAGGER < b.y + b.height && b.y - MAX_BASELINE_STAGGER < a.y + a.height;
+}
+
+/** Whether two non-empty groups of items coexist over a meaningful shared
+ * vertical range, rather than one sitting entirely above the other. Measured
+ * per line — does *this* line have a neighbor on the other side nearby? —
+ * rather than by each group's overall envelope or occupied-band set, which
+ * would call two groups "overlapping" whenever one's total span happens to
+ * enclose the other's, even with a real gap between them and no line ever
+ * actually beside another; or would reject two ordinary columns whenever
+ * their (never pixel-aligned) baselines happen to land in different bands.
+ *
+ * Checked against the *shorter* side only: genuine comparison columns are
+ * routinely unequal length (six Nekroz bullets beside two Apoptoz ones), and
+ * the longer column's lines past where the shorter one ends are not evidence
+ * against coexistence — they are simply where it keeps going alone. */
+function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  const matched = shorter.filter((item) => longer.some((other) => coexist(item, other))).length;
+  return matched / shorter.length >= MIN_VERTICAL_OVERLAP;
+}
+
+/**
+ * Finds x-positions of vertical whitespace gutters wide and central enough to
+ * be column breaks — e.g. a Nekroz/Apoptoz comparison list — rather than
+ * ordinary margins, so `orderByReadingPosition` can read column by column
+ * instead of interleaving both columns' text row by row.
+ *
+ * Page-spanning elements (a header, footer, page number — anything wider than
+ * `MAX_COLUMN_ITEM_WIDTH`) are excluded up front rather than merely tolerated:
+ * a page can have any number of them (a title *and* a footer) without hiding
+ * the real gutter between them.
+ */
+export function columnBoundaries(items: Positioned[]): number[] {
+  if (items.length < 2 * MIN_LINES_PER_COLUMN) return [];
+
+  const columnScoped = items.filter((item) => item.width <= MAX_COLUMN_ITEM_WIDTH);
+
+  const coverage = new Array<number>(COLUMN_BUCKETS).fill(0);
+  for (const item of columnScoped) {
+    const start = Math.max(0, Math.floor(item.x * COLUMN_BUCKETS));
+    const end = Math.min(COLUMN_BUCKETS, Math.ceil((item.x + item.width) * COLUMN_BUCKETS));
+    for (let bucket = start; bucket < end; bucket++) coverage[bucket]!++;
+  }
+
+  const boundaries: number[] = [];
+  let index = 0;
+  while (index < COLUMN_BUCKETS) {
+    if (coverage[index]! > 0) {
+      index++;
+      continue;
+    }
+    const start = index;
+    while (index < COLUMN_BUCKETS && coverage[index]! === 0) index++;
+    // A run reaching all the way to either edge is the page's own outer
+    // margin, however wide — not a gap *between* two columns of text, which
+    // has content on both sides by definition. The center check alone can
+    // miss this: a wide trailing margin (e.g. a short right column ending at
+    // x=0.84) can have its center fall outside `COLUMN_EDGE_MARGIN` even
+    // though it never separates two things.
+    const touchesEdge = start === 0 || index === COLUMN_BUCKETS;
+    const width = (index - start) / COLUMN_BUCKETS;
+    const center = (start + index) / 2 / COLUMN_BUCKETS;
+    if (
+      !touchesEdge &&
+      width >= MIN_GUTTER_WIDTH &&
+      center >= COLUMN_EDGE_MARGIN &&
+      center <= 1 - COLUMN_EDGE_MARGIN
+    ) {
+      boundaries.push(center);
+    }
+  }
+
+  if (!boundaries.length) return [];
+
+  const perColumn: Positioned[][] = Array.from({ length: boundaries.length + 1 }, () => []);
+  for (const item of items) {
+    if (!spansAGutter(item, boundaries)) perColumn[columnOf(item, boundaries)]!.push(item);
+  }
+  if (perColumn.some((column) => column.length < MIN_LINES_PER_COLUMN)) return [];
+  for (let i = 0; i < perColumn.length - 1; i++) {
+    if (!overlapsVertically(perColumn[i]!, perColumn[i + 1]!)) return [];
+  }
+
+  return boundaries;
+}
+
+/**
+ * Reading order: top to bottom in bands, left to right within a band — except
+ * a page split into columns (detected via `columnBoundaries`) reads column by
+ * column, each column top to bottom, rather than interleaving both columns'
+ * lines row by row. Row-by-row reading of a comparison table merges two
+ * unrelated sentences into one garbled line.
+ *
+ * Banding rather than a float tolerance, because a tolerance comparison is
+ * not a strict weak ordering and produces an arbitrary permutation on a dense
+ * page.
+ *
+ * A line spanning the gutter (a header or footer) is not assigned to either
+ * column: it is placed in the overall top-to-bottom sequence, flushing
+ * whatever each column has accumulated so far (in column order) immediately
+ * before it. That puts a header before both columns, a footer after both, and
+ * a mid-page divider between whatever came above it and below it — instead of
+ * always sorting into one column by its center, which could otherwise strand
+ * a footer between the columns it actually follows.
+ */
+export function orderByReadingPosition<T extends Positioned>(items: T[]): T[] {
+  const withinColumn = (a: Positioned, b: Positioned): number => {
+    const bandA = Math.round(a.y / READING_BAND);
+    const bandB = Math.round(b.y / READING_BAND);
+    if (bandA !== bandB) return bandA - bandB;
+    return a.x - b.x;
+  };
+
+  const ordered = [...items].sort(withinColumn);
+  const boundaries = columnBoundaries(items);
+  if (!boundaries.length) return ordered;
+
+  const buffers: T[][] = Array.from({ length: boundaries.length + 1 }, () => []);
+  const result: T[] = [];
+  for (const item of ordered) {
+    if (spansAGutter(item, boundaries)) {
+      for (const buffer of buffers) result.push(...buffer);
+      buffers.forEach((buffer) => (buffer.length = 0));
+      result.push(item);
+    } else {
+      buffers[columnOf(item, boundaries)]!.push(item);
+    }
+  }
+  for (const buffer of buffers) result.push(...buffer);
+  return result;
+}
+
 /** Status codes worth another attempt (§17). */
 function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
@@ -284,7 +468,7 @@ export class DocumentAIRecognizer implements TextRecognizer {
     // merged into this one.
     const page = document.pages?.[0] ?? {};
 
-    const lines: OCRLine[] = blocksOf(page)
+    const unordered = blocksOf(page)
       .map((block) => {
         const text = textForLayout(fullText, block.layout);
         return {
@@ -293,21 +477,15 @@ export class DocumentAIRecognizer implements TextRecognizer {
           ...boundsOf(block.layout),
         };
       })
-      .filter((line) => line.text.trim().length > 0)
-      // Same reading order as the Vision path: top to bottom in bands, then
-      // left to right. Banding rather than a float tolerance, because a
-      // tolerance comparison is not a strict weak ordering and produces an
-      // arbitrary permutation on a dense page.
-      .sort((a, b) => {
-        const bandA = Math.round(a.y / READING_BAND);
-        const bandB = Math.round(b.y / READING_BAND);
-        if (bandA !== bandB) return bandA - bandB;
-        return a.x - b.x;
-      })
-      .map((line, index) => ({
-        lineId: `line_${String(index).padStart(2, "0")}`,
-        ...line,
-      }));
+      .filter((line) => line.text.trim().length > 0);
+
+    // Same reading order as the Vision path (§10.1): column by column when
+    // the page splits into columns, top-to-bottom-then-left-to-right
+    // otherwise — see `orderByReadingPosition`.
+    const lines: OCRLine[] = orderByReadingPosition(unordered).map((line, index) => ({
+      lineId: `line_${String(index).padStart(2, "0")}`,
+      ...line,
+    }));
 
     return {
       imagePath: options.imagePath,

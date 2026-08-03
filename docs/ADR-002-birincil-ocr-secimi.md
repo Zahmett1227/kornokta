@@ -73,7 +73,12 @@ Ayrıntı: `evals/tests/test_diacritic_folding.py`.
 ## Açık kalanlar
 
 1. **Hangi Google işlemcisi?** Document AI'ın OCR işlemcisi mi, yoksa Form/Layout
-   Parser mı? Çok sütunlu ders notu sayfalarında sütun tespiti gerekiyor.
+   Parser mı? Çok sütunlu ders notu sayfalarında sütun tespiti gerekiyor. **Kısmen
+   ele alındı (2026-08-03):** işlemci seçimi hâlâ OCR işlemcisi, ama okuma sırası
+   artık sütun farkında — bir sütun/karşılaştırma listesi satır satır yerine sütun
+   sütun okunuyor (`ReadingOrder.swift` / `documentAI.ts`'teki
+   `orderByReadingPosition`). Gerçek bir Nekroz/Apoptoz karşılaştırma sayfasının
+   iki sütununun tek bir cümlede karıştığı bir kullanıcı raporuyla bulundu.
 2. **El yazısı.** Google'ın Türkçe el yazısında ne kadar iyi olduğu ölçülmedi.
    §10.6 kişisel sözlüğün üzerine kurulacağı taban buna bağlı.
 3. **Bölge kırpma.** Faz 2 işaret tespiti çalıştıktan sonra tekrar
