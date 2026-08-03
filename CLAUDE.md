@@ -25,7 +25,7 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) da yazıldı — **ama bu ortamda Swift derleyicisi olmadığı için bir Mac'te `swift test` ile henüz doğrulanmadı**. Gold pasaj kart kalite ölçümünün toplama/rapor aracı da yazıldı ve test edildi (`evals/card_quality/aggregate.py`, `docs/MAC-ADIMLARI-FAZ3.md`). Kalan: swift test doğrulaması, kullanıcının kendi pasajlarıyla asıl ölçüm (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
+| Faz 3 — AI kart üretimi | 🔶 Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı — **bir Mac'te `swift test` ile henüz doğrulanmadı** (bu ortamda derleyici yok). **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız swift test doğrulaması ve gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | Başlamadı |
 | Faz 5 — Sertleştirme | Başlamadı |
 
@@ -119,28 +119,24 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/FAZ0-*.md`, `docs/FAZ1-DURUM.md` — tarihsel kayıtlar (güncel durum
   için değil, o anki karar gerekçelerini görmek için)
 
-## Sıradaki iş: Faz 3 — AI kart üretimi devamı
+## Sıradaki iş: Faz 3'ün son ucu, sonra Faz 4
 
-Backend tarafı yazıldı VE gerçek anahtarla uçtan uca doğrulandı
-(`docs/FAZ3-PLAN.md`): config, promptlar, §14 şema doğrulayıcı, kart kalite
-kapısı, OpenAI/Gemini sağlayıcıları, `POST /api/cards`, `npm run
-cards`/`npm run handwriting`. iOS istemcisi de yazıldı (`BackendCardProvider`,
-`ModelRun` kaydı §16.8, `CapturePipeline`/`ProcessingQueue`/`AppEnvironment`
-bağlaması) — ayrıntı ve nelerin eklendiği `docs/FAZ3-PLAN.md`'nin "F3-8"
-bölümünde. Sırada:
+Faz 3'ün neredeyse tamamı bitti (`docs/FAZ3-PLAN.md`): backend gerçek
+anahtarla uçtan uca doğrulandı, iOS istemcisi yazıldı, **çıkış kapısı
+(gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve
+yeterli görüldü** (2 pasaj, 8 kart, %100 kabul — "F3-10 — asıl ölçüm
+yapıldı" bölümüne bakılabilir). Kalan küçük kalemler:
 
 1. **`cd ios/CizgiCore && swift test` bir Mac'te.** Bu ortamda Swift
-   derleyicisi yok; F3-8'in kodu ve +16 yeni testi hiç çalıştırılmadı. Önce bu
-   — hata çıkarsa bir sonraki oturuma o hatayla gelinmeli, "çalışıyor"
-   varsayılmamalı.
-2. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
-   pasajlardan üretilen kartların kalite rubriği kabul sınırını geçmelidir."
-   Toplama/rapor aracı artık hazır ve test edilmiş
-   (`evals/card_quality/aggregate.py`); adım adım rehber `docs/MAC-ADIMLARI-FAZ3.md`'de.
-   Kalan: kullanıcının kendi kitabından gerçek pasaj seçip elle puanlaması.
-3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+   derleyicisi yok; F3-8'in kodu ve +16 yeni testi hiç çalıştırılmadı. İlk
+   fırsatta bu — hata çıkarsa bir sonraki oturuma o hatayla gelinmeli,
+   "çalışıyor" varsayılmamalı.
+2. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.
-4. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
+3. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
    yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
    altında not edildi).
+
+Bunlar birer engelleyici değil — Faz 4'e (FSRS tekrar motoru, §25) şimdi
+geçilebilir, yukarıdakiler ne zaman ele alınırsa alınsın.

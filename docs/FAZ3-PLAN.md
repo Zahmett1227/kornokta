@@ -24,7 +24,7 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — üç gerçek hata buldurdu (OpenAI şema, Gemini token bütçesi, OpenAI token bütçesi), sonunda ikisi de başarıyla tamamlandı |
 | **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | 🔶 kod + yeni testler yazıldı; bu ortamda Swift derleyicisi yok, **bir Mac'te `swift test` ile henüz doğrulanmadı** (aşağıya bakın) |
 | **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | ✅ **tamamlandı** — ikisi de gerçek bir çıktı üretti |
-| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | 🔶 puanları toplayıp dağılıma çeviren araç yazıldı ve test edildi (`evals/card_quality/aggregate.py`, `docs/MAC-ADIMLARI-FAZ3.md`); asıl ölçüm — gold pasaj seçimi ve elle puanlama — kullanıcıyı bekliyor |
+| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ✅ **kullanıcı 2 gerçek pasaj / 8 gerçek kart üzerinde ölçümü yaptı ve yeterli gördü** (%100 kabul) — küçük bir örneklem, istatistiksel kanıt değil; kullanıcının kendi kararı (aşağıya bakın) |
 
 ---
 
@@ -395,6 +395,47 @@ anlatılıyor.
 **Kalan gerçek eksik:** kullanıcının kendi kitabından gerçek pasajlar seçip
 elle puanlaması — bu ne bir API anahtarı ne bir derleyici sorunu, doğrudan
 kullanıcının kendi tıbbi bilgisini ve zamanını gerektiren tek adım.
+
+## F3-10 — asıl ölçüm yapıldı (kullanıcının kararıyla)
+
+Kullanıcı bu oturumda 2 gerçek pasajı elle yazıp `npm run cards --text ...`
+ile gerçek kart ürettirdi, üretilen 8 kartı (4+4) ANA-PLAN §23.3 rubriğiyle
+elle puanladı, `python -m evals.card_quality.aggregate` ile dağılımı
+hesapladık: **8 kart, 8 kabul, 0 inceleme, 0 ret (%100)**.
+
+Gözlemlenen olumlu bulgular (rubrik puanlarının ötesinde, ürünün kendi
+güvenlik sözleşmesiyle ilgili):
+- Kaynaktaki olası yazım hataları ("protoipi", "bornşiyal", "PSAMmom")
+  sessizce düzeltilmedi, `source_possible_error` ile işaretlenip onay
+  istendi (§0.5).
+- Kaynakta açılımı verilmeyen bir kısaltma ("HC"/"hc") tahmin edilmeden
+  bırakıldı, belirsizlik olarak işaretlendi.
+- Yarım kalan bir cümle ("gebelikte uterus düz kaslarda", fiilsiz) bir şey
+  uydurularak tamamlanmadı, olduğu gibi kullanıldı.
+- "distinction" kart tipi (§13.1'in dört tipinden biri), iki yakın kavramı
+  (hiperplazi/hipertrofi) ayırt eden bir pasajda doğru seçildi.
+- Bir kartın kendi ürettiği soru metninde küçük bir yazım kusuru bulundu
+  ("interlö kini" — boşluk hatalı); kaynaktan gelen bir hata değil, modelin
+  kendi üretiminde.
+
+**Kullanıcının notu:** "sadece basit düzeydeki belirgin eksik cümle ve
+kelimeleri tanıyabilir" — yani model şu an yalnızca *açıkça* eksik/bozuk
+olan basit vakaları doğru idare ediyor gibi görünüyor; daha incelikli
+eksiklikler test edilmedi. Bu, gelecekte daha zorlu/çeşitli pasajlarla
+tekrar bakılabilecek bir gözlem olarak burada kayıtlı — şimdilik bir aksiyon
+gerektirmiyor.
+
+**Kullanıcının kararı:** 2 pasaj / 8 kart, hepsi kabul sınırında, **yeterli
+görüldü** ve Faz 3'ün çıkış kapısı bu ölçümle kapatıldı. Dürüstçe not:
+bu istatistiksel olarak güçlü bir kanıt değil (küçük örneklem) — ama
+ANA-PLAN §25 bir örneklem büyüklüğü şart koşmuyor, yalnızca "kalite
+rubriği kabul sınırını geçmelidir" diyor, ve bunun karşılanıp
+karşılanmadığına kullanıcının kendisi karar veriyor (§0.6, F3-10'un kendi
+tasarım kararıyla tutarlı: bu proje tek bir "geçti" sayısı uydurmuyor).
+
+Puan dosyası (`evals/fixtures/card-quality-scores.json`) yerel/gitignore'lu
+kalıyor — telifli kaynağa yakın içerik (kart front/back metinleri) taşıdığı
+için commit edilmedi, yalnızca bu oturumun kaydı burada.
 
 ## Test durumu
 
