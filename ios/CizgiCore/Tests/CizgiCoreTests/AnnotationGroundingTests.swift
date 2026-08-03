@@ -36,6 +36,11 @@ private func markerGroup(_ id: String, evidence: AnnotationEvidence) -> Annotati
 }
 
 final class AnnotationGrouperTests: XCTestCase {
+    func testDocumentAIBlockLayoutKindDecodes() throws {
+        let data = try XCTUnwrap("\"block\"".data(using: .utf8))
+        XCTAssertEqual(try JSONDecoder().decode(AnnotationLayoutKind.self, from: data), .block)
+    }
+
     func testOfflineManualRectangleUsesLocalLineGeometry() {
         let manual = AnnotationGroup(
             id: "manual", evidenceIds: [], selectedLineIds: [], contextLineIds: [],

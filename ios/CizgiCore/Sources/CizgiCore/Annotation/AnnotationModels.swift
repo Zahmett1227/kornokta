@@ -52,6 +52,9 @@ public enum AnnotationType: String, Codable, Sendable, CaseIterable {
 
 public enum AnnotationLayoutKind: String, Codable, Sendable, CaseIterable {
     case paragraph
+    /// Generic Document AI layout block. It is distinct on the wire even
+    /// though persistence currently treats it as paragraph-like content.
+    case block
     case bullet
     case column
     case tableCandidate = "table_candidate"
