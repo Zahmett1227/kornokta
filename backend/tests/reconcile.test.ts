@@ -72,20 +72,35 @@ describe("reconcile", () => {
     expect(result.text).not.toContain("secenek");
   });
 
-  describe("critical disagreements (§10.5, §19.2)", () => {
-    it("asks about a route disagreement instead of recording it", () => {
+  describe("Apple-vs-Google disagreements no longer gate (ADR-002)", () => {
+    // Apple Vision cannot write Turkish, so it is not a second opinion worth
+    // interrupting the user for — the on-screen "kaynak"/"okuma" wording used
+    // to name Apple's reading as "kaynak" (gold) and Google's as "okuma"
+    // (hypothesis), exactly backwards from which engine is trustworthy, and
+    // *any* disagreement (critical-looking or not) blocked the page. Both are
+    // fixed here: the direction is corrected (asserted below) and disagreeing
+    // no longer blocks — it is recorded (`criticalLineIds`,
+    // `lines[].criticalTokenFlags`) for audit, and the real safety net for a
+    // card's actual content is `cardGate` checking each card's own
+    // `sourceQuote` (§19), independent of this OCR-level comparison.
+
+    it("records a route disagreement but still accepts", () => {
       const apple = page([
         ["line_00", "Anafilakside ilk seçenek tedavi"],
         ["line_01", "0,3–0,5 mg IV adrenalindir."],
       ]);
       const result = reconcile(GOOGLE, apple);
-      expect(result.decision).toBe("quick_confirm");
+      expect(result.decision).toBe("auto_accept");
       expect(result.criticalLineIds).toEqual(["line_01"]);
-      expect(result.reason).toContain("IM");
-      expect(result.reason).toContain("IV");
+      // "kaynak" names Google's (primary, trustworthy) reading, "okuma"
+      // names Apple's — not the other way around.
+      expect(result.lines[1]!.criticalTokenFlags[0]).toContain("kaynak [IM");
+      expect(result.lines[1]!.criticalTokenFlags[0]).toContain("okuma [IV");
+      // The passage carried forward is still Google's, regardless.
+      expect(result.text).toContain("IM adrenalindir");
     });
 
-    it("asks about a dose disagreement", () => {
+    it("records a dose disagreement but still accepts", () => {
       const apple = page([
         ["line_00", "Anafilakside ilk seçenek tedavi"],
         ["line_01", "0,3–0,5 mg IM adrenalindir."],
@@ -95,23 +110,26 @@ describe("reconcile", () => {
         ["line_01", "0,03–0,5 mg IM adrenalindir."],
       ]);
       const result = reconcile(google, apple);
-      expect(result.decision).toBe("quick_confirm");
+      expect(result.decision).toBe("auto_accept");
       expect(result.criticalLineIds).toContain("line_01");
     });
 
-    it("asks about a negation disagreement", () => {
+    it("records a negation disagreement but still accepts", () => {
       const a = page([["line_00", "bu ilaç kullanılmalıdır"]]);
       const b = page([["line_00", "bu ilaç kullanılmamalıdır"]]);
-      expect(reconcile(a, b).decision).toBe("quick_confirm");
+      const result = reconcile(a, b);
+      expect(result.decision).toBe("auto_accept");
+      expect(result.criticalLineIds).toEqual(["line_00"]);
     });
 
-    it("asks even when the primary engine is confident", () => {
-      // A confident reading of the wrong route is exactly the case the rule
-      // exists for, so confidence must not short-circuit it.
-      const apple = page([["line_00", "5 mg IV verilir", 0.99]]);
-      const google = page([["line_00", "5 mg IM verilir", 0.99]]);
+    it("does not gate on a suffix OCR typo of the same hipo/hiper polarity", () => {
+      // Regression for the exact production case: Apple dropping a letter in
+      // "hipersensitivite" must not read as a hipo<->hiper flip.
+      const google = page([["line_00", "Tip 4 hipersensitivite örnekleri"]]);
+      const apple = page([["line_00", "Tip 4 hipersenstvite örnekleri"]]);
       const result = reconcile(google, apple);
-      expect(result.decision).toBe("quick_confirm");
+      expect(result.decision).toBe("auto_accept");
+      expect(result.criticalLineIds).toEqual([]);
     });
 
     it("names the line, not just the page", () => {
@@ -120,7 +138,7 @@ describe("reconcile", () => {
         ["line_01", "0,3–0,5 mg IV adrenalindir."],
       ]);
       const result = reconcile(GOOGLE, apple);
-      // The user has to be pointed at one line, not asked to re-read the page.
+      // Still pointed at one line for audit, even though it no longer blocks.
       expect(result.criticalLineIds).toHaveLength(1);
       expect(result.lines.find((l) => l.lineId === "line_00")!.criticalTokenFlags).toEqual([]);
     });
@@ -240,7 +258,9 @@ describe("reconcile", () => {
 
     it("falls back to ids when neither side carries geometry", () => {
       const result = reconcile(flat([["line_00", "0,5 mg IM"]]), flat([["line_00", "0,5 mg IV"]]));
-      expect(result.decision).toBe("quick_confirm");
+      // Pairing still finds the disagreement (recorded in criticalLineIds);
+      // it no longer blocks (ADR-002 — Apple is not a second opinion).
+      expect(result.decision).toBe("auto_accept");
       expect(result.criticalLineIds).toEqual(["line_00"]);
     });
 

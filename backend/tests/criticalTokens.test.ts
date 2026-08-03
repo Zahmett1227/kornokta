@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   ROUTE_SYNONYMS,
   TOKEN_CLASSES,
+  canonicalHypoHyper,
   canonicalRoute,
   containsCriticalToken,
   detectCriticalTokens,
@@ -131,6 +132,22 @@ describe("canonicalRoute", () => {
   it("leaves an unknown value alone rather than merging it with a known route", () => {
     expect(canonicalRoute("epidural")).toBe("EPIDURAL");
     expect(isRouteSurface("epidural")).toBe(false);
+  });
+});
+
+describe("canonicalHypoHyper", () => {
+  it("folds to just the polarity prefix", () => {
+    expect(canonicalHypoHyper("hipersensitivite")).toBe("hiper");
+    expect(canonicalHypoHyper("hipersenstvite")).toBe("hiper");
+    expect(canonicalHypoHyper("hipokalemi")).toBe("hipo");
+  });
+
+  it("does not let a Turkish dotted capital I defeat the prefix match (PR #7 review)", () => {
+    // `'İ'.toLowerCase()` alone yields 'i' + a combining dot above (U+0307),
+    // so a correctly-cased Turkish heading would not start with plain
+    // 'hiper'/'hipo' without folding diacritics first.
+    expect(canonicalHypoHyper("HİPERSENSİTİVİTE")).toBe("hiper");
+    expect(canonicalHypoHyper("Hİpokalemi")).toBe("hipo");
   });
 });
 

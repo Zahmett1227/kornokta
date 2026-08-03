@@ -330,8 +330,11 @@ describe("reconciliation in the response", () => {
       deps({ recognizer }),
     );
     const body = (await response.json()) as { reconciliation?: { decision: string; criticalLineIds: string[] } };
-    // IM vs IV is a route disagreement and must never be recorded silently.
-    expect(body.reconciliation?.decision).toBe("quick_confirm");
+    // IM vs IV is a route disagreement between Google (primary) and the
+    // phone's own Apple Vision reading (secondary). Apple cannot write
+    // Turkish (ADR-002), so its disagreement no longer blocks — it is
+    // recorded (`criticalLineIds`) for audit and Google's reading is kept.
+    expect(body.reconciliation?.decision).toBe("auto_accept");
     expect(body.reconciliation?.criticalLineIds).toEqual(["line_00"]);
   });
 
@@ -401,6 +404,6 @@ describe("reconciliation in the response", () => {
     expect(serialized).not.toContain("IV adrenalin");
     // A decision is a category, not content, and it is what makes "why did
     // this ask me?" answerable later.
-    expect(d.logged[0]).toMatchObject({ decision: "quick_confirm", hadLocalReading: true });
+    expect(d.logged[0]).toMatchObject({ decision: "auto_accept", hadLocalReading: true });
   });
 });

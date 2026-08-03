@@ -124,6 +124,32 @@ def is_route_surface(text: str) -> bool:
     return key in _ROUTE_LOOKUP
 
 
+def canonical_hypo_hyper(surface: str) -> str:
+    """Collapses a hipo/hiper token to just its polarity prefix.
+
+    §10.5 makes the hipo/hiper *distinction* critical, not the rest of the
+    word's spelling: 'hipersensitivite' misread as 'hipersenstvite' is an
+    ordinary OCR typo in the suffix, not a polarity flip, and comparing full
+    surfaces reported it as a critical mismatch it is not. 'hipokalemi' vs
+    'hiperkalemi' *does* change polarity and must still mismatch — this keeps
+    that case exactly as sharp while dropping the suffix-typo false positive.
+
+    `fold_diacritics` runs *before* `casefold()`, not after: Python's default
+    case folding turns 'İ' (dotted capital I) into 'i' + a combining dot above
+    (U+0307), so 'HİPERSENSİTİVİTE'.casefold() starts with that combining
+    sequence rather than plain 'hiper' and neither prefix matches — silently
+    defeating this exact function on correctly-cased Turkish headings (PR #7
+    review). `fold_diacritics` maps 'İ' to a plain ASCII 'I' as one character,
+    so casefolding afterward never introduces a combining mark to begin with.
+    """
+    folded = fold_diacritics(nfc(surface)).casefold()
+    if folded.startswith("hiper"):
+        return "hiper"
+    if folded.startswith("hipo"):
+        return "hipo"
+    return folded
+
+
 _UNITS = (
     "mEq/L", "mmol/L", "mmHg", "mcg", "µg", "μg", "mg", "ng", "pg",
     "kg", "g", "mL", "ml", "dL", "dl", "L", "IU", "U", "mOsm",

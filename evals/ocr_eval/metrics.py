@@ -225,7 +225,9 @@ def _canonical_route(token: str) -> str:
     return canonical_route(token)
 
 
-def critical_token_recall_loss(gold_text: str, hypothesis: str) -> float:
+def critical_token_recall_loss(
+    gold_text: str, hypothesis: str, *, fold_hypo_hyper: bool = False
+) -> float:
     """Fraction of the source's critical tokens the reading did not reproduce,
     with **both sides detected** rather than one side supplied.
 
@@ -251,19 +253,19 @@ def critical_token_recall_loss(gold_text: str, hypothesis: str) -> float:
     Repeated values are matched to distinct occurrences, so one surviving '5'
     cannot satisfy both doses of '5 mg sabah, 5 mg akşam'.
     """
-    gold = _canonical_token_counter(gold_text)
+    gold = _canonical_token_counter(gold_text, fold_hypo_hyper=fold_hypo_hyper)
     if not gold:
         return 0.0
-    available = _canonical_token_counter(hypothesis)
+    available = _canonical_token_counter(hypothesis, fold_hypo_hyper=fold_hypo_hyper)
     missing = sum((gold - available).values())
     return missing / sum(gold.values())
 
 
-def _canonical_token_counter(text: str) -> Counter:
+def _canonical_token_counter(text: str, *, fold_hypo_hyper: bool = False) -> Counter:
     from .critical_tokens import detect_critical_tokens
 
     return Counter(
-        (token.token_class, _canonical(token.text, token.token_class))
+        (token.token_class, _canonical(token.text, token.token_class, fold_hypo_hyper=fold_hypo_hyper))
         for token in detect_critical_tokens(nfc(text))
     )
 
@@ -274,7 +276,7 @@ def _is_route(token: str) -> bool:
     return is_route_surface(token)
 
 
-def _canonical(text: str, token_class: str | None = None) -> str:
+def _canonical(text: str, token_class: str | None = None, *, fold_hypo_hyper: bool = False) -> str:
     if token_class == "route":
         # Every accepted spelling of one route folds to its code, so 'IV',
         # 'intravenöz' and 'damar içi' compare equal while IV and IM stay
@@ -283,6 +285,21 @@ def _canonical(text: str, token_class: str | None = None) -> str:
         from .critical_tokens import canonical_route
 
         return canonical_route(text)
+    if token_class == "hypo_hyper" and fold_hypo_hyper:
+        # Only the hipo/hiper prefix is the critical distinction (§10.5); the
+        # rest of the word is an ordinary transcription detail. Comparing full
+        # surfaces turned a dropped letter in the suffix ('hipersensitivite'
+        # -> 'hipersenstvite') into a reported critical mismatch.
+        #
+        # Opt-in, not the default: this same function backs `cardGate`'s
+        # check of a generated card's own content against its cited source
+        # (via `added_critical_tokens`), where 'hipokalemi' turning into
+        # 'hiponatremi' is a real invented value, not a tolerable suffix typo
+        # — folding unconditionally hid exactly that (PR #7 review,
+        # docs/ADR-003). Only OCR-vs-OCR reconciliation passes `True`.
+        from .critical_tokens import canonical_hypo_hyper
+
+        return canonical_hypo_hyper(text)
     # Diacritics are deliberately NOT folded here.
     #
     # The *detector* folds, so a critical token is still found in ASCII-fied
@@ -369,6 +386,8 @@ def _sequence_with_surfaces(
     text: str,
     wordlists: "Wordlists | None",
     annotated_tokens: Iterable[str] | None,
+    *,
+    fold_hypo_hyper: bool = False,
 ) -> list[tuple[tuple[str, str], str]]:
     """((class, canonical), surface) pairs — canonical drives comparison, the
     surface is what a human reads in the report. They differ for values whose
@@ -378,7 +397,13 @@ def _sequence_with_surfaces(
     text = nfc(text)
     detected = detect_critical_tokens(text, wordlists)
     entries = [
-        (t.start, t.end, t.token_class, _canonical(t.text, t.token_class), t.text)
+        (
+            t.start,
+            t.end,
+            t.token_class,
+            _canonical(t.text, t.token_class, fold_hypo_hyper=fold_hypo_hyper),
+            t.text,
+        )
         for t in detected
     ]
 
@@ -397,6 +422,8 @@ def critical_token_mismatches(
     hypothesis: str,
     wordlists: "Wordlists | None" = None,
     gold_tokens: Iterable[str] | None = None,
+    *,
+    fold_hypo_hyper: bool = False,
 ) -> list[str]:
     """Ordered differences between the two texts' critical-token sequences.
 
@@ -413,13 +440,26 @@ def critical_token_mismatches(
     unlisted drug name, say — still take part in the ordering. Without them a
     swapped drug/dose assignment goes unseen.
 
+    `fold_hypo_hyper` defaults to **off** — a hipo/hiper token compares by its
+    full surface, so a card whose own content changes 'hipokalemi' into
+    'hiponatremi' is a mismatch, not a same-polarity synonym. Pass `True` only
+    for OCR-vs-OCR reconciliation (`reconcile.ts`), where Apple Vision's own
+    suffix typos on a word it otherwise read correctly (§10.1) should not be
+    reported as a critical disagreement (docs/ADR-003). Reviewer's finding on
+    this exact function reusing a loose comparison for card validation is why
+    this became a parameter instead of a blanket default (PR #7 review).
+
     Returns one human-readable entry per divergence; empty means the sequences
     agree.
     """
     import difflib
 
-    gold_entries = _sequence_with_surfaces(gold_text, wordlists, gold_tokens)
-    hyp_entries = _sequence_with_surfaces(hypothesis, wordlists, gold_tokens)
+    gold_entries = _sequence_with_surfaces(
+        gold_text, wordlists, gold_tokens, fold_hypo_hyper=fold_hypo_hyper
+    )
+    hyp_entries = _sequence_with_surfaces(
+        hypothesis, wordlists, gold_tokens, fold_hypo_hyper=fold_hypo_hyper
+    )
     gold_keys = [key for key, _surface in gold_entries]
     hyp_keys = [key for key, _surface in hyp_entries]
 
@@ -439,7 +479,11 @@ def critical_token_mismatches(
 
 
 def added_critical_tokens(
-    gold_text: str, hypothesis: str, wordlists: "Wordlists | None" = None
+    gold_text: str,
+    hypothesis: str,
+    wordlists: "Wordlists | None" = None,
+    *,
+    fold_hypo_hyper: bool = False,
 ) -> list[str]:
     """Critical tokens the hypothesis introduces that the gold text lacks.
 
@@ -448,6 +492,13 @@ def added_critical_tokens(
     while changing the meaning: gold '1 mg' read as '1–2 mg' keeps every gold
     token and gains a dose endpoint. The Faz 0 gate needs both directions
     (ANA-PLAN §23.2, §24.3), so this reports the surplus side.
+
+    This is also what `cardGate`'s TypeScript port uses to check a generated
+    card's own front/back against its cited `sourceQuote` (§19) — which is
+    exactly why `fold_hypo_hyper` defaults to **off** here: a card that turns
+    a sourced 'hipokalemi' into 'hiponatremi' must be reported as inventing a
+    critical value, not excused as the same polarity (docs/ADR-003). Pass
+    `True` only for OCR-vs-OCR reconciliation.
 
     Returns the surplus occurrences, so a value appearing twice in the
     hypothesis but once in the source is reported once.
@@ -460,7 +511,7 @@ def added_critical_tokens(
         # optional spacing — '%40' and '% 40', 'q8h' and 'q8 h' — routes fold
         # on case, and diacritics fold, so keying on the raw surface would
         # report an unchanged value as newly introduced.
-        return (token.token_class, _canonical(token.text, token.token_class))
+        return (token.token_class, _canonical(token.text, token.token_class, fold_hypo_hyper=fold_hypo_hyper))
 
     hypothesis_tokens = detect_critical_tokens(hypothesis, wordlists)
     surplus = (

@@ -89,6 +89,23 @@ export function cardIntroducesUnsourcedCriticalToken(
   return addedCriticalTokens(card.sourceQuote, `${card.front}\n${card.back}`);
 }
 
+/**
+ * Checks whether the card's own `explanation` introduces a critical value not
+ * backed by its cited `sourceQuote`.
+ *
+ * A narrow, precise signal used only to make the confirmation reason
+ * specific ("invented value X") when one of §10.5's enumerated classes is
+ * involved. It is **not** the full safety check for `explanation` — see
+ * `hasNonEmptyExplanation` below and its use in `verdictForCard` for why a
+ * critical-token detector alone is not enough here.
+ */
+export function explanationIntroducesUnsourcedCriticalToken(
+  card: Pick<Card, "explanation" | "sourceQuote">,
+): string[] {
+  if (!card.explanation.trim()) return [];
+  return addedCriticalTokens(card.sourceQuote, card.explanation);
+}
+
 function verdictForCard(card: Card): CardVerdict {
   const reasons: string[] = [];
   let decision: CardDecision = "auto_accept";
@@ -111,6 +128,29 @@ function verdictForCard(card: Card): CardVerdict {
         `Kaynağa sadık kart, kaynakta olmayan kritik değer içeriyor: ${invented.join(", ")} (§0.5, §19.3).`,
       );
     }
+  }
+
+  // The card prompt (v1.1, §12.2) lets `explanation` carry non-source
+  // context (mechanism, clinical relevance) specifically so `front`/`back`
+  // don't have to. A critical-token detector can only prove a narrow class
+  // of fabrication (dose/route/diagnosis/etc.) — it cannot tell whether
+  // arbitrary prose ("Adrenalin mast hücresi degranülasyonunu tetikler") is
+  // actually grounded in the source or invented outright; that is a
+  // semantic judgment no deterministic detector can make (§0.5). So this
+  // does not try to detect fabrication in prose — any non-empty explanation
+  // needs confirmation, independent of both `card.enriched` and whether a
+  // critical token happens to be present. `explanationIntroducesUnsourced-
+  // CriticalToken` only sharpens the *reason* when it can (PR #7 review,
+  // second round — a critical-token-only check still let unsourced prose
+  // without a recognized critical value straight through).
+  if (card.explanation.trim()) {
+    decision = worseOf(decision, "quick_confirm");
+    const explanationInvented = explanationIntroducesUnsourcedCriticalToken(card);
+    reasons.push(
+      explanationInvented.length > 0
+        ? `Açıklama kaynakta olmayan kritik değer içeriyor: ${explanationInvented.join(", ")} (§12.2, §19.2).`
+        : "Açıklama kaynak dışı içerik taşıyabilir; onay gerekiyor (§12.2, §19.2).",
+    );
   }
 
   if (!card.sourceFaithful && !card.enriched) {

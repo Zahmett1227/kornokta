@@ -454,7 +454,16 @@ final class ReconciliationPassthroughTests: XCTestCase {
     func testTheReasonReachesTheCaller() async {
         // §19.2: a confirmation with no reason attached is one the user cannot
         // answer well. "check this page" invites a reflexive tap.
-        let flag = "replace: kaynak [IM (route)] -> okuma [IV (route)]"
+        //
+        // "kaynak" names the primary (Google) reading and "okuma" the
+        // secondary (Apple) reading here — matching `reply(...)` above,
+        // where `primaryText` is "IV" and `secondaryText` is "IM". Backend's
+        // `reconcile.ts` no longer *blocks* on this kind of disagreement
+        // alone (ADR-002 — Apple cannot write Turkish, so it is not a second
+        // opinion worth interrupting for), but this test is about the
+        // client faithfully carrying through whatever the backend *did*
+        // decide and why, not about what makes the backend decide it.
+        let flag = "replace: kaynak [IV (route)] -> okuma [IM (route)]"
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: local),
             selector: FixedSelection(lineIds: ["line_00"]),

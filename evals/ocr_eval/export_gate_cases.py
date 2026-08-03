@@ -81,6 +81,10 @@ PAIRS: list[tuple[str, str, str]] = [
 
     # --- hypo/hyper and ions ---
     ("hipo_hiper", "hipokalemi gelişti", "hiperkalemi gelişti"),
+    # Same polarity, suffix OCR typo (a real production case, PR review): the
+    # gate must not treat a dropped letter after 'hiper-' as a critical
+    # mismatch, but must still catch an actual hipo<->hiper flip above.
+    ("hipo_hiper", "Tip 4 hipersensitivite örnekleri", "Tip 4 hipersenstvite örnekleri"),
     ("iyon", "Na+ artışı", "Na- artışı"),
     ("iyon", "Fe+2 birikimi", "Fe+3 birikimi"),
 
@@ -112,11 +116,17 @@ PAIRS: list[tuple[str, str, str]] = [
 def build_payload() -> dict:
     cases = []
     for group, gold, reading in PAIRS:
-        mismatches = critical_token_mismatches(gold, reading)
+        # fold_hypo_hyper=True: these pairs simulate OCR-vs-OCR reconciliation
+        # (reconcile.ts), where an on-device suffix typo on an otherwise
+        # correctly-read word should not be a critical mismatch (ADR-003).
+        # `cardGate`'s own use of `added_critical_tokens` (validating a
+        # generated card against its own quoted source) deliberately does
+        # NOT set this — see that function's docstring.
+        mismatches = critical_token_mismatches(gold, reading, fold_hypo_hyper=True)
         # The reconciliation measure, not the manifest one: neither side of an
         # Apple-vs-Google comparison is annotated, so both are detected.
-        missing = critical_token_recall_loss(gold, reading)
-        added = added_critical_tokens(gold, reading)
+        missing = critical_token_recall_loss(gold, reading, fold_hypo_hyper=True)
+        added = added_critical_tokens(gold, reading, fold_hypo_hyper=True)
         cases.append(
             {
                 "group": group,

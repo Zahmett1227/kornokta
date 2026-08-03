@@ -99,6 +99,35 @@ export function isRouteSurface(text: string): boolean {
 }
 
 /**
+ * Collapses a hipo/hiper token to just its polarity prefix.
+ *
+ * §10.5 makes the hipo/hiper *distinction* critical, not the rest of the
+ * word's spelling: 'hipersensitivite' misread as 'hipersenstvite' is an
+ * ordinary OCR typo in the suffix, not a polarity flip, and comparing full
+ * surfaces reported it as a critical mismatch it is not. 'hipokalemi' vs
+ * 'hiperkalemi' *does* change polarity and must still mismatch — this keeps
+ * that case exactly as sharp while dropping the suffix-typo false positive.
+ *
+ * `foldDiacritics` runs *before* `toLowerCase()`, not after: JavaScript's
+ * default lowercasing turns 'İ' (dotted capital I) into 'i' followed by a
+ * combining dot above (U+0307), so `'HİPERSENSİTİVİTE'.toLowerCase()` starts
+ * with that combining sequence rather than plain 'hiper', and neither prefix
+ * matches — silently defeating this exact function on correctly-cased
+ * Turkish headings (PR #7 review). `foldDiacritics` maps 'İ' to a plain
+ * ASCII 'I' as one character, so lowercasing afterward never introduces a
+ * combining mark to begin with.
+ *
+ * Ported from `evals/ocr_eval/critical_tokens.canonical_hypo_hyper`, which
+ * stays the reference.
+ */
+export function canonicalHypoHyper(surface: string): string {
+  const folded = foldDiacritics(nfc(surface)).toLowerCase();
+  if (folded.startsWith("hiper")) return "hiper";
+  if (folded.startsWith("hipo")) return "hipo";
+  return folded;
+}
+
+/**
  * Returns every critical span in `text`, sorted by position.
  *
  * Overlapping spans are kept — `0,5 mg/kg` yields dose_frequency,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { cardIntroducesUnsourcedCriticalToken, runCardGate } from "../providers/cardGate.js";
+import {
+  cardIntroducesUnsourcedCriticalToken,
+  explanationIntroducesUnsourcedCriticalToken,
+  runCardGate,
+} from "../providers/cardGate.js";
 import type { Card, LlmOutput } from "../schemas/llmOutputTypes.js";
 
 function baseCard(overrides: Partial<Card> = {}): Card {
@@ -35,6 +39,37 @@ describe("cardIntroducesUnsourcedCriticalToken", () => {
     const card = baseCard({ back: "1 mg IV adrenalin." });
     expect(cardIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
   });
+
+  it("flags a same-polarity hipo/hyper diagnosis swap (PR #7 review, docs/ADR-003)", () => {
+    // `addedCriticalTokens` here must NOT fold hipo/hiper to just its prefix —
+    // that folding exists for OCR-vs-OCR reconciliation (reconcile.ts) and
+    // would otherwise let a card silently turn a sourced 'hipokalemi' into
+    // 'hiponatremi', a different diagnosis entirely, into an auto-accept.
+    const card = baseCard({
+      sourceQuote: "Hastada hipokalemi saptandı.",
+      back: "Hastada hiponatremi saptandı.",
+    });
+    expect(cardIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
+  });
+});
+
+describe("explanationIntroducesUnsourcedCriticalToken (PR #7 review)", () => {
+  it("is clean when explanation adds no critical value", () => {
+    // A negation ('içermez') is itself a critical-token class (§10.5), so this
+    // deliberately avoids one — the point is ordinary prose, not an
+    // accidental second critical value to detect.
+    const card = baseCard({ explanation: "Bu bir mekanizma açıklamasıdır." });
+    expect(explanationIntroducesUnsourcedCriticalToken(card)).toEqual([]);
+  });
+
+  it("is clean when explanation is empty", () => {
+    expect(explanationIntroducesUnsourcedCriticalToken(baseCard({ explanation: "" }))).toEqual([]);
+  });
+
+  it("flags a critical value in explanation regardless of card.enriched", () => {
+    const card = baseCard({ explanation: "Genellikle 10 mg IV olarak da uygulanabilir." });
+    expect(explanationIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
+  });
 });
 
 describe("runCardGate", () => {
@@ -64,6 +99,49 @@ describe("runCardGate", () => {
       { maxCardsPerKnowledgeUnit: 4 },
     );
     expect(report.verdicts[0]!.decision).toBe("reject");
+  });
+
+  it("still asks for confirmation when explanation invents a value and the model mislabels enriched=false (PR #7 review)", () => {
+    // The exact failure Codex found: front/back are clean and self-reported
+    // enriched=false, so `cardIntroducesUnsourcedCriticalToken` and the
+    // enriched-card rule both stay silent — only the independent explanation
+    // check catches it.
+    const report = runCardGate(
+      {
+        cards: [
+          baseCard({
+            explanation: "Klinikte genellikle 10 mg IV olarak da uygulanır.",
+            enriched: false,
+          }),
+        ],
+        quality: quality(),
+      },
+      { maxCardsPerKnowledgeUnit: 4 },
+    );
+    expect(report.verdicts[0]!.decision).toBe("quick_confirm");
+    expect(report.verdicts[0]!.reasons.join(" ")).toContain("Açıklama");
+  });
+
+  it("also asks for confirmation on fabricated prose with no critical-token class at all (PR #7 review, 2nd round)", () => {
+    // Codex's follow-up: a critical-token check can only prove a narrow
+    // class of fabrication. This explanation invents a mechanism claim with
+    // no number/dose/route/negation for `addedCriticalTokens` to catch, so
+    // only the broader "any non-empty explanation needs confirmation" rule
+    // (independent of both the detector and `enriched`) catches it.
+    const report = runCardGate(
+      {
+        cards: [
+          baseCard({
+            explanation: "Adrenalin mast hücresi degranülasyonunu tetikler.",
+            enriched: false,
+          }),
+        ],
+        quality: quality(),
+      },
+      { maxCardsPerKnowledgeUnit: 4 },
+    );
+    expect(report.verdicts[0]!.decision).toBe("quick_confirm");
+    expect(report.verdicts[0]!.reasons.join(" ")).toContain("Açıklama");
   });
 
   it("only asks for confirmation, not rejection, when the same invented value is on an enriched card (§12.2)", () => {
