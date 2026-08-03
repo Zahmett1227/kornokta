@@ -186,6 +186,14 @@ final class ProcessingQueue: ObservableObject {
                 .reduce(0, +) / Double(max(recognized.lines.count, 1))
         }
 
+        // OCR completed before card generation, so a transient card/provider
+        // failure must not make the queue pay for a second OCR run on retry.
+        // The snapshot is cleared only from the successfully persisted ready
+        // path below.
+        if outcome.finalState != .ready, let snapshot = outcome.ocrSnapshot {
+            page.ocrSnapshotData = try? JSONEncoder().encode(snapshot)
+        }
+
         switch outcome.finalState {
         case .ready:
             if !outcome.generatedGroups.isEmpty {
@@ -211,9 +219,6 @@ final class ProcessingQueue: ObservableObject {
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired
-            if let snapshot = outcome.ocrSnapshot {
-                page.ocrSnapshotData = try? JSONEncoder().encode(snapshot)
-            }
             // Not an error, but the reason has to survive: §19.2 requires the
             // confirmation, and a confirmation with no reason attached is one
             // the user cannot answer well. `lastError` is the field the queue

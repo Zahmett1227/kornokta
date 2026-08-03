@@ -109,17 +109,19 @@ public final class TextRegion {
     /// Flattened x/y polygon coordinates when a non-rectangular source region
     /// is available. Current detectors emit a rectangle, but this prevents a
     /// later lasso selection from being forced back into a whole-page box.
-    public var boundingPolygon: [Double]
+    public var boundingPolygon: [Double] = []
     public var lineIds: [String]
-    public var tokenIds: [String]
-    public var evidenceIds: [String]
+    public var tokenIds: [String] = []
+    public var evidenceIds: [String] = []
     public var appleOCRText: String?
     public var googleOCRText: String?
     public var finalText: String
-    public var selectedText: String
-    public var contextText: String
-    public var handwrittenNotes: [String]
-    public var layoutKindRaw: String
+    public var selectedText: String = ""
+    public var contextText: String = ""
+    public var handwrittenNotes: [String] = []
+    /// Declaration-time defaults make this a lightweight SwiftData migration
+    /// for stores created before annotation grounding existed.
+    public var layoutKindRaw: String = "unknown"
     /// Relative image-store path for the actual source crop, never an
     /// absolute sandbox path.
     public var sourceCropPath: String?

@@ -274,32 +274,51 @@ public struct CapturePipeline: Sendable {
         // second call after a user tap.
         var remote = snapshot?.remote
         var upload: PreparedUpload?
-        if remote == nil, let backend {
-            do {
-                let reading = try await Self.cloudReading(
-                    backend: backend,
-                    jobId: jobId,
-                    imageURL: imageURL,
-                    recognized: recognized
-                )
-                remote = reading.remote
-                upload = reading.upload
-            } catch let error as BackendError {
-                return Self.outcome(
-                    for: error,
-                    jobId: jobId,
-                    recognized: recognized,
-                    selection: initialSelection
-                )
-            } catch {
-                return PipelineOutcome(
-                    jobId: jobId,
-                    finalState: .temporaryFailure,
-                    recognized: recognized,
-                    selectedLineIds: initialSelection.selectedLineIds,
-                    selection: initialSelection,
-                    failure: .providerUnavailable
-                )
+        if let backend {
+            if remote == nil {
+                do {
+                    let reading = try await Self.cloudReading(
+                        backend: backend,
+                        jobId: jobId,
+                        imageURL: imageURL,
+                        recognized: recognized
+                    )
+                    remote = reading.remote
+                    upload = reading.upload
+                } catch let error as BackendError {
+                    return Self.outcome(
+                        for: error,
+                        jobId: jobId,
+                        recognized: recognized,
+                        selection: initialSelection
+                    )
+                } catch {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .temporaryFailure,
+                        recognized: recognized,
+                        selectedLineIds: initialSelection.selectedLineIds,
+                        selection: initialSelection,
+                        failure: .providerUnavailable
+                    )
+                }
+            } else {
+                // OCR is already complete, but the card endpoint still needs
+                // the page bytes. Rebuild only this local upload on resume;
+                // never pay for or alter the persisted OCR snapshot again.
+                do {
+                    upload = try Self.prepareUpload(imageURL: imageURL)
+                } catch {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .temporaryFailure,
+                        recognized: recognized,
+                        selectedLineIds: initialSelection.selectedLineIds,
+                        selection: initialSelection,
+                        ocrSnapshot: snapshot,
+                        failure: .providerUnavailable
+                    )
+                }
             }
         }
 
@@ -520,10 +539,8 @@ public struct CapturePipeline: Sendable {
         // Downscaled before sending: a full-resolution scan base64s to more
         // than a serverless host will accept, and the platform rejects it
         // before our own endpoint can say why (see `UploadImageEncoder`).
-        let upload = try UploadImageEncoder.prepare(
-            contentsOf: imageURL,
-            mimeType: Self.mimeType(for: imageURL)
-        )
+        let upload = try prepareUpload(imageURL: imageURL)
+
         let remote = try await backend.recognize(
             jobId: jobId,
             imageData: upload.data,
@@ -532,6 +549,16 @@ public struct CapturePipeline: Sendable {
         )
 
         return (remote, upload)
+    }
+
+    /// Recreated locally when a user confirms a stored OCR snapshot. The
+    /// result is intentionally not part of the snapshot: it is derived from
+    /// the original page and may be discarded after the request.
+    private static func prepareUpload(imageURL: URL) throws -> PreparedUpload {
+        try UploadImageEncoder.prepare(
+            contentsOf: imageURL,
+            mimeType: Self.mimeType(for: imageURL)
+        )
     }
 
     /// Fraction of the smaller box that has to be covered for two boxes to be
