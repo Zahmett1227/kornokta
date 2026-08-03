@@ -25,7 +25,7 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) da yazıldı — **ama bu ortamda Swift derleyicisi olmadığı için bir Mac'te `swift test` ile henüz doğrulanmadı**. Kalan: o doğrulama, gold pasaj kart kalite rubriği ölçümü (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
+| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) da yazıldı — **ama bu ortamda Swift derleyicisi olmadığı için bir Mac'te `swift test` ile henüz doğrulanmadı**. Gold pasaj kart kalite ölçümünün toplama/rapor aracı da yazıldı ve test edildi (`evals/card_quality/aggregate.py`, `docs/MAC-ADIMLARI-FAZ3.md`). Kalan: swift test doğrulaması, kullanıcının kendi pasajlarıyla asıl ölçüm (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
 | Faz 4 — FSRS tekrar motoru | Başlamadı |
 | Faz 5 — Sertleştirme | Başlamadı |
 
@@ -36,11 +36,11 @@ alınmadı. Önceki oturumlar `claude/faz1-ios-iskelet` ve
 ileri sarılmıştı.
 
 **Test durumu:**
-- Python (`evals/`): 435 test, yeşil — `python -m pytest evals -q`
+- Python (`evals/`): 452 test, yeşil — `python -m pytest evals -q`
 - Swift (`ios/CizgiCore/`): 114 test **gerçek bir Mac'te doğrulandı** (2026-08-02);
   Faz 3 istemci entegrasyonuyla birlikte **+16 yeni test yazıldı (130 toplam),
   bu ortamda derleyici olmadığı için henüz Mac'te çalıştırılmadı** — `swift test`
-- Backend (`backend/`): 418 test, yeşil — `npm test`
+- Backend (`backend/`): 419 test, yeşil — `npm test`
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
 doğrulandı — gerçek bir kitap sayfası fotoğrafı Google Document AI'dan doğru
@@ -93,9 +93,9 @@ elle senkron tutma, üret ve kilitle.
 Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
-python -m pytest evals -q                    # 435 test
+python -m pytest evals -q                    # 452 test
 cd ios/CizgiCore && swift test                # 130 test (114'ü Mac'te doğrulandı, +16'sı henüz değil)
-cd backend && npm test                        # 418 test
+cd backend && npm test                        # 419 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 
@@ -108,8 +108,10 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/FAZ3-PLAN.md` — Faz 3'ün tam kaydı: backend'de ne yazıldı, hangi
   tasarım kararları alındı, çıkış kapısının neden henüz ölçülemediği
 - `docs/OPENAI-GEMINI-KURULUM.md` — OpenAI/Gemini anahtarlarını edinme adımları
-- `docs/MAC-ADIMLARI.md` — altın set ölçümü istenirse adım adım rehber
+- `docs/MAC-ADIMLARI.md` — Faz 2 altın set ölçümü istenirse adım adım rehber
   (araçlar hazır, hiç çalıştırılmadı)
+- `docs/MAC-ADIMLARI-FAZ3.md` — Faz 3 gold pasaj kart kalite ölçümü rehberi
+  (araçlar hazır ve test edildi, ölçüm kullanıcıyı bekliyor)
 - `backend/README.md` — backend yapısı, Vercel dağıtımında çıkan gerçek
   tuzaklar ve çözümleri
 - `ios/README.md` — iOS yapısı, cihazda elle kontrol listesi
@@ -133,6 +135,9 @@ bölümünde. Sırada:
    varsayılmamalı.
 2. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
    pasajlardan üretilen kartların kalite rubriği kabul sınırını geçmelidir."
+   Toplama/rapor aracı artık hazır ve test edilmiş
+   (`evals/card_quality/aggregate.py`); adım adım rehber `docs/MAC-ADIMLARI-FAZ3.md`'de.
+   Kalan: kullanıcının kendi kitabından gerçek pasaj seçip elle puanlaması.
 3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.

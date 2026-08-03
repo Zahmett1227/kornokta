@@ -43,8 +43,9 @@ Ana plan §26'daki yapı izlenir:
 │   ├── gold-manifest.schema.json  # Manifest JSON şeması
 │   ├── fixtures/                  # Gerçek sayfa görselleri — YEREL, commit edilmez
 │   ├── ocr_eval/                  # Metrikler, kritik token, doğrulayıcı, raporlar
+│   ├── card_quality/               # §23.3 kart kalite rubriği + toplama aracı (Faz 3 çıkış kapısı)
 │   ├── spikes/                    # marker_detection (işaret tespiti referansı)
-│   └── tests/                     # pytest birim testleri (435 test)
+│   └── tests/                     # pytest birim testleri (452 test)
 └── docs/         # Mimari, gizlilik, faz planları, kurulum rehberleri
 ```
 
@@ -52,7 +53,7 @@ Ana plan §26'daki yapı izlenir:
 
 ```bash
 pip install -r evals/requirements.txt
-python -m pytest evals                                    # 435 test
+python -m pytest evals                                    # 452 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
 ```
 
@@ -65,7 +66,7 @@ cd ios/CizgiCore && swift test                             # 130 test (114 Mac't
 ## Backend'i çalıştırma
 
 ```bash
-cd backend && npm install && npm test                      # 418 test
+cd backend && npm install && npm test                      # 419 test
 npm run serve                                               # yerel sunucu, 127.0.0.1:8787
 ```
 

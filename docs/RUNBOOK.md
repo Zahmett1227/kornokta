@@ -9,7 +9,7 @@ Swift (iOS mantığı), TypeScript (backend).
 ```bash
 pip install -r evals/requirements.txt
 
-python -m pytest evals -q                                        # 435 test
+python -m pytest evals -q                                        # 452 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json --check-files
 python -m evals.spikes.marker_detection.run --demo                # sentetik demo, ağ gerekmez
 ```
@@ -37,7 +37,7 @@ Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir
 cd backend
 npm install
 npm run typecheck
-npm test                                                          # 418 test
+npm test                                                          # 419 test
 ```
 
 Yerel sunucu (yalnız 127.0.0.1, dışarıya açılmaz):

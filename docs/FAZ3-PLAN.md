@@ -24,7 +24,7 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — üç gerçek hata buldurdu (OpenAI şema, Gemini token bütçesi, OpenAI token bütçesi), sonunda ikisi de başarıyla tamamlandı |
 | **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | 🔶 kod + yeni testler yazıldı; bu ortamda Swift derleyicisi yok, **bir Mac'te `swift test` ile henüz doğrulanmadı** (aşağıya bakın) |
 | **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | ✅ **tamamlandı** — ikisi de gerçek bir çıktı üretti |
-| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ altyapı hazır; gold set ve çok-pasajlı ölçüm kalıyor |
+| **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | 🔶 puanları toplayıp dağılıma çeviren araç yazıldı ve test edildi (`evals/card_quality/aggregate.py`, `docs/MAC-ADIMLARI-FAZ3.md`); asıl ölçüm — gold pasaj seçimi ve elle puanlama — kullanıcıyı bekliyor |
 
 ---
 
@@ -365,13 +365,44 @@ mevcut 114 test hâlâ geçmeli, yeni testler de geçmeli. Geçmezse hata mesaj�
 bu oturuma geri bildirilirse düzeltilir; bu depoda derleme aracı olmadığı
 için önceden yakalanamadı.
 
+## F3-10 — gold pasaj kart kalite ölçümü altyapısı
+
+`evals/card_quality/rubric.py` (§23.3'ün tek-kart puanlayıcısı: 7 kriter,
+0-2 puan, 12-14 kabul / 9-11 inceleme / 0-8 ret) zaten Faz 3'ün başında
+yazılmış ve testliydi — bu oturumda eksik olan, bulunan şey **çok sayıda
+kartın puanını toplayıp bir dağılıma çeviren katman**dı; o hiç yoktu.
+
+Eklenen: `evals/card_quality/scores.schema.json` (bir insanın 0-2 puanlarını
+yazacağı dosyanın şeması — `gold-manifest.schema.json`'ın aynı deseni:
+`additionalProperties: false`, `jsonschema` ile doğrulama) ve
+`evals/card_quality/aggregate.py` (şema + tutarlılık hatalarını basan,
+geçerliyse her kartın kararını ve toplam kabul/inceleme/ret dağılımını
+yazan bir CLI — `evals/ocr_eval/validate_manifest.py`'nin aynı deseni).
+**Bilerek yapılmayan:** bir tek "geçti/kaldı" sayısı üretmek — ANA-PLAN §25
+yalnızca "kalite rubriği kabul sınırını geçmelidir" diyor, kaç pasaj ya da
+kaç yüzde kabul gerektiğini söylemiyor; bunu ben uydurmak yerine dağılımı
+gösterip kararı kullanıcıya bırakıyorum (§0.6). 17 yeni Python testi yazıldı
+**ve bu ortamda gerçekten çalıştırıldı** (Swift'in aksine, burada bir Python
+yorumlayıcısı var) — hepsi geçiyor.
+
+`docs/MAC-ADIMLARI-FAZ3.md`, Faz 2'nin `docs/MAC-ADIMLARI.md`'siyle aynı
+üslupta: kullanıcının kendi kitabından pasaj seçmesi, `npm run cards --
+--text ... --output ...` ile (script'in zaten desteklediği bayraklarla,
+kaynağı düzenlemeden) gerçek kart üretmesi, her kartı elle puanlaması, ve
+`python -m evals.card_quality.aggregate` ile dağılımı hesaplaması adım adım
+anlatılıyor.
+
+**Kalan gerçek eksik:** kullanıcının kendi kitabından gerçek pasajlar seçip
+elle puanlaması — bu ne bir API anahtarı ne bir derleyici sorunu, doğrudan
+kullanıcının kendi tıbbi bilgisini ve zamanını gerektiren tek adım.
+
 ## Test durumu
 
 ```
 $ npm test   (backend/)
-418 passed
+419 passed
 $ python -m pytest evals -q
-435 passed
+452 passed
 ```
 
 Yeni testlerin hepsi (config, prompt, şema doğrulayıcı, kart kapısı, OpenAI/Gemini

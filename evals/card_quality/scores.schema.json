@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cizgi.local/schemas/card-quality-scores.schema.json",
+  "title": "Çizgi kart kalite rubriği puanları",
+  "description": "ANA-PLAN §23.3, §25 Faz 3 çıkış kapısı: gold pasajlardan üretilen kartlara insan tarafından verilen rubrik puanları. Kart içeriği (front/back/sourceQuote) burada tutulmaz — yalnız cardId ile `npm run cards`'ın yerel, gitignore'lu çıktısına atıf yapılır; bu dosyanın kendisi de telif içermediği için commit edilebilir, ama yine de evals/fixtures/ altında tutulup gitignore'lu kalması önerilir (ANA-PLAN §26, §30 ile aynı ihtiyat).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "entries"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cardId", "scores"],
+      "properties": {
+        "cardId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "§14'teki card.id — `npm run cards`'ın yerel JSON çıktısındaki kimlikle eşleşir."
+        },
+        "goldPassageLabel": {
+          "type": "string",
+          "description": "Serbest metin: hangi gold pasajdan üretildiği (örn. 'Anafilaksi, sayfa 42'). İçerik değil, yalnız kullanıcının kendi takibi için."
+        },
+        "scores": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source_faithfulness",
+            "single_clear_answer",
+            "medical_accuracy",
+            "question_clarity",
+            "learning_value",
+            "non_redundancy",
+            "appropriate_difficulty"
+          ],
+          "properties": {
+            "source_faithfulness": { "$ref": "#/$defs/criterionScore" },
+            "single_clear_answer": { "$ref": "#/$defs/criterionScore" },
+            "medical_accuracy": { "$ref": "#/$defs/criterionScore" },
+            "question_clarity": { "$ref": "#/$defs/criterionScore" },
+            "learning_value": { "$ref": "#/$defs/criterionScore" },
+            "non_redundancy": { "$ref": "#/$defs/criterionScore" },
+            "appropriate_difficulty": { "$ref": "#/$defs/criterionScore" }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "criterionScore": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2,
+      "description": "ANA-PLAN §23.3: her kriter 0-2 puan."
+    }
+  }
+}
