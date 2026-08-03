@@ -207,6 +207,104 @@ export function blocksOf(page: RawPage): RawBlock[] {
 /** Height of one reading-order band, as a fraction of the page. */
 export const READING_BAND = 0.01;
 
+/** A positioned item this module can put in reading order. */
+export interface Positioned {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Buckets used to scan for column gutters in `columnBoundaries`. */
+const COLUMN_BUCKETS = 100;
+/** A gutter narrower than this fraction of the page width is ordinary word
+ * spacing, not a column break. */
+const MIN_GUTTER_WIDTH = 0.02;
+/** A gutter this close to either edge is a margin, not a break between
+ * columns of text. */
+const COLUMN_EDGE_MARGIN = 0.08;
+/** Every column a detected gutter implies must end up with at least this many
+ * lines, or the "gutter" was probably one short/indented line, not a layout. */
+const MIN_LINES_PER_COLUMN = 2;
+
+/**
+ * Finds x-positions of vertical whitespace gutters wide and central enough to
+ * be column breaks — e.g. a Nekroz/Apoptoz comparison list — rather than
+ * ordinary margins, so `orderByReadingPosition` can read column by column
+ * instead of interleaving both columns' text row by row.
+ *
+ * A handful of full-width outliers (a header, a page number) are tolerated —
+ * `crossingTolerance` — rather than blocking detection outright.
+ */
+export function columnBoundaries(items: Positioned[]): number[] {
+  if (items.length < 2 * MIN_LINES_PER_COLUMN) return [];
+
+  const coverage = new Array<number>(COLUMN_BUCKETS).fill(0);
+  for (const item of items) {
+    const start = Math.max(0, Math.floor(item.x * COLUMN_BUCKETS));
+    const end = Math.min(COLUMN_BUCKETS, Math.ceil((item.x + item.width) * COLUMN_BUCKETS));
+    for (let bucket = start; bucket < end; bucket++) coverage[bucket]!++;
+  }
+
+  const crossingTolerance = Math.max(1, Math.floor(items.length / 20));
+  const boundaries: number[] = [];
+  let index = 0;
+  while (index < COLUMN_BUCKETS) {
+    if (coverage[index]! > crossingTolerance) {
+      index++;
+      continue;
+    }
+    const start = index;
+    while (index < COLUMN_BUCKETS && coverage[index]! <= crossingTolerance) index++;
+    const width = (index - start) / COLUMN_BUCKETS;
+    const center = (start + index) / 2 / COLUMN_BUCKETS;
+    if (width >= MIN_GUTTER_WIDTH && center >= COLUMN_EDGE_MARGIN && center <= 1 - COLUMN_EDGE_MARGIN) {
+      boundaries.push(center);
+    }
+  }
+
+  if (!boundaries.length) return [];
+
+  const perColumn = new Array<number>(boundaries.length + 1).fill(0);
+  for (const item of items) {
+    const center = item.x + item.width / 2;
+    perColumn[boundaries.filter((b) => b < center).length]!++;
+  }
+  if (perColumn.some((count) => count < MIN_LINES_PER_COLUMN)) return [];
+
+  return boundaries;
+}
+
+/**
+ * Reading order: top to bottom in bands, left to right within a band — except
+ * a page split into columns (detected via `columnBoundaries`) reads column by
+ * column, each column top to bottom, rather than interleaving both columns'
+ * lines row by row. Row-by-row reading of a comparison table merges two
+ * unrelated sentences into one garbled line.
+ *
+ * Banding rather than a float tolerance, because a tolerance comparison is
+ * not a strict weak ordering and produces an arbitrary permutation on a dense
+ * page.
+ */
+export function orderByReadingPosition<T extends Positioned>(items: T[]): T[] {
+  const withinColumn = (a: Positioned, b: Positioned): number => {
+    const bandA = Math.round(a.y / READING_BAND);
+    const bandB = Math.round(b.y / READING_BAND);
+    if (bandA !== bandB) return bandA - bandB;
+    return a.x - b.x;
+  };
+
+  const boundaries = columnBoundaries(items);
+  if (!boundaries.length) return [...items].sort(withinColumn);
+
+  const columns: T[][] = Array.from({ length: boundaries.length + 1 }, () => []);
+  for (const item of items) {
+    const center = item.x + item.width / 2;
+    columns[boundaries.filter((b) => b < center).length]!.push(item);
+  }
+  return columns.flatMap((column) => column.sort(withinColumn));
+}
+
 /** Status codes worth another attempt (§17). */
 function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
@@ -284,7 +382,7 @@ export class DocumentAIRecognizer implements TextRecognizer {
     // merged into this one.
     const page = document.pages?.[0] ?? {};
 
-    const lines: OCRLine[] = blocksOf(page)
+    const unordered = blocksOf(page)
       .map((block) => {
         const text = textForLayout(fullText, block.layout);
         return {
@@ -293,21 +391,15 @@ export class DocumentAIRecognizer implements TextRecognizer {
           ...boundsOf(block.layout),
         };
       })
-      .filter((line) => line.text.trim().length > 0)
-      // Same reading order as the Vision path: top to bottom in bands, then
-      // left to right. Banding rather than a float tolerance, because a
-      // tolerance comparison is not a strict weak ordering and produces an
-      // arbitrary permutation on a dense page.
-      .sort((a, b) => {
-        const bandA = Math.round(a.y / READING_BAND);
-        const bandB = Math.round(b.y / READING_BAND);
-        if (bandA !== bandB) return bandA - bandB;
-        return a.x - b.x;
-      })
-      .map((line, index) => ({
-        lineId: `line_${String(index).padStart(2, "0")}`,
-        ...line,
-      }));
+      .filter((line) => line.text.trim().length > 0);
+
+    // Same reading order as the Vision path (§10.1): column by column when
+    // the page splits into columns, top-to-bottom-then-left-to-right
+    // otherwise — see `orderByReadingPosition`.
+    const lines: OCRLine[] = orderByReadingPosition(unordered).map((line, index) => ({
+      lineId: `line_${String(index).padStart(2, "0")}`,
+      ...line,
+    }));
 
     return {
       imagePath: options.imagePath,

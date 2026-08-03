@@ -1,0 +1,78 @@
+import XCTest
+@testable import CizgiCore
+
+final class ReadingOrderTests: XCTestCase {
+    private func box(x: Double, y: Double, width: Double, height: Double = 0.03) -> ReadingOrder.Box {
+        ReadingOrder.Box(minX: x, minY: y, maxX: x + width, maxY: y + height)
+    }
+
+    // MARK: - columnBoundaries
+
+    func testFindsNothingWithTooFewItemsToInferALayout() {
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: [box(x: 0.1, y: 0.1, width: 0.2)]), [])
+    }
+
+    func testFindsNothingForAnOrdinarySingleColumnPage() {
+        let boxes = (0..<8).map { box(x: 0.1, y: Double($0) * 0.05, width: 0.8) }
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: boxes), [])
+    }
+
+    func testFindsTheGutterOfAGenuineTwoColumnLayout() {
+        let boxes = [0.1, 0.2, 0.3, 0.4].flatMap { y in
+            [box(x: 0.05, y: y, width: 0.4), box(x: 0.55, y: y, width: 0.4)]
+        }
+        let boundaries = ReadingOrder.columnBoundaries(for: boxes)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
+    }
+
+    func testIgnoresANarrowNearEdgeGapAsAnOrdinaryMargin() {
+        // Content spans [0.05, 0.97] almost fully; the only "gaps" are the
+        // page margins on either side, which must not read as a column split.
+        let boxes = (0..<8).map { box(x: 0.05, y: Double($0) * 0.05, width: 0.92) }
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: boxes), [])
+    }
+
+    func testToleratesOneFullWidthOutlierCrossingTheGutter() {
+        let columns = [0.2, 0.3, 0.4, 0.5, 0.6].flatMap { y in
+            [box(x: 0.05, y: y, width: 0.4), box(x: 0.55, y: y, width: 0.4)]
+        }
+        let header = box(x: 0.05, y: 0.05, width: 0.9)
+        let boundaries = ReadingOrder.columnBoundaries(for: [header] + columns)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
+    }
+
+    func testRejectsAGapThatWouldLeaveAColumnWithTooFewLines() {
+        // One short, indented line creates a thin apparent gap, but nothing
+        // else on the page is split that way — must not read as two columns.
+        var boxes = [box(x: 0.3, y: 0.1, width: 0.3)]
+        boxes += (0..<6).map { box(x: 0.05, y: 0.2 + Double($0) * 0.05, width: 0.9) }
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: boxes), [])
+    }
+
+    // MARK: - order
+
+    func testFallsBackToTopToBottomThenLeftToRightWithNoDetectedColumns() {
+        let boxes = [
+            box(x: 0.1, y: 0.5, width: 0.5),   // "alt"
+            box(x: 0.6, y: 0.1, width: 0.5),   // "üst sağ"
+            box(x: 0.1, y: 0.1, width: 0.5),   // "üst sol"
+        ]
+        XCTAssertEqual(ReadingOrder.order(boxes), [2, 1, 0])
+    }
+
+    func testReadsATwoColumnComparisonListColumnByColumnNotRowByRow() {
+        // Mirrors the real bug: a Nekroz/Apoptoz style comparison list where
+        // each row has one bullet per column at the same height. Row-by-row
+        // reading interleaves the two topics into one garbled sentence.
+        let nekroz = [0.1, 0.2, 0.3].map { box(x: 0.05, y: $0, width: 0.4) }
+        let apoptoz = [0.1, 0.2, 0.3].map { box(x: 0.55, y: $0, width: 0.4) }
+        // Interleaved input order, as a naive row-by-row OCR pass would emit it.
+        let boxes = [nekroz[0], apoptoz[0], nekroz[1], apoptoz[1], nekroz[2], apoptoz[2]]
+
+        // Indices 0, 2, 4 are Nekroz; 1, 3, 5 are Apoptoz — column order means
+        // all of Nekroz (top to bottom) before any of Apoptoz.
+        XCTAssertEqual(ReadingOrder.order(boxes), [0, 2, 4, 1, 3, 5])
+    }
+}

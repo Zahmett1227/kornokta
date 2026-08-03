@@ -10,32 +10,24 @@ import Vision
 /// finish with no network. It is explicitly **not** the final source of truth —
 /// Google Document AI and the model reconciliation decide that (§10.2, §10.3).
 public struct VisionTextRecognizer: TextRecognizing {
-    /// Height of one ordering band, as a fraction of the page.
-    static let bandHeight = 0.01
-
     /// Vision does not promise reading order, so observations are sorted
-    /// top-to-bottom then left-to-right for stable line ids.
-    ///
-    /// The vertical position is quantized into bands instead of compared with
-    /// a tolerance. A tolerance comparison is not a strict weak ordering —
-    /// `a ≈ b` and `b ≈ c` can hold while `a < c` does too — and `sorted(by:)`
-    /// given such a predicate returns an arbitrary permutation, which on a
-    /// dense page scrambles the transcript. Rounding to a band is transitive.
+    /// top-to-bottom then left-to-right for stable line ids — except that a
+    /// page split into columns (e.g. a Nekroz/Apoptoz comparison list) reads
+    /// column by column, not row by row: reading row-by-row across columns
+    /// interleaves two unrelated sentences into one garbled line. See
+    /// `ReadingOrder.order(_:)`.
     ///
     /// Kept identical to `AppleVisionSpike.VisionOCR.inReadingOrder`: the Faz 0
     /// measurement is only meaningful if the app orders lines the same way.
     static func inReadingOrder(
         _ observations: [VNRecognizedTextObservation]
     ) -> [VNRecognizedTextObservation] {
-        func band(_ observation: VNRecognizedTextObservation) -> Int {
-            // Flip to a top-left origin first, so band 0 is the top of the page.
-            Int(((1.0 - observation.boundingBox.maxY) / bandHeight).rounded())
+        let boxes = observations.map { observation -> ReadingOrder.Box in
+            let box = observation.boundingBox
+            // Flip to a top-left origin first, so smaller y is higher on the page.
+            return ReadingOrder.Box(minX: box.minX, minY: 1 - box.maxY, maxX: box.maxX, maxY: 1 - box.minY)
         }
-        return observations.sorted { a, b in
-            let bandA = band(a), bandB = band(b)
-            if bandA != bandB { return bandA < bandB }
-            return a.boundingBox.minX < b.boundingBox.minX
-        }
+        return ReadingOrder.order(boxes).map { observations[$0] }
     }
 
     /// Languages this device can actually recognize (§10.1). Vision silently
