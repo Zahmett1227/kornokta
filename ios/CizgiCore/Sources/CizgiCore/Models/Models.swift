@@ -56,6 +56,13 @@ public final class CapturedPage {
     public var retryCount: Int
     /// Set when the job may next be retried after a temporary failure (§17).
     public var nextAttemptAt: Date?
+    /// Set once the retention setting says the original image should go,
+    /// cleared only once it actually is removed (§22). Durable so a crash
+    /// between persisting `.ready` and deleting the file — or a later,
+    /// unrelated save that happens to flush this page — can't leave the
+    /// image orphaned forever; `shouldProcess` never revisits a `.ready`
+    /// page, so nothing else would ever retry the deletion.
+    public var pendingOriginalImageDeletion: Bool = false
 
     public var source: Source?
 
@@ -81,6 +88,7 @@ public final class CapturedPage {
         self.processingStateRaw = state.rawValue
         self.confirmationFlags = []
         self.retryCount = 0
+        self.pendingOriginalImageDeletion = false
         self.regions = []
     }
 }

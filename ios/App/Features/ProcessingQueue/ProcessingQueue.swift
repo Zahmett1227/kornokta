@@ -79,6 +79,8 @@ final class ProcessingQueue: ObservableObject {
         defer { isRunning = false }
 
         let context = container.mainContext
+        reconcilePendingImageDeletions(context: context)
+
         let descriptor = FetchDescriptor<CapturedPage>(
             sortBy: [SortDescriptor(\.captureDate, order: .forward)]
         )
@@ -87,6 +89,27 @@ final class ProcessingQueue: ObservableObject {
         for page in pages where shouldProcess(page) {
             await process(page)
         }
+    }
+
+    /// Retries an image deletion left over from a previous launch: `apply`
+    /// may have exited between persisting `pendingOriginalImageDeletion` and
+    /// actually removing the file, or a later, unrelated save may be what
+    /// flushed that flag to disk. `shouldProcess` never revisits a `.ready`
+    /// page, so this is the only place that gets another chance at it.
+    private func reconcilePendingImageDeletions(context: ModelContext) {
+        let descriptor = FetchDescriptor<CapturedPage>(
+            predicate: #Predicate { $0.pendingOriginalImageDeletion }
+        )
+        guard let pending = try? context.fetch(descriptor), !pending.isEmpty else { return }
+        for page in pending {
+            do {
+                try imageStore.remove(relativePath: page.originalImagePath)
+                page.pendingOriginalImageDeletion = false
+            } catch {
+                // Leave the flag set; try again on the next launch/foreground.
+            }
+        }
+        try? context.save()
     }
 
     private func shouldProcess(_ page: CapturedPage) -> Bool {
@@ -148,6 +171,9 @@ final class ProcessingQueue: ObservableObject {
             page.lastError = nil
             page.retryCount = 0
             page.nextAttemptAt = nil
+            if !AppSettings.load().keepOriginalPage {
+                page.pendingOriginalImageDeletion = true
+            }
 
         case .confirmationRequired:
             page.processingState = .confirmationRequired
@@ -180,12 +206,21 @@ final class ProcessingQueue: ObservableObject {
         // The original image is the only source if `context.save()` fails
         // (e.g. storage full) — deleting it before persistence is confirmed
         // would leave the page pointing at a file that no longer exists with
-        // none of the generated cards actually saved. Only remove it once
-        // the `.ready` state and its cards are durably on disk.
+        // none of the generated cards actually saved. `pendingOriginalImageDeletion`
+        // travels with the same save as the `.ready` transition, so even if
+        // this process exits before the removal below runs — or a later,
+        // unrelated save is what actually flushes this page — the flag is
+        // already durable and `reconcilePendingImageDeletions` retries it.
         do {
             try context.save()
-            if outcome.finalState == .ready, !AppSettings.load().keepOriginalPage {
-                try? imageStore.remove(relativePath: page.originalImagePath)
+            if page.pendingOriginalImageDeletion {
+                do {
+                    try imageStore.remove(relativePath: page.originalImagePath)
+                    page.pendingOriginalImageDeletion = false
+                    try? context.save()
+                } catch {
+                    // Leave the flag set; reconcilePendingImageDeletions retries later.
+                }
             }
         } catch {}
     }
