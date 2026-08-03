@@ -321,6 +321,25 @@ public struct CapturePipeline: Sendable {
                     )
                 }
             }
+        } else if snapshot?.remote != nil {
+            // A confirmation can outlive a Settings change or an app
+            // relaunch. In that case the saved cloud OCR is still valid, but
+            // a real card provider must not be invoked without the original
+            // page bytes. Recreate the derived upload even though this run no
+            // longer has a cloud-OCR client attached.
+            do {
+                upload = try Self.prepareUpload(imageURL: imageURL)
+            } catch {
+                return PipelineOutcome(
+                    jobId: jobId,
+                    finalState: .temporaryFailure,
+                    recognized: recognized,
+                    selectedLineIds: initialSelection.selectedLineIds,
+                    selection: initialSelection,
+                    ocrSnapshot: snapshot,
+                    failure: .providerUnavailable
+                )
+            }
         }
 
         let groundedSelection = AnnotationGrouper.ground(
