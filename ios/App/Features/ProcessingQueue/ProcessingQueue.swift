@@ -31,6 +31,14 @@ final class ProcessingQueue: ObservableObject {
         pipeline = pipeline.withBackend(backend)
     }
 
+    /// Swaps the card generator. Called alongside `setBackend` when the
+    /// backend URL or device token changes, so real (§25 Faz 3) and mock
+    /// generation follow the same on/off switch as cloud OCR rather than a
+    /// second one.
+    func setCardGenerator(_ generator: any CardGenerating) {
+        pipeline = pipeline.withGenerator(generator)
+    }
+
     /// Registers a freshly captured image. Returns once the bytes are on disk —
     /// §24.1 forbids telling the user a capture succeeded before that.
     @discardableResult
@@ -211,6 +219,28 @@ final class ProcessingQueue: ObservableObject {
             )
             card.knowledgeUnit = unit
             context.insert(card)
+        }
+
+        // Only the real backend generator reports this (§16.8); the mock
+        // makes no network call and has nothing to account for. Recorded
+        // only on success — `persist` runs solely from the `.ready` branch of
+        // `apply`, so a failed call never reaches here (a known, deliberate
+        // gap: a failed generation is not yet given its own `ModelRun`).
+        if let metadata = outcome.modelRun {
+            let run = ModelRun(
+                requestId: metadata.requestId,
+                jobId: page.id.uuidString,
+                provider: metadata.provider,
+                model: metadata.model,
+                purpose: metadata.purpose,
+                promptVersion: metadata.promptVersion,
+                latencyMs: metadata.latencyMs,
+                inputTokens: metadata.inputTokens,
+                outputTokens: metadata.outputTokens,
+                estimatedCostUSD: metadata.estimatedCostUSD,
+                success: true
+            )
+            context.insert(run)
         }
     }
 

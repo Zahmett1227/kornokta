@@ -53,14 +53,18 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    LabeledContent("Aşama", value: "Faz 2 — bulut OCR")
+                    LabeledContent("Aşama", value: environment.isBackendConfigured ? "Faz 3 — yapay zeka kart üretimi" : "Faz 2 — bulut OCR")
                     LabeledContent("Metin tanıma", value: environment.isBackendConfigured ? "Google Document AI" : "Yalnız cihaz (Türkçe okumaz)")
-                    LabeledContent("Kart üretimi", value: "Sahte sağlayıcı")
+                    LabeledContent("Kart üretimi", value: environment.isBackendConfigured ? "Gerçek (backend)" : "Sahte sağlayıcı")
                     LabeledContent("Tekrar algoritması", value: "Geçici (FSRS Faz 4)")
                 } header: {
                     Text("Durum")
                 } footer: {
-                    Text("Kart üretimi hâlâ sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır.")
+                    Text(
+                        environment.isBackendConfigured
+                            ? "Kartlar backend üzerinden gerçek bir modelden üretiliyor; kaynağı belirsiz olanlar onaya düşer. Tekrar etmek her zaman çevrimdışı çalışır."
+                            : "Kart üretimi hâlâ sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır."
+                    )
                 }
             }
             .navigationTitle("Ayarlar")

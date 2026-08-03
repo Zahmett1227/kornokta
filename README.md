@@ -19,13 +19,15 @@ adım orada.
 | **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
 | **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
 | **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
-| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu, testleri ve **gerçek anahtarla uçtan uca doğrulaması** tamam (gerçek kart, gerçek transkripsiyon). iOS entegrasyonu ve çıkış kapısı (gold pasaj kart rubriği) ölçümü kalıyor. Bkz. `docs/FAZ3-PLAN.md` |
+| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu, testleri ve **gerçek anahtarla uçtan uca doğrulaması** tamam (gerçek kart, gerçek transkripsiyon). iOS istemcisi yazıldı ama bir Mac'te henüz `swift test` ile doğrulanmadı; çıkış kapısı (gold pasaj kart rubriği) ölçümü de kalıyor. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | Başlamadı |
 | **Faz 5** | Sertleştirme | Başlamadı |
 
 Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulandı:
 gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
-(`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te 114/114 test geçiyor.
+(`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te 114/114 test geçiyor;
+Faz 3 istemci entegrasyonuyla eklenen +16 test bu ortamda (Swift derleyicisi
+yok) henüz çalıştırılamadı.
 
 Ayrıntılı özet: [`docs/FAZ2-PLAN.md`](docs/FAZ2-PLAN.md), [`docs/FAZ3-PLAN.md`](docs/FAZ3-PLAN.md).
 
@@ -57,7 +59,7 @@ python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
 ## iOS mantığını test etme
 
 ```bash
-cd ios/CizgiCore && swift test                             # 114 test
+cd ios/CizgiCore && swift test                             # 130 test (114 Mac'te doğrulandı, +16 henüz değil)
 ```
 
 ## Backend'i çalıştırma

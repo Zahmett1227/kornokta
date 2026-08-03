@@ -25,7 +25,7 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). Kalan: iOS istemci entegrasyonu, gold pasaj kart kalite rubriği ölçümü (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
+| Faz 3 — AI kart üretimi | 🔶 Backend tarafı yazıldı, test edildi, **ve gerçek bir OpenAI/Gemini anahtarıyla uçtan uca doğrulandı** (gerçek kart, gerçek transkripsiyon). İki gerçek hata bu sırada bulundu ve düzeltildi (OpenAI şema `type` zorunluluğu, model reasoning token'larının `max_output_tokens`'tan düşmesi). iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) da yazıldı — **ama bu ortamda Swift derleyicisi olmadığı için bir Mac'te `swift test` ile henüz doğrulanmadı**. Kalan: o doğrulama, gold pasaj kart kalite rubriği ölçümü (çıkış kapısı). Ayrıntı: `docs/FAZ3-PLAN.md`. |
 | Faz 4 — FSRS tekrar motoru | Başlamadı |
 | Faz 5 — Sertleştirme | Başlamadı |
 
@@ -35,10 +35,12 @@ alınmadı. Önceki oturumlar `claude/faz1-ios-iskelet` ve
 `claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bunlar zaten `main`'e
 ileri sarılmıştı.
 
-**Test durumu (hepsi yeşil):**
-- Python (`evals/`): 435 test — `python -m pytest evals -q`
-- Swift (`ios/CizgiCore/`): 114 test, **gerçek bir Mac'te doğrulandı** — `swift test`
-- Backend (`backend/`): 418 test — `npm test`
+**Test durumu:**
+- Python (`evals/`): 435 test, yeşil — `python -m pytest evals -q`
+- Swift (`ios/CizgiCore/`): 114 test **gerçek bir Mac'te doğrulandı** (2026-08-02);
+  Faz 3 istemci entegrasyonuyla birlikte **+16 yeni test yazıldı (130 toplam),
+  bu ortamda derleyici olmadığı için henüz Mac'te çalıştırılmadı** — `swift test`
+- Backend (`backend/`): 418 test, yeşil — `npm test`
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
 doğrulandı — gerçek bir kitap sayfası fotoğrafı Google Document AI'dan doğru
@@ -91,9 +93,9 @@ elle senkron tutma, üret ve kilitle.
 Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
-python -m pytest evals -q                    # 431 test
-cd ios/CizgiCore && swift test                # 114 test
-cd backend && npm test                        # 313 test
+python -m pytest evals -q                    # 435 test
+cd ios/CizgiCore && swift test                # 130 test (114'ü Mac'te doğrulandı, +16'sı henüz değil)
+cd backend && npm test                        # 418 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 
@@ -120,11 +122,20 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 Backend tarafı yazıldı VE gerçek anahtarla uçtan uca doğrulandı
 (`docs/FAZ3-PLAN.md`): config, promptlar, §14 şema doğrulayıcı, kart kalite
 kapısı, OpenAI/Gemini sağlayıcıları, `POST /api/cards`, `npm run
-cards`/`npm run handwriting`. Sırada:
+cards`/`npm run handwriting`. iOS istemcisi de yazıldı (`BackendCardProvider`,
+`ModelRun` kaydı §16.8, `CapturePipeline`/`ProcessingQueue`/`AppEnvironment`
+bağlaması) — ayrıntı ve nelerin eklendiği `docs/FAZ3-PLAN.md`'nin "F3-8"
+bölümünde. Sırada:
 
-1. iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8).
+1. **`cd ios/CizgiCore && swift test` bir Mac'te.** Bu ortamda Swift
+   derleyicisi yok; F3-8'in kodu ve +16 yeni testi hiç çalıştırılmadı. Önce bu
+   — hata çıkarsa bir sonraki oturuma o hatayla gelinmeli, "çalışıyor"
+   varsayılmamalı.
 2. Gold pasajlarla kart kalite rubriği ölçümü — çıkış kapısı (§25): "Gold
    pasajlardan üretilen kartların kalite rubriği kabul sınırını geçmelidir."
 3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.
+4. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
+   yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
+   altında not edildi).

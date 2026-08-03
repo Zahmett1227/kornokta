@@ -22,7 +22,7 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ **gerçek anahtarla uçtan uca doğrulandı** — gerçek transkripsiyon, gerçek token sayıları. Hâlâ hiçbir uç noktaya/akışa bağlı değil (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
 | **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ kod + test; sağlayıcı gerçek anahtarla doğrulandı ama bu HTTP uç noktası üzerinden (yalnız `scripts/cards.ts` üzerinden) henüz canlı denenmedi |
 | **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — üç gerçek hata buldurdu (OpenAI şema, Gemini token bütçesi, OpenAI token bütçesi), sonunda ikisi de başarıyla tamamlandı |
-| **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | ❌ başlamadı |
+| **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | 🔶 kod + yeni testler yazıldı; bu ortamda Swift derleyicisi yok, **bir Mac'te `swift test` ile henüz doğrulanmadı** (aşağıya bakın) |
 | **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | ✅ **tamamlandı** — ikisi de gerçek bir çıktı üretti |
 | **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ❌ altyapı hazır; gold set ve çok-pasajlı ölçüm kalıyor |
 
@@ -280,6 +280,90 @@ birden fazla pasajlık ölçüm kalıyor).
 hâlâ 0; gerçek harcama oluyor ama tahmini maliyet alanı bunu yansıtmıyor.
 Gerçek fiyat, sağlayıcının kendi hesap/fiyatlandırma sayfasından
 doldurulmalı (`docs/OPENAI-GEMINI-KURULUM.md`).
+
+## F3-8 — iOS istemci entegrasyonu (kod yazıldı, Mac'te henüz doğrulanmadı)
+
+Bu ortamda Swift derleyicisi yok (ne yerel toolchain ne Docker), yani bu
+bölümdeki her şey **elle titiz gözden geçirme ile yazıldı, `swift test` ile
+hiç çalıştırılmadı**. Faz 1/2'nin kendi kuralı burada da geçerli: kullanıcı
+kendi Mac'inde `swift test` çalıştırıp sonucu bildirene kadar bu iş "tamam"
+sayılmıyor.
+
+**Yeni dosya:** `ios/CizgiCore/Sources/CizgiCore/Providers/BackendCardProvider.swift`
+— `CardGenerating` protokolünün gerçek uygulaması, `BackendClient.swift`'in
+aynı deseniyle (`Remote*` adlı wire tipleri, aynı hata sınıflandırması).
+Bir tasarım kararı öne çıkıyor: sunucunun §19 kalite kapısı
+(`runCardGate`) `output.cards`'ı **hiç değiştirmiyor** — reddedilen bir kart
+hâlâ dizinin içinde duruyor, yalnız ayrı bir `gate.verdicts` raporunda
+işaretleniyor. `BackendCardProvider.map` bu yüzden her kartı kendi
+`cardId`'siyle `gate.verdicts`'a karşı kontrol ediyor: `reject` kararı
+kartı tamamen düşürüyor, `quick_confirm` `requiresUserApproval`'ı zorluyor
+(ADR-001'in taban-tavan değil kuralı istemci tarafında da uygulanıyor), ve
+kapının hiç puanlamadığı bir kart id'si (olmaması gereken bir durum)
+sessizce güvenilmek yerine `quick_confirm`'e düşüyor.
+
+**Bir gerçek backend eksiği bulundu ve düzeltildi:** `_cards.ts`'in yanıtı
+(`CardsSuccess`) prompt versiyonunu hiç döndürmüyordu — yalnız sunucu
+log satırına yazıyordu, ve o log satırının yorumunda "iOS ModelRun kaydı
+bunu bir gün buradan okuyacak" yazıyordu ki bu hiçbir zaman mümkün
+olmayacak bir varsayımdı (telefonun sunucu loglarına erişimi yok).
+`CardsSuccess`'e `cardPromptVersion` alanı eklendi (aynı `CARD_PROMPT_VERSION`
+sabitinden, elle senkron tutulan ikinci bir kopya değil) — backend testleri
+güncellendi ve geçiyor.
+
+**Protokol/tip değişiklikleri, hepsi ekleme (mevcut çağrı yerleri bozulmadı):**
+- `CardGenerationRequest`e `imageData`/`mimeType`/`selectedLineIds`/`isHandwritten`
+  eklendi (hepsi varsayılanlı) — `MockCardProvider` hiç okumuyor, gerçek
+  sağlayıcı gövdeyi bunlardan kuruyor.
+- `GeneratedKnowledge`e `modelRun: ModelRunMetadata?` eklendi — yeni bir
+  `ModelRunMetadata` (Sendable, Equatable) yalnızca sağlayıcının bilebileceği
+  alanları taşıyor (`requestId`, `provider`, `model`, `purpose`,
+  `promptVersion`, `latencyMs`, `inputTokens`, `outputTokens`,
+  `estimatedCostUSD`); `id`/`jobId`/`success`/`errorCategory`/`createdAt`
+  çağıran tarafından (zaten bildiği için) dolduruluyor.
+- `PipelineOutcome`e aynı sebeple `modelRun` eklendi.
+- `CapturePipeline`e `withGenerator(_:)` eklendi (`withBackend`/`withSelector`
+  ile aynı desen) ve `run(...)` artık OCR çağrısı için zaten hazırlanmış
+  görüntü baytlarını (`UploadImageEncoder.prepare` sonucu) ikinci kez
+  kodlamadan kart üretimine de veriyor.
+
+**`ProcessingQueue`/`AppEnvironment` (Uygulama katmanı, `CizgiCore` paketinin
+dışında — `swift test` bunu hiç kapsamıyor, yalnız Xcode/cihazda denenebilir):**
+- `ProcessingQueue.setCardGenerator(_:)` eklendi, `setBackend` ile birlikte
+  çağrılıyor — Ayarlar'daki backend URL/token tek anahtar, hem bulut OCR'ı
+  hem gerçek kart üretimini birlikte açıp kapatıyor, ikinci bir anahtar yok.
+- `ProcessingQueue.persist(...)` artık `outcome.modelRun` doluysa bir
+  `ModelRun` (§16.8) kaydı oluşturup ekliyor. **Bilerek eksik bırakılan:**
+  yalnız başarılı çağrılar kaydediliyor — başarısız bir kart üretimi çağrısı
+  için henüz bir `ModelRun` yazılmıyor (backend zaten kendi log satırında
+  başarısızlığı tutuyor; iOS tarafı bunu aynalamıyor, bu ayrı, küçük bir
+  sonraki adım).
+- `AppEnvironment.makeCardGenerator` eklendi, `makeBackend` ile aynı
+  "backend URL + cihaz tokenı var mı" kontrolünü paylaşıyor
+  (`resolvedBackendConfiguration` adında ortak bir yardımcıya çıkarıldı,
+  ki iki fonksiyon "yapılandırılmış" kararını birbirinden bağımsız
+  vermesin). `SettingsView`'daki "Durum" bölümü artık `isBackendConfigured`e
+  göre "Kart üretimi: Sahte sağlayıcı" / "Gerçek (backend)" gösteriyor —
+  önceden hep "Sahte sağlayıcı" yazıyordu, bu artık yanlış olurdu.
+
+**Yeni testler (`ios/CizgiCore/Tests/CizgiCoreTests/`, hepsi yazıldı, hiçbiri
+henüz çalıştırılmadı):**
+- `BackendCardProviderTests.swift` — `BackendCardProvider.map`'i doğrudan
+  test ediyor (HTTP mock'lama bu pakette hiç yok, `BackendClient` için de
+  yok — aynı emsal): reddedilen kart düşüyor mu, `quick_confirm` onay
+  zorluyor mu, model onayı asla aşağı çekilmiyor mu, puanlanmamış bir
+  kart id'si güvenilmiyor mu, boş `knowledgeUnits`/tamamı reddedilmiş kartlar
+  `sourceInsufficient` fırlatıyor mu, `sourceConcern` birleşimi doğru mu,
+  `modelRun` gerçek `usage`/`cardPromptVersion`'ı taşıyor mu.
+- `BackendPipelineTests.swift`e eklenen `CardGenerationRequestTests` —
+  `CapturePipeline` seviyesinde: sağlayıcı OCR çağrısıyla aynı baytları mı
+  alıyor, backend yokken görüntü gönderilmiyor mu, `modelRun` outcome'a
+  ulaşıyor mu, mock sağlayıcı `modelRun`'ı `nil` bırakıyor mu.
+
+**Kullanıcıdan istenen:** `cd ios/CizgiCore && swift test` bir Mac'te —
+mevcut 114 test hâlâ geçmeli, yeni testler de geçmeli. Geçmezse hata mesajı
+bu oturuma geri bildirilirse düzeltilir; bu depoda derleme aracı olmadığı
+için önceden yakalanamadı.
 
 ## Test durumu
 

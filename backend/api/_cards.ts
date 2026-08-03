@@ -42,6 +42,14 @@ export interface CardsSuccess {
   jobId: string;
   output: LlmOutput;
   gate: CardGateReport;
+  /**
+   * Not part of the §14 canonical schema (`output` stays exactly what §14
+   * defines), but the iOS `ModelRun` record (§16.8) has its own
+   * `promptVersion` field and needs a real value to put there. Sourced from
+   * the same constant the log line already used, so there is exactly one
+   * place this string is defined, not two synced by hand.
+   */
+  cardPromptVersion: string;
 }
 
 export interface CardsFailure {
@@ -198,14 +206,11 @@ export async function handleCardsRequest(
       inputTokens: rawUsage.inputTokens,
       outputTokens: rawUsage.outputTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
-      // Not part of the §14 response — the iOS `ModelRun` record (§16.8) that
-      // will eventually read this log line has its own `promptVersion` field,
-      // so it belongs here rather than in the canonical schema.
       cardPromptVersion: CARD_PROMPT_VERSION,
       elapsedMs: Date.now() - started,
     });
 
-    return json({ jobId, output, gate } satisfies CardsSuccess, 200);
+    return json({ jobId, output, gate, cardPromptVersion: CARD_PROMPT_VERSION } satisfies CardsSuccess, 200);
   } catch (error) {
     const openAIError = error instanceof OpenAIError ? error : null;
 

@@ -255,6 +255,122 @@ final class BackendPipelineTests: XCTestCase {
     }
 }
 
+/// Records the request it was given and returns a canned `GeneratedKnowledge`
+/// carrying `modelRun` — a real generator (§25 Faz 3) reports one, the mock
+/// never does, so the pipeline's job is just to pass it through untouched.
+actor RecordingCardGenerator: CardGenerating {
+    private(set) var lastRequest: CardGenerationRequest?
+    private let knowledge: GeneratedKnowledge
+
+    init(knowledge: GeneratedKnowledge) {
+        self.knowledge = knowledge
+    }
+
+    func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
+        lastRequest = request
+        return knowledge
+    }
+}
+
+final class CardGenerationRequestTests: XCTestCase {
+    private var imageURL: URL!
+
+    override func setUpWithError() throws {
+        imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jpg")
+        try Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]).write(to: imageURL)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: imageURL)
+    }
+
+    private let localPage = [
+        localLine("line_00", "Anafilakside ilk secenek tedavi", y: 0.10),
+        localLine("line_01", "0,3-0,5 mg IM adrenalindir.", y: 0.16),
+    ]
+
+    private let cloudPage = [
+        remoteLine("g0", "Anafilakside ilk seçenek tedavi", y: 0.10),
+        remoteLine("g1", "0,3–0,5 mg IM adrenalindir.", y: 0.16),
+    ]
+
+    private func card() -> GeneratedCard {
+        GeneratedCard(type: .directRecall, front: "?", back: "adrenalin", sourceQuote: "adrenalin")
+    }
+
+    private func runMetadata() -> ModelRunMetadata {
+        ModelRunMetadata(
+            requestId: "job-mr", provider: "openai", model: "gpt-5.6-sol",
+            purpose: "card_generation", promptVersion: "cardGeneration.v1",
+            latencyMs: 900, inputTokens: 500, outputTokens: 120, estimatedCostUSD: 0.01
+        )
+    }
+
+    func testTheGeneratorReceivesTheSameBytesTheBackendWasSent() async {
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(canonicalClaim: "x", cards: [card()])
+        )
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator,
+            backend: StubBackend(.success(remote(cloudPage)))
+        )
+        _ = await pipeline.run(jobId: "job-cg1", imageURL: imageURL)
+
+        let request = await generator.lastRequest
+        XCTAssertEqual(request?.imageData, try? Data(contentsOf: imageURL))
+        XCTAssertEqual(request?.mimeType, "image/jpeg")
+        XCTAssertEqual(request?.selectedLineIds, ["line_01"])
+    }
+
+    func testWithoutABackendNoImageIsSentToTheGenerator() async {
+        // Faz 1 offline mode: `MockCardProvider` never reads these, but a real
+        // generator must not be handed stale/absent bytes and try anyway.
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(canonicalClaim: "x", cards: [card()])
+        )
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator
+        )
+        _ = await pipeline.run(jobId: "job-cg2", imageURL: imageURL)
+
+        let request = await generator.lastRequest
+        XCTAssertNil(request?.imageData)
+        XCTAssertNil(request?.mimeType)
+    }
+
+    func testModelRunMetadataReachesTheOutcome() async {
+        // §16.8: this is what `ProcessingQueue` reads to write a `ModelRun`.
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(canonicalClaim: "x", cards: [card()], modelRun: runMetadata())
+        )
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator,
+            backend: StubBackend(.success(remote(cloudPage)))
+        )
+        let outcome = await pipeline.run(jobId: "job-cg3", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .ready)
+        XCTAssertEqual(outcome.modelRun, runMetadata())
+    }
+
+    func testMockGeneratorLeavesModelRunNil() async {
+        // The offline path reports nothing to account for — there was no call.
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"])
+        )
+        let outcome = await pipeline.run(jobId: "job-cg4", imageURL: imageURL)
+        XCTAssertNil(outcome.modelRun)
+    }
+}
+
 final class LineOverlapTests: XCTestCase {
     func testBoxesOnTheSameLineOverlap() {
         let box = CGRect(x: 0.1, y: 0.10, width: 0.8, height: 0.04)

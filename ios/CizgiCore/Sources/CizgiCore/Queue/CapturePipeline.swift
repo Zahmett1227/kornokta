@@ -18,6 +18,11 @@ public struct PipelineOutcome: Sendable, Equatable {
     /// confirmation, and a confirmation with no reason attached is one the
     /// user cannot answer well.
     public let reconciliation: RemoteReconciliation?
+    /// Provider call accounting for this run's card generation (§16.8), when
+    /// the generator made one. Mirrors `knowledge.modelRun` — carried on the
+    /// outcome too so the caller can persist it without reaching back into
+    /// `knowledge`.
+    public let modelRun: ModelRunMetadata?
 
     public init(
         jobId: String,
@@ -27,7 +32,8 @@ public struct PipelineOutcome: Sendable, Equatable {
         passage: String? = nil,
         knowledge: GeneratedKnowledge? = nil,
         failure: FailureKind? = nil,
-        reconciliation: RemoteReconciliation? = nil
+        reconciliation: RemoteReconciliation? = nil,
+        modelRun: ModelRunMetadata? = nil
     ) {
         self.jobId = jobId
         self.finalState = finalState
@@ -37,6 +43,7 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.knowledge = knowledge
         self.failure = failure
         self.reconciliation = reconciliation
+        self.modelRun = modelRun
     }
 }
 
@@ -119,6 +126,19 @@ public struct CapturePipeline: Sendable {
         )
     }
 
+    /// Same pipeline with a different card generator — how real generation
+    /// (§25 Faz 3) replaces `MockCardProvider` once a backend is configured,
+    /// mirroring `withBackend`.
+    public func withGenerator(_ generator: any CardGenerating) -> CapturePipeline {
+        CapturePipeline(
+            recognizer: recognizer,
+            selector: selector,
+            generator: generator,
+            maxCards: maxCards,
+            backend: backend
+        )
+    }
+
     /// Same pipeline with a different card ceiling, so the user's "cards per
     /// passage" setting reaches the generator instead of the built-in default
     /// (§6.7, §13.2). Clamped because a non-positive limit would silently
@@ -186,6 +206,11 @@ public struct CapturePipeline: Sendable {
         var passage = Self.passage(from: recognized, lineIds: selected)
         var cloudDecision: RemoteDecision?
         var reconciliation: RemoteReconciliation?
+        // Reused for card generation below rather than re-encoded, so the
+        // bytes the model sees are exactly the bytes the OCR call already
+        // sent — encoding twice would be wasted work and could in principle
+        // produce a slightly different JPEG.
+        var upload: PreparedUpload?
 
         if let backend {
             do {
@@ -199,6 +224,7 @@ public struct CapturePipeline: Sendable {
                 passage = remote.passage
                 cloudDecision = remote.reconciliation?.decision
                 reconciliation = remote.reconciliation
+                upload = remote.upload
             } catch let error as BackendError {
                 return Self.outcome(for: error, jobId: jobId, recognized: recognized, selected: selected)
             } catch {
@@ -256,7 +282,14 @@ public struct CapturePipeline: Sendable {
                     jobId: jobId,
                     passage: passage,
                     subject: subject,
-                    maxCards: maxCards
+                    maxCards: maxCards,
+                    imageData: upload?.data,
+                    mimeType: upload?.mimeType,
+                    selectedLineIds: selected,
+                    // No on-device handwriting detector yet (§25 Faz 3 lists
+                    // iOS integration, not detection) — always false rather
+                    // than guessed, matching §0.5's "never silently decide".
+                    isHandwritten: false
                 )
             )
             guard !knowledge.cards.isEmpty else {
@@ -278,7 +311,8 @@ public struct CapturePipeline: Sendable {
                 selectedLineIds: selected,
                 passage: passage,
                 knowledge: knowledge,
-                reconciliation: reconciliation
+                reconciliation: reconciliation,
+                modelRun: knowledge.modelRun
             )
         } catch let error as CardGenerationError {
             if case .sourceInsufficient = error {
@@ -346,7 +380,7 @@ public struct CapturePipeline: Sendable {
         imageURL: URL,
         recognized: RecognizedPage,
         selected: [String]
-    ) async throws -> (passage: String, reconciliation: RemoteReconciliation?) {
+    ) async throws -> (passage: String, reconciliation: RemoteReconciliation?, upload: PreparedUpload) {
         // Downscaled before sending: a full-resolution scan base64s to more
         // than a serverless host will accept, and the platform rejects it
         // before our own endpoint can say why (see `UploadImageEncoder`).
@@ -378,7 +412,7 @@ public struct CapturePipeline: Sendable {
         // marked region. Falling back to the local text would quietly ship the
         // reading we know is wrong for Turkish, so the passage stays empty and
         // the caller asks the user (§19.2).
-        return (cloudText, remote.reconciliation)
+        return (cloudText, remote.reconciliation, upload)
     }
 
     /// Fraction of the smaller box that has to be covered for two boxes to be

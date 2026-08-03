@@ -1,14 +1,22 @@
-# Çizgi — iOS (Faz 1 + Faz 2 tamam)
+# Çizgi — iOS (Faz 1 + Faz 2 tamam, Faz 3 istemci tarafı yazıldı)
 
 Faz 1 hedefi (ANA-PLAN §25) tamam: uygulama çevrimdışı fotoğraf alıp kart
 oluşturabiliyor ve tekrar edebiliyor. Faz 2 de tamam: cihaz üstü işaret
 tespiti (fosforlu/alt çizgi), bulut OCR (backend üzerinden Google Document
-AI) ve iki motorun uzlaştırması çalışıyor. Kart üretimi hâlâ sahte
-(gerçek üretim Faz 3'te), tekrar aralıkları hâlâ geçici (FSRS Faz 4'te).
+AI) ve iki motorun uzlaştırması çalışıyor. Backend URL ve cihaz tokenı
+girilmemişse kart üretimi hâlâ sahte (`MockCardProvider`); girilmişse
+`BackendCardProvider` gerçek `/api/cards` çağrısı yapar (§25 Faz 3) — ikisi
+de aynı `CardGenerating` protokolünün arkasında, Ayarlar'daki tek anahtar
+ikisini de birlikte açıp kapatıyor. Tekrar aralıkları hâlâ geçici (FSRS
+Faz 4'te). **Bu istemci kod yazıldı, henüz gerçek bir cihazda/gerçek bir
+backend'e karşı elle denenmedi** — bkz. `docs/FAZ3-PLAN.md`.
 
 `swift test` gerçek bir Mac'te **114/114** geçiyor (2026-08-02) — kod elle
-incelendi ve ayrıca gerçek derleyicide doğrulandı. Bulunan hatalar ve
-düzeltmeleri `docs/FAZ2-PLAN.md`'de.
+incelendi ve ayrıca gerçek derleyicide doğrulandı. Faz 3 istemci kodu ve
+yeni testleri (`BackendCardProviderTests.swift`, `BackendPipelineTests.swift`
+içindeki `CardGenerationRequestTests`) bu ortamda **yazıldı ama henüz bir
+Mac'te `swift test` ile doğrulanmadı** — bu depoda Swift derleyicisi yok.
+Bulunan hatalar ve düzeltmeleri `docs/FAZ2-PLAN.md`'de.
 
 ## Apple Vision Türkçe okumuyor — bilerek
 
@@ -106,7 +114,7 @@ göndermektense hiç göndermemeyi seçiyor.
 
 | Eksik | Nerede |
 |---|---|
-| Gerçek kart üretimi (yapay zeka) | Faz 3 |
+| Gerçek kart üretimi (yapay zeka) — istemci kodu yazıldı, cihazda henüz denenmedi | Faz 3 |
 | FSRS | Faz 4 — şu an `PlaceholderScheduler` |
 | Bildirimler, dışa aktarma, maliyet limiti | Faz 4/5 |
 

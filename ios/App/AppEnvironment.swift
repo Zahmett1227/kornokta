@@ -5,9 +5,9 @@ import CizgiCore
 
 /// Shared services for the app.
 ///
-/// Faz 1 wires the local pieces only: Vision OCR and the offline mock
-/// generator. The cloud OCR and the real card model arrive in Faz 2/3 behind
-/// the same protocols (ANA-PLAN §25), so nothing here changes shape.
+/// Vision OCR and the offline mock generator are always available; cloud OCR
+/// and real card generation (§25 Faz 2/3) switch on together, behind the same
+/// protocols, the moment Settings has a backend URL and device token.
 @MainActor
 final class AppEnvironment: ObservableObject {
     let imageStore: ImageStore
@@ -47,7 +47,7 @@ final class AppEnvironment: ObservableObject {
             pipeline: CapturePipeline(
                 recognizer: recognizer,
                 selector: Self.makeSelector(),
-                generator: MockCardProvider(),
+                generator: Self.makeCardGenerator(settings: self.settings, tokens: tokens),
                 backend: Self.makeBackend(settings: self.settings, tokens: tokens)
             )
         )
@@ -64,6 +64,24 @@ final class AppEnvironment: ObservableObject {
         (try? DetectedMarkerSelector()) ?? ManualSelectionOnly()
     }
 
+    /// Resolves Settings into a `BackendConfiguration`, or nil when the user
+    /// has not set up a backend. The one place the URL/token validity check
+    /// lives, so `makeBackend` and `makeCardGenerator` cannot drift into
+    /// deciding "configured" differently from each other.
+    static func resolvedBackendConfiguration(
+        settings: AppSettings,
+        tokens: any DeviceTokenStoring
+    ) -> BackendConfiguration? {
+        let trimmed = settings.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            !trimmed.isEmpty,
+            let url = URL(string: trimmed),
+            url.scheme != nil,
+            tokens.read()?.isEmpty == false
+        else { return nil }
+        return BackendConfiguration(baseURL: url)
+    }
+
     /// Builds the cloud OCR client, or nil when the user has not set it up.
     ///
     /// Nil is a normal state, not an error: capture, local OCR and review all
@@ -74,18 +92,29 @@ final class AppEnvironment: ObservableObject {
         settings: AppSettings,
         tokens: any DeviceTokenStoring
     ) -> (any BackendCalling)? {
-        let trimmed = settings.backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard
-            !trimmed.isEmpty,
-            let url = URL(string: trimmed),
-            url.scheme != nil,
-            tokens.read()?.isEmpty == false
-        else { return nil }
-
+        guard let configuration = resolvedBackendConfiguration(settings: settings, tokens: tokens) else {
+            return nil
+        }
         return BackendClient(
-            configuration: BackendConfiguration(baseURL: url),
+            configuration: configuration,
             // Read per call rather than captured, so changing the token in
             // Settings takes effect on the next page instead of next launch.
+            tokenProvider: { tokens.read() }
+        )
+    }
+
+    /// Real card generation once a backend is configured, `MockCardProvider`
+    /// otherwise — the same on/off condition as `makeBackend`, so cards never
+    /// go real while OCR is still local (§25 Faz 3).
+    static func makeCardGenerator(
+        settings: AppSettings,
+        tokens: any DeviceTokenStoring
+    ) -> any CardGenerating {
+        guard let configuration = resolvedBackendConfiguration(settings: settings, tokens: tokens) else {
+            return MockCardProvider()
+        }
+        return BackendCardProvider(
+            configuration: configuration,
             tokenProvider: { tokens.read() }
         )
     }
@@ -94,6 +123,7 @@ final class AppEnvironment: ObservableObject {
     /// user edits the backend URL or the token.
     func backendChanged() {
         queue.setBackend(Self.makeBackend(settings: settings, tokens: tokenStore))
+        queue.setCardGenerator(Self.makeCardGenerator(settings: settings, tokens: tokenStore))
         refreshBackendState()
     }
 

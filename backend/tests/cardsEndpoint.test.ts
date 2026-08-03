@@ -11,6 +11,7 @@ import {
 import { OpenAIError } from "../providers/openai.js";
 import type { CardGenerationRequest, CardGenerationResult } from "../providers/openai.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
+import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 
 const TOKEN = "t".repeat(MIN_TOKEN_LENGTH);
 const IMAGE = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]).toString("base64");
@@ -129,6 +130,12 @@ describe("POST /api/cards", () => {
     expect(body.jobId).toBe("job-1");
     expect(body.output.cards).toHaveLength(1);
     expect(body.gate.verdicts).toHaveLength(1);
+  });
+
+  it("returns the prompt version used, so the iOS ModelRun record (§16.8) has a real value to store", async () => {
+    const response = await handleCardsRequest(post(VALID_BODY), deps());
+    const body = (await response.json()) as { cardPromptVersion: string };
+    expect(body.cardPromptVersion).toBe(CARD_PROMPT_VERSION);
   });
 
   it("passes the already-reconciled text through unchanged, not re-deriving it", async () => {
