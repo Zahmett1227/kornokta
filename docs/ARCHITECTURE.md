@@ -23,12 +23,38 @@
 ## İşlem hattı (özet)
 
 ```text
-kamera/fotoğraf → yerel sayfa düzeltme → Apple Vision (önizleme + satır geometrisi)
-  → cihaz üstü işaret tespiti → Google Document AI OCR (backend) → uzlaştırma
-  → [onay | kart üretimi (OpenAI/Gemini, Faz 3)] → kalite doğrulama → [onay | hazır] → SwiftData + FSRS-6 (Faz 4)
+kamera/fotoğraf → yerel sayfa düzeltme → Apple Vision (önizleme + token/satır geometrisi)
+  → cihaz üstü işaret kanıtı → Google Document AI OCR (bir kez) → token-geometri ile grounding
+  → cihazdaki OCR anlık görüntüsü + fotoğraf üzeri onay → grup başına kart üretimi
+  → kalite doğrulama → hazır → SwiftData + FSRS-6 (Faz 4)
 ```
 
 Durum makinesi ve hata dalları: ANA-PLAN §17. Tüm adımlar idempotent; tekrar planlama LLM'siz, deterministik kodda (§0.8, P6).
+
+## Annotation-grounding ve fotoğraf tabanlı onay
+
+İşaret seçimi artık düz bir `lineIds` dizisi değildir. `AnnotationEvidence`
+(tip, normalize bbox, token/satır kimlikleri, güven ve piksel ölçümleri) ile
+`AnnotationGroup` (seçili metin, bağlam, başlık, düzen türü, el yazısı ilişkisi)
+ayrı sözleşmelerdir. Aynı metin farklı bölgelerdeyse, iki sütundaysa ya da
+geometrik olarak uzaksa iki grup olarak kalır. Kısa bir alt çizgi seçili tokenı
+gösterir; bağlamı yalnız kendi OCR satırına genişler.
+
+Google sonucu geldikten sonra `OCRSnapshot` cihazda saklanır. Belirsiz/quick
+confirm durumunda SwiftUI ekranı Vision veya Google'ı yeniden çağırmaz: sayfa
+fotoğrafı üzerinde renkli bbox katmanları, büyütme/kaydırma ve erişilebilir
+metin özeti gösterir. Onaylanan aynı snapshot kart üretimine devam eder; bu
+akışta ikinci OCR ücreti veya farklı OCR sonucu yoktur.
+
+Her onaylı grup için SwiftData'da gerçek bbox, token/evidence kimlikleri,
+seçili ve bağlam metni, düzen/seçim türü, varsa el yazısı notu ve gerçek kaynak
+kırpması saklanır. Bu ayrıntılı yerel metadata mevcut `/api/cards` sözleşmesine
+otomatik eklenmez; kullanıcı açıkça onaylamadan OCR türevi konum/not verisi yeni
+bir dış isteğe taşınmaz.
+
+Document AI token/stil alanları (el yazısı, altı çizili, arka plan rengi)
+`DOCUMENTAI_COMPUTE_STYLE_INFO=true` ile istenir; Enterprise OCR sürümü ve
+maliyet doğrulanana kadar varsayılan kapalıdır. Karar: ADR-004.
 
 ## Aynı davranış iki yerde — anti-drift disiplini
 
@@ -47,3 +73,4 @@ var. İkisinin ayrışmaması için:
 - LLM çıktı sözleşmesi: [`backend/schemas/llm_output.schema.json`](../backend/schemas/llm_output.schema.json) (ANA-PLAN §14)
 - Altın set manifesti: [`evals/gold-manifest.schema.json`](../evals/gold-manifest.schema.json) (ANA-PLAN §23.1)
 - Model kimlikleri ve eşikler merkezi config'te tutulur, koda gömülmez (§0.6, §11.3). Faz 0 spike eşikleri: [`evals/spikes/marker_detection/config.json`](../evals/spikes/marker_detection/config.json)
+- Annotation-grounding kararı: [`docs/ADR-004-annotation-grounding.md`](ADR-004-annotation-grounding.md)

@@ -1,6 +1,18 @@
 import Foundation
 import CoreGraphics
 
+/// Cards produced for one grounded visual group. Multiple annotations on a
+/// page remain separate knowledge units all the way to persistence.
+public struct GeneratedAnnotationGroup: Sendable, Equatable {
+    public let group: AnnotationGroup
+    public let knowledge: GeneratedKnowledge
+
+    public init(group: AnnotationGroup, knowledge: GeneratedKnowledge) {
+        self.group = group
+        self.knowledge = knowledge
+    }
+}
+
 /// What one pipeline run produced. Returned rather than written directly so the
 /// pipeline stays free of SwiftData and can be tested without a store.
 public struct PipelineOutcome: Sendable, Equatable {
@@ -8,8 +20,16 @@ public struct PipelineOutcome: Sendable, Equatable {
     public let finalState: ProcessingState
     public let recognized: RecognizedPage?
     public let selectedLineIds: [String]
+    /// Structured visual selection, retained through confirmation instead of
+    /// collapsing it into line ids at the detector boundary.
+    public let selection: MarkerSelectionResult
+    public let annotationGroups: [AnnotationGroup]
+    /// Local, device-only checkpoint used to resume a confirmation without a
+    /// second Vision or Document AI run.
+    public let ocrSnapshot: OCRSnapshot?
     public let passage: String?
     public let knowledge: GeneratedKnowledge?
+    public let generatedGroups: [GeneratedAnnotationGroup]
     public let failure: FailureKind?
     /// What the backend concluded about the two readings, when there was one.
     ///
@@ -29,8 +49,12 @@ public struct PipelineOutcome: Sendable, Equatable {
         finalState: ProcessingState,
         recognized: RecognizedPage? = nil,
         selectedLineIds: [String] = [],
+        selection: MarkerSelectionResult = MarkerSelectionResult(),
+        annotationGroups: [AnnotationGroup] = [],
+        ocrSnapshot: OCRSnapshot? = nil,
         passage: String? = nil,
         knowledge: GeneratedKnowledge? = nil,
+        generatedGroups: [GeneratedAnnotationGroup] = [],
         failure: FailureKind? = nil,
         reconciliation: RemoteReconciliation? = nil,
         modelRun: ModelRunMetadata? = nil
@@ -39,8 +63,12 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.finalState = finalState
         self.recognized = recognized
         self.selectedLineIds = selectedLineIds
+        self.selection = selection
+        self.annotationGroups = annotationGroups
+        self.ocrSnapshot = ocrSnapshot
         self.passage = passage
         self.knowledge = knowledge
+        self.generatedGroups = generatedGroups
         self.failure = failure
         self.reconciliation = reconciliation
         self.modelRun = modelRun
@@ -54,7 +82,7 @@ public struct PipelineOutcome: Sendable, Equatable {
 /// then this seam lets the pipeline run with an explicit selection, and makes
 /// the missing step visible instead of silently selecting everything.
 public protocol MarkerSelecting: Sendable {
-    func selectLines(in page: RecognizedPage, imageURL: URL) async throws -> [String]
+    func select(in page: RecognizedPage, imageURL: URL) async throws -> MarkerSelectionResult
 }
 
 /// Selects nothing, so a capture stops at `confirmationRequired` and the user
@@ -62,7 +90,9 @@ public protocol MarkerSelecting: Sendable {
 /// with no detected marker and no manual selection must not become a card.
 public struct ManualSelectionOnly: MarkerSelecting {
     public init() {}
-    public func selectLines(in page: RecognizedPage, imageURL: URL) async throws -> [String] { [] }
+    public func select(in page: RecognizedPage, imageURL: URL) async throws -> MarkerSelectionResult {
+        MarkerSelectionResult()
+    }
 }
 
 /// Selects the lines whose ids are given. Used by the confirmation screen when
@@ -70,8 +100,33 @@ public struct ManualSelectionOnly: MarkerSelecting {
 public struct FixedSelection: MarkerSelecting {
     public let lineIds: [String]
     public init(lineIds: [String]) { self.lineIds = lineIds }
-    public func selectLines(in page: RecognizedPage, imageURL: URL) async throws -> [String] {
-        lineIds.filter { id in page.lines.contains { $0.id == id } }
+    public func select(in page: RecognizedPage, imageURL: URL) async throws -> MarkerSelectionResult {
+        let lines = page.lines.filter { lineIds.contains($0.id) }
+        guard let first = lines.first else { return MarkerSelectionResult() }
+        let box = lines.map { NormalizedRect($0.box) }.reduce(NormalizedRect(first.box)) { $0.union($1) }
+        let ids = lines.map(\.id)
+        let tokenIds = lines.flatMap { $0.tokens.map(\.id) }
+        let evidence = AnnotationEvidence(
+            id: "manual_\(ids.joined(separator: "_"))",
+            type: .manual,
+            boundingBox: box,
+            lineIds: ids,
+            tokenIds: tokenIds,
+            confidence: 1,
+            decision: .autoCandidate
+        )
+        let group = AnnotationGroup(
+            id: "manual_group",
+            evidenceIds: [evidence.id],
+            selectedLineIds: ids,
+            contextLineIds: ids,
+            selectedTokenIds: tokenIds,
+            boundingBox: box,
+            confidence: 1,
+            needsConfirmation: false,
+            selectionType: .manual
+        )
+        return MarkerSelectionResult(evidence: [evidence], groups: [group], autoSelectedGroupIds: [group.id])
     }
 }
 
@@ -153,22 +208,27 @@ public struct CapturePipeline: Sendable {
         )
     }
 
-    public func run(jobId: String, imageURL: URL, subject: String? = nil) async -> PipelineOutcome {
+    public func run(
+        jobId: String,
+        imageURL: URL,
+        subject: String? = nil,
+        snapshot: OCRSnapshot? = nil,
+        selectionOverride: [String]? = nil,
+        selectionResultOverride: MarkerSelectionResult? = nil,
+        completedGroupIds: [String] = []
+    ) async -> PipelineOutcome {
         let recognized: RecognizedPage
-        do {
-            recognized = try await recognizer.recognize(imageAt: imageURL)
-        } catch {
-            // OCR failing on a readable file is a device/config problem, not a
-            // transient one; retrying forever would not help (§17).
-            return PipelineOutcome(
-                jobId: jobId,
-                finalState: .permanentFailure,
-                failure: .configuration
-            )
+        if let snapshot {
+            recognized = snapshot.recognizedPage
+        } else {
+            do {
+                recognized = try await recognizer.recognize(imageAt: imageURL)
+            } catch {
+                return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .configuration)
+            }
         }
 
         guard !recognized.lines.isEmpty else {
-            // Nothing legible. §19.3: reject rather than invent a card.
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .permanentFailure,
@@ -177,181 +237,289 @@ public struct CapturePipeline: Sendable {
             )
         }
 
-        let selected: [String]
-        do {
-            selected = try await selector.selectLines(in: recognized, imageURL: imageURL)
-        } catch {
-            return PipelineOutcome(
-                jobId: jobId,
-                finalState: .temporaryFailure,
-                recognized: recognized,
-                failure: .providerUnavailable
-            )
-        }
-
-        guard !selected.isEmpty else {
-            // No marker found and no manual selection — ask the user which
-            // passage they meant (§19.2, §19.3).
-            return PipelineOutcome(
-                jobId: jobId,
-                finalState: .confirmationRequired,
-                recognized: recognized
-            )
-        }
-
-        // Cloud OCR (§10.2). The local reading is only a preview: Apple Vision
-        // does not support Turkish and produces no ı ş ğ İ at all, so a passage
-        // built from it would carry defects into every card
-        // (docs/ADR-002-birincil-ocr-secimi.md).
-        var passage = Self.passage(from: recognized, lineIds: selected)
-        var cloudDecision: RemoteDecision?
-        var reconciliation: RemoteReconciliation?
-        // Reused for card generation below rather than re-encoded, so the
-        // bytes the model sees are exactly the bytes the OCR call already
-        // sent — encoding twice would be wasted work and could in principle
-        // produce a slightly different JPEG.
-        var upload: PreparedUpload?
-
-        if let backend {
+        let initialSelection: MarkerSelectionResult
+        if let selectionResultOverride {
+            initialSelection = selectionResultOverride
+        } else if let selectionOverride {
             do {
-                let remote = try await Self.cloudReading(
-                    backend: backend,
-                    jobId: jobId,
-                    imageURL: imageURL,
-                    recognized: recognized,
-                    selected: selected
+                initialSelection = try await FixedSelection(lineIds: selectionOverride).select(
+                    in: recognized,
+                    imageURL: imageURL
                 )
-                passage = remote.passage
-                cloudDecision = remote.reconciliation?.decision
-                reconciliation = remote.reconciliation
-                upload = remote.upload
-            } catch let error as BackendError {
-                return Self.outcome(for: error, jobId: jobId, recognized: recognized, selected: selected)
             } catch {
                 return PipelineOutcome(
                     jobId: jobId,
                     finalState: .temporaryFailure,
                     recognized: recognized,
-                    selectedLineIds: selected,
+                    failure: .providerUnavailable
+                )
+            }
+        } else if let snapshot {
+            initialSelection = snapshot.selection
+        } else {
+            do {
+                initialSelection = try await selector.select(in: recognized, imageURL: imageURL)
+            } catch {
+                return PipelineOutcome(
+                    jobId: jobId,
+                    finalState: .temporaryFailure,
+                    recognized: recognized,
                     failure: .providerUnavailable
                 )
             }
         }
 
-        guard !passage.isEmpty else {
+        // Cloud OCR is a page-level operation and happens before deciding
+        // whether marker confidence needs confirmation. That lets the photo UI
+        // resume from the exact primary OCR snapshot instead of paying for a
+        // second call after a user tap.
+        var remote = snapshot?.remote
+        var upload: PreparedUpload?
+        if let backend {
+            if remote == nil {
+                do {
+                    let reading = try await Self.cloudReading(
+                        backend: backend,
+                        jobId: jobId,
+                        imageURL: imageURL,
+                        recognized: recognized
+                    )
+                    remote = reading.remote
+                    upload = reading.upload
+                } catch let error as BackendError {
+                    return Self.outcome(
+                        for: error,
+                        jobId: jobId,
+                        recognized: recognized,
+                        selection: initialSelection
+                    )
+                } catch {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .temporaryFailure,
+                        recognized: recognized,
+                        selectedLineIds: initialSelection.selectedLineIds,
+                        selection: initialSelection,
+                        failure: .providerUnavailable
+                    )
+                }
+            } else {
+                // OCR is already complete, but the card endpoint still needs
+                // the page bytes. Rebuild only this local upload on resume;
+                // never pay for or alter the persisted OCR snapshot again.
+                do {
+                    upload = try Self.prepareUpload(imageURL: imageURL)
+                } catch {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .temporaryFailure,
+                        recognized: recognized,
+                        selectedLineIds: initialSelection.selectedLineIds,
+                        selection: initialSelection,
+                        ocrSnapshot: snapshot,
+                        failure: .providerUnavailable
+                    )
+                }
+            }
+        }
+
+        let groundedSelection = AnnotationGrouper.ground(
+            selection: initialSelection,
+            localPage: recognized,
+            remotePage: remote?.page,
+            discoverHandwriting: selectionResultOverride == nil
+        )
+        let selection: MarkerSelectionResult
+        if selectionResultOverride != nil {
+            let confirmedGroups = groundedSelection.groups.map { $0.markedConfirmed() }
+            selection = MarkerSelectionResult(
+                evidence: groundedSelection.evidence,
+                groups: confirmedGroups,
+                autoSelectedGroupIds: confirmedGroups.map(\.id)
+            )
+        } else {
+            selection = groundedSelection
+        }
+        let checkpoint = OCRSnapshot(
+            localLines: recognized.lines.map(LocalLine.init),
+            remote: remote,
+            selection: selection,
+            userConfirmed: selectionResultOverride != nil || snapshot?.userConfirmed == true
+        )
+        let selectedGroups = selection.groups.filter {
+            selection.autoSelectedGroupIds.contains($0.id)
+                && !completedGroupIds.contains(Self.persistenceKey(for: $0))
+        }
+        // Preserve the caller-facing local ids for compatibility and UI
+        // selection. Grounded groups retain their separate primary OCR ids.
+        let selectedLineIds = initialSelection.selectedLineIds
+        let firstPassage = selectedGroups.first.map { Self.groupPassage($0) }
+
+        guard !selection.groups.isEmpty else {
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .confirmationRequired,
                 recognized: recognized,
-                selectedLineIds: selected,
-                reconciliation: reconciliation
+                selection: selection,
+                ocrSnapshot: checkpoint,
+                reconciliation: remote?.reconciliation
             )
         }
 
-        // §19.3 and §10.5.1: a rejected page never becomes a card, and a
-        // critical-token disagreement is asked about rather than recorded.
-        // Checked before generation so a disputed passage never reaches the
-        // model — and never costs a call.
+        guard !selection.needsConfirmation, !selectedGroups.isEmpty else {
+            return PipelineOutcome(
+                jobId: jobId,
+                finalState: .confirmationRequired,
+                recognized: recognized,
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
+                reconciliation: remote?.reconciliation
+            )
+        }
+
+        let cloudDecision: RemoteDecision? = (selectionResultOverride != nil || snapshot?.userConfirmed == true)
+            ? nil
+            : remote?.reconciliation?.decision
         switch cloudDecision {
         case .reject:
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .permanentFailure,
                 recognized: recognized,
-                selectedLineIds: selected,
-                passage: passage,
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
                 failure: .invalidResponse,
-                reconciliation: reconciliation
+                reconciliation: remote?.reconciliation
             )
         case .quickConfirm:
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .confirmationRequired,
                 recognized: recognized,
-                selectedLineIds: selected,
-                passage: passage,
-                reconciliation: reconciliation
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
+                reconciliation: remote?.reconciliation
             )
         case .autoAccept, nil:
             break
         }
 
+        var generated: [GeneratedAnnotationGroup] = []
         do {
-            let knowledge = try await generator.generate(
-                CardGenerationRequest(
-                    jobId: jobId,
-                    passage: passage,
-                    subject: subject,
-                    maxCards: maxCards,
-                    imageData: upload?.data,
-                    mimeType: upload?.mimeType,
-                    selectedLineIds: selected,
-                    // No on-device handwriting detector yet (§25 Faz 3 lists
-                    // iOS integration, not detection) — always false rather
-                    // than guessed, matching §0.5's "never silently decide".
-                    isHandwritten: false
+            for group in selectedGroups {
+                let passage = Self.groupPassage(group)
+                guard !passage.isEmpty else {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .confirmationRequired,
+                        recognized: recognized,
+                        selectedLineIds: selectedLineIds,
+                        selection: selection,
+                        annotationGroups: selection.groups,
+                        ocrSnapshot: checkpoint,
+                        reconciliation: remote?.reconciliation
+                    )
+                }
+                let knowledge = try await generator.generate(
+                    CardGenerationRequest(
+                        jobId: "\(jobId):\(group.id)",
+                        passage: passage,
+                        subject: subject,
+                        maxCards: maxCards,
+                        imageData: upload?.data,
+                        mimeType: upload?.mimeType,
+                        // This legacy field remains local-Vision ids for the
+                        // existing card API; the structured group retains the
+                        // primary OCR line/token ids for the next contract.
+                        selectedLineIds: initialSelection.evidence
+                            .filter { group.evidenceIds.contains($0.id) }
+                            .flatMap(\.lineIds),
+                        isHandwritten: !group.handwrittenNotes.isEmpty,
+                        annotationGroups: [group]
+                    )
                 )
-            )
-            guard !knowledge.cards.isEmpty else {
-                return PipelineOutcome(
-                    jobId: jobId,
-                    finalState: .confirmationRequired,
-                    recognized: recognized,
-                    selectedLineIds: selected,
-                    passage: passage,
-                    reconciliation: reconciliation
-                )
+                guard !knowledge.cards.isEmpty else {
+                    return PipelineOutcome(
+                        jobId: jobId,
+                        finalState: .confirmationRequired,
+                        recognized: recognized,
+                        selectedLineIds: selectedLineIds,
+                        selection: selection,
+                        annotationGroups: selection.groups,
+                        ocrSnapshot: checkpoint,
+                        passage: passage,
+                        reconciliation: remote?.reconciliation
+                    )
+                }
+                generated.append(GeneratedAnnotationGroup(group: group, knowledge: knowledge))
             }
-            let needsApproval = knowledge.cards.contains { $0.requiresUserApproval }
-                || knowledge.sourceConcern != nil
+            let needsApproval = generated.contains {
+                $0.knowledge.cards.contains { $0.requiresUserApproval } || $0.knowledge.sourceConcern != nil
+            }
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: needsApproval ? .confirmationRequired : .ready,
                 recognized: recognized,
-                selectedLineIds: selected,
-                passage: passage,
-                knowledge: knowledge,
-                reconciliation: reconciliation,
-                modelRun: knowledge.modelRun
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
+                knowledge: generated.first?.knowledge,
+                generatedGroups: generated,
+                reconciliation: remote?.reconciliation,
+                modelRun: generated.first?.knowledge.modelRun
             )
         } catch let error as CardGenerationError {
             if case .sourceInsufficient = error {
-                // The passage itself is too thin. Retrying identical input can
-                // only fail again, so ask the user to widen the selection
-                // instead of burning attempts (§12.1, §19.3).
                 return PipelineOutcome(
                     jobId: jobId,
                     finalState: .confirmationRequired,
                     recognized: recognized,
-                    selectedLineIds: selected,
-                    passage: passage,
-                    reconciliation: reconciliation
+                    selectedLineIds: selectedLineIds,
+                    selection: selection,
+                    annotationGroups: selection.groups,
+                    ocrSnapshot: checkpoint,
+                    passage: firstPassage,
+                    reconciliation: remote?.reconciliation
                 )
             }
-            // Let `FailureKind` decide transient vs permanent rather than
-            // guessing per call site — that is the one place §17's retry rule
-            // is written down.
             let kind = Self.failureKind(for: error)
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: kind.resultingState,
                 recognized: recognized,
-                selectedLineIds: selected,
-                passage: passage,
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
+                generatedGroups: generated,
                 failure: kind,
-                reconciliation: reconciliation
+                reconciliation: remote?.reconciliation
             )
         } catch {
-            // An error the generator does not declare. Treat as transient so a
-            // one-off is retried, but never silently drop the capture (§21.2).
             return PipelineOutcome(
                 jobId: jobId,
                 finalState: .temporaryFailure,
                 recognized: recognized,
-                selectedLineIds: selected,
-                passage: passage,
+                selectedLineIds: selectedLineIds,
+                selection: selection,
+                annotationGroups: selection.groups,
+                ocrSnapshot: checkpoint,
+                passage: firstPassage,
+                generatedGroups: generated,
                 failure: .providerUnavailable,
-                reconciliation: reconciliation
+                reconciliation: remote?.reconciliation
             )
         }
     }
@@ -367,27 +535,26 @@ public struct CapturePipeline: Sendable {
         }
     }
 
-    /// Sends the page to the backend and builds the passage from the reading
-    /// that comes back.
-    ///
-    /// The selected lines are matched to the cloud reading by **overlap**, not
-    /// by id: the backend reconciles the same way, and for the same reason —
-    /// each engine numbers its own lines and they do not find the same number
-    /// of them.
+    /// `TextRegion` predates a first-class annotation-group id. Its stable
+    /// evidence set is therefore the persistence identity used to skip work
+    /// that succeeded before a later group failed.
+    static func persistenceKey(for group: AnnotationGroup) -> String {
+        group.evidenceIds.sorted().joined(separator: ":")
+    }
+
+    /// Sends a page to the backend once. Group-to-token grounding happens only
+    /// after this complete primary OCR snapshot has returned.
     private static func cloudReading(
         backend: any BackendCalling,
         jobId: String,
         imageURL: URL,
-        recognized: RecognizedPage,
-        selected: [String]
-    ) async throws -> (passage: String, reconciliation: RemoteReconciliation?, upload: PreparedUpload) {
+        recognized: RecognizedPage
+    ) async throws -> (remote: RemoteRecognition, upload: PreparedUpload) {
         // Downscaled before sending: a full-resolution scan base64s to more
         // than a serverless host will accept, and the platform rejects it
         // before our own endpoint can say why (see `UploadImageEncoder`).
-        let upload = try UploadImageEncoder.prepare(
-            contentsOf: imageURL,
-            mimeType: Self.mimeType(for: imageURL)
-        )
+        let upload = try prepareUpload(imageURL: imageURL)
+
         let remote = try await backend.recognize(
             jobId: jobId,
             imageData: upload.data,
@@ -395,24 +562,17 @@ public struct CapturePipeline: Sendable {
             localLines: recognized.lines.map(LocalLine.init)
         )
 
-        let selectedBoxes = recognized.lines
-            .filter { selected.contains($0.id) }
-            .map(\.box)
-        let cloudText = remote.page.lines
-            .filter { line in
-                selectedBoxes.contains { box in
-                    Self.overlaps(box: box, x: line.x, y: line.y, width: line.width, height: line.height)
-                }
-            }
-            .map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (remote, upload)
+    }
 
-        // If nothing overlapped, the cloud reading found the page but not the
-        // marked region. Falling back to the local text would quietly ship the
-        // reading we know is wrong for Turkish, so the passage stays empty and
-        // the caller asks the user (§19.2).
-        return (cloudText, remote.reconciliation, upload)
+    /// Recreated locally when a user confirms a stored OCR snapshot. The
+    /// result is intentionally not part of the snapshot: it is derived from
+    /// the original page and may be discarded after the request.
+    private static func prepareUpload(imageURL: URL) throws -> PreparedUpload {
+        try UploadImageEncoder.prepare(
+            contentsOf: imageURL,
+            mimeType: Self.mimeType(for: imageURL)
+        )
     }
 
     /// Fraction of the smaller box that has to be covered for two boxes to be
@@ -447,7 +607,7 @@ public struct CapturePipeline: Sendable {
         for error: BackendError,
         jobId: String,
         recognized: RecognizedPage,
-        selected: [String]
+        selection: MarkerSelectionResult
     ) -> PipelineOutcome {
         let failure: FailureKind
         switch error {
@@ -463,9 +623,16 @@ public struct CapturePipeline: Sendable {
             jobId: jobId,
             finalState: failure.resultingState,
             recognized: recognized,
-            selectedLineIds: selected,
+            selectedLineIds: selection.selectedLineIds,
+            selection: selection,
             failure: failure
         )
+    }
+
+    private static func groupPassage(_ group: AnnotationGroup) -> String {
+        let context = group.contextText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !context.isEmpty { return context }
+        return group.selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Joins the selected lines in page order, so a passage reads the way it

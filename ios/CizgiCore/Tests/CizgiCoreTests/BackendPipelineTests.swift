@@ -155,6 +155,74 @@ final class BackendPipelineTests: XCTestCase {
         XCTAssertNotNil(outcome.passage)
     }
 
+    func testConfirmationSnapshotDoesNotCallCloudOCRAgain() async {
+        let backend = StubBackend(.success(remote(cloudPage, decision: .quickConfirm)))
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            backend: backend
+        )
+        let first = await pipeline.run(jobId: "job-snapshot", imageURL: imageURL)
+        guard let snapshot = first.ocrSnapshot else {
+            return XCTFail("Onay için OCR snapshot'ı saklanmalı")
+        }
+        XCTAssertEqual(first.finalState, .confirmationRequired)
+
+        let confirmedGroups = snapshot.selection.groups.map { $0.markedConfirmed() }
+        let confirmed = MarkerSelectionResult(
+            evidence: snapshot.selection.evidence,
+            groups: confirmedGroups,
+            autoSelectedGroupIds: confirmedGroups.map(\.id)
+        )
+        let resumed = await pipeline.run(
+            jobId: "job-snapshot",
+            imageURL: imageURL,
+            snapshot: snapshot,
+            selectionResultOverride: confirmed
+        )
+
+        XCTAssertEqual(resumed.finalState, .ready)
+        let requests = await backend.requests
+        XCTAssertEqual(requests.count, 1, "Fotoğraf onayı ikinci bir Google OCR çağrısı yapmamalı")
+    }
+
+    func testConfirmationSnapshotRebuildsTheUploadForCardGeneration() async {
+        let backend = StubBackend(.success(remote(cloudPage, decision: .quickConfirm)))
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(
+                canonicalClaim: "adrenalin", cards: [GeneratedCard(
+                    type: .directRecall, front: "?", back: "adrenalin", sourceQuote: "adrenalin"
+                )]
+            )
+        )
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator,
+            backend: backend
+        )
+        let first = await pipeline.run(jobId: "job-resume-upload", imageURL: imageURL)
+        guard let snapshot = first.ocrSnapshot else {
+            return XCTFail("Onay için OCR snapshot'ı saklanmalı")
+        }
+        let groups = snapshot.selection.groups.map { $0.markedConfirmed() }
+        let confirmed = MarkerSelectionResult(
+            evidence: snapshot.selection.evidence, groups: groups, autoSelectedGroupIds: groups.map(\.id)
+        )
+
+        let resumed = await pipeline.run(
+            jobId: "job-resume-upload", imageURL: imageURL,
+            snapshot: snapshot, selectionResultOverride: confirmed
+        )
+
+        XCTAssertEqual(resumed.finalState, .ready)
+        let request = await generator.lastRequest
+        XCTAssertEqual(request?.imageData, try? Data(contentsOf: imageURL))
+        XCTAssertEqual(request?.mimeType, "image/jpeg")
+        let backendRequests = await backend.requests
+        XCTAssertEqual(backendRequests.count, 1, "Snapshot devamında OCR yeniden çağrılmamalı")
+    }
+
     func testRejectedPageNeverBecomesACard() async {
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: localPage),

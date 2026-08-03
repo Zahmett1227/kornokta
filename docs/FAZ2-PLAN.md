@@ -180,3 +180,30 @@ Araçlar hazır kalıyor — `evals/ocr_eval/gold_marker_report.py`,
 birikince (ya da yine 20 görüntü etiketlenmek istenirse) aynı komutlarla
 çalışır. `evals/reports/vision.json` ve `.../google.json` de yerelde duruyor;
 etiketleme yarım bırakılıp sonra tamamlanabilir, baştan başlamak gerekmez.
+
+## Güncelleme 2026-08-04 — satır seçimi yerine annotation grounding
+
+F2-5/F2-7 arasındaki eski el değiştirme noktası bir `[lineId]` listesi idi;
+bu, kısa alt çizgiyi tüm satıra şişiriyor, aynı metnin iki ayrı yerde
+işaretlenmesini birleştirebiliyor ve onay ekranını OCR'ı yeniden çalıştırmaya
+zorluyordu. Bu yüzden Faz 3 kart üretiminden **önce** sözleşme genişletildi:
+
+- `AnnotationEvidence` işaret türü, normalize bbox, token/satır kimlikleri,
+  güven ve ölçümü; `AnnotationGroup` seçili metni, bağlamı, düzeni ve onay
+  durumunu taşır.
+- Vision token kutularında piksel ölçümü yapılır; Google Document AI'nin token
+  kutuları birincil metne ground eder. Kısa bir alt çizgi tokenı seçer, bağlam
+  yalnız ilgili satıra genişler; sütun ve uzak bölgeler birleşmez.
+- Google OCR sayfa başına bir kez çağrılır ve `OCRSnapshot` cihazda saklanır.
+  Onay ekranı fotoğraf üzerinde overlay ile çalışır; tekrar Vision/Google OCR
+  çağırmaz.
+- Onaylı her grup kendi `TextRegion`/`KnowledgeUnit`/kaynak kırpmasını üretir;
+  bbox artık sayfa geneli veya sabit örnek değildir.
+
+Sunucu, `tokens`, `paragraphs`, `blocks`, `tables` ve isteğe bağlı token stil
+alanlarını döndürebilir. Stil eklentisi merkezi
+`DOCUMENTAI_COMPUTE_STYLE_INFO=false` bayrağı arkasındadır; işlemci sürümü ve
+fiyat doğrulanmadan açılmaz. Ayrıntılı karar ADR-004'tedir. Gerçek karmaşık
+sayfa fotoğrafı kabul testi hâlâ kullanıcı tarafından yerleştirilecek fixture'a
+bağlıdır; bu değişiklik sentetik/geometri regresyonlarını kapatır, 20 görüntü
+altın-set kapısını kaldırmaz.

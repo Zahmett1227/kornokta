@@ -24,7 +24,7 @@ yorumları **İngilizce**.
 |---|---|
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
-| Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
+| Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. 2026-08-04'te Faz 3 öncesi annotation-grounding katmanı eklendi: token/bbox kanıtı, grup sözleşmesi, tek-çağrılık OCR snapshot ve fotoğraf üstü onay. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı** (kullanıcı kendi telefonunda çalıştırdı, gerçek bir sayfa çekti). **Bu oturumda telefon backend'e bağlandı** (Vercel cihaz tokenı girildi) ve **153/153 Swift testi kullanıcı tarafından doğrulandı** — önceki oturumun açık kalan en öncelikli maddesi kapandı. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı ama süreçte dört gerçek hata bulunup düzeltildi — ayrıntı `docs/FAZ5-DURUM.md`. |
@@ -213,10 +213,11 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli:** bu oturumun değişikliklerini (ADR-003 + prompt v1.1)
-Vercel'e dağıtıp telefonda aynı sayfayı yeniden çekmek — onay ekranının
-artık Apple-Google gürültüsüyle tetiklenmediğini ve gerçek yapay zeka
-kartlarının yeni prompt'la nasıl çıktığını gerçek kullanımda görmek.
+**En öncelikli:** gerçek karmaşık bir sayfa fotoğrafını
+`evals/fixtures/complex-annotations/` altına yerleştirip yeni fotoğraf-tabanlı
+grounding/onay akışını telefonda denemek. Beklenenler: kısa alt çizgi yalnız
+tokenı seçmeli, aynı metin farklı yerlerde ayrı kalmalı, tek OCR çağrısından
+sonra onay ekranı tekrar OCR yapmamalı. Ayrıntı: ADR-004.
 
 1. Bu dal (`claude/project-review-issue-j0ycif`) merge edilip Vercel'in
    Production dağıtımı güncellenmeli (Production Branch ayarına dikkat —

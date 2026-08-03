@@ -112,6 +112,9 @@ extension MarkerDetector {
 
         return LineDetection(
             lineId: measurement.lineId,
+            highlightOverlap: measurement.highlightOverlap,
+            underlineDarkRatio: evidence.darkRatio,
+            underlineExtentRatio: evidence.extentRatio,
             markerOverlap: markerOverlap,
             lineGeometry: lineGeometry,
             localOCRConfidence: measurement.ocrConfidence,
@@ -141,6 +144,53 @@ extension MarkerDetector {
                     documentQuality: documentQuality,
                     neighboringSeparation: Self.neighboringSeparation(line, among: lines)
                 )
+            )
+        }
+    }
+
+    /// Token-level counterpart of `analyze(page:lines:)`. The calibrated
+    /// decision rules are deliberately reused: this adds no new threshold,
+    /// only applies the existing underline/highlight measurements to a word
+    /// box when Vision could provide one.
+    public func analyze(
+        page buffer: PixelBuffer,
+        tokens: [TokenBox],
+        documentQuality: Double = 0.9
+    ) -> [TokenDetection] {
+        let parentLines = Self.parentLines(for: tokens)
+        return tokens.map { token in
+            let box = token.lineBox
+            let parent = parentLines[token.lineId] ?? box
+            return TokenDetection(
+                token: token,
+                detection: judge(
+                    LineMeasurement(
+                        lineId: token.tokenId,
+                        highlightOverlap: highlightOverlap(in: buffer, line: box),
+                        underline: underlineEvidence(in: buffer, line: box),
+                        ocrConfidence: token.ocrConfidence,
+                        documentQuality: documentQuality,
+                        neighboringSeparation: Self.neighboringSeparation(parent, among: Array(parentLines.values))
+                    )
+                )
+            )
+        }
+    }
+
+    /// Reconstruct each OCR line from its token bounds. Token detection has no
+    /// separate line input, but its confidence must use the same real spacing
+    /// measurement as line detection rather than a permanent perfect score.
+    private static func parentLines(for tokens: [TokenBox]) -> [String: LineBox] {
+        Dictionary(grouping: tokens, by: \.lineId).mapValues { members in
+            let first = members[0]
+            let minX = members.map(\.x).min() ?? first.x
+            let minY = members.map(\.y).min() ?? first.y
+            let maxX = members.map { $0.x + $0.width }.max() ?? first.x + first.width
+            let maxY = members.map { $0.y + $0.height }.max() ?? first.y + first.height
+            return LineBox(
+                lineId: first.lineId, x: minX, y: minY,
+                width: max(1, maxX - minX), height: max(1, maxY - minY),
+                ocrConfidence: members.map(\.ocrConfidence).reduce(0, +) / Double(members.count)
             )
         }
     }

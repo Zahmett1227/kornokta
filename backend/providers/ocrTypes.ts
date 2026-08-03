@@ -19,6 +19,41 @@ export interface OCRLine {
   y: number;
   width: number;
   height: number;
+  /** Token ids which geometrically belong to this line, when available. */
+  tokenIds?: string[];
+}
+
+export interface OCRColor {
+  red: number;
+  green: number;
+  blue: number;
+  alpha: number;
+}
+
+/** Word-level primary OCR geometry and style information. */
+export interface OCRToken {
+  tokenId: string;
+  text: string;
+  confidence: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isHandwritten: boolean;
+  isUnderlined: boolean;
+  backgroundColor?: OCRColor;
+}
+
+/** Kept distinct from text lines so tables remain source regions, not prose. */
+export interface OCRLayoutRegion {
+  id: string;
+  kind: "paragraph" | "block" | "table_candidate";
+  text: string;
+  confidence: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface OCRPage {
@@ -36,6 +71,10 @@ export interface OCRPage {
   engineVersion: string;
   elapsedMs: number;
   lines: OCRLine[];
+  tokens?: OCRToken[];
+  paragraphs?: OCRLayoutRegion[];
+  blocks?: OCRLayoutRegion[];
+  tables?: OCRLayoutRegion[];
 }
 
 export interface OCRRun {

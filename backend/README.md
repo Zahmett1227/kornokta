@@ -176,6 +176,9 @@ değişkenine JSON olarak gömülür.
    değil — o depo dışında kalıyor):
    - `GOOGLE_PROJECT_ID`, `DOCUMENTAI_LOCATION`, `DOCUMENTAI_PROCESSOR_ID`,
      `DOCUMENTAI_LANGUAGE_HINTS` — `.env.example`'daki değerlerin aynısı, gizli değil.
+   - `DOCUMENTAI_COMPUTE_STYLE_INFO` — Enterprise OCR'nin stil eklentisini
+     (el yazısı/alt çizgi/arka plan rengi) kullanmak için ancak işlemci sürümü
+     ve maliyet doğrulandıktan sonra `true`; varsayılan `false`.
    - `DEVICE_TOKEN` — `npm run token` çıktısı.
    - `GOOGLE_CREDENTIALS_JSON` — indirdiğin servis hesabı dosyasının **tüm
      içeriği**, tek satır JSON olarak. `GOOGLE_APPLICATION_CREDENTIALS`

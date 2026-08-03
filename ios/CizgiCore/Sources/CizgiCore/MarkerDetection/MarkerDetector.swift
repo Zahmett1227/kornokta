@@ -48,13 +48,67 @@ public struct LineBox: Sendable, Equatable {
     }
 }
 
+/// A word-sized geometry target. The image-processing algorithm remains the
+/// same as the calibrated line detector; only the measuring window narrows so
+/// an underline under “hipoksi” does not need to cover 40% of its full line.
+public struct TokenBox: Sendable, Equatable {
+    public let tokenId: String
+    public let lineId: String
+    public let x: Int
+    public let y: Int
+    public let width: Int
+    public let height: Int
+    public let ocrConfidence: Double
+
+    public init(
+        tokenId: String,
+        lineId: String,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        ocrConfidence: Double = 0.9
+    ) {
+        self.tokenId = tokenId
+        self.lineId = lineId
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.ocrConfidence = ocrConfidence
+    }
+
+    public init(_ token: RecognizedToken, lineId: String, imageWidth: Int, imageHeight: Int) {
+        self.init(
+            tokenId: token.id,
+            lineId: lineId,
+            x: Int((Double(token.box.minX) * Double(imageWidth)).rounded()),
+            y: Int((Double(token.box.minY) * Double(imageHeight)).rounded()),
+            width: Int((Double(token.box.width) * Double(imageWidth)).rounded()),
+            height: Int((Double(token.box.height) * Double(imageHeight)).rounded()),
+            ocrConfidence: token.confidence
+        )
+    }
+
+    public var lineBox: LineBox {
+        LineBox(
+            lineId: lineId,
+            x: x,
+            y: y,
+            width: width,
+            height: height,
+            ocrConfidence: ocrConfidence
+        )
+    }
+}
+
 public enum SelectionKind: String, Sendable, Equatable {
     case highlight
     case underline
     case none
 }
 
-public enum MarkerDecision: String, Sendable, Equatable {
+public enum MarkerDecision: String, Codable, Sendable, Equatable {
     case autoCandidate = "auto_candidate"
     case quickConfirm = "quick_confirm"
     case userSelection = "user_selection"
@@ -87,6 +141,9 @@ public struct UnderlineEvidence: Sendable, Equatable {
 
 public struct LineDetection: Sendable, Equatable {
     public let lineId: String
+    public let highlightOverlap: Double
+    public let underlineDarkRatio: Double
+    public let underlineExtentRatio: Double
     public let markerOverlap: Double
     public let lineGeometry: Double
     public let localOCRConfidence: Double
@@ -95,6 +152,44 @@ public struct LineDetection: Sendable, Equatable {
     public let selectionConfidence: Double
     public let selectionType: SelectionKind
     public let decision: MarkerDecision
+
+    public init(
+        lineId: String,
+        highlightOverlap: Double = 0,
+        underlineDarkRatio: Double = 0,
+        underlineExtentRatio: Double = 0,
+        markerOverlap: Double,
+        lineGeometry: Double,
+        localOCRConfidence: Double,
+        documentQuality: Double,
+        neighboringSeparation: Double,
+        selectionConfidence: Double,
+        selectionType: SelectionKind,
+        decision: MarkerDecision
+    ) {
+        self.lineId = lineId
+        self.highlightOverlap = highlightOverlap
+        self.underlineDarkRatio = underlineDarkRatio
+        self.underlineExtentRatio = underlineExtentRatio
+        self.markerOverlap = markerOverlap
+        self.lineGeometry = lineGeometry
+        self.localOCRConfidence = localOCRConfidence
+        self.documentQuality = documentQuality
+        self.neighboringSeparation = neighboringSeparation
+        self.selectionConfidence = selectionConfidence
+        self.selectionType = selectionType
+        self.decision = decision
+    }
+}
+
+public struct TokenDetection: Sendable, Equatable {
+    public let token: TokenBox
+    public let detection: LineDetection
+
+    public init(token: TokenBox, detection: LineDetection) {
+        self.token = token
+        self.detection = detection
+    }
 }
 
 public struct MarkerDetector: Sendable {

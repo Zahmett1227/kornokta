@@ -102,6 +102,10 @@ public struct CardGenerationRequest: Sendable {
     public let mimeType: String?
     public let selectedLineIds: [String]
     public let isHandwritten: Bool
+    /// The forward-compatible source contract. `passage` remains as a
+    /// compatibility projection for providers that have not yet adopted batch
+    /// group output, while new providers can preserve group identity.
+    public let annotationGroups: [AnnotationGroup]
 
     public init(
         jobId: String,
@@ -112,7 +116,8 @@ public struct CardGenerationRequest: Sendable {
         imageData: Data? = nil,
         mimeType: String? = nil,
         selectedLineIds: [String] = [],
-        isHandwritten: Bool = false
+        isHandwritten: Bool = false,
+        annotationGroups: [AnnotationGroup] = []
     ) {
         self.jobId = jobId
         self.passage = passage
@@ -123,6 +128,7 @@ public struct CardGenerationRequest: Sendable {
         self.mimeType = mimeType
         self.selectedLineIds = selectedLineIds
         self.isHandwritten = isHandwritten
+        self.annotationGroups = annotationGroups
     }
 }
 

@@ -76,12 +76,37 @@ public struct VisionTextRecognizer: TextRecognizing {
         let lines = ordered.enumerated().compactMap { index, observation -> RecognizedLine? in
             guard let candidate = observation.topCandidates(1).first else { return nil }
             let box = observation.boundingBox
+            let lineId = String(format: "line_%02d", index)
+            var tokens: [RecognizedToken] = []
+            candidate.string.enumerateSubstrings(
+                in: candidate.string.startIndex..<candidate.string.endIndex,
+                options: [.byWords, .substringNotRequired]
+            ) { _, range, _, _ in
+                guard let observation = try? candidate.boundingBox(for: range) else { return }
+                let tokenBox = observation.boundingBox
+                tokens.append(
+                    RecognizedToken(
+                        id: "\(lineId)_token_\(tokens.count)",
+                        text: String(candidate.string[range]),
+                        confidence: Double(candidate.confidence),
+                        // Vision's token boxes use the same bottom-left frame
+                        // as its observation; normalize once at this boundary.
+                        box: CGRect(
+                            x: tokenBox.minX,
+                            y: 1 - tokenBox.maxY,
+                            width: tokenBox.width,
+                            height: tokenBox.height
+                        )
+                    )
+                )
+            }
             return RecognizedLine(
-                id: String(format: "line_%02d", index),
+                id: lineId,
                 text: candidate.string,
                 confidence: Double(candidate.confidence),
                 // Vision's origin is bottom-left; flip to top-left.
-                box: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height)
+                box: CGRect(x: box.minX, y: 1 - box.maxY, width: box.width, height: box.height),
+                tokens: tokens
             )
         }
 

@@ -28,6 +28,12 @@ export interface DocumentAIConfig {
   languageHints: string[];
   /** Per-request timeout in milliseconds. */
   timeoutMs: number;
+  /**
+   * Requests Document AI's paid font-style add-on. Disabled by default until
+   * the configured Enterprise OCR processor version and billing impact have
+   * been verified in the owning Google project.
+   */
+  computeStyleInfo?: boolean;
 }
 
 export interface CostConfig {
@@ -128,6 +134,14 @@ function numeric(name: string, fallback: number): number {
   return value;
 }
 
+function boolean(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  throw new ConfigError(`${name} true/false olmalı, alınan: ${raw}`);
+}
+
 /**
  * Reads configuration from the environment.
  *
@@ -145,6 +159,7 @@ export function loadConfig(): Config {
         .map((hint) => hint.trim())
         .filter(Boolean),
       timeoutMs: numeric("DOCUMENTAI_TIMEOUT_MS", 60_000),
+      computeStyleInfo: boolean("DOCUMENTAI_COMPUTE_STYLE_INFO", false),
     },
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
