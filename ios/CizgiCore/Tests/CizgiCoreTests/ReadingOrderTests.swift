@@ -42,6 +42,35 @@ final class ReadingOrderTests: XCTestCase {
         XCTAssertEqual(boundaries[0], 0.45, accuracy: 0.05)
     }
 
+    func testFindsGenuineColumnsEvenWithStaggeredNeverPixelAlignedBaselines() {
+        // Independently-typeset columns are never aligned row for row in
+        // practice. Left lines at 0.10/0.15/0.20, right lines offset by half
+        // a row (0.125/0.175/0.225): both columns occupy the same vertical
+        // region, but a strict same-band requirement would see almost no
+        // shared bands.
+        let left = [0.1, 0.15, 0.2].map { box(x: 0.05, y: $0, width: 0.4, height: 0.02) }
+        let right = [0.125, 0.175, 0.225].map { box(x: 0.55, y: $0, width: 0.4, height: 0.02) }
+        let boundaries = ReadingOrder.columnBoundaries(for: left + right)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
+    }
+
+    func testToleratesAPageHeaderAndAFooterTogetherNotJustOneOutlier() {
+        // A title at the top and a page number at the bottom both span the
+        // full width, so together they cover every bucket the real gutter
+        // occupies — if spanning boxes were merely "tolerated" up to a small
+        // count rather than excluded outright, two of them at the same x
+        // would still hide the gutter from the gap scan.
+        let header = box(x: 0.05, y: 0.02, width: 0.9, height: 0.02)
+        let footer = box(x: 0.05, y: 0.9, width: 0.9, height: 0.02)
+        let columns = [0.2, 0.3, 0.4, 0.5].flatMap { y in
+            [box(x: 0.05, y: y, width: 0.4), box(x: 0.55, y: y, width: 0.4)]
+        }
+        let boundaries = ReadingOrder.columnBoundaries(for: [header, footer] + columns)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
+    }
+
     func testIgnoresANarrowNearEdgeGapAsAnOrdinaryMargin() {
         // Content spans [0.05, 0.97] almost fully; the only "gaps" are the
         // page margins on either side, which must not read as a column split.

@@ -29,13 +29,26 @@ struct VisionOCR {
     /// many lines, or the "gutter" was probably one short/indented line, not
     /// a layout.
     static let minLinesPerColumn = 2
-    /// Two candidate columns must share at least this fraction of the shorter
-    /// one's vertical extent, or they are not side by side — they are two
-    /// horizontally-separated but vertically-stacked regions (e.g. a
-    /// right-aligned header above unrelated left-aligned body text), and
-    /// reading them column by column would reorder the page instead of
-    /// fixing it.
+    /// Two candidate columns must have at least this fraction of each side's
+    /// lines vertically near a line on the other side, or they are not side
+    /// by side — they are two horizontally-separated but vertically-stacked
+    /// regions (e.g. a right-aligned header above unrelated left-aligned body
+    /// text), and reading them column by column would reorder the page
+    /// instead of fixing it.
     static let minVerticalOverlap = 0.5
+    /// How far apart two boxes' vertical extents may be and still count as
+    /// "the same row" for `overlapsVertically` — roughly one line height, so
+    /// two independently-typeset columns with staggered baselines (never
+    /// pixel-aligned between columns in practice) still read as coexisting,
+    /// while regions that are genuinely stacked with a real gap between them
+    /// do not.
+    static let maxBaselineStagger = 0.03
+    /// A box wider than this fraction of the page cannot fit inside a single
+    /// column next to another — it is a page-spanning element (a header,
+    /// footer, or page number), not evidence of a column's own text. Excluded
+    /// from the gap scan below so any number of them, however many, never
+    /// hide a real gutter.
+    static let maxColumnItemWidth = 0.5
 
     /// Vision returns observations in no guaranteed reading order, so they are
     /// sorted top-to-bottom then left-to-right for stable `lineId` numbering —
@@ -103,45 +116,44 @@ struct VisionOCR {
         boundaries.filter { $0 < box.midX }.count
     }
 
-    /// Every `bandHeight`-tall slice of the page actually touched by one of
-    /// `boxes` — not just the outer envelope from its topmost to its
-    /// bottommost box, which would call two groups "overlapping" whenever one
-    /// group's total span happens to enclose the other's, even with a gap of
-    /// un-occupied page between them and no box ever actually beside another.
-    /// Boxes are bottom-left origin (Vision's native convention), but bands
-    /// only need to consistently identify the same page slice on both sides —
-    /// no need to flip to top-left first.
-    static func occupiedBands(_ boxes: [CGRect]) -> Set<Int> {
-        var bands: Set<Int> = []
-        for box in boxes {
-            let start = Int((box.minY / bandHeight).rounded(.down))
-            let end = Int((box.maxY / bandHeight).rounded(.up))
-            guard start < end else { continue }
-            bands.formUnion(start..<end)
-        }
-        return bands
+    /// Whether `a` and `b` sit close enough vertically to count as the same
+    /// row, within `maxBaselineStagger` of slack in either direction. Boxes
+    /// are bottom-left origin (Vision's native convention); the comparison
+    /// only needs to be self-consistent, so no flip to top-left is needed.
+    static func coexist(_ a: CGRect, _ b: CGRect) -> Bool {
+        a.minY - maxBaselineStagger < b.maxY && b.minY - maxBaselineStagger < a.maxY
     }
 
-    /// Whether two groups of boxes coexist over a meaningful shared vertical
-    /// range, rather than one sitting entirely above the other (or enclosing
-    /// the other's range without actually coexisting alongside it).
+    /// Whether two non-empty groups of boxes coexist over a meaningful shared
+    /// vertical range, rather than one sitting entirely above the other.
+    /// Measured per box — does *this* box have a neighbor on the other side
+    /// nearby? — rather than by each group's overall envelope or
+    /// occupied-band set, which would call two groups "overlapping" whenever
+    /// one's total span happens to enclose the other's, even with a real gap
+    /// between them and no box ever actually beside another; or would reject
+    /// two ordinary columns whenever their (never pixel-aligned) baselines
+    /// happen to land in different bands.
     static func overlapsVertically(_ a: [CGRect], _ b: [CGRect]) -> Bool {
-        let bandsA = occupiedBands(a), bandsB = occupiedBands(b)
-        guard !bandsA.isEmpty, !bandsB.isEmpty else { return false }
-        let shared = bandsA.intersection(bandsB).count
-        return Double(shared) / Double(min(bandsA.count, bandsB.count)) >= minVerticalOverlap
+        let aMatched = a.filter { box in b.contains { coexist(box, $0) } }.count
+        let bMatched = b.filter { box in a.contains { coexist(box, $0) } }.count
+        return Double(aMatched) / Double(a.count) >= minVerticalOverlap
+            && Double(bMatched) / Double(b.count) >= minVerticalOverlap
     }
 
     /// Finds x-positions of vertical whitespace gutters wide and central
-    /// enough to be column breaks rather than ordinary margins. A handful of
-    /// full-width outliers (a header, a page number) are tolerated —
-    /// `crossingTolerance` — rather than blocking detection outright, and
-    /// excluded from the per-column checks below.
+    /// enough to be column breaks rather than ordinary margins.
+    ///
+    /// Page-spanning elements (a header, footer, page number — anything wider
+    /// than `maxColumnItemWidth`) are excluded up front rather than merely
+    /// tolerated: a page can have any number of them (a title *and* a footer)
+    /// without hiding the real gutter between them.
     static func columnBoundaries(for observations: [VNRecognizedTextObservation]) -> [Double] {
         guard observations.count >= 2 * minLinesPerColumn else { return [] }
 
+        let columnScoped = observations.filter { $0.boundingBox.width <= maxColumnItemWidth }
+
         var coverage = [Int](repeating: 0, count: columnBuckets)
-        for observation in observations {
+        for observation in columnScoped {
             let box = observation.boundingBox
             let start = max(0, Int((box.minX * Double(columnBuckets)).rounded(.down)))
             let end = min(columnBuckets, Int((box.maxX * Double(columnBuckets)).rounded(.up)))
@@ -149,13 +161,12 @@ struct VisionOCR {
             for bucket in start..<end { coverage[bucket] += 1 }
         }
 
-        let crossingTolerance = max(1, observations.count / 20)
         var boundaries: [Double] = []
         var index = 0
         while index < columnBuckets {
-            guard coverage[index] <= crossingTolerance else { index += 1; continue }
+            guard coverage[index] == 0 else { index += 1; continue }
             let start = index
-            while index < columnBuckets, coverage[index] <= crossingTolerance { index += 1 }
+            while index < columnBuckets, coverage[index] == 0 { index += 1 }
             // A run reaching all the way to either edge is the page's own
             // outer margin, however wide — not a gap *between* two columns of
             // text, which has content on both sides by definition. The center

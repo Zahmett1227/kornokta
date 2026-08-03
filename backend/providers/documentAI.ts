@@ -226,12 +226,23 @@ const COLUMN_EDGE_MARGIN = 0.08;
 /** Every column a detected gutter implies must end up with at least this many
  * lines, or the "gutter" was probably one short/indented line, not a layout. */
 const MIN_LINES_PER_COLUMN = 2;
-/** Two candidate columns must share at least this fraction of the shorter
- * one's vertical extent, or they are not side by side — they are two
- * horizontally-separated but vertically-stacked regions (e.g. a right-aligned
- * header above unrelated left-aligned body text), and reading them column by
- * column would reorder the page instead of fixing it. */
+/** Two candidate columns must have at least this fraction of each side's
+ * lines vertically near a line on the other side, or they are not side by
+ * side — they are two horizontally-separated but vertically-stacked regions
+ * (e.g. a right-aligned header above unrelated left-aligned body text), and
+ * reading them column by column would reorder the page instead of fixing it. */
 const MIN_VERTICAL_OVERLAP = 0.5;
+/** How far apart two lines' vertical extents may be and still count as "the
+ * same row" for `overlapsVertically` — roughly one line height, so two
+ * independently-typeset columns with staggered baselines (never pixel-aligned
+ * between columns in practice) still read as coexisting, while regions that
+ * are genuinely stacked with a real gap between them do not. */
+const MAX_BASELINE_STAGGER = 0.03;
+/** An item wider than this fraction of the page cannot fit inside a single
+ * column next to another — it is a page-spanning element (a header, footer,
+ * or page number), not evidence of a column's own text. Excluded from the gap
+ * scan below so any number of them, however many, never hide a real gutter. */
+const MAX_COLUMN_ITEM_WIDTH = 0.5;
 
 /** True if `item`'s span crosses one of `boundaries` rather than sitting
  * entirely inside one column — a header or footer spanning the gutter. */
@@ -244,31 +255,24 @@ function columnOf(item: Positioned, boundaries: number[]): number {
   return boundaries.filter((b) => b < center).length;
 }
 
-/** Every `READING_BAND`-tall slice of the page actually touched by one of
- * `items` — not just the outer envelope from its topmost to its bottommost
- * item, which would call two lines "overlapping" whenever one group's total
- * span happens to enclose the other's, even with a gap of un-occupied page
- * between them and no line ever actually beside another. */
-function occupiedBands(items: Positioned[]): Set<number> {
-  const bands = new Set<number>();
-  for (const item of items) {
-    const start = Math.floor(item.y / READING_BAND);
-    const end = Math.ceil((item.y + item.height) / READING_BAND);
-    for (let band = start; band < end; band++) bands.add(band);
-  }
-  return bands;
+/** Whether `a` and `b` sit close enough vertically to count as the same row,
+ * within `MAX_BASELINE_STAGGER` of slack in either direction. */
+function coexist(a: Positioned, b: Positioned): boolean {
+  return a.y - MAX_BASELINE_STAGGER < b.y + b.height && b.y - MAX_BASELINE_STAGGER < a.y + a.height;
 }
 
 /** Whether two non-empty groups of items coexist over a meaningful shared
- * vertical range, rather than one sitting entirely above the other (or
- * enclosing the other's range without actually coexisting alongside it). */
+ * vertical range, rather than one sitting entirely above the other. Measured
+ * per line — does *this* line have a neighbor on the other side nearby? —
+ * rather than by each group's overall envelope or occupied-band set, which
+ * would call two groups "overlapping" whenever one's total span happens to
+ * enclose the other's, even with a real gap between them and no line ever
+ * actually beside another; or would reject two ordinary columns whenever
+ * their (never pixel-aligned) baselines happen to land in different bands. */
 function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
-  const bandsA = occupiedBands(a);
-  const bandsB = occupiedBands(b);
-  if (!bandsA.size || !bandsB.size) return false;
-  let shared = 0;
-  for (const band of bandsA) if (bandsB.has(band)) shared++;
-  return shared / Math.min(bandsA.size, bandsB.size) >= MIN_VERTICAL_OVERLAP;
+  const aMatched = a.filter((item) => b.some((other) => coexist(item, other))).length;
+  const bMatched = b.filter((item) => a.some((other) => coexist(item, other))).length;
+  return aMatched / a.length >= MIN_VERTICAL_OVERLAP && bMatched / b.length >= MIN_VERTICAL_OVERLAP;
 }
 
 /**
@@ -277,31 +281,32 @@ function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
  * ordinary margins, so `orderByReadingPosition` can read column by column
  * instead of interleaving both columns' text row by row.
  *
- * A handful of full-width outliers (a header, a page number) are tolerated —
- * `crossingTolerance` — rather than blocking detection outright, and excluded
- * from the per-column checks below (they are not evidence for or against a
- * column split, since they belong to neither column).
+ * Page-spanning elements (a header, footer, page number — anything wider than
+ * `MAX_COLUMN_ITEM_WIDTH`) are excluded up front rather than merely tolerated:
+ * a page can have any number of them (a title *and* a footer) without hiding
+ * the real gutter between them.
  */
 export function columnBoundaries(items: Positioned[]): number[] {
   if (items.length < 2 * MIN_LINES_PER_COLUMN) return [];
 
+  const columnScoped = items.filter((item) => item.width <= MAX_COLUMN_ITEM_WIDTH);
+
   const coverage = new Array<number>(COLUMN_BUCKETS).fill(0);
-  for (const item of items) {
+  for (const item of columnScoped) {
     const start = Math.max(0, Math.floor(item.x * COLUMN_BUCKETS));
     const end = Math.min(COLUMN_BUCKETS, Math.ceil((item.x + item.width) * COLUMN_BUCKETS));
     for (let bucket = start; bucket < end; bucket++) coverage[bucket]!++;
   }
 
-  const crossingTolerance = Math.max(1, Math.floor(items.length / 20));
   const boundaries: number[] = [];
   let index = 0;
   while (index < COLUMN_BUCKETS) {
-    if (coverage[index]! > crossingTolerance) {
+    if (coverage[index]! > 0) {
       index++;
       continue;
     }
     const start = index;
-    while (index < COLUMN_BUCKETS && coverage[index]! <= crossingTolerance) index++;
+    while (index < COLUMN_BUCKETS && coverage[index]! === 0) index++;
     // A run reaching all the way to either edge is the page's own outer
     // margin, however wide — not a gap *between* two columns of text, which
     // has content on both sides by definition. The center check alone can
