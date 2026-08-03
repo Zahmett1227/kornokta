@@ -35,6 +35,18 @@ describe("cardIntroducesUnsourcedCriticalToken", () => {
     const card = baseCard({ back: "1 mg IV adrenalin." });
     expect(cardIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
   });
+
+  it("flags a same-polarity hipo/hyper diagnosis swap (PR #7 review, docs/ADR-003)", () => {
+    // `addedCriticalTokens` here must NOT fold hipo/hiper to just its prefix —
+    // that folding exists for OCR-vs-OCR reconciliation (reconcile.ts) and
+    // would otherwise let a card silently turn a sourced 'hipokalemi' into
+    // 'hiponatremi', a different diagnosis entirely, into an auto-accept.
+    const card = baseCard({
+      sourceQuote: "Hastada hipokalemi saptandı.",
+      back: "Hastada hiponatremi saptandı.",
+    });
+    expect(cardIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
+  });
 });
 
 describe("runCardGate", () => {

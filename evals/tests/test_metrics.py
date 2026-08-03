@@ -228,6 +228,20 @@ class TestAddedCriticalTokens:
     def test_removed_token_is_not_reported_as_added(self):
         assert added_critical_tokens("5 mg ve 10 mg", "5 mg") == []
 
+    def test_hypo_hyper_full_surface_change_is_reported_by_default(self):
+        # A card whose own back text turns a sourced 'hipokalemi' into
+        # 'hiponatremi' is a different diagnosis, not a tolerable spelling
+        # variant of the same one — `fold_hypo_hyper` must default to off so
+        # `cardGate`'s use of this function (validating generated card content
+        # against its own cited source) still catches it (PR #7 review,
+        # docs/ADR-003). Folding is opt-in, for OCR-vs-OCR reconciliation only.
+        assert added_critical_tokens("Hasta hipokalemi geliştirdi", "Hasta hiponatremi geliştirdi") != []
+
+    def test_hypo_hyper_suffix_typo_is_forgiven_only_when_folded(self):
+        gold, hypothesis = "Tip 4 hipersensitivite örnekleri", "Tip 4 hipersenstvite örnekleri"
+        assert added_critical_tokens(gold, hypothesis) != []
+        assert added_critical_tokens(gold, hypothesis, fold_hypo_hyper=True) == []
+
     @pytest.mark.parametrize(
         "gold_text, hypothesis",
         [("mortalite %40", "mortalite % 40"), ("q8h uygulanır", "q8 h uygulanır")],
@@ -332,6 +346,17 @@ class TestCriticalTokenSequence:
         assert critical_token_mismatches(gold, hypothesis) == []
         assert added_critical_tokens(gold, hypothesis) == []
         assert critical_token_error_rate(["IM"], hypothesis) == 0.0
+
+    def test_hypo_hyper_change_reported_unless_folded(self):
+        # Default (strict) — used by cardGate: a changed diagnosis, same
+        # polarity, must still mismatch (PR #7 review, docs/ADR-003).
+        gold, hypothesis = "hipokalemi gelişti", "hiponatremi gelişti"
+        assert critical_token_mismatches(gold, hypothesis) != []
+        # Folded (opt-in) — used by OCR reconciliation: an on-device suffix
+        # typo on the same word must not.
+        gold, hypothesis = "hipersensitivite örnekleri", "hipersenstvite örnekleri"
+        assert critical_token_mismatches(gold, hypothesis) != []
+        assert critical_token_mismatches(gold, hypothesis, fold_hypo_hyper=True) == []
 
     @pytest.mark.parametrize(
         "gold, hypothesis",

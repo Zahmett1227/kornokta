@@ -83,6 +83,40 @@ hatası "kritik uyuşmazlık" olarak raporlanıyordu.
    `backend/providers/criticalTokens.ts` (üretim) içinde, `canonical_route`
    ile aynı desende.
 
+## Düzeltme — PR #7 incelemesinde bulunan gerçek bir P1
+
+Codex, bu PR'ın incelemesinde `hypo_hyper` önek-katlamasının **paylaşılan bir
+fonksiyon üzerinden** `cardGate.ts`'e de sızdığını buldu:
+`cardIntroducesUnsourcedCriticalToken`, OCR uzlaştırmasıyla aynı
+`addedCriticalTokens`'ı çağırıyor. Katlama koşulsuz olduğu için, modelin
+ürettiği bir kart `sourceQuote: "hipokalemi"` derken `back: "hiponatremi"`
+yazsa bile — **tamamen farklı bir tanı** — ikisi de `hipo`ya katlandığı için
+"uydurulmuş kritik değer yok" sonucu çıkıyor ve model kendi bayraklarını
+temiz bıraktıysa kart otomatik kabul edilebilirdi. Bu, tam olarak §19'un
+önlemeye çalıştığı hata sınıfı.
+
+**Düzeltme:** Katlama artık **varsayılan kapalı**, yalnızca açıkça istenince
+(`fold_hypo_hyper=True` / `{ foldHypoHyper: true }`) çalışıyor:
+
+- `evals/ocr_eval/metrics.py`: `_canonical`, `_sequence_with_surfaces`,
+  `_canonical_token_counter`, `critical_token_mismatches`,
+  `critical_token_recall_loss`, `added_critical_tokens` — hepsi
+  `fold_hypo_hyper: bool = False` keyword-only parametresi aldı.
+- `backend/providers/gate.ts`: aynı desende `GateOptions { foldHypoHyper?:
+  boolean }` — `canonical`, `criticalTokenMismatches`,
+  `criticalTokenErrorRate`, `addedCriticalTokens`, `runGate`.
+- **Yalnızca `reconcile.ts`** (OCR-vs-OCR karşılaştırması) ve
+  `evals/ocr_eval/export_gate_cases.py` (aynı senaryoyu simüle eden vaka
+  üreticisi) `true` geçiyor.
+- **`cardGate.ts` hiçbir şey geçmiyor** — varsayılan (katı/strict) davranışı
+  kullanıyor, yani `hipokalemi` → `hiponatremi` gibi bir değişiklik artık
+  doğru şekilde "uydurulmuş kritik değer" olarak yakalanıyor.
+
+Regresyon: `backend/tests/gate.test.ts` ve `cardGate.test.ts`'e Codex'in tam
+senaryosu eklendi (`hipokalemi`/`hiponatremi` katlanmadan yakalanıyor,
+`hipersensitivite`/`hipersenstvite` yalnız `foldHypoHyper: true` iken
+affediliyor); Python tarafında `evals/tests/test_metrics.py`'ye aynısı.
+
 ## Neden güvenli
 
 Bu bir gevşetme değil, **yanlış yerdeki bir kapının kaldırılması**:
@@ -94,7 +128,10 @@ Bu bir gevşetme değil, **yanlış yerdeki bir kapının kaldırılması**:
 - Asıl güvenlik ağı **kartın kendisi** üzerinde çalışıyor:
   `backend/providers/cardGate.ts`, her kartın `front`/`back`'ini kendi
   `sourceQuote`'una karşı bağımsızca kontrol ediyor (`addedCriticalTokens`,
-  §19) — bu kontrol reconcile.ts'ten tamamen bağımsız ve değişmedi.
+  §19) — bu kontrol `reconcile.ts`'in kararından tamamen bağımsız. (Paylaştığı
+  `addedCriticalTokens` fonksiyonunun kendisinde PR incelemesinde bulunan bir
+  hata vardı — yukarıdaki "Düzeltme" bölümüne bakın; düzeltmeden önce bu iki
+  kullanım yanlışlıkla aynı gevşek katlamayı paylaşıyordu.)
 - El yazısı, düşük Google güveni ve boş sayfa hâlâ gatelemeye devam ediyor —
   yalnızca "Apple ne dedi" sorusu artık karar vermiyor.
 

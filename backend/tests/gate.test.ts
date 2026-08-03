@@ -42,7 +42,10 @@ describe("shared gate cases (Python reference)", () => {
 
   for (const entry of cases) {
     it(`[${entry.group}] ${JSON.stringify(entry.gold)} -> ${JSON.stringify(entry.reading)}`, () => {
-      const result = runGate(entry.gold, entry.reading);
+      // These cases simulate OCR-vs-OCR reconciliation (evals/ocr_eval/
+      // export_gate_cases.py generates them the same way), so `foldHypoHyper`
+      // is on here — matching `reconcile.ts`'s own call, not `cardGate.ts`'s.
+      const result = runGate(entry.gold, entry.reading, { foldHypoHyper: true });
       expect(result.mismatches).toEqual(entry.mismatches);
       expect(result.missingRate).toBeCloseTo(entry.missingRate, 10);
       expect(result.added).toEqual(entry.added);
@@ -94,6 +97,30 @@ describe("the three measures answer different questions", () => {
     expect(verdicts[0]).toContain("replace");
     expect(verdicts[0]).toContain("IM");
     expect(verdicts[0]).toContain("IV");
+  });
+});
+
+describe("hypo/hyper folding is opt-in, not a blanket default (PR #7 review)", () => {
+  it("a changed diagnosis of the same polarity is a mismatch by default", () => {
+    // This is exactly `cardGate.ts`'s call shape: checking generated content
+    // against its own cited source, with no options — must stay strict.
+    const gold = "Hasta hipokalemi geliştirdi";
+    const hypothesis = "Hasta hiponatremi geliştirdi";
+    expect(criticalTokenMismatches(gold, hypothesis)).not.toEqual([]);
+    expect(addedCriticalTokens(gold, hypothesis)).not.toEqual([]);
+  });
+
+  it("an on-device suffix typo is only forgiven when reconciliation opts in", () => {
+    const gold = "Tip 4 hipersensitivite örnekleri";
+    const hypothesis = "Tip 4 hipersenstvite örnekleri";
+    expect(addedCriticalTokens(gold, hypothesis)).not.toEqual([]);
+    expect(addedCriticalTokens(gold, hypothesis, { foldHypoHyper: true })).toEqual([]);
+  });
+
+  it("a real polarity flip still mismatches even when folding is on", () => {
+    const gold = "hipokalemi gelişti";
+    const hypothesis = "hiperkalemi gelişti";
+    expect(criticalTokenMismatches(gold, hypothesis, { foldHypoHyper: true })).not.toEqual([]);
   });
 });
 

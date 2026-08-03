@@ -67,6 +67,19 @@ yorumları **İngilizce**.
    güncellendi: model artık soruyu kurmadan önce pasajın kazanımını
    yorumluyor, `explanation` alanında kaynak dışı bağlama izin var
    (`enriched=true` ile, §12.2'nin zaten var olan onay zorunluluğu altında).
+5. **(Bu oturum, PR #7 incelemesi)** Codex gerçek bir P1 buldu: madde 4'teki
+   `hypo_hyper` önek-katlaması paylaşılan `addedCriticalTokens` üzerinden
+   `cardGate.ts`'e de sızmıştı — bir kart `sourceQuote: hipokalemi` derken
+   `back: hiponatremi` yazsa (tamamen farklı bir tanı) bile ikisi de `hipo`ya
+   katlandığı için "uydurulmuş kritik değer yok" çıkıp otomatik kabul
+   edilebilirdi. Düzeltme: katlama artık varsayılan **kapalı**
+   (`fold_hypo_hyper`/`foldHypoHyper` parametresiyle açık istek gerektiriyor);
+   yalnızca `reconcile.ts` (OCR-vs-OCR) açıyor, `cardGate.ts` hiç açmıyor.
+   Ayrıntı ADR-003'ün "Düzeltme" bölümünde. Yol boyunca `gate.ts` içinde
+   önceden var olan, ilgisiz bir bayt hatası da bulundu: `${token.tokenClass}
+   ${token.key}` şablon dizgisinde beş yerde gerçek bir boşluk yerine NUL
+   (`\x00`) baytı vardı — sessizce çalışıyordu (yalnız iç anahtar olarak
+   kullanılıyor) ama görünmez bir kusurdu, düzeltildi.
 
 **Test durumu:**
 - Python (`evals/`): 503 test, yeşil — `python -m pytest evals -q` (bu

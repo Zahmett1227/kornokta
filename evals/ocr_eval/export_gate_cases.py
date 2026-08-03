@@ -116,11 +116,17 @@ PAIRS: list[tuple[str, str, str]] = [
 def build_payload() -> dict:
     cases = []
     for group, gold, reading in PAIRS:
-        mismatches = critical_token_mismatches(gold, reading)
+        # fold_hypo_hyper=True: these pairs simulate OCR-vs-OCR reconciliation
+        # (reconcile.ts), where an on-device suffix typo on an otherwise
+        # correctly-read word should not be a critical mismatch (ADR-003).
+        # `cardGate`'s own use of `added_critical_tokens` (validating a
+        # generated card against its own quoted source) deliberately does
+        # NOT set this — see that function's docstring.
+        mismatches = critical_token_mismatches(gold, reading, fold_hypo_hyper=True)
         # The reconciliation measure, not the manifest one: neither side of an
         # Apple-vs-Google comparison is annotated, so both are detected.
-        missing = critical_token_recall_loss(gold, reading)
-        added = added_critical_tokens(gold, reading)
+        missing = critical_token_recall_loss(gold, reading, fold_hypo_hyper=True)
+        added = added_critical_tokens(gold, reading, fold_hypo_hyper=True)
         cases.append(
             {
                 "group": group,

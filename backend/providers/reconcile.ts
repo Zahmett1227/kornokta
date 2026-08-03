@@ -149,7 +149,15 @@ export function reconcile(
     // string's "kaynak" names the trustworthy reading and "okuma" names the
     // one that cannot write Turkish, not the other way around. This is
     // informational only now (see `decide`, below): it no longer gates.
-    const flags = second === null || agrees ? [] : runGate(first.text, second.text).mismatches;
+    // `foldHypoHyper: true` — this is OCR-vs-OCR reconciliation, where an
+    // on-device suffix typo on an otherwise correctly-read word ('hipersen-
+    // sitivite' -> 'hipersenstvite') should not read as a critical
+    // disagreement. `cardGate.ts` deliberately does NOT set this when
+    // checking a card's own content against its source (docs/ADR-003).
+    const flags =
+      second === null || agrees
+        ? []
+        : runGate(first.text, second.text, { foldHypoHyper: true }).mismatches;
     return {
       lineId: first.lineId,
       primaryText: first.text,
@@ -167,7 +175,9 @@ export function reconcile(
   // `primaryText` (Google) is `gold`, `secondaryText` (Apple) is `hypothesis` —
   // same direction as the per-line gate above, and same caveat: recorded on
   // the result for audit, no longer a `decide` input (§10.2, §10.3).
-  const gate = secondary ? runGate(primaryText, secondaryText) : runGate(primaryText, primaryText);
+  const gate = secondary
+    ? runGate(primaryText, secondaryText, { foldHypoHyper: true })
+    : runGate(primaryText, primaryText, { foldHypoHyper: true });
 
   const criticalLineIds = lines
     .filter((line) => line.criticalTokenFlags.length > 0)
