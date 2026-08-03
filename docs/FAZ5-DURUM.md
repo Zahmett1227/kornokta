@@ -2,7 +2,50 @@
 
 **Durum (2026-08-03):** Kod tarafı tamamlandı; fazın son kabulü gerçek iPhone
 üzerindeki aşağıdaki kontrol listesine bağlıdır. Linux ortamında Xcode, kamera,
-Keychain ve bildirim izni doğrulanamaz.
+Keychain ve bildirim izni doğrulanamaz. **Aynı gün kullanıcı bu testi kendi
+iPhone'unda fiilen başlattı** — aşağıdaki "Gerçek cihaz oturumu" bölümüne bak.
+
+## Gerçek cihaz oturumu (2026-08-03)
+
+Kullanıcı `xcodegen` + Xcode ile projeyi kendi iPhone'unda derleyip çalıştırdı.
+Süreçte üç ayrı gerçek sorun bulundu ve düzeltildi — hiçbiri ortam/kurulum
+sorunu değildi, üçü de koddaki gerçek hatalardı:
+
+1. **`xcodegen` eksikti / "developer disk image" hatası** — Mac tarafı kurulum
+   sorunları, kod değişikliği gerekmedi (`brew install xcodegen`, Xcode
+   güncelleme).
+2. **`ProcessingQueue.swift` — iki P1 bulgusu (PR #3).** `context.save()`
+   başarısız olursa orijinal sayfa görüntüsü, `.ready` durumu veya kartlar
+   diske hiç yazılmadan görüntü zaten silinmiş oluyordu (kurtarılamaz veri
+   kaybı). Düzeltme: görüntü yalnız save başarılı olduktan sonra siliniyor;
+   silinmemiş bir görüntü için kalıcı `pendingOriginalImageDeletion` bayrağı
+   eklendi, `processPending()` başlangıçta bunu tarayıp yeniden deniyor —
+   bayrağın kontrolü kendi taze `ModelContext`'i üzerinden yapılıyor ki
+   başarısız bir save'in bellekte bıraktığı geçici durumu kalıcı sanmasın.
+3. **`AppEnvironment.swift` — gerçek bir derleme hatası (PR #4).** `init`'te
+   `queue` özelliği atanırken `self.settings` okunuyordu; Swift bunu tüm
+   stored property'ler atanmadan yasaklıyor. Bu hata şimdiye kadar hiç
+   yakalanmamıştı çünkü `swift test` yalnız `CizgiCore` paketini derliyor,
+   `ios/App` hedefini (bu dosyayı) hiç dokunmuyor — bu, o hedefin Xcode'da
+   **gerçekten derlendiği ilk andı**.
+4. **Kart kalitesi kötü çıktı → kök neden bulundu (PR #5).** Kullanıcı gerçek
+   bir sayfa çekti; backend henüz bağlanmadığı için kartlar Faz 1'in kasıtlı
+   olarak aptal `MockCardProvider`'ından geldi (beklenen davranış — Ayarlar'da
+   "Ayarlanmadı" yazıyordu). Ama arkadaki ham metin de karışıktı: sayfa iki
+   sütunluydu (Nekroz/Apoptoz karşılaştırması), hem Apple Vision hem Google
+   Document AI satırları yalnız "yukarıdan aşağı + soldan sağa" sıralıyordu,
+   sütun sütun değil satır satır okuyordu — iki sütun aynı satırdaysa iki
+   konuyu tek cümlede karıştırıyordu. Sütun tespiti eklendi
+   (`ios/CizgiCore/Sources/CizgiCore/OCR/ReadingOrder.swift` ve
+   `backend/providers/documentAI.ts`), Codex'in ardışık 8 turluk incelemesi
+   sonunda 7 gerçek uç durum daha bulup düzelttirdi (dar sütun, taşan
+   başlık/dipnot, hizasız satır, eşit olmayan uzunluk, vb.) — 8.'si (çok dar
+   ama gerçek boşluğu kesen bir ayraç) kullanıcı kararıyla düşük öncelikli
+   olarak ertelendi. Ayrıntı: `docs/ADR-002-birincil-ocr-secimi.md`.
+
+Bu oturumda telefon backend'e **hâlâ bağlanmadı** — Ayarlar'da sunucu adresi
+ve cihaz anahtarı girilmesi gerekiyor (adımlar kullanıcıya anlatıldı, `CLAUDE.md`
+→ "Sıradaki iş"). Bağlanınca kartlar Mock'tan gerçek yapay zekaya geçecek.
 
 ## Tamamlananlar
 
@@ -22,14 +65,28 @@ Keychain ve bildirim izni doğrulanamaz.
 
 ## iPhone kabul listesi
 
-1. Mac'te `cd ios && xcodegen generate && open Cizgi.xcodeproj` çalıştır.
+**Durum (2026-08-03):** 1–3 ve 5 fiilen denendi (yukarıdaki "Gerçek cihaz
+oturumu" bölümü) — üçü de o sırada bulunan koddaki gerçek hataları düzeltmeyi
+gerektirdi, şimdi hepsi `main`'de. 4 henüz tamamlanmadı (backend'e
+bağlanılmadı). 6–10 hiç denenmedi.
+
+1. ~~Mac'te `cd ios && xcodegen generate && open Cizgi.xcodeproj` çalıştır.~~
+   Denendi — `xcodegen` kurulu değildi, kullanıcı Mac'inde kurdu.
 2. Xcode'da **Signing & Capabilities → Team** altında Apple ID takımını seç;
    bundle kimliği çakışırsa `local.cizgi.app` değerini benzersiz yap.
-3. iPhone'u bağla, geliştirici modunu aç ve `Cizgi` şemasını telefonda çalıştır.
+3. ~~iPhone'u bağla, geliştirici modunu aç ve `Cizgi` şemasını telefonda
+   çalıştır.~~ Denendi — önce "developer disk image" hatası (Mac tarafı),
+   sonra gerçek bir derleme hatası (`AppEnvironment.swift`, düzeltildi)
+   çıktı. Artık derleniyor (kullanıcı `swift test`i doğruladı, ama yalnız
+   sütun tespitinin ilk sürümüyle — bkz. `CLAUDE.md` "Test durumu").
 4. Ayarlar'da Vercel adresini ve `npm run token` ile üretilen cihaz anahtarını
    gir. “Bağlı / Google Document AI / Gerçek (backend) / FSRS-6” görünmeli.
+   **Henüz yapılmadı** — Ayarlar hâlâ "Ayarlanmadı" gösteriyordu.
 5. Gerçek bir sayfa çek; uygulamayı işleme sırasında arka plana atıp geri dön.
-   İş devam etmeli ve yalnız bir kart grubu oluşmalı.
+   İş devam etmeli ve yalnız bir kart grubu oluşmalı. **Kısmen denendi:** bir
+   sayfa çekildi (backend bağlanmadan, yani Mock kart üreticiyle) — kart
+   kalitesi kötü çıktı, kök nedeni (sütun okuma hatası) bulunup düzeltildi.
+   Arka plana atma senaryosu ayrıca denenmedi.
 6. Uçak modunda sayfa çek; hata kaybolmamalı. Ağı açıp “Tekrar dene”ye basınca
    aynı kayıt tamamlanmalı.
 7. Günlük hatırlatıcıyı aç, iOS iznini ver ve geçici olarak sonraki saate kur.

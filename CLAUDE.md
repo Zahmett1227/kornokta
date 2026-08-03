@@ -27,23 +27,51 @@ yorumları **İngilizce**.
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
-| Faz 5 — Sertleştirme | 🟡 Kod tamam; gerçek iPhone kabul testi bekliyor. Recovery, bildirim, yeni kart/hızlı oturum limitleri, geriye uyumlu ayarlar, JSON yedek ve görüntü saklama politikası eklendi. `docs/FAZ5-DURUM.md`. |
+| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı** (kullanıcı kendi telefonunda çalıştırdı, gerçek bir sayfa çekti). Kabul listesindeki 10 maddenin tamamı henüz koşulmadı ama süreçte üç gerçek hata bulunup düzeltildi — ayrıntı `docs/FAZ5-DURUM.md`. |
 
-**Dal durumu:** Faz 3/4'ün kodu `main`'e alındı (fast-forward merge, `20d71b2`,
-2026-08-03) — `main` ve `claude/proje-analizi-planlama-r7lxw4` şu an aynı
-commit'te. Önceki oturumlar `claude/faz1-ios-iskelet` ve
+**Dal durumu:** `main` şu an `15e68b0`'da (PR #3, #4, #5 merge edildi,
+2026-08-03). Önceki oturumlar `claude/faz1-ios-iskelet` ve
 `claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bunlar da zaten
 `main`'e ileri sarılmıştı.
 
+**Bugünkü gerçek cihaz oturumunda bulunan ve düzeltilen sorunlar** (üçü de
+`main`'de, ayrıntı `docs/FAZ5-DURUM.md`):
+1. `ProcessingQueue.swift`: orijinal sayfa görüntüsü, `.ready` durumu ve
+   kartlar diske kalıcı olarak yazılmadan siliniyordu (kayıt başarısız olursa
+   görüntü kurtarılamaz kalıyordu) — iki P1 bulgusu, ikisi de düzeltildi (PR #3).
+2. `AppEnvironment.swift`: `init`'te `self.settings` tüm stored property'ler
+   atanmadan okunuyordu — Swift derleme hatası. Bu, App hedefinin Xcode'da
+   **gerçekten derlendiği ilk an**dı (`swift test` yalnız `CizgiCore`
+   paketini derliyor, App hedefini hiç dokunmuyor) — düzeltildi (PR #4).
+3. Kullanıcı gerçek bir sütunlu (Nekroz/Apoptoz karşılaştırma) sayfa çekti;
+   kart arkası iki konuyu tek cümlede karıştırdı. Kök neden: hem Apple Vision
+   hem Google Document AI satırları yalnız "yukarıdan aşağı + soldan sağa"
+   sıralıyor, sütun farkında değildi. Sütun tespiti eklendi
+   (`ReadingOrder.swift` / `documentAI.ts`), Codex'in ardışık 8 turluk
+   incelemesinden 7'si düzeltildi (8.'si — çok dar ama gerçek boşluğu kesen
+   bir ayraç senaryosu — kullanıcı kararıyla ertelendi, gerçek kullanımda
+   düşük olasılık). `docs/ADR-002-birincil-ocr-secimi.md`'nin "Açık kalanlar"
+   listesi güncellendi (PR #5).
+
 **Test durumu:**
 - Python (`evals/`): 503 test, yeşil — `python -m pytest evals -q`
-- Swift (`ios/CizgiCore/`): 136 test, **kullanıcı tarafından gerçek bir Mac'te
-  doğrulandı (2026-08-03), hepsi yeşil** — `swift test`
-- Backend (`backend/`): 419 test, yeşil — `npm test`
+- Swift (`ios/CizgiCore/`): 153 test. **Dikkat:** kullanıcı bu oturumda
+  `swift test`'i yalnız sütun tespitinin **ilk sürümünde** (145 test, PR #5'in
+  ilk commit'i) doğruladı — Codex'in bulduğu 7 turluk sonraki düzeltme
+  (`overlapsVertically`, kenar boşluğu, taşan satır işleme, vb.) TypeScript
+  aynası üzerinden gerçekten test edildi (`npm test`) ve elle satır satır
+  Swift'e çevrildi, ama şu anki 153 test hâlini bir Mac'te `swift test` ile
+  **henüz kimse çalıştırmadı**. Sıradaki oturumda önce bu koşulmalı.
+- Backend (`backend/`): 436 test, yeşil — `npm test` (bu ortamda gerçekten
+  çalıştırıldı)
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
 doğrulandı — gerçek bir kitap sayfası fotoğrafı Google Document AI'dan doğru
-Türkçe metinle döndü (`ı ş ğ İ ü ö ç` dahil).
+Türkçe metinle döndü (`ı ş ğ İ ü ö ç` dahil). Telefonun kendisi bu oturum
+sonunda hâlâ backend'e bağlanmamıştı (Ayarlar'da "Ayarlanmadı") — kullanıcı
+`npm run token` ile bir cihaz anahtarı üretip Vercel + telefona girmesi
+gerekiyor, adımlar kullanıcıya anlatıldı ama uygulanıp uygulanmadığı bu
+oturumda doğrulanmadı.
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -51,7 +79,9 @@ Türkçe metinle döndü (`ı ş ğ İ ü ö ç` dahil).
   tanımayı desteklemiyor (ölçüldü, `docs/FAZ0-BULGULAR.md`). Google Document
   AI birincil ve tek metin kaynağı; Vision yalnız önizleme + satır geometrisi
   için kullanılıyor. Bunu tersine çevirecek bir değişiklik yapmadan önce bu
-  ADR'yi oku.
+  ADR'yi oku. "Açık kalanlar" #1'deki çok sütunlu sayfa okuma sırası artık
+  büyük ölçüde çözüldü (`ReadingOrder.swift` / `documentAI.ts`) — satır
+  sıralama mantığını değiştirmeden önce bu ADR'nin güncellenmiş halini oku.
 - **`docs/ADR-001-hibrit-turkce-morfoloji.md`** — Türkçe normalizasyon
   (İ/ı büyük-küçük harf, NFC, diyakritik katlama) kararı.
 - **§0.5** — hiçbir sayı/birim/yön/olumsuzlama/sembol sessizce
@@ -93,8 +123,8 @@ Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
 python -m pytest evals -q                    # 503 test
-cd ios/CizgiCore && swift test                # 136 test (hepsi Mac'te doğrulandı)
-cd backend && npm test                        # 419 test
+cd ios/CizgiCore && swift test                # 153 test (bu haliyle henüz Mac'te koşulmadı, yukarı bak)
+cd backend && npm test                        # 436 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 
@@ -123,19 +153,32 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-Eskiden tek gerçek engelleyici olan `swift test` doğrulaması **2026-08-03'te
-kullanıcı tarafından bir Mac'te yapıldı: 136/136 test yeşil.** Faz 3 ve Faz 4
-artık ikisi de kod + test + Mac doğrulaması tamam. Kalan hiçbir kalem Faz
-3/4'ün çıkış kapılarını engellemiyor — hepsi ne zaman istenirse ele alınabilir:
+**En öncelikli:** bir Mac'te `cd ios/CizgiCore && swift test` çalıştırıp 153
+testin (16'sı yeni `ReadingOrderTests.swift`) hepsinin yeşil olduğunu
+doğrulamak. Bu ortamda Swift toolchain yok; sütun tespiti mantığı TypeScript
+aynası üzerinden gerçekten test edildi (436 backend testi yeşil) ve elle
+Swift'e çevrildi, ama Swift derlemesi kimse tarafından çalıştırılmadı.
 
-1. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+1. Yukarıdaki `swift test` doğrulaması — ilk kez derlenen `AppEnvironment.swift`
+   düzeltmesini ve genişlemiş `ReadingOrderTests.swift`'i kapsıyor.
+2. Telefonu backend'e bağla: Ayarlar'da `https://kornokta-nu.vercel.app` gir,
+   `npm run token` ile üretilen bir cihaz anahtarını hem Vercel'in
+   `DEVICE_TOKEN` ortam değişkenine hem telefonun Keychain'ine koy. Bağlanınca
+   kart üretimi Mock'tan gerçek yapay zekaya geçer.
+3. Bağlandıktan sonra `docs/FAZ5-DURUM.md`'deki 10 maddelik iPhone kabul
+   listesinin geri kalanını (bildirim, yedek, sınırlar) koş.
+4. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.
-2. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
+5. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
    yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
    altında not edildi).
-3. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
+6. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
    var ama hiç `UNUserNotification` çağrısı yok), süre-bütçeli hızlı mod,
    ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
-4. Faz 5'in kodu tamamlandı; `docs/FAZ5-DURUM.md` içindeki gerçek iPhone kabul
-   listesini çalıştır. Bu ortam kamera/Keychain/bildirim iznini doğrulayamaz.
+7. (Düşük öncelik) Codex'in PR #5'te bulduğu 8. bulgu ertelendi: yarım sayfa
+   genişliğinden dar ama yine de gerçek sütun boşluğunu kesen ortalanmış bir
+   ayraç/başlık, boşluğu hâlâ gizleyebilir (`documentAI.ts`/`ReadingOrder.swift`
+   içindeki `MAX_COLUMN_ITEM_WIDTH` sabitiyle ilgili — ayrıntı PR #5'in
+   yorumlarında). Gerçek kullanımda düşük olasılık, kullanıcı kararıyla
+   ertelendi.

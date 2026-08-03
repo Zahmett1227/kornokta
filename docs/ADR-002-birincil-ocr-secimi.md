@@ -73,12 +73,23 @@ Ayrıntı: `evals/tests/test_diacritic_folding.py`.
 ## Açık kalanlar
 
 1. **Hangi Google işlemcisi?** Document AI'ın OCR işlemcisi mi, yoksa Form/Layout
-   Parser mı? Çok sütunlu ders notu sayfalarında sütun tespiti gerekiyor. **Kısmen
-   ele alındı (2026-08-03):** işlemci seçimi hâlâ OCR işlemcisi, ama okuma sırası
-   artık sütun farkında — bir sütun/karşılaştırma listesi satır satır yerine sütun
-   sütun okunuyor (`ReadingOrder.swift` / `documentAI.ts`'teki
-   `orderByReadingPosition`). Gerçek bir Nekroz/Apoptoz karşılaştırma sayfasının
-   iki sütununun tek bir cümlede karıştığı bir kullanıcı raporuyla bulundu.
+   Parser mı? Çok sütunlu ders notu sayfalarında sütun tespiti gerekiyor.
+   **Büyük ölçüde ele alındı (2026-08-03):** işlemci seçimi hâlâ OCR
+   işlemcisi, ama okuma sırası artık sütun farkında — bir sütun/karşılaştırma
+   listesi satır satır yerine sütun sütun okunuyor (`ReadingOrder.swift` /
+   `documentAI.ts`'teki `orderByReadingPosition`/`columnBoundaries`). Gerçek
+   bir Nekroz/Apoptoz karşılaştırma sayfasının iki sütununun tek bir cümlede
+   karıştığı bir kullanıcı raporuyla bulundu. Codex'in PR #5'teki ardışık 8
+   turluk incelemesi sırasında sırayla düzeltilen uç durumlar: taşan
+   başlık/dipnotun sütuna yanlış atanması, üst üste yığılı ama alakasız
+   bölgelerin sütun sanılması (iki kez, farklı ölçüm hatalarıyla), kenar
+   boşluğunun ikinci bir sütun sanılması, hizasız (piksel hizalı olmayan)
+   satırların reddedilmesi, eşit olmayan uzunluktaki sütunların reddedilmesi.
+   **Kalan bilinen sınırlama:** yarım sayfa genişliğinden dar ama yine de
+   gerçek sütun boşluğunu kesen ortalanmış bir ayraç/başlık, boşluğu hâlâ
+   gizleyebilir (`MAX_COLUMN_ITEM_WIDTH` sabiti genişliğe göre dışlıyor,
+   konuma göre değil) — kullanıcı kararıyla düşük öncelikli, gerçek kullanımda
+   düşük olasılık olduğu için ertelendi.
 2. **El yazısı.** Google'ın Türkçe el yazısında ne kadar iyi olduğu ölçülmedi.
    §10.6 kişisel sözlüğün üzerine kurulacağı taban buna bağlı.
 3. **Bölge kırpma.** Faz 2 işaret tespiti çalıştıktan sonra tekrar
