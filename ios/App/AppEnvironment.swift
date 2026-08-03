@@ -26,7 +26,8 @@ final class AppEnvironment: ObservableObject {
         let store = try ImageStore(root: try ImageStore.defaultRoot())
         self.imageStore = store
         self.scheduler = Self.makeScheduler()
-        self.settings = AppSettings.load()
+        let settings = AppSettings.load()
+        self.settings = settings
 
         #if canImport(Security)
         let tokens: any DeviceTokenStoring = KeychainDeviceTokenStore()
@@ -41,14 +42,18 @@ final class AppEnvironment: ObservableObject {
         let recognizer: any TextRecognizing = UnavailableRecognizer()
         #endif
 
+        // `settings`/`tokens` are local copies, not `self.settings`/`self.tokenStore`:
+        // reading a property through `self` here would trip Swift's "used before all
+        // stored properties are initialized" check, since `queue` itself is still
+        // mid-assignment.
         self.queue = ProcessingQueue(
             container: container,
             imageStore: store,
             pipeline: CapturePipeline(
                 recognizer: recognizer,
                 selector: Self.makeSelector(),
-                generator: Self.makeCardGenerator(settings: self.settings, tokens: tokens),
-                backend: Self.makeBackend(settings: self.settings, tokens: tokens)
+                generator: Self.makeCardGenerator(settings: settings, tokens: tokens),
+                backend: Self.makeBackend(settings: settings, tokens: tokens)
             )
         )
         refreshBackendState()
