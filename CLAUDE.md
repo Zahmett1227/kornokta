@@ -26,20 +26,20 @@ yorumları **İngilizce**.
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
 | Faz 3 — AI kart üretimi | 🔶 Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı — **bir Mac'te `swift test` ile henüz doğrulanmadı** (bu ortamda derleyici yok). **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız swift test doğrulaması ve gerçek maliyet rakamları. |
-| Faz 4 — FSRS tekrar motoru | Başlamadı |
+| Faz 4 — FSRS tekrar motoru | 🔶 Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **bir Mac'te `swift test` ile henüz doğrulanmadı**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | Başlamadı |
 
-**Dal durumu:** `main` Faz 2 sonrasıyla (`ccf5985`) aynı. Faz 3'ün backend
-kodu `claude/proje-analizi-planlama-r7lxw4` dalında, henüz `main`'e
-alınmadı. Önceki oturumlar `claude/faz1-ios-iskelet` ve
-`claude/tibbi-hafiza-app-04elp1` dallarında çalıştı, bunlar zaten `main`'e
-ileri sarılmıştı.
+**Dal durumu:** `main` Faz 2 sonrasıyla (`ccf5985`) aynı. Faz 3/4'ün kodu
+`claude/proje-analizi-planlama-r7lxw4` dalında, henüz `main`'e alınmadı.
+Önceki oturumlar `claude/faz1-ios-iskelet` ve `claude/tibbi-hafiza-app-04elp1`
+dallarında çalıştı, bunlar zaten `main`'e ileri sarılmıştı.
 
 **Test durumu:**
-- Python (`evals/`): 452 test, yeşil — `python -m pytest evals -q`
+- Python (`evals/`): 503 test, yeşil — `python -m pytest evals -q`
 - Swift (`ios/CizgiCore/`): 114 test **gerçek bir Mac'te doğrulandı** (2026-08-02);
-  Faz 3 istemci entegrasyonuyla birlikte **+16 yeni test yazıldı (130 toplam),
-  bu ortamda derleyici olmadığı için henüz Mac'te çalıştırılmadı** — `swift test`
+  Faz 3/4 ile birlikte **+22 yeni test yazıldı (136 toplam: 16 F3-8'den,
+  6 FSRS'ten), bu ortamda derleyici olmadığı için henüz Mac'te çalıştırılmadı**
+  — `swift test`
 - Backend (`backend/`): 419 test, yeşil — `npm test`
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
@@ -93,8 +93,8 @@ elle senkron tutma, üret ve kilitle.
 Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
-python -m pytest evals -q                    # 452 test
-cd ios/CizgiCore && swift test                # 130 test (114'ü Mac'te doğrulandı, +16'sı henüz değil)
+python -m pytest evals -q                    # 503 test
+cd ios/CizgiCore && swift test                # 136 test (114'ü Mac'te doğrulandı, +22'si henüz değil)
 cd backend && npm test                        # 419 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
@@ -106,12 +106,15 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/FAZ2-PLAN.md` — Faz 2'nin tam kaydı: ne yapıldı, hangi hatalar
   bulundu/düzeltildi, çıkış kapısının neden atlandığı
 - `docs/FAZ3-PLAN.md` — Faz 3'ün tam kaydı: backend'de ne yazıldı, hangi
-  tasarım kararları alındı, çıkış kapısının neden henüz ölçülemediği
+  tasarım kararları alındı, gold pasaj ölçümünün nasıl kapatıldığı
+- `docs/FAZ4-PLAN.md` — Faz 4'ün tam kaydı: FSRS-6 formülleri nereden
+  geldi (ve ilk fetch'in nasıl yanlış çıktığı), Python referansı, Swift
+  portu, saat dilimi güvenliği kararı
 - `docs/OPENAI-GEMINI-KURULUM.md` — OpenAI/Gemini anahtarlarını edinme adımları
 - `docs/MAC-ADIMLARI.md` — Faz 2 altın set ölçümü istenirse adım adım rehber
   (araçlar hazır, hiç çalıştırılmadı)
 - `docs/MAC-ADIMLARI-FAZ3.md` — Faz 3 gold pasaj kart kalite ölçümü rehberi
-  (araçlar hazır ve test edildi, ölçüm kullanıcıyı bekliyor)
+  (kullanıcıyla birlikte yapıldı, sonuç `docs/FAZ3-PLAN.md`'de)
 - `backend/README.md` — backend yapısı, Vercel dağıtımında çıkan gerçek
   tuzaklar ve çözümleri
 - `ios/README.md` — iOS yapısı, cihazda elle kontrol listesi
@@ -119,24 +122,24 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/FAZ0-*.md`, `docs/FAZ1-DURUM.md` — tarihsel kayıtlar (güncel durum
   için değil, o anki karar gerekçelerini görmek için)
 
-## Sıradaki iş: Faz 3'ün son ucu, sonra Faz 4
+## Sıradaki iş
 
-Faz 3'ün neredeyse tamamı bitti (`docs/FAZ3-PLAN.md`): backend gerçek
-anahtarla uçtan uca doğrulandı, iOS istemcisi yazıldı, **çıkış kapısı
-(gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve
-yeterli görüldü** (2 pasaj, 8 kart, %100 kabul — "F3-10 — asıl ölçüm
-yapıldı" bölümüne bakılabilir). Kalan küçük kalemler:
+**Tek gerçek engelleyici: `cd ios/CizgiCore && swift test` bir Mac'te.**
+Bu ortamda Swift derleyicisi yok — F3-8'in (backend kart üretimi istemcisi)
+ve Faz 4'ün (FSRS portu) kodu ve +22 yeni testi hiç çalıştırılmadı. Mevcut
+114 test hâlâ geçmeli, yeni 22 de geçmeli. Hata çıkarsa bir sonraki oturuma
+o hatayla gelinmeli, "çalışıyor" varsayılmamalı.
 
-1. **`cd ios/CizgiCore && swift test` bir Mac'te.** Bu ortamda Swift
-   derleyicisi yok; F3-8'in kodu ve +16 yeni testi hiç çalıştırılmadı. İlk
-   fırsatta bu — hata çıkarsa bir sonraki oturuma o hatayla gelinmeli,
-   "çalışıyor" varsayılmamalı.
-2. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+Engelleyici olmayan, ne zaman istenirse ele alınabilecek kalemler:
+
+1. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.
-3. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
+2. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
    yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
    altında not edildi).
-
-Bunlar birer engelleyici değil — Faz 4'e (FSRS tekrar motoru, §25) şimdi
-geçilebilir, yukarıdakiler ne zaman ele alınırsa alınsın.
+3. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
+   var ama hiç `UNUserNotification` çağrısı yok), süre-bütçeli hızlı mod,
+   ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
+4. Faz 5 — Sertleştirme (retry/idempotency, background recovery, maliyet
+   sert limitleri, veri dışa aktarma) henüz başlamadı.

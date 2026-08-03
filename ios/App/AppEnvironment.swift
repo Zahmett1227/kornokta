@@ -25,7 +25,7 @@ final class AppEnvironment: ObservableObject {
     init(container: ModelContainer) throws {
         let store = try ImageStore(root: try ImageStore.defaultRoot())
         self.imageStore = store
-        self.scheduler = PlaceholderScheduler()
+        self.scheduler = Self.makeScheduler()
         self.settings = AppSettings.load()
 
         #if canImport(Security)
@@ -62,6 +62,16 @@ final class AppEnvironment: ObservableObject {
     /// that silently selected everything would be the dangerous failure.
     static func makeSelector() -> any MarkerSelecting {
         (try? DetectedMarkerSelector()) ?? ManualSelectionOnly()
+    }
+
+    /// FSRS-6 (§18.1), falling back to the non-FSRS placeholder if the
+    /// bundled weights cannot be read.
+    ///
+    /// Same reasoning as `makeSelector()`: a config-loading component throws
+    /// rather than substituting built-in numbers (§0.6), so the safe
+    /// fallback lives here, at the one call site, not inside the scheduler.
+    static func makeScheduler() -> any ReviewScheduling {
+        (try? FSRSScheduler()) ?? PlaceholderScheduler()
     }
 
     /// Resolves Settings into a `BackendConfiguration`, or nil when the user

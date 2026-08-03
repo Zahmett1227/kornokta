@@ -9,7 +9,7 @@ Swift (iOS mantığı), TypeScript (backend).
 ```bash
 pip install -r evals/requirements.txt
 
-python -m pytest evals -q                                        # 452 test
+python -m pytest evals -q                                        # 503 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json --check-files
 python -m evals.spikes.marker_detection.run --demo                # sentetik demo, ağ gerekmez
 ```
@@ -25,7 +25,7 @@ python -m evals.ocr_eval.vision_report evals/reports/google.json --verbose
 
 ```bash
 cd ios/CizgiCore
-swift test                                                        # 114 test
+swift test                                                        # 136 test (114 Mac'te doğrulandı, +22 henüz değil)
 ```
 
 Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir

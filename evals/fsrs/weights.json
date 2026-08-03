@@ -1,0 +1,10 @@
+{
+  "_comment": "FSRS-6 default (un-personalized) weights and target retention (ANA-PLAN §18.1: 'açık kaynak ve güncel FSRS algoritması kullanılmalı'). Sourced from the open-spaced-repetition project's published reference (fsrs-optimizer), cross-checked against two independent copies of the algorithm spec before being used here — not a number chosen by this codebase. These are the generic defaults every fresh FSRS deployment starts from; they are NOT tuned to this user's own review history (no history exists yet). A future personalization step (running the optimizer against this user's own ReviewLog data) would replace this file, not the code that reads it (§0.6).",
+  "version": "FSRS-6",
+  "weights": [
+    0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001,
+    1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014,
+    1.8729, 0.5425, 0.0912, 0.0658, 0.1542
+  ],
+  "desiredRetention": 0.9
+}

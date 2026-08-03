@@ -56,7 +56,7 @@ struct SettingsView: View {
                     LabeledContent("Aşama", value: environment.isBackendConfigured ? "Faz 3 — yapay zeka kart üretimi" : "Faz 2 — bulut OCR")
                     LabeledContent("Metin tanıma", value: environment.isBackendConfigured ? "Google Document AI" : "Yalnız cihaz (Türkçe okumaz)")
                     LabeledContent("Kart üretimi", value: environment.isBackendConfigured ? "Gerçek (backend)" : "Sahte sağlayıcı")
-                    LabeledContent("Tekrar algoritması", value: "Geçici (FSRS Faz 4)")
+                    LabeledContent("Tekrar algoritması", value: environment.scheduler is FSRSScheduler ? "FSRS-6" : "Geçici (bundled ağırlıklar okunamadı)")
                 } header: {
                     Text("Durum")
                 } footer: {
