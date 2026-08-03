@@ -25,7 +25,7 @@ python -m evals.ocr_eval.vision_report evals/reports/google.json --verbose
 
 ```bash
 cd ios/CizgiCore
-swift test                                                        # 136 test (114 Mac'te doğrulandı, +22 henüz değil)
+swift test                                                        # 136 test, hepsi Mac'te doğrulandı (2026-08-03)
 ```
 
 Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir

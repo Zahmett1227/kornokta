@@ -22,7 +22,7 @@ adımlara böl"). Sıra, sonraki adımın üstüne inşa edebileceği katmandan 
 | **F3-6** | Gemini el yazısı ikinci görüş sağlayıcısı | ✅ **gerçek anahtarla uçtan uca doğrulandı** — gerçek transkripsiyon, gerçek token sayıları. Hâlâ hiçbir uç noktaya/akışa bağlı değil (transkripsiyon uzlaştırması hâlâ tamamen deterministik) |
 | **F3-7** | `POST /api/cards` uç noktası, router'a bağlı | ✅ kod + test; sağlayıcı gerçek anahtarla doğrulandı ama bu HTTP uç noktası üzerinden (yalnız `scripts/cards.ts` üzerinden) henüz canlı denenmedi |
 | **F3-7.5** | Yerel canlı-doğrulama araçları (`npm run cards`, `npm run handwriting`) | ✅ — üç gerçek hata buldurdu (OpenAI şema, Gemini token bütçesi, OpenAI token bütçesi), sonunda ikisi de başarıyla tamamlandı |
-| **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | 🔶 kod + yeni testler yazıldı; bu ortamda Swift derleyicisi yok, **bir Mac'te `swift test` ile henüz doğrulanmadı** (aşağıya bakın) |
+| **F3-8** | iOS istemci entegrasyonu (`/api/cards` çağrısı, `ModelRun` kaydı, onay ekranına bağlama) | ✅ kod + yeni testler yazıldı; **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı** (2026-08-03, aşağıya bakın) |
 | **F3-9** | Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama | ✅ **tamamlandı** — ikisi de gerçek bir çıktı üretti |
 | **F3-10** | Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı) | ✅ **kullanıcı 2 gerçek pasaj / 8 gerçek kart üzerinde ölçümü yaptı ve yeterli gördü** (%100 kabul) — küçük bir örneklem, istatistiksel kanıt değil; kullanıcının kendi kararı (aşağıya bakın) |
 
@@ -281,13 +281,12 @@ hâlâ 0; gerçek harcama oluyor ama tahmini maliyet alanı bunu yansıtmıyor.
 Gerçek fiyat, sağlayıcının kendi hesap/fiyatlandırma sayfasından
 doldurulmalı (`docs/OPENAI-GEMINI-KURULUM.md`).
 
-## F3-8 — iOS istemci entegrasyonu (kod yazıldı, Mac'te henüz doğrulanmadı)
+## F3-8 — iOS istemci entegrasyonu (kod yazıldı, Mac'te doğrulandı)
 
 Bu ortamda Swift derleyicisi yok (ne yerel toolchain ne Docker), yani bu
-bölümdeki her şey **elle titiz gözden geçirme ile yazıldı, `swift test` ile
-hiç çalıştırılmadı**. Faz 1/2'nin kendi kuralı burada da geçerli: kullanıcı
-kendi Mac'inde `swift test` çalıştırıp sonucu bildirene kadar bu iş "tamam"
-sayılmıyor.
+bölümdeki her şey önce **elle titiz gözden geçirme ile yazıldı**, sonra
+kullanıcı kendi Mac'inde `swift test` çalıştırıp sonucu bildirdi:
+**136/136 test yeşil (2026-08-03)**.
 
 **Yeni dosya:** `ios/CizgiCore/Sources/CizgiCore/Providers/BackendCardProvider.swift`
 — `CardGenerating` protokolünün gerçek uygulaması, `BackendClient.swift`'in
@@ -346,8 +345,8 @@ dışında — `swift test` bunu hiç kapsamıyor, yalnız Xcode/cihazda deneneb
   göre "Kart üretimi: Sahte sağlayıcı" / "Gerçek (backend)" gösteriyor —
   önceden hep "Sahte sağlayıcı" yazıyordu, bu artık yanlış olurdu.
 
-**Yeni testler (`ios/CizgiCore/Tests/CizgiCoreTests/`, hepsi yazıldı, hiçbiri
-henüz çalıştırılmadı):**
+**Yeni testler (`ios/CizgiCore/Tests/CizgiCoreTests/`, hepsi yazıldı ve
+Mac'te doğrulandı):**
 - `BackendCardProviderTests.swift` — `BackendCardProvider.map`'i doğrudan
   test ediyor (HTTP mock'lama bu pakette hiç yok, `BackendClient` için de
   yok — aynı emsal): reddedilen kart düşüyor mu, `quick_confirm` onay
@@ -360,10 +359,10 @@ henüz çalıştırılmadı):**
   alıyor, backend yokken görüntü gönderilmiyor mu, `modelRun` outcome'a
   ulaşıyor mu, mock sağlayıcı `modelRun`'ı `nil` bırakıyor mu.
 
-**Kullanıcıdan istenen:** `cd ios/CizgiCore && swift test` bir Mac'te —
-mevcut 114 test hâlâ geçmeli, yeni testler de geçmeli. Geçmezse hata mesajı
-bu oturuma geri bildirilirse düzeltilir; bu depoda derleme aracı olmadığı
-için önceden yakalanamadı.
+**Sonuç:** Kullanıcı `cd ios/CizgiCore && swift test`'i kendi Mac'inde
+çalıştırdı — mevcut 114 test ve yeni testlerin tamamı dahil, **136/136
+yeşil** (2026-08-03). Bu depoda derleme aracı olmadığı için önceden
+yakalanamayan bir hata çıkmadı.
 
 ## F3-10 — gold pasaj kart kalite ölçümü altyapısı
 

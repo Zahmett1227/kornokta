@@ -118,8 +118,8 @@ bıraktığı yerler):
   gösteriyor ("FSRS-6" ya da "Geçici (bundled ağırlıklar okunamadı)") —
   önceden hep "Geçici (FSRS Faz 4)" yazıyordu, ki bu artık yanlış olurdu.
 
-**Yeni Swift testleri (`FSRSSchedulerTests.swift`, 6 test) — bu ortamda
-Swift derleyicisi olmadığı için henüz `swift test` ile çalıştırılmadı:**
+**Yeni Swift testleri (`FSRSSchedulerTests.swift`, 6 test) — kullanıcı
+tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03):**
 - `FSRSSharedCaseTests` — `evals/shared/fsrs-cases.json`'daki 21 vakanın
   hepsini Swift tarafında yeniden hesaplayıp Python referansıyla
   karşılaştırıyor (§18.1'in "referans implementasyonla karşılaştırma"
@@ -148,13 +148,12 @@ kaynak gösterme ve askıya alma zaten Faz 1'den beri çalışıyor.
    (`maxCardsPerPassage` farklı bir şey: pasaj başına üretilecek kart
    sayısı, günlük yeni kart tanıtım limiti değil).
 
-## Kullanıcıdan istenen
+## Sonuç
 
-**`cd ios/CizgiCore && swift test` bir Mac'te.** Bu ortamda Swift
-derleyicisi yok; FSRS portu ve 6 yeni testi hiç çalıştırılmadı. Mevcut 130
-test hâlâ geçmeli (formüller `ReviewScheduling` protokolünü değiştirmedi),
-+6 yeni test de geçmeli. Geçmezse hata mesajıyla bir sonraki oturuma
-gelinmeli.
+Kullanıcı `cd ios/CizgiCore && swift test`'i kendi Mac'inde çalıştırdı:
+**136/136 test yeşil** (2026-08-03) — mevcut 114 test (formüller
+`ReviewScheduling` protokolünü değiştirmedi) ve Faz 3/4'ün eklediği +22
+test (16'sı F3-8'den, 6'sı FSRS'ten) dahil.
 
 ## Test durumu
 
@@ -164,5 +163,4 @@ $ python -m pytest evals -q
               5 export-tazelik + 3 config-senkron + 2 saat dilimi güvenliği)
 ```
 
-Swift: 136 test yazıldı (114'ü önceki oturumlarda Mac'te doğrulandı, +22'si
-—16'sı Faz 3 F3-8'den, 6'sı bu Faz 4 FSRS işinden— henüz doğrulanmadı).
+Swift: 136 test, hepsi bir Mac'te doğrulandı (2026-08-03).

@@ -1,4 +1,4 @@
-# Çizgi — iOS (Faz 1 + Faz 2 tamam, Faz 3/4 istemci tarafı yazıldı)
+# Çizgi — iOS (Faz 1-4 tamam)
 
 Faz 1 hedefi (ANA-PLAN §25) tamam: uygulama çevrimdışı fotoğraf alıp kart
 oluşturabiliyor ve tekrar edebiliyor. Faz 2 de tamam: cihaz üstü işaret
@@ -9,17 +9,15 @@ girilmemişse kart üretimi hâlâ sahte (`MockCardProvider`); girilmişse
 de aynı `CardGenerating` protokolünün arkasında, Ayarlar'daki tek anahtar
 ikisini de birlikte açıp kapatıyor. Tekrar motoru artık gerçek FSRS-6
 (`FSRSScheduler`, §18 Faz 4) — bundled ağırlıklar okunamazsa eski
-`PlaceholderScheduler`'a düşüyor. **Bu istemci kod (Faz 3 ve Faz 4) yazıldı,
-henüz gerçek bir cihazda/derleyicide elle denenmedi** — bkz.
+`PlaceholderScheduler`'a düşüyor. Faz 3/4 istemci kodu **kullanıcı tarafından
+gerçek bir Mac'te `swift test` ile doğrulandı (2026-08-03)** — bkz.
 `docs/FAZ3-PLAN.md`, `docs/FAZ4-PLAN.md`.
 
-`swift test` gerçek bir Mac'te **114/114** geçiyor (2026-08-02) — kod elle
-incelendi ve ayrıca gerçek derleyicide doğrulandı. Faz 3/4 istemci kodu ve
-yeni testleri (`BackendCardProviderTests.swift`, `BackendPipelineTests.swift`
-içindeki `CardGenerationRequestTests`, `FSRSSchedulerTests.swift`) bu ortamda
-**yazıldı ama henüz bir Mac'te `swift test` ile doğrulanmadı** (+22 test) —
-bu depoda Swift derleyicisi yok. Bulunan hatalar ve düzeltmeleri
-`docs/FAZ2-PLAN.md`'de.
+`swift test` gerçek bir Mac'te **136/136** geçiyor (2026-08-03). Faz 1/2'nin
+114 testi daha önce (2026-08-02), Faz 3/4'ün eklediği +22 test
+(`BackendCardProviderTests.swift`, `BackendPipelineTests.swift` içindeki
+`CardGenerationRequestTests`, `FSRSSchedulerTests.swift`) şimdi doğrulandı.
+Bulunan hatalar ve düzeltmeleri `docs/FAZ2-PLAN.md`'de.
 
 ## Apple Vision Türkçe okumuyor — bilerek
 
@@ -55,12 +53,11 @@ cd ios/CizgiCore
 swift test
 ```
 
-136 test (114'ü Mac'te doğrulandı, +22'si henüz değil — yukarıya bakın):
-durum makinesi, işlem hattı, planlayıcı, görüntü deposu, backend istemcisi,
-işaret tespiti (paylaşılan Python vakalarına karşı sabitlenmiş), yükleme
-sıkıştırma, gerçek kart üretimi sağlayıcısı, FSRS-6 (paylaşılan Python
-vakalarına karşı sabitlenmiş). Kamera ve SwiftUI dışarıda kalır — onlar
-cihazda denenir.
+136 test, hepsi Mac'te doğrulandı (yukarıya bakın): durum makinesi, işlem
+hattı, planlayıcı, görüntü deposu, backend istemcisi, işaret tespiti
+(paylaşılan Python vakalarına karşı sabitlenmiş), yükleme sıkıştırma, gerçek
+kart üretimi sağlayıcısı, FSRS-6 (paylaşılan Python vakalarına karşı
+sabitlenmiş). Kamera ve SwiftUI dışarıda kalır — onlar cihazda denenir.
 
 ## Uygulamayı çalıştır
 
@@ -119,8 +116,6 @@ göndermektense hiç göndermemeyi seçiyor.
 
 | Eksik | Nerede |
 |---|---|
-| Gerçek kart üretimi (yapay zeka) — istemci kodu yazıldı, cihazda henüz denenmedi | Faz 3 |
-| FSRS-6 — istemci kodu yazıldı, cihazda henüz denenmedi (`docs/FAZ4-PLAN.md`) | Faz 4 |
 | Bildirimler, süre-bütçeli hızlı mod, ayrı "yeni kart limiti" | Faz 4/5 |
 
 İşaret tespiti kararsız kaldığında (`quick_confirm`) ya da hiçbir şey

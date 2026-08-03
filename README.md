@@ -12,22 +12,21 @@ Ana şartname:
 [`CLAUDE.md`](CLAUDE.md)'yi oku** — güncel durum, açık kararlar ve sıradaki
 adım orada.
 
-## Mevcut durum (2026-08-02)
+## Mevcut durum (2026-08-03)
 
 | Faz | Kapsam | Durum |
 |---|---|---|
 | **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
 | **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
 | **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
-| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | 🔶 Backend kodu, testleri, **gerçek anahtarla uçtan uca doğrulaması** ve **gold pasaj kart kalite ölçümü** (kullanıcıyla birlikte, %100 kabul) tamam. iOS istemcisi yazıldı ama bir Mac'te henüz `swift test` ile doğrulanmadı. Bkz. `docs/FAZ3-PLAN.md` |
-| **Faz 4** | FSRS tekrar motoru | 🔶 Gerçek FSRS-6 algoritması yazıldı (Python referansı + Swift portu), Faz 1'in offline review akışına bağlandı. Python tarafı bu ortamda çalıştırıldı; Swift portu bir Mac'te henüz doğrulanmadı. Bkz. `docs/FAZ4-PLAN.md` |
+| **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | ✅ Backend kodu, testleri, **gerçek anahtarla uçtan uca doğrulaması** ve **gold pasaj kart kalite ölçümü** (kullanıcıyla birlikte, %100 kabul) tamam. iOS istemcisi yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı**. Bkz. `docs/FAZ3-PLAN.md` |
+| **Faz 4** | FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (Python referansı + Swift portu), Faz 1'in offline review akışına bağlandı. Python tarafı bu ortamda çalıştırıldı; Swift portu **kullanıcı tarafından bir Mac'te doğrulandı**. Bkz. `docs/FAZ4-PLAN.md` |
 | **Faz 5** | Sertleştirme | Başlamadı |
 
 Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulandı:
 gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
-(`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te 114/114 test geçiyor;
-Faz 3/4 ile eklenen +22 test bu ortamda (Swift derleyicisi yok) henüz
-çalıştırılamadı.
+(`ı ş ğ İ ü ö ç` dahil). Swift kodu gerçek bir Mac'te **136/136 test** geçiyor
+(2026-08-03) — Faz 3/4 ile eklenen tüm testler dahil.
 
 Ayrıntılı özet: [`docs/FAZ2-PLAN.md`](docs/FAZ2-PLAN.md), [`docs/FAZ3-PLAN.md`](docs/FAZ3-PLAN.md), [`docs/FAZ4-PLAN.md`](docs/FAZ4-PLAN.md).
 
@@ -61,7 +60,7 @@ python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
 ## iOS mantığını test etme
 
 ```bash
-cd ios/CizgiCore && swift test                             # 136 test (114 Mac'te doğrulandı, +22 henüz değil)
+cd ios/CizgiCore && swift test                             # 136 test (hepsi Mac'te doğrulandı)
 ```
 
 ## Backend'i çalıştırma
