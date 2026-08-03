@@ -10,7 +10,8 @@ public enum AnnotationGrouper {
     public static func ground(
         selection: MarkerSelectionResult,
         localPage: RecognizedPage,
-        remotePage: RemotePage?
+        remotePage: RemotePage?,
+        discoverHandwriting: Bool = true
     ) -> MarkerSelectionResult {
         guard let remotePage else {
             return groundLocally(selection: selection, page: localPage)
@@ -34,7 +35,12 @@ public enum AnnotationGrouper {
             let contextTokens = remotePage.tokens.filter { token in
                 contextLines.contains { $0.tokenIds.contains(token.tokenId) }
             }
-            let handNotes = nearbyHandwrittenTokens(for: group, from: remotePage.tokens)
+            // Confirmation passes the user's chosen groups back in. Re-running
+            // discovery there would resurrect a handwriting candidate they
+            // explicitly rejected.
+            let handNotes = discoverHandwriting
+                ? nearbyHandwrittenTokens(for: group, from: remotePage.tokens)
+                : remotePage.tokens.filter { group.handwrittenNoteIds.contains($0.tokenId) }
             let layoutKind = layoutKind(for: group, lines: contextLines, tables: remotePage.tables)
             let heading = parentHeading(for: group, lines: remotePage.lines)
             return group.with(
@@ -50,14 +56,14 @@ public enum AnnotationGrouper {
                 layoutKind: layoutKind,
                 // A handwriting relationship is an explicitly uncertain
                 // visual claim until the user attaches or rejects it.
-                needsConfirmation: group.needsConfirmation || !handNotes.isEmpty
+                needsConfirmation: group.needsConfirmation || (discoverHandwriting && !handNotes.isEmpty)
             )
         }
 
         // A margin note far from all marked information stays a separate,
         // pending candidate rather than being attached to a random paragraph.
         let attachedHandwriting = Set(groups.flatMap(\.handwrittenNoteIds))
-        for token in remotePage.tokens where token.isHandwritten && !attachedHandwriting.contains(token.tokenId) {
+        for token in remotePage.tokens where discoverHandwriting && token.isHandwritten && !attachedHandwriting.contains(token.tokenId) {
             let box = token.boundingBox
             groups.append(
                 AnnotationGroup(
@@ -92,12 +98,22 @@ public enum AnnotationGrouper {
     ) -> MarkerSelectionResult {
         let lines = Dictionary(uniqueKeysWithValues: page.lines.map { ($0.id, $0) })
         let groups = merge(selection.groups).map { group in
-            let selected = group.selectedLineIds.compactMap { lines[$0] }
+            let explicit = group.selectedLineIds.compactMap { lines[$0] }
+            // A freehand confirmation rectangle has no line id. Ground it
+            // against local Vision geometry so offline confirmation is usable.
+            let selected = explicit.isEmpty
+                ? page.lines.filter { line in
+                    group.boundingBox.overlapOfSmallerArea(with: NormalizedRect(line.box)) >= 0.25
+                        || contains(group.boundingBox, NormalizedRect(line.box).center)
+                }
+                : explicit
             return group.with(
+                selectedLineIds: selected.map(\.id),
+                contextLineIds: selected.map(\.id),
                 selectedText: selected.map(\.text).joined(separator: " "),
                 contextText: selected.map(\.text).joined(separator: " "),
-                selectedTokenIds: group.selectedTokenIds,
-                contextTokenIds: group.contextTokenIds
+                selectedTokenIds: selected.flatMap { $0.tokens.map(\.id) },
+                contextTokenIds: selected.flatMap { $0.tokens.map(\.id) }
             )
         }
         return MarkerSelectionResult(

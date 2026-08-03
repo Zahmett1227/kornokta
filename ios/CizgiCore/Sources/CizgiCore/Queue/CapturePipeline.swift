@@ -214,7 +214,8 @@ public struct CapturePipeline: Sendable {
         subject: String? = nil,
         snapshot: OCRSnapshot? = nil,
         selectionOverride: [String]? = nil,
-        selectionResultOverride: MarkerSelectionResult? = nil
+        selectionResultOverride: MarkerSelectionResult? = nil,
+        completedGroupIds: [String] = []
     ) async -> PipelineOutcome {
         let recognized: RecognizedPage
         if let snapshot {
@@ -325,7 +326,8 @@ public struct CapturePipeline: Sendable {
         let groundedSelection = AnnotationGrouper.ground(
             selection: initialSelection,
             localPage: recognized,
-            remotePage: remote?.page
+            remotePage: remote?.page,
+            discoverHandwriting: selectionResultOverride == nil
         )
         let selection: MarkerSelectionResult
         if selectionResultOverride != nil {
@@ -344,7 +346,10 @@ public struct CapturePipeline: Sendable {
             selection: selection,
             userConfirmed: selectionResultOverride != nil || snapshot?.userConfirmed == true
         )
-        let selectedGroups = selection.groups.filter { selection.autoSelectedGroupIds.contains($0.id) }
+        let selectedGroups = selection.groups.filter {
+            selection.autoSelectedGroupIds.contains($0.id)
+                && !completedGroupIds.contains(Self.persistenceKey(for: $0))
+        }
         // Preserve the caller-facing local ids for compatibility and UI
         // selection. Grounded groups retain their separate primary OCR ids.
         let selectedLineIds = initialSelection.selectedLineIds
@@ -408,8 +413,8 @@ public struct CapturePipeline: Sendable {
             break
         }
 
+        var generated: [GeneratedAnnotationGroup] = []
         do {
-            var generated: [GeneratedAnnotationGroup] = []
             for group in selectedGroups {
                 let passage = Self.groupPassage(group)
                 guard !passage.isEmpty else {
@@ -498,6 +503,7 @@ public struct CapturePipeline: Sendable {
                 annotationGroups: selection.groups,
                 ocrSnapshot: checkpoint,
                 passage: firstPassage,
+                generatedGroups: generated,
                 failure: kind,
                 reconciliation: remote?.reconciliation
             )
@@ -511,6 +517,7 @@ public struct CapturePipeline: Sendable {
                 annotationGroups: selection.groups,
                 ocrSnapshot: checkpoint,
                 passage: firstPassage,
+                generatedGroups: generated,
                 failure: .providerUnavailable,
                 reconciliation: remote?.reconciliation
             )
@@ -526,6 +533,13 @@ public struct CapturePipeline: Sendable {
         case .providerUnavailable: return .providerUnavailable
         case .sourceInsufficient: return .invalidResponse
         }
+    }
+
+    /// `TextRegion` predates a first-class annotation-group id. Its stable
+    /// evidence set is therefore the persistence identity used to skip work
+    /// that succeeded before a later group failed.
+    static func persistenceKey(for group: AnnotationGroup) -> String {
+        group.evidenceIds.sorted().joined(separator: ":")
     }
 
     /// Sends a page to the backend once. Group-to-token grounding happens only

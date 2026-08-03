@@ -172,7 +172,8 @@ final class ProcessingQueue: ObservableObject {
             subject: page.source?.subject,
             snapshot: decodedSnapshot(for: page),
             selectionOverride: lineSelection,
-            selectionResultOverride: selectionResult
+            selectionResultOverride: selectionResult,
+            completedGroupIds: completedGroupIds(for: page)
         )
 
         apply(outcome, to: page, context: context)
@@ -192,6 +193,14 @@ final class ProcessingQueue: ObservableObject {
         // path below.
         if outcome.finalState != .ready, let snapshot = outcome.ocrSnapshot {
             page.ocrSnapshotData = try? JSONEncoder().encode(snapshot)
+        }
+
+        // Keep completed groups before returning a retryable failure. A later
+        // retry receives their ids and generates only the unfinished groups.
+        if outcome.finalState != .ready {
+            for generated in outcome.generatedGroups where !hasPersistedGroup(generated.group, on: page) {
+                persist(generated: generated, outcome: outcome, page: page, context: context)
+            }
         }
 
         switch outcome.finalState {
@@ -347,6 +356,17 @@ final class ProcessingQueue: ObservableObject {
             )
             context.insert(run)
         }
+    }
+
+    private func completedGroupIds(for page: CapturedPage) -> [String] {
+        page.regions.compactMap { region in
+            region.evidenceIds.isEmpty ? nil : region.evidenceIds.sorted().joined(separator: ":")
+        }
+    }
+
+    private func hasPersistedGroup(_ group: AnnotationGroup, on page: CapturedPage) -> Bool {
+        let key = group.evidenceIds.sorted().joined(separator: ":")
+        return page.regions.contains { $0.evidenceIds.sorted().joined(separator: ":") == key }
     }
 
     private func decodedSnapshot(for page: CapturedPage) -> OCRSnapshot? {

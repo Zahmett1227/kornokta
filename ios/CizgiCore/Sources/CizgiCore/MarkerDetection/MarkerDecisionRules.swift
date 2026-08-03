@@ -157,8 +157,10 @@ extension MarkerDetector {
         tokens: [TokenBox],
         documentQuality: Double = 0.9
     ) -> [TokenDetection] {
-        tokens.map { token in
+        let parentLines = Self.parentLines(for: tokens)
+        return tokens.map { token in
             let box = token.lineBox
+            let parent = parentLines[token.lineId] ?? box
             return TokenDetection(
                 token: token,
                 detection: judge(
@@ -168,9 +170,27 @@ extension MarkerDetector {
                         underline: underlineEvidence(in: buffer, line: box),
                         ocrConfidence: token.ocrConfidence,
                         documentQuality: documentQuality,
-                        neighboringSeparation: 1.0
+                        neighboringSeparation: Self.neighboringSeparation(parent, among: Array(parentLines.values))
                     )
                 )
+            )
+        }
+    }
+
+    /// Reconstruct each OCR line from its token bounds. Token detection has no
+    /// separate line input, but its confidence must use the same real spacing
+    /// measurement as line detection rather than a permanent perfect score.
+    private static func parentLines(for tokens: [TokenBox]) -> [String: LineBox] {
+        Dictionary(grouping: tokens, by: \.lineId).mapValues { members in
+            let first = members[0]
+            let minX = members.map(\.x).min() ?? first.x
+            let minY = members.map(\.y).min() ?? first.y
+            let maxX = members.map { $0.x + $0.width }.max() ?? first.x + first.width
+            let maxY = members.map { $0.y + $0.height }.max() ?? first.y + first.height
+            return LineBox(
+                lineId: first.lineId, x: minX, y: minY,
+                width: max(1, maxX - minX), height: max(1, maxY - minY),
+                ocrConfidence: members.map(\.ocrConfidence).reduce(0, +) / Double(members.count)
             )
         }
     }

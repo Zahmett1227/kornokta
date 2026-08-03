@@ -36,6 +36,50 @@ private func markerGroup(_ id: String, evidence: AnnotationEvidence) -> Annotati
 }
 
 final class AnnotationGrouperTests: XCTestCase {
+    func testOfflineManualRectangleUsesLocalLineGeometry() {
+        let manual = AnnotationGroup(
+            id: "manual", evidenceIds: [], selectedLineIds: [], contextLineIds: [],
+            boundingBox: NormalizedRect(x: 0.15, y: 0.20, width: 0.35, height: 0.05),
+            confidence: 1, needsConfirmation: false, selectionType: .manual
+        )
+        let local = RecognizedPage(lines: [RecognizedLine(
+            id: "local", text: "Yerel seçilmiş pasaj", confidence: 0.9,
+            box: CGRect(x: 0.10, y: 0.19, width: 0.50, height: 0.06)
+        )], elapsed: 0)
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(groups: [manual], autoSelectedGroupIds: ["manual"]),
+            localPage: local, remotePage: nil
+        )
+
+        XCTAssertEqual(grounded.groups.first?.selectedText, "Yerel seçilmiş pasaj")
+        XCTAssertEqual(grounded.groups.first?.selectedLineIds, ["local"])
+    }
+
+    func testConfirmationDoesNotRediscoverRejectedHandwriting() {
+        let evidence = markerEvidence("e", line: "local", token: "token", x: 0.2, y: 0.2)
+        let base = markerGroup("group", evidence: evidence)
+        let page = RemotePage(
+            imageWidth: 100, imageHeight: 100, elapsedMs: 1,
+            lines: [annotationLine("remote", "Seçili bilgi", x: 0.1, y: 0.19)],
+            tokens: [
+                annotationToken("text", "bilgi", x: 0.2, y: 0.2),
+                RemoteToken(tokenId: "note", text: "not", confidence: 0.8, x: 0.8, y: 0.2, width: 0.08, height: 0.03, isHandwritten: true)
+            ]
+        )
+        let initial = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [evidence], groups: [base], autoSelectedGroupIds: ["group"]),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let confirmed = initial.groups.filter { $0.selectionType != .handwriting }.map { $0.markedConfirmed() }
+        let resumed = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [evidence], groups: confirmed, autoSelectedGroupIds: ["group"]),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page, discoverHandwriting: false
+        )
+
+        XCTAssertFalse(resumed.groups.contains { $0.selectionType == .handwriting })
+    }
+
     func testShortPhraseUnderlineUsesTokenGeometryAndExpandsOnlyToItsLine() {
         let evidence = markerEvidence("e", line: "vision_0", token: "vision_0_t", x: 0.44, y: 0.20)
         let group = markerGroup("g", evidence: evidence)
@@ -158,6 +202,24 @@ final class PageOverlayTransformTests: XCTestCase {
 }
 
 final class TokenMarkerDetectionTests: XCTestCase {
+    func testTokenDetectionUsesItsParentLineSeparation() throws {
+        let config = try MarkerConfig.bundled()
+        let detector = MarkerDetector(config: config)
+        let width = 120
+        let height = 100
+        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw XCTSkip("CGContext oluşturulamadı") }
+        context.setFillColor(CGColor.sRGB(1, 1, 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else { throw XCTSkip("Görüntü üretilemedi") }
+        let page = try PixelBuffer(cgImage: image)
+        let tokens = [
+            TokenBox(tokenId: "a", lineId: "a", x: 10, y: 20, width: 30, height: 16),
+            TokenBox(tokenId: "b", lineId: "b", x: 10, y: 37, width: 30, height: 16)
+        ]
+        let result = detector.analyze(page: page, tokens: tokens)
+        XCTAssertLessThan(result[0].detection.neighboringSeparation, 1)
+    }
+
     func testShortUnderlineIsDetectedAtTokenLevelEvenWhenItWouldBeTinyOnTheLine() throws {
         let config = try MarkerConfig.bundled()
         let detector = MarkerDetector(config: config)
