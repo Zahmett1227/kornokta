@@ -158,3 +158,48 @@ Bu bir gevşetme değil, **yanlış yerdeki bir kapının kaldırılması**:
   içindeki örnek etiket metni de doğru yöne çevrildi — bu testin kendisi
   `reconcile.ts`'i çalıştırmıyor (sentetik bir `RemoteReconciliation`
   kuruyor), yalnızca örneğin doğruluğu için düzeltildi.
+
+## İkinci düzeltme turu — aynı PR incelemesinde bulunan bir P1 + bir P2
+
+Codex, hypo/hyper düzeltmesinin ilk halini de incelemeye devam etti ve iki
+gerçek bulgu daha çıkardı.
+
+**P1 — `explanation`'daki uydurma içerik kendi bayrağına güveniyordu.**
+Kart üretim promptu v1.1 (§15.2), modele `explanation` alanında kaynak dışı
+bağlam ekleme izni veriyor, `enriched=true` işaretiyle. Ama `cardGate.ts`
+yalnızca `front`/`back`'i `sourceQuote`'a karşı kontrol ediyordu
+(`cardIntroducesUnsourcedCriticalToken`) ve `enriched` bayrağı yanlışlıkla
+`false` kalırsa (model unutursa/yanlış işaretlerse) `explanation`'daki
+uydurma bir doz/yol hiçbir kontrolden geçmeden otomatik kabul edilebilirdi —
+ADR-001'in "modelin kendi bayrağı taban, tavan değil" kuralının tam olarak
+yakalamak istediği hata sınıfı.
+
+**Düzeltme:** `explanationIntroducesUnsourcedCriticalToken` eklendi
+(`cardGate.ts`) — `explanation`'ı da aynı `addedCriticalTokens` ile
+`sourceQuote`'a karşı kontrol ediyor, **`card.enriched`'in değerinden
+bağımsız olarak**. Bulunursa `quick_confirm`'e yükseltiyor (ret değil —
+`explanation` kasıtlı olarak kaynak dışı içerik taşıyabilir, yalnızca
+onaysız geçemez).
+
+**P2 — Türkçe noktalı büyük İ, `hipo`/`hiper` önek eşleşmesini bozuyordu.**
+`canonical_hypo_hyper`/`canonicalHypoHyper`, önek testinden önce
+`casefold()`/`toLowerCase()` çağırıyordu. Türkçe `İ` (U+0130) varsayılan
+küçük harfe çevrildiğinde `i` + birleşen nokta (U+0307) üretir — yani
+`"HİPERSENSİTİVİTE".toLowerCase()` düz `"hiper"` ile **başlamaz**, birleşen
+noktalı bir dizgiyle başlar. Sonuç: doğru büyük harfli bir Türkçe başlıkta
+(`foldHypoHyper: true` ile bile) suffix farkı hâlâ kritik uyuşmazlık
+sayılırdı — düzeltmenin kendisi tam da düzeltmesi gereken metinde sessizce
+başarısız oluyordu.
+
+**Düzeltme:** Her iki fonksiyon da artık `fold_diacritics`/`foldDiacritics`'i
+(zaten var olan, `İ`→`I` gibi tek karakterlik bir çeviri tablosu) önek
+testinden **önce** çalıştırıyor — `casefold`/`toLowerCase`'in kendisi asla
+birleşen bir işaret üretemeyecek hale geliyor.
+
+Regresyon: `evals/tests/test_critical_tokens.py::TestCanonicalHypoHyper`,
+`backend/tests/criticalTokens.test.ts` (`canonicalHypoHyper` describe),
+`backend/tests/cardGate.test.ts` (Codex'in tam senaryosu: `enriched: false`
+bırakılmış ama `explanation`'da uydurma doz olan bir kart hâlâ
+`quick_confirm` alıyor mu).
+
+Testler: Python 511/511, backend 449/449 (bu ortamda koşuldu).

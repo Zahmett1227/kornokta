@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { cardIntroducesUnsourcedCriticalToken, runCardGate } from "../providers/cardGate.js";
+import {
+  cardIntroducesUnsourcedCriticalToken,
+  explanationIntroducesUnsourcedCriticalToken,
+  runCardGate,
+} from "../providers/cardGate.js";
 import type { Card, LlmOutput } from "../schemas/llmOutputTypes.js";
 
 function baseCard(overrides: Partial<Card> = {}): Card {
@@ -49,6 +53,25 @@ describe("cardIntroducesUnsourcedCriticalToken", () => {
   });
 });
 
+describe("explanationIntroducesUnsourcedCriticalToken (PR #7 review)", () => {
+  it("is clean when explanation adds no critical value", () => {
+    // A negation ('içermez') is itself a critical-token class (§10.5), so this
+    // deliberately avoids one — the point is ordinary prose, not an
+    // accidental second critical value to detect.
+    const card = baseCard({ explanation: "Bu bir mekanizma açıklamasıdır." });
+    expect(explanationIntroducesUnsourcedCriticalToken(card)).toEqual([]);
+  });
+
+  it("is clean when explanation is empty", () => {
+    expect(explanationIntroducesUnsourcedCriticalToken(baseCard({ explanation: "" }))).toEqual([]);
+  });
+
+  it("flags a critical value in explanation regardless of card.enriched", () => {
+    const card = baseCard({ explanation: "Genellikle 10 mg IV olarak da uygulanabilir." });
+    expect(explanationIntroducesUnsourcedCriticalToken(card)).not.toEqual([]);
+  });
+});
+
 describe("runCardGate", () => {
   it("auto-accepts a clean, source-faithful card with no risk flags", () => {
     const report = runCardGate(
@@ -76,6 +99,27 @@ describe("runCardGate", () => {
       { maxCardsPerKnowledgeUnit: 4 },
     );
     expect(report.verdicts[0]!.decision).toBe("reject");
+  });
+
+  it("still asks for confirmation when explanation invents a value and the model mislabels enriched=false (PR #7 review)", () => {
+    // The exact failure Codex found: front/back are clean and self-reported
+    // enriched=false, so `cardIntroducesUnsourcedCriticalToken` and the
+    // enriched-card rule both stay silent — only the independent explanation
+    // check catches it.
+    const report = runCardGate(
+      {
+        cards: [
+          baseCard({
+            explanation: "Klinikte genellikle 10 mg IV olarak da uygulanır.",
+            enriched: false,
+          }),
+        ],
+        quality: quality(),
+      },
+      { maxCardsPerKnowledgeUnit: 4 },
+    );
+    expect(report.verdicts[0]!.decision).toBe("quick_confirm");
+    expect(report.verdicts[0]!.reasons.join(" ")).toContain("Açıklama");
   });
 
   it("only asks for confirmation, not rejection, when the same invented value is on an enriched card (§12.2)", () => {

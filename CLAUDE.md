@@ -80,13 +80,24 @@ yorumları **İngilizce**.
    ${token.key}` şablon dizgisinde beş yerde gerçek bir boşluk yerine NUL
    (`\x00`) baytı vardı — sessizce çalışıyordu (yalnız iç anahtar olarak
    kullanılıyor) ama görünmez bir kusurdu, düzeltildi.
+6. **(Bu oturum, aynı PR'ın ikinci incelemesi)** Codex bir P1 + bir P2 daha
+   buldu. P1: `explanation`'daki uydurma içerik yalnızca modelin kendi
+   `enriched` bayrağına güveniyordu — bayrak yanlışlıkla `false` kalırsa hiç
+   yakalanmıyordu (ADR-001'in "bayrak taban, tavan değil" kuralının tam
+   ihlali). Düzeltme: `explanationIntroducesUnsourcedCriticalToken`
+   (`cardGate.ts`) artık `enriched`'ten bağımsız kontrol ediyor. P2:
+   `canonical_hypo_hyper`/`canonicalHypoHyper`, Türkçe noktalı büyük `İ`'yi
+   `casefold`/`toLowerCase`'den önce katlamıyordu — `İ` varsayılan küçük
+   harfte birleşen noktalı bir `i`ye dönüşüp önek eşleşmesini bozuyordu.
+   Düzeltme: zaten var olan `fold_diacritics`/`foldDiacritics` önce
+   çalıştırılıyor. Ayrıntı: ADR-003'ün "İkinci düzeltme turu" bölümü.
 
 **Test durumu:**
-- Python (`evals/`): 503 test, yeşil — `python -m pytest evals -q` (bu
+- Python (`evals/`): 511 test, yeşil — `python -m pytest evals -q` (bu
   oturumda gerçekten çalıştırıldı)
-- Backend (`backend/`): **439 test**, yeşil — `npm test` (bu oturumda
-  gerçekten çalıştırıldı; +2 bu oturumun prompt testleri, mevcut
-  reconcile/ocrEndpoint testleri yeni davranışa göre güncellendi)
+- Backend (`backend/`): **449 test**, yeşil — `npm test` (bu oturumda
+  gerçekten çalıştırıldı; PR #7 incelemesinin iki turunda eklenen testler
+  dahil — gate/cardGate/criticalTokens'a Codex'in senaryoları)
 - Swift (`ios/CizgiCore/`): 153 test. **Kullanıcı bu oturumda `swift test`
   çalıştırdı, 153/153 yeşil** — önceki oturumun açık kalan riski (sütun
   tespitinin son 8 düzeltmesi hiç derlenmemişti) kapandı. **Dikkat:** bu
@@ -156,9 +167,9 @@ elle senkron tutma, üret ve kilitle.
 Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
-python -m pytest evals -q                    # 503 test
+python -m pytest evals -q                    # 511 test
 cd ios/CizgiCore && swift test                # 153 test (153/153 Mac'te doğrulandı; bu oturumun etiket-metni değişikliği sonrası henüz yeniden koşulmadı, yukarı bak)
-cd backend && npm test                        # 439 test
+cd backend && npm test                        # 449 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 

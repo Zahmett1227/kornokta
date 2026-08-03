@@ -255,6 +255,33 @@ class TestRoute:
         assert "route" not in classes_of(text)
 
 
+class TestCanonicalHypoHyper:
+    @pytest.mark.parametrize(
+        "surface, prefix",
+        [
+            ("hipersensitivite", "hiper"),
+            ("hipersenstvite", "hiper"),
+            ("HIPERKALEMI", "hiper"),
+            ("hipokalemi", "hipo"),
+        ],
+    )
+    def test_folds_to_polarity_prefix(self, surface, prefix):
+        from evals.ocr_eval.critical_tokens import canonical_hypo_hyper
+
+        assert canonical_hypo_hyper(surface) == prefix
+
+    def test_turkish_dotted_capital_i_does_not_defeat_the_prefix_match(self):
+        # PR #7 review: 'İ'.casefold() alone yields 'i' + a combining dot
+        # above (U+0307), so a correctly-cased Turkish heading like
+        # 'HİPERSENSİTİVİTE' would compare unequal to 'hipersenstvite' and
+        # both would be reported as distinct, unfolded surfaces — silently
+        # defeating this function on exactly the text it exists to fold.
+        from evals.ocr_eval.critical_tokens import canonical_hypo_hyper
+
+        assert canonical_hypo_hyper("HİPERSENSİTİVİTE") == "hiper"
+        assert canonical_hypo_hyper("Hİpokalemi") == "hipo"
+
+
 class TestWordlists:
     def test_drug_name_from_wordlist(self):
         wl = Wordlists(drug_names={"adrenalin", "amiodaron"})

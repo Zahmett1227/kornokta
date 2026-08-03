@@ -89,6 +89,27 @@ export function cardIntroducesUnsourcedCriticalToken(
   return addedCriticalTokens(card.sourceQuote, `${card.front}\n${card.back}`);
 }
 
+/**
+ * Checks whether the card's own `explanation` introduces a critical value not
+ * backed by its cited `sourceQuote`.
+ *
+ * The card prompt (v1.1, §12.2) lets `explanation` carry non-source context
+ * (mechanism, clinical relevance) specifically so `front`/`back` don't have
+ * to — but that content still must not silently carry an invented dose,
+ * route, or diagnosis past the user. This does **not** trust the model's own
+ * `enriched` flag as the signal: ADR-001's rule ("a self-reported flag is a
+ * floor, never a ceiling") applies here too. Without this, a model that adds
+ * such content but returns `enriched=false` — by mistake or otherwise —
+ * would pass both this check and the enriched-card rule below with nothing
+ * catching it (PR #7 review, docs/ADR-003).
+ */
+export function explanationIntroducesUnsourcedCriticalToken(
+  card: Pick<Card, "explanation" | "sourceQuote">,
+): string[] {
+  if (!card.explanation.trim()) return [];
+  return addedCriticalTokens(card.sourceQuote, card.explanation);
+}
+
 function verdictForCard(card: Card): CardVerdict {
   const reasons: string[] = [];
   let decision: CardDecision = "auto_accept";
@@ -111,6 +132,15 @@ function verdictForCard(card: Card): CardVerdict {
         `Kaynağa sadık kart, kaynakta olmayan kritik değer içeriyor: ${invented.join(", ")} (§0.5, §19.3).`,
       );
     }
+  }
+
+  // Independent of `card.enriched` — see the function's own docstring for why.
+  const explanationInvented = explanationIntroducesUnsourcedCriticalToken(card);
+  if (explanationInvented.length > 0) {
+    decision = worseOf(decision, "quick_confirm");
+    reasons.push(
+      `Açıklama kaynakta olmayan kritik değer içeriyor: ${explanationInvented.join(", ")} (§12.2, §19.2).`,
+    );
   }
 
   if (!card.sourceFaithful && !card.enriched) {
