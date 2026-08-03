@@ -223,6 +223,51 @@ final class BackendPipelineTests: XCTestCase {
         XCTAssertEqual(backendRequests.count, 1, "Snapshot devamında OCR yeniden çağrılmamalı")
     }
 
+    func testConfirmationSnapshotKeepsUploadWhenCloudOCRClientIsDetached() async {
+        let initialBackend = StubBackend(.success(remote(cloudPage, decision: .quickConfirm)))
+        let initialPipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            backend: initialBackend
+        )
+        let first = await initialPipeline.run(jobId: "job-detached-backend", imageURL: imageURL)
+        guard let snapshot = first.ocrSnapshot else {
+            return XCTFail("Onay için OCR snapshot'ı saklanmalı")
+        }
+
+        let groups = snapshot.selection.groups.map { $0.markedConfirmed() }
+        let confirmed = MarkerSelectionResult(
+            evidence: snapshot.selection.evidence,
+            groups: groups,
+            autoSelectedGroupIds: groups.map(\.id)
+        )
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(
+                canonicalClaim: "adrenalin",
+                cards: [GeneratedCard(
+                    type: .directRecall, front: "?", back: "adrenalin", sourceQuote: "adrenalin"
+                )]
+            )
+        )
+        let resumedPipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator
+        )
+
+        let resumed = await resumedPipeline.run(
+            jobId: "job-detached-backend",
+            imageURL: imageURL,
+            snapshot: snapshot,
+            selectionResultOverride: confirmed
+        )
+
+        XCTAssertEqual(resumed.finalState, .ready)
+        let request = await generator.lastRequest
+        XCTAssertEqual(request?.imageData, try? Data(contentsOf: imageURL))
+        XCTAssertEqual(request?.mimeType, "image/jpeg")
+    }
+
     func testRejectedPageNeverBecomesACard() async {
         let pipeline = CapturePipeline(
             recognizer: StubRecognizer(lines: localPage),
