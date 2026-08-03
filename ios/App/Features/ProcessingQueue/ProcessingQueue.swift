@@ -401,6 +401,7 @@ final class ProcessingQueue: ObservableObject {
     private static func persistedLayoutKind(_ kind: AnnotationLayoutKind) -> LayoutKind {
         switch kind {
         case .paragraph: return .paragraph
+        case .block: return .paragraph
         case .bullet: return .bullet
         case .column: return .column
         case .tableCandidate: return .tableCandidate
