@@ -268,11 +268,16 @@ function coexist(a: Positioned, b: Positioned): boolean {
  * would call two groups "overlapping" whenever one's total span happens to
  * enclose the other's, even with a real gap between them and no line ever
  * actually beside another; or would reject two ordinary columns whenever
- * their (never pixel-aligned) baselines happen to land in different bands. */
+ * their (never pixel-aligned) baselines happen to land in different bands.
+ *
+ * Checked against the *shorter* side only: genuine comparison columns are
+ * routinely unequal length (six Nekroz bullets beside two Apoptoz ones), and
+ * the longer column's lines past where the shorter one ends are not evidence
+ * against coexistence — they are simply where it keeps going alone. */
 function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
-  const aMatched = a.filter((item) => b.some((other) => coexist(item, other))).length;
-  const bMatched = b.filter((item) => a.some((other) => coexist(item, other))).length;
-  return aMatched / a.length >= MIN_VERTICAL_OVERLAP && bMatched / b.length >= MIN_VERTICAL_OVERLAP;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  const matched = shorter.filter((item) => longer.some((other) => coexist(item, other))).length;
+  return matched / shorter.length >= MIN_VERTICAL_OVERLAP;
 }
 
 /**

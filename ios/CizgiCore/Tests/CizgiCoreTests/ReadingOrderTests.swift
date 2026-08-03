@@ -55,6 +55,20 @@ final class ReadingOrderTests: XCTestCase {
         XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
     }
 
+    func testFindsGenuineColumnsEvenWhenOneSideHasFarFewerLinesThanTheOther() {
+        // A real comparison list is routinely unequal length: six Nekroz
+        // bullets beside only two Apoptoz ones. The two columns coexist for
+        // the rows they share; the left column's extra four lines past where
+        // the right one ends are not evidence against that — requiring half
+        // of *both* sides to match would reject this (2/6 on the left) and
+        // fall back to row-by-row.
+        let left = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map { box(x: 0.05, y: $0, width: 0.4) }
+        let right = [0.1, 0.15].map { box(x: 0.55, y: $0, width: 0.4) }
+        let boundaries = ReadingOrder.columnBoundaries(for: left + right)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
+    }
+
     func testToleratesAPageHeaderAndAFooterTogetherNotJustOneOutlier() {
         // A title at the top and a page number at the bottom both span the
         // full width, so together they cover every bucket the real gutter

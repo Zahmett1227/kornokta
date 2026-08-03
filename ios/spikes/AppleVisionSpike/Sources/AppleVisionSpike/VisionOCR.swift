@@ -133,11 +133,16 @@ struct VisionOCR {
     /// between them and no box ever actually beside another; or would reject
     /// two ordinary columns whenever their (never pixel-aligned) baselines
     /// happen to land in different bands.
+    ///
+    /// Checked against the *shorter* side only: genuine comparison columns
+    /// are routinely unequal length (six Nekroz bullets beside two Apoptoz
+    /// ones), and the longer column's boxes past where the shorter one ends
+    /// are not evidence against coexistence — they are simply where it keeps
+    /// going alone.
     static func overlapsVertically(_ a: [CGRect], _ b: [CGRect]) -> Bool {
-        let aMatched = a.filter { box in b.contains { coexist(box, $0) } }.count
-        let bMatched = b.filter { box in a.contains { coexist(box, $0) } }.count
-        return Double(aMatched) / Double(a.count) >= minVerticalOverlap
-            && Double(bMatched) / Double(b.count) >= minVerticalOverlap
+        let (shorter, longer) = a.count <= b.count ? (a, b) : (b, a)
+        let matched = shorter.filter { box in longer.contains { coexist(box, $0) } }.count
+        return Double(matched) / Double(shorter.count) >= minVerticalOverlap
     }
 
     /// Finds x-positions of vertical whitespace gutters wide and central

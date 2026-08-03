@@ -219,6 +219,19 @@ describe("columnBoundaries", () => {
     expect(boundaries[0]).toBeCloseTo(0.5, 1);
   });
 
+  it("finds genuine columns even when one side has far fewer lines than the other", () => {
+    // A real comparison list is routinely unequal length: six Nekroz bullets
+    // beside only two Apoptoz ones. The two columns coexist for the rows they
+    // share; the left column's extra four lines past where the right one
+    // ends are not evidence against that — requiring half of *both* sides to
+    // match would reject this (2/6 on the left) and fall back to row-by-row.
+    const left = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map((y) => ({ x: 0.05, y, width: 0.4, height: 0.03 }));
+    const right = [0.1, 0.15].map((y) => ({ x: 0.55, y, width: 0.4, height: 0.03 }));
+    const boundaries = columnBoundaries([...left, ...right]);
+    expect(boundaries).toHaveLength(1);
+    expect(boundaries[0]).toBeCloseTo(0.5, 1);
+  });
+
   it("tolerates a page header and a footer together, not just one outlier", () => {
     // A title at the top and a page number at the bottom both span the full
     // width, so together they cover every bucket the real gutter occupies —
