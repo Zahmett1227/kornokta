@@ -302,9 +302,21 @@ export function columnBoundaries(items: Positioned[]): number[] {
     }
     const start = index;
     while (index < COLUMN_BUCKETS && coverage[index]! <= crossingTolerance) index++;
+    // A run reaching all the way to either edge is the page's own outer
+    // margin, however wide — not a gap *between* two columns of text, which
+    // has content on both sides by definition. The center check alone can
+    // miss this: a wide trailing margin (e.g. a short right column ending at
+    // x=0.84) can have its center fall outside `COLUMN_EDGE_MARGIN` even
+    // though it never separates two things.
+    const touchesEdge = start === 0 || index === COLUMN_BUCKETS;
     const width = (index - start) / COLUMN_BUCKETS;
     const center = (start + index) / 2 / COLUMN_BUCKETS;
-    if (width >= MIN_GUTTER_WIDTH && center >= COLUMN_EDGE_MARGIN && center <= 1 - COLUMN_EDGE_MARGIN) {
+    if (
+      !touchesEdge &&
+      width >= MIN_GUTTER_WIDTH &&
+      center >= COLUMN_EDGE_MARGIN &&
+      center <= 1 - COLUMN_EDGE_MARGIN
+    ) {
       boundaries.push(center);
     }
   }

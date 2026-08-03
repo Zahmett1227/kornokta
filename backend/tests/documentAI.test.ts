@@ -190,6 +190,23 @@ describe("columnBoundaries", () => {
     expect(boundaries[0]).toBeCloseTo(0.5, 1);
   });
 
+  it("does not let a short right column's trailing margin masquerade as a second gutter", () => {
+    // The right column ends at x=0.84 (a short comparison-list entry), so its
+    // trailing margin to the page edge is 16% wide — wide enough to pass the
+    // gutter-width check, and its center (0.92) is right at the old edge
+    // threshold. Without rejecting edge-touching runs outright, this reads as
+    // a second "gutter", produces an empty third column, fails the
+    // minimum-lines check, and the whole (otherwise valid) two-column split
+    // is discarded — leaving the page interleaved row by row again.
+    const items: Positioned[] = [0.1, 0.2, 0.3].flatMap((y) => [
+      { x: 0.05, y, width: 0.4, height: 0.03 },
+      { x: 0.5, y, width: 0.34, height: 0.03 },
+    ]);
+    const boundaries = columnBoundaries(items);
+    expect(boundaries).toHaveLength(1);
+    expect(boundaries[0]).toBeCloseTo(0.45, 1);
+  });
+
   it("ignores a narrow near-edge gap as an ordinary margin, not a column break", () => {
     // Content spans [0.05, 0.97] almost fully; the only "gaps" are the page
     // margins on either side, which must not read as a column split.

@@ -156,9 +156,16 @@ struct VisionOCR {
             guard coverage[index] <= crossingTolerance else { index += 1; continue }
             let start = index
             while index < columnBuckets, coverage[index] <= crossingTolerance { index += 1 }
+            // A run reaching all the way to either edge is the page's own
+            // outer margin, however wide — not a gap *between* two columns of
+            // text, which has content on both sides by definition. The center
+            // check alone can miss this: a wide trailing margin (e.g. a short
+            // right column ending at x=0.84) can have its center fall outside
+            // `columnEdgeMargin` even though it never separates two things.
+            let touchesEdge = start == 0 || index == columnBuckets
             let width = Double(index - start) / Double(columnBuckets)
             let center = (Double(start) + Double(index)) / 2 / Double(columnBuckets)
-            if width >= minGutterWidth, center >= columnEdgeMargin, center <= 1 - columnEdgeMargin {
+            if !touchesEdge, width >= minGutterWidth, center >= columnEdgeMargin, center <= 1 - columnEdgeMargin {
                 boundaries.append(center)
             }
         }

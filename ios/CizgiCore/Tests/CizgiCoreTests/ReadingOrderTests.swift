@@ -26,6 +26,22 @@ final class ReadingOrderTests: XCTestCase {
         XCTAssertEqual(boundaries[0], 0.5, accuracy: 0.05)
     }
 
+    func testDoesNotLetAShortRightColumnsTrailingMarginMasqueradeAsASecondGutter() {
+        // The right column ends at x=0.84 (a short comparison-list entry), so
+        // its trailing margin to the page edge is 16% wide — wide enough to
+        // pass the gutter-width check, with a center right at the old edge
+        // threshold. Without rejecting edge-touching runs outright, this
+        // reads as a second "gutter", produces an empty third column, fails
+        // the minimum-lines check, and the whole two-column split is
+        // discarded — leaving the page interleaved row by row again.
+        let boxes = [0.1, 0.2, 0.3].flatMap { y in
+            [box(x: 0.05, y: y, width: 0.4), box(x: 0.5, y: y, width: 0.34)]
+        }
+        let boundaries = ReadingOrder.columnBoundaries(for: boxes)
+        XCTAssertEqual(boundaries.count, 1)
+        XCTAssertEqual(boundaries[0], 0.45, accuracy: 0.05)
+    }
+
     func testIgnoresANarrowNearEdgeGapAsAnOrdinaryMargin() {
         // Content spans [0.05, 0.97] almost fully; the only "gaps" are the
         // page margins on either side, which must not read as a column split.
