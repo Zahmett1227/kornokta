@@ -4,6 +4,7 @@ import CizgiCore
 
 struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView {
@@ -23,6 +24,13 @@ struct RootView: View {
             // Pick up anything left unfinished by a previous launch (§24.1:
             // pending work must survive the app closing).
             await environment.queue.processPending()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            // iOS may suspend networking immediately after the app leaves the
+            // foreground. Re-scan the durable queue whenever it becomes
+            // active; idempotence in ProcessingQueue prevents duplicate cards.
+            Task { await environment.queue.processPending() }
         }
     }
 }

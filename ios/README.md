@@ -1,4 +1,4 @@
-# Çizgi — iOS (Faz 1-4 tamam)
+# Çizgi — iOS (Faz 1-4 tamam, Faz 5 cihaz kabulünde)
 
 Faz 1 hedefi (ANA-PLAN §25) tamam: uygulama çevrimdışı fotoğraf alıp kart
 oluşturabiliyor ve tekrar edebiliyor. Faz 2 de tamam: cihaz üstü işaret
@@ -116,7 +116,7 @@ göndermektense hiç göndermemeyi seçiyor.
 
 | Eksik | Nerede |
 |---|---|
-| Bildirimler, süre-bütçeli hızlı mod, ayrı "yeni kart limiti" | Faz 4/5 |
+| Gerçek iPhone Faz 5 kabul testi | `docs/FAZ5-DURUM.md` |
 
 İşaret tespiti kararsız kaldığında (`quick_confirm`) ya da hiçbir şey
 bulamadığında (`user_selection`) çekim onay ekranına düşer, pasajı elle

@@ -27,7 +27,7 @@ yorumları **İngilizce**.
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
-| Faz 5 — Sertleştirme | Başlamadı |
+| Faz 5 — Sertleştirme | 🟡 Kod tamam; gerçek iPhone kabul testi bekliyor. Recovery, bildirim, yeni kart/hızlı oturum limitleri, geriye uyumlu ayarlar, JSON yedek ve görüntü saklama politikası eklendi. `docs/FAZ5-DURUM.md`. |
 
 **Dal durumu:** Faz 3/4'ün kodu `main`'e alındı (fast-forward merge, `20d71b2`,
 2026-08-03) — `main` ve `claude/proje-analizi-planlama-r7lxw4` şu an aynı
@@ -137,5 +137,5 @@ artık ikisi de kod + test + Mac doğrulaması tamam. Kalan hiçbir kalem Faz
 3. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
    var ama hiç `UNUserNotification` çağrısı yok), süre-bütçeli hızlı mod,
    ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
-4. Faz 5 — Sertleştirme (retry/idempotency, background recovery, maliyet
-   sert limitleri, veri dışa aktarma) henüz başlamadı.
+4. Faz 5'in kodu tamamlandı; `docs/FAZ5-DURUM.md` içindeki gerçek iPhone kabul
+   listesini çalıştır. Bu ortam kamera/Keychain/bildirim iznini doğrulayamaz.

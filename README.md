@@ -21,7 +21,7 @@ adım orada.
 | **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod ve dağıtım tamam — **çıkış kapısı (altın set ölçümü) bilinçli olarak atlandı**, bkz. `docs/FAZ2-PLAN.md` |
 | **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | ✅ Backend kodu, testleri, **gerçek anahtarla uçtan uca doğrulaması** ve **gold pasaj kart kalite ölçümü** (kullanıcıyla birlikte, %100 kabul) tamam. iOS istemcisi yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı**. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (Python referansı + Swift portu), Faz 1'in offline review akışına bağlandı. Python tarafı bu ortamda çalıştırıldı; Swift portu **kullanıcı tarafından bir Mac'te doğrulandı**. Bkz. `docs/FAZ4-PLAN.md` |
-| **Faz 5** | Sertleştirme | Başlamadı |
+| **Faz 5** | Sertleştirme | 🟡 Kod tamam: recovery, bildirim, oturum limitleri, sürümlü JSON dışa aktarma ve görüntü saklama politikası hazır. Gerçek iPhone kabul testi bekliyor; bkz. `docs/FAZ5-DURUM.md` |
 
 Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulandı:
 gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
