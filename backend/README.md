@@ -236,12 +236,18 @@ Hepsi gerçek bir dağıtımda yaşandı ve düzeltildi:
 
 ## Henüz yok
 
-- Gerçek bir OpenAI/Gemini anahtarıyla canlı doğrulama — `docs/FAZ3-PLAN.md`
-- Gold pasajlarla kart kalite rubriği ölçümü (§25 Faz 3 çıkış kapısı)
 - Transkripsiyon uzlaştırmasının Gemini'ye yükselmesi (§5.2 adım 5) — bugün
   `providers/reconcile.ts` tamamen deterministik, Gemini sağlayıcısı yazıldı
   ama hiçbir akışa bağlı değil
-- iOS istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı (§16.8)
 - Fotoğrafların işlem biter bitmez silinmesi (§7.3) — şu an istek belleği
   ötesinde hiçbir yerde tutulmuyor zaten (görüntü asla diske yazılmıyor),
   ama bu davranış henüz ayrı bir testle güvence altına alınmadı
+- Gerçek OpenAI/Gemini token maliyeti — `OPENAI_USD_PER_MILLION_*`/
+  `GEMINI_USD_PER_MILLION_*` hâlâ 0 (`docs/FAZ3-PLAN.md`)
+- Başarısız kart üretimi çağrıları için iOS tarafında bir `ModelRun` kaydı
+  (yalnız başarılı çağrılar kaydediliyor, `docs/FAZ3-PLAN.md`'de F3-8 altında)
+
+Tamamlananlar (artık burada değil): gerçek bir OpenAI/Gemini anahtarıyla
+canlı doğrulama, gold pasajlarla kart kalite rubriği ölçümü, iOS
+istemcisinin `/api/cards`'ı çağırması ve `ModelRun` kaydı — bkz.
+`docs/FAZ3-PLAN.md`.

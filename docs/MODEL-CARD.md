@@ -18,9 +18,12 @@ Model kimlikleri merkezi config'te tutulur (§11.3); kod içine gömülmez. Üre
 
 OCR tarafı ölçüldü: Apple Vision Türkçe desteklemiyor (`docs/FAZ0-BULGULAR.md`),
 Google Document AI birincil OCR olarak seçildi ve gerçek bir sayfayla uçtan
-uca doğrulandı (`docs/FAZ2-PLAN.md`). Kart üretimi tarafı (GPT-5.6 Sol /
-Gemini / Claude adaylarının §27'deki 8 boyutta karşılaştırılması) Faz 3
-kapsamında, henüz başlamadı.
+uca doğrulandı (`docs/FAZ2-PLAN.md`). Kart üretimi tarafı (Faz 3) gerçek bir
+OpenAI/Gemini anahtarıyla uçtan uca doğrulandı ve gold pasaj kart kalite
+rubriğiyle ölçüldü (2 pasaj, 8 kart, %100 kabul — kullanıcının kendi kararı,
+`docs/FAZ3-PLAN.md`); §27'deki 8 boyutlu tam model karşılaştırması henüz
+yapılmadı. Tekrar planlama tarafı (Faz 4) gerçek FSRS-6 ile değiştirildi ve
+bir Mac'te `swift test` ile doğrulandı (`docs/FAZ4-PLAN.md`).
 
 ## Bilinen sınırlar
 

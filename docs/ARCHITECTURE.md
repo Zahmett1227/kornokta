@@ -4,9 +4,9 @@
 
 ## Bileşenler
 
-- **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, tekrar (FSRS Faz 4'te). Faz 1'de başladı, Faz 2'de tamamlandı.
-- **Backend** (`backend/`): Vercel Functions. Google kimlik bilgisini saklar, Document AI çağrısını yapar, iki motorun okumasını uzlaştırır, kritik token karşılaştırması yapar. Faz 2'de başladı, dağıtık ve uçtan uca doğrulandı. Faz 3'te OpenAI/Gemini kart üretimi eklenecek. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır.
-- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları. Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (431 Python testi).
+- **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, gerçek kart üretimi istemcisi (Faz 3), gerçek FSRS-6 tekrarı (Faz 4). Faz 1'de başladı, Faz 2-4'te tamamlandı; hepsi bir Mac'te `swift test` ile doğrulandı.
+- **Backend** (`backend/`): Vercel Functions. Google kimlik bilgisini saklar, Document AI çağrısını yapar, iki motorun okumasını uzlaştırır, kritik token karşılaştırması yapar, OpenAI/Gemini ile kart üretir (Faz 3). Dağıtık ve uçtan uca doğrulandı. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır.
+- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları, FSRS-6 referans algoritması (Faz 4). Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (503 Python testi).
 
 ## Apple Vision yalnız önizleme ve geometri için — metin için değil
 
@@ -25,7 +25,7 @@
 ```text
 kamera/fotoğraf → yerel sayfa düzeltme → Apple Vision (önizleme + satır geometrisi)
   → cihaz üstü işaret tespiti → Google Document AI OCR (backend) → uzlaştırma
-  → [onay | kart üretimi (Faz 3)] → kalite doğrulama → [onay | hazır] → SwiftData + FSRS
+  → [onay | kart üretimi (OpenAI/Gemini, Faz 3)] → kalite doğrulama → [onay | hazır] → SwiftData + FSRS-6 (Faz 4)
 ```
 
 Durum makinesi ve hata dalları: ANA-PLAN §17. Tüm adımlar idempotent; tekrar planlama LLM'siz, deterministik kodda (§0.8, P6).
