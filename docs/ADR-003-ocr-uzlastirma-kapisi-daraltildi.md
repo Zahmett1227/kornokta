@@ -203,3 +203,42 @@ bırakılmış ama `explanation`'da uydurma doz olan bir kart hâlâ
 `quick_confirm` alıyor mu).
 
 Testler: Python 511/511, backend 449/449 (bu ortamda koşuldu).
+
+## Üçüncü düzeltme — kritik-token denetimi tek başına yeterli değil
+
+Codex, `explanationIntroducesUnsourcedCriticalToken` eklendikten hemen sonra
+aynı fikri bir adım daha derinleştirdi: bu fonksiyon yalnızca §10.5'in
+saydığı **sınırlı sınıfları** (sayı, doz, yol, olumsuzluk, ...) yakalayabilir.
+Modelin `explanation`'a eklediği ama hiçbir kritik-token sınıfına girmeyen
+uydurma bir cümle — Codex'in örneği: kaynakta hiç geçmeyen bir mekanizma
+iddiası, "Adrenalin mast hücresi degranülasyonunu tetikler" — `addedCriticalTokens`'tan
+boş dönerdi, ve `enriched` yanlışlıkla `false` kaldıysa kart yine
+`auto_accept` olurdu.
+
+Bu, aslında **çözülemeyecek bir problem**: serbest bir cümlenin kaynaktan
+"gerçekten çıkarılabilir" olup olmadığını anlamak semantik bir yargıdır,
+regex tabanlı bir dedektörün yapabileceği bir şey değil (§0.5'in tam
+uyardığı tür belirsizlik). Bu yüzden kural, cümlenin içeriğini anlamaya
+çalışmak yerine daha basit ve dürüst bir sinyale dayandırıldı:
+
+**Düzeltme:** `verdictForCard` artık `explanation` boş değilse — kritik
+token bulunsun ya da bulunmasın, `enriched` ne olursa olsun —
+`quick_confirm`'e yükseltiyor. `explanationIntroducesUnsourcedCriticalToken`
+hâlâ çalışıyor, ama artık yalnızca *neden* metnini (bulunursa "kaynakta
+olmayan kritik değer X" diye) netleştirmek için; kararın kendisi artık ona
+bağlı değil. Bu, §12.2'nin zaten söylediği kuralı ("her ek içerik açıkça
+onay gerektirir") modelin kendi bayrağına güvenmeden, doğrudan alanın
+kendisinden türetiyor — ADR-001'in "modelin bayrağı taban, tavan değil"
+ilkesinin bir dedektörün kör noktasına değil, doğrudan alana uygulanmış hali.
+
+**Kabul edilen ödünleşim:** Artık gerçekten kaynağa sadık, hiçbir şey
+uydurmayan ama `explanation` alanını dolduran bir kart da onay ister —
+§24.2'nin "az müdahale" hedefine küçük bir sürtünme ekliyor. Ama serbest
+metnin gerçekten kaynaklı olup olmadığını güvenilir biçimde ayıramadığımız
+için, güvenlik tarafında hata yapmak (§0.5, §19.2) daha az müdahaleden
+önceliklidir.
+
+Regresyon: `backend/tests/cardGate.test.ts`'e Codex'in ikinci örneği
+(kritik-token sınıfına girmeyen uydurma mekanizma cümlesi) eklendi.
+
+Testler: backend 450/450 (bu ortamda koşuldu).

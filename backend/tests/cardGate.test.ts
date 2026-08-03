@@ -122,6 +122,28 @@ describe("runCardGate", () => {
     expect(report.verdicts[0]!.reasons.join(" ")).toContain("Açıklama");
   });
 
+  it("also asks for confirmation on fabricated prose with no critical-token class at all (PR #7 review, 2nd round)", () => {
+    // Codex's follow-up: a critical-token check can only prove a narrow
+    // class of fabrication. This explanation invents a mechanism claim with
+    // no number/dose/route/negation for `addedCriticalTokens` to catch, so
+    // only the broader "any non-empty explanation needs confirmation" rule
+    // (independent of both the detector and `enriched`) catches it.
+    const report = runCardGate(
+      {
+        cards: [
+          baseCard({
+            explanation: "Adrenalin mast hücresi degranülasyonunu tetikler.",
+            enriched: false,
+          }),
+        ],
+        quality: quality(),
+      },
+      { maxCardsPerKnowledgeUnit: 4 },
+    );
+    expect(report.verdicts[0]!.decision).toBe("quick_confirm");
+    expect(report.verdicts[0]!.reasons.join(" ")).toContain("Açıklama");
+  });
+
   it("only asks for confirmation, not rejection, when the same invented value is on an enriched card (§12.2)", () => {
     const report = runCardGate(
       {

@@ -91,11 +91,23 @@ yorumları **İngilizce**.
    harfte birleşen noktalı bir `i`ye dönüşüp önek eşleşmesini bozuyordu.
    Düzeltme: zaten var olan `fold_diacritics`/`foldDiacritics` önce
    çalıştırılıyor. Ayrıntı: ADR-003'ün "İkinci düzeltme turu" bölümü.
+7. **(Bu oturum, aynı PR'ın üçüncü incelemesi)** Codex bir adım daha derine
+   indi: madde 6'daki `explanation` kontrolü yalnızca §10.5'in saydığı
+   kritik-token sınıflarını yakalayabiliyor — kaynakta hiç geçmeyen ama
+   hiçbir sınıfa girmeyen uydurma bir cümle (Codex'in örneği: sahte bir
+   mekanizma iddiası) hâlâ `enriched=false` ile sızabilirdi. Bu deterministik
+   olarak çözülemeyecek bir problem (serbest metnin kaynaktan çıkarılabilir
+   olup olmadığı semantik bir yargı, §0.5) — bu yüzden kural basitleştirildi:
+   `explanation` boş değilse, kritik token bulunsun bulunmasın, `enriched`
+   ne olursa olsun `quick_confirm`'e yükseliyor. Küçük bir sürtünme kabul
+   edildi (tamamen zararsız bir açıklama da onay ister) çünkü serbest metni
+   güvenilir biçimde ayıramıyoruz. Ayrıntı: ADR-003'ün "Üçüncü düzeltme"
+   bölümü.
 
 **Test durumu:**
 - Python (`evals/`): 511 test, yeşil — `python -m pytest evals -q` (bu
   oturumda gerçekten çalıştırıldı)
-- Backend (`backend/`): **449 test**, yeşil — `npm test` (bu oturumda
+- Backend (`backend/`): **450 test**, yeşil — `npm test` (bu oturumda
   gerçekten çalıştırıldı; PR #7 incelemesinin iki turunda eklenen testler
   dahil — gate/cardGate/criticalTokens'a Codex'in senaryoları)
 - Swift (`ios/CizgiCore/`): 153 test. **Kullanıcı bu oturumda `swift test`
@@ -169,7 +181,7 @@ Ayrıntı: `docs/RUNBOOK.md`. Özet:
 ```bash
 python -m pytest evals -q                    # 511 test
 cd ios/CizgiCore && swift test                # 153 test (153/153 Mac'te doğrulandı; bu oturumun etiket-metni değişikliği sonrası henüz yeniden koşulmadı, yukarı bak)
-cd backend && npm test                        # 449 test
+cd backend && npm test                        # 450 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 
