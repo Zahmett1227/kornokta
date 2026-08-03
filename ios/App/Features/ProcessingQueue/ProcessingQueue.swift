@@ -78,9 +78,9 @@ final class ProcessingQueue: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
-        let context = container.mainContext
-        reconcilePendingImageDeletions(context: context)
+        reconcilePendingImageDeletions()
 
+        let context = container.mainContext
         let descriptor = FetchDescriptor<CapturedPage>(
             sortBy: [SortDescriptor(\.captureDate, order: .forward)]
         )
@@ -96,7 +96,16 @@ final class ProcessingQueue: ObservableObject {
     /// actually removing the file, or a later, unrelated save may be what
     /// flushed that flag to disk. `shouldProcess` never revisits a `.ready`
     /// page, so this is the only place that gets another chance at it.
-    private func reconcilePendingImageDeletions(context: ModelContext) {
+    ///
+    /// Uses a fresh `ModelContext` rather than `container.mainContext`: a
+    /// failed `save()` in `apply` can leave `pendingOriginalImageDeletion =
+    /// true` mutated in memory on the shared main context without it ever
+    /// reaching disk, and a fetch on that same context would still return
+    /// it — deleting the image before anything durable says that's safe.
+    /// A brand-new context has no unsaved changes of its own, so its fetch
+    /// only sees flags that actually made it to the persistent store.
+    private func reconcilePendingImageDeletions() {
+        let context = ModelContext(container)
         let descriptor = FetchDescriptor<CapturedPage>(
             predicate: #Predicate { $0.pendingOriginalImageDeletion }
         )
