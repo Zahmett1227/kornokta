@@ -244,23 +244,31 @@ function columnOf(item: Positioned, boundaries: number[]): number {
   return boundaries.filter((b) => b < center).length;
 }
 
-/** The vertical [top, bottom] extent covered by `items`. */
-function verticalRange(items: Positioned[]): { top: number; bottom: number } {
-  return {
-    top: Math.min(...items.map((item) => item.y)),
-    bottom: Math.max(...items.map((item) => item.y + item.height)),
-  };
+/** Every `READING_BAND`-tall slice of the page actually touched by one of
+ * `items` — not just the outer envelope from its topmost to its bottommost
+ * item, which would call two lines "overlapping" whenever one group's total
+ * span happens to enclose the other's, even with a gap of un-occupied page
+ * between them and no line ever actually beside another. */
+function occupiedBands(items: Positioned[]): Set<number> {
+  const bands = new Set<number>();
+  for (const item of items) {
+    const start = Math.floor(item.y / READING_BAND);
+    const end = Math.ceil((item.y + item.height) / READING_BAND);
+    for (let band = start; band < end; band++) bands.add(band);
+  }
+  return bands;
 }
 
 /** Whether two non-empty groups of items coexist over a meaningful shared
- * vertical range, rather than one sitting entirely above the other. */
+ * vertical range, rather than one sitting entirely above the other (or
+ * enclosing the other's range without actually coexisting alongside it). */
 function overlapsVertically(a: Positioned[], b: Positioned[]): boolean {
-  const rangeA = verticalRange(a);
-  const rangeB = verticalRange(b);
-  const overlap = Math.min(rangeA.bottom, rangeB.bottom) - Math.max(rangeA.top, rangeB.top);
-  const smallerSpan = Math.min(rangeA.bottom - rangeA.top, rangeB.bottom - rangeB.top);
-  if (smallerSpan <= 0) return false;
-  return overlap / smallerSpan >= MIN_VERTICAL_OVERLAP;
+  const bandsA = occupiedBands(a);
+  const bandsB = occupiedBands(b);
+  if (!bandsA.size || !bandsB.size) return false;
+  let shared = 0;
+  for (const band of bandsA) if (bandsB.has(band)) shared++;
+  return shared / Math.min(bandsA.size, bandsB.size) >= MIN_VERTICAL_OVERLAP;
 }
 
 /**

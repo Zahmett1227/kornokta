@@ -63,20 +63,30 @@ enum ReadingOrder {
         return boundaries.filter { $0 < center }.count
     }
 
-    /// The vertical [top, bottom] extent covered by `boxes`, or `nil` if empty.
-    private static func verticalRange(_ boxes: [Box]) -> (top: Double, bottom: Double)? {
-        guard let top = boxes.map(\.minY).min(), let bottom = boxes.map(\.maxY).max() else { return nil }
-        return (top, bottom)
+    /// Every `bandHeight`-tall slice of the page actually touched by one of
+    /// `boxes` — not just the outer envelope from its topmost to its
+    /// bottommost box, which would call two groups "overlapping" whenever one
+    /// group's total span happens to enclose the other's, even with a gap of
+    /// un-occupied page between them and no box ever actually beside another.
+    private static func occupiedBands(_ boxes: [Box]) -> Set<Int> {
+        var bands: Set<Int> = []
+        for box in boxes {
+            let start = Int((box.minY / bandHeight).rounded(.down))
+            let end = Int((box.maxY / bandHeight).rounded(.up))
+            guard start < end else { continue }
+            bands.formUnion(start..<end)
+        }
+        return bands
     }
 
     /// Whether two groups of boxes coexist over a meaningful shared vertical
-    /// range, rather than one sitting entirely above the other.
+    /// range, rather than one sitting entirely above the other (or enclosing
+    /// the other's range without actually coexisting alongside it).
     private static func overlapsVertically(_ a: [Box], _ b: [Box]) -> Bool {
-        guard let rangeA = verticalRange(a), let rangeB = verticalRange(b) else { return false }
-        let overlap = min(rangeA.bottom, rangeB.bottom) - max(rangeA.top, rangeB.top)
-        let smallerSpan = min(rangeA.bottom - rangeA.top, rangeB.bottom - rangeB.top)
-        guard smallerSpan > 0 else { return false }
-        return overlap / smallerSpan >= minVerticalOverlap
+        let bandsA = occupiedBands(a), bandsB = occupiedBands(b)
+        guard !bandsA.isEmpty, !bandsB.isEmpty else { return false }
+        let shared = bandsA.intersection(bandsB).count
+        return Double(shared) / Double(min(bandsA.count, bandsB.count)) >= minVerticalOverlap
     }
 
     /// Returns `boxes`' indices in reading order.

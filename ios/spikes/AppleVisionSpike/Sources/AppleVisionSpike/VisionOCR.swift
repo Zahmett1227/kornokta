@@ -103,18 +103,33 @@ struct VisionOCR {
         boundaries.filter { $0 < box.midX }.count
     }
 
+    /// Every `bandHeight`-tall slice of the page actually touched by one of
+    /// `boxes` — not just the outer envelope from its topmost to its
+    /// bottommost box, which would call two groups "overlapping" whenever one
+    /// group's total span happens to enclose the other's, even with a gap of
+    /// un-occupied page between them and no box ever actually beside another.
+    /// Boxes are bottom-left origin (Vision's native convention), but bands
+    /// only need to consistently identify the same page slice on both sides —
+    /// no need to flip to top-left first.
+    static func occupiedBands(_ boxes: [CGRect]) -> Set<Int> {
+        var bands: Set<Int> = []
+        for box in boxes {
+            let start = Int((box.minY / bandHeight).rounded(.down))
+            let end = Int((box.maxY / bandHeight).rounded(.up))
+            guard start < end else { continue }
+            bands.formUnion(start..<end)
+        }
+        return bands
+    }
+
     /// Whether two groups of boxes coexist over a meaningful shared vertical
-    /// range, rather than one sitting entirely above the other. Boxes are
-    /// bottom-left origin (Vision's native convention), so "top" is the
-    /// larger `maxY`.
+    /// range, rather than one sitting entirely above the other (or enclosing
+    /// the other's range without actually coexisting alongside it).
     static func overlapsVertically(_ a: [CGRect], _ b: [CGRect]) -> Bool {
-        guard let topA = a.map(\.maxY).max(), let bottomA = a.map(\.minY).min(),
-              let topB = b.map(\.maxY).max(), let bottomB = b.map(\.minY).min()
-        else { return false }
-        let overlap = min(topA, topB) - max(bottomA, bottomB)
-        let smallerSpan = min(topA - bottomA, topB - bottomB)
-        guard smallerSpan > 0 else { return false }
-        return overlap / smallerSpan >= minVerticalOverlap
+        let bandsA = occupiedBands(a), bandsB = occupiedBands(b)
+        guard !bandsA.isEmpty, !bandsB.isEmpty else { return false }
+        let shared = bandsA.intersection(bandsB).count
+        return Double(shared) / Double(min(bandsA.count, bandsB.count)) >= minVerticalOverlap
     }
 
     /// Finds x-positions of vertical whitespace gutters wide and central

@@ -60,6 +60,17 @@ final class ReadingOrderTests: XCTestCase {
         XCTAssertEqual(ReadingOrder.columnBoundaries(for: metadata + body), [])
     }
 
+    func testRejectsColumnsWhoseOuterEnvelopesOverlapButWhoseLinesNeverActuallyCoexist() {
+        // Left column has two lines far apart (top and bottom of the page)
+        // with a large empty gap between them; the right column's lines sit
+        // entirely in that gap. The left column's *envelope* [0.05, 0.88]
+        // contains the right column's range, but no line from either side is
+        // ever actually beside a line from the other.
+        let left = [0.05, 0.85].map { box(x: 0.05, y: $0, width: 0.4) }
+        let right = [0.4, 0.42].map { box(x: 0.55, y: $0, width: 0.4) }
+        XCTAssertEqual(ReadingOrder.columnBoundaries(for: left + right), [])
+    }
+
     // MARK: - order
 
     func testFallsBackToTopToBottomThenLeftToRightWithNoDetectedColumns() {

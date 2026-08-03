@@ -241,6 +241,17 @@ describe("columnBoundaries", () => {
     }));
     expect(columnBoundaries([...metadata, ...body])).toEqual([]);
   });
+
+  it("rejects columns whose outer envelopes overlap but whose lines never actually coexist", () => {
+    // Left column has two lines far apart (top and bottom of the page) with a
+    // large empty gap between them; the right column's lines sit entirely in
+    // that gap. The left column's *envelope* [0.05, 0.88] contains the right
+    // column's range, but no line from either side is ever actually beside a
+    // line from the other — this must not read as a two-column layout.
+    const left = [0.05, 0.85].map((y) => ({ x: 0.05, y, width: 0.4, height: 0.03 }));
+    const right = [0.4, 0.42].map((y) => ({ x: 0.55, y, width: 0.4, height: 0.03 }));
+    expect(columnBoundaries([...left, ...right])).toEqual([]);
+  });
 });
 
 describe("orderByReadingPosition", () => {
