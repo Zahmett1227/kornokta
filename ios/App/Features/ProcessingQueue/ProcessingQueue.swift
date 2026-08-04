@@ -445,6 +445,23 @@ final class ProcessingQueue: ObservableObject {
         try? container.mainContext.save()
     }
 
+    /// Removes a queue entry entirely, unlike `cancel` which only marks it
+    /// `.cancelled` and leaves it in the list forever. SwiftData cascades the
+    /// delete to `regions`/`knowledgeUnits`/`cards` (`deleteRule: .cascade`),
+    /// but the crop and original page files it stored on disk are its own —
+    /// those are read out and removed before the model objects go, since
+    /// `page`/`region` become invalid to read once deleted.
+    func delete(_ page: CapturedPage) {
+        let context = container.mainContext
+        let cropPaths = page.regions.compactMap(\.sourceCropPath)
+        try? imageStore.remove(relativePath: page.originalImagePath)
+        for path in cropPaths {
+            try? imageStore.remove(relativePath: path)
+        }
+        context.delete(page)
+        try? context.save()
+    }
+
     func retry(_ page: CapturedPage) async {
         guard page.processingState == .temporaryFailure || page.processingState == .permanentFailure else { return }
         page.retryCount = 0
