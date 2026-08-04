@@ -93,7 +93,22 @@ final class ProcessingQueue: ObservableObject {
         )
         guard let pages = try? context.fetch(descriptor) else { return }
 
-        for page in pages where shouldProcess(page) {
+        for page in pages {
+            // `pendingDeletion` is only ever consumed by `apply`, reached
+            // after `pipeline.run` returns — but if the app was terminated
+            // between an in-flight `delete(_:)` marking this flag and that
+            // run finishing, a fresh launch's `inFlightPageIDs` starts empty
+            // and `shouldProcess` would accept the page's still-`.localOCR`
+            // state, re-uploading and re-OCR'ing an image the user already
+            // asked to delete before ever reaching that check (PR #12
+            // review, Codex P1 — second round). Handling it here, before
+            // `shouldProcess` is even asked, means a deletion always wins
+            // over resuming work, on every launch, with no network call.
+            if page.pendingDeletion {
+                performDelete(page)
+                continue
+            }
+            guard shouldProcess(page) else { continue }
             await process(page)
         }
     }
