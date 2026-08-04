@@ -473,6 +473,59 @@ final class CardGenerationRequestTests: XCTestCase {
         XCTAssertEqual(outcome.modelRun, runMetadata())
     }
 
+    func testACardNeedingApprovalStillReachesReadyRatherThanBouncingToConfirmation() async {
+        // Regression for the production bug (found via real device use,
+        // 2026-08-04): a flagged card used to send `finalState` back to
+        // `.confirmationRequired` even though the card was already persisted
+        // (`ProcessingQueue.apply` persists `generatedGroups` regardless of
+        // `finalState`). On the next resume, `completedGroupIds` then
+        // filtered that already-persisted group out of `selectedGroups`,
+        // leaving nothing to (re)generate — a permanent stuck loop
+        // indistinguishable from "Kart oluştur" doing nothing. The group was
+        // fine; only that one card needed a look, and it is reviewed in
+        // Bilgilerim now (`CardStatus.needsReview`), not by re-opening this
+        // screen.
+        let flagged = GeneratedCard(
+            type: .directRecall,
+            front: "?",
+            back: "adrenalin",
+            sourceQuote: "adrenalin",
+            requiresUserApproval: true
+        )
+        let generator = RecordingCardGenerator(
+            knowledge: GeneratedKnowledge(canonicalClaim: "x", sourceConcern: "Kaynak belirsiz.", cards: [flagged])
+        )
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator,
+            backend: StubBackend(.success(remote(cloudPage)))
+        )
+        let outcome = await pipeline.run(jobId: "job-cg5", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .ready)
+        XCTAssertEqual(outcome.generatedGroups.first?.knowledge.cards.first?.requiresUserApproval, true)
+    }
+
+    func testConfirmationRequiredAlwaysCarriesAReasonEvenWithNoReconciliation() async {
+        // §19.2: a confirmation with no reason attached is one the user
+        // cannot answer well. `outcome.reconciliation` is only populated for
+        // the OCR-disagreement path — this checks a stop reason that has
+        // nothing to do with it (the generator returned zero cards) still
+        // reaches the caller.
+        let generator = RecordingCardGenerator(knowledge: GeneratedKnowledge(canonicalClaim: "x", cards: []))
+        let pipeline = CapturePipeline(
+            recognizer: StubRecognizer(lines: localPage),
+            selector: FixedSelection(lineIds: ["line_01"]),
+            generator: generator,
+            backend: StubBackend(.success(remote(cloudPage)))
+        )
+        let outcome = await pipeline.run(jobId: "job-cg6", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .confirmationRequired)
+        XCTAssertNotNil(outcome.confirmationReason)
+    }
+
     func testMockGeneratorLeavesModelRunNil() async {
         // The offline path reports nothing to account for — there was no call.
         let pipeline = CapturePipeline(
