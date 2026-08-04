@@ -26,6 +26,19 @@ private func markerEvidence(_ id: String, line: String, token: String, x: Double
     )
 }
 
+/// Like `markerEvidence`, but with a configurable box — needed to construct
+/// precise "adjacent" vs. "far apart" vs. "different line" geometries for
+/// the merge-predicate tests below.
+private func localTokenEvidence(
+    _ id: String, line: String, token: String, x: Double, y: Double, width: Double = 0.10, height: Double = 0.03
+) -> AnnotationEvidence {
+    AnnotationEvidence(
+        id: id, type: .underline,
+        boundingBox: NormalizedRect(x: x, y: y, width: width, height: height),
+        lineIds: [line], tokenIds: [token], confidence: 0.9, decision: .autoCandidate, provenance: .localToken
+    )
+}
+
 private func markerGroup(_ id: String, evidence: AnnotationEvidence) -> AnnotationGroup {
     AnnotationGroup(
         id: id, evidenceIds: [evidence.id], selectedLineIds: evidence.lineIds,
@@ -359,17 +372,29 @@ final class RemoteAnnotationCandidateTests: XCTestCase {
         XCTAssertEqual(candidates.groups.first?.selectionType, .highlight)
     }
 
-    /// Regression test 5: three remote-style highlights sit on the same row.
-    /// The middle one is close enough to merge with both its neighbours
-    /// individually, but the two outer ones are not close enough to each
-    /// other — a transitive chain through the middle candidate must not
-    /// collapse all three (or the two far ones) into a single group.
-    func testTwoFarApartHighlightsOnTheSameRowDoNotChainMergeThroughAMiddleCandidate() throws {
+    /// Three remote-style highlights sit on the very same real OCR line —
+    /// sharing one literal Google `lineId` — but with real gaps between them
+    /// far beyond ordinary word spacing. Sharing a line id alone is not
+    /// enough to merge (§ item 3: "aynı satırda birbirinden uzak iki ayrı
+    /// fosforlu ifade tek grup olmamalı") — only genuinely adjacent runs on
+    /// that line combine. This also proves complete-linkage still holds:
+    /// nothing here transitively chains through a middle candidate either.
+    ///
+    /// (Supersedes a same-named-in-spirit test that used to assert
+    /// left+middle merged into one group under the old "close horizontal
+    /// center, small vertical gap" rule — that was exactly the over-eager
+    /// merging this task removes; three genuinely separate marks on a row,
+    /// even a shared row, must stay three separate marks.)
+    func testTwoFarApartHighlightsOnTheSameLineDoNotMergeEvenThoughTheyShareALineId() throws {
         let config = try MarkerConfig.bundled()
         let yellow = RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
         let page = RemotePage(
             imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
-            lines: [],
+            lines: [RemoteLine(
+                lineId: "row", text: "Sol ... Orta ... Sağ", confidence: 0.97,
+                x: 0.0, y: 0.30, width: 0.63, height: 0.03,
+                tokenIds: ["left", "middle", "right"]
+            )],
             tokens: [
                 RemoteToken(tokenId: "left", text: "Sol", confidence: 0.95, x: 0.00, y: 0.30, width: 0.05, height: 0.03, backgroundColor: yellow),
                 RemoteToken(tokenId: "middle", text: "Orta", confidence: 0.95, x: 0.25, y: 0.30, width: 0.05, height: 0.03, backgroundColor: yellow),
@@ -384,9 +409,10 @@ final class RemoteAnnotationCandidateTests: XCTestCase {
             config: config
         )
 
-        XCTAssertEqual(grounded.groups.count, 2, "Sağdaki, ortadaki köprü aday üzerinden sola zincirlenerek birleşmemeli")
+        XCTAssertEqual(grounded.groups.count, 3, "Aynı satırı paylaşsalar bile büyük boşlukla ayrılan üç ayrı ifade birleşmemeli")
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["left"]) })
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["middle"]) })
         XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["right"]) })
-        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["left", "middle"]) })
     }
 
     /// A printed, high-saturation heading band spans every token on its own
@@ -602,9 +628,11 @@ final class AnnotationGroundingDiagnosticsTests: XCTestCase {
         )
 
         let diagnostics = AnnotationGrouper.diagnostics(
-            initialSelection: initialSelection, groundedSelection: grounded, remotePage: page, styleInfoRequested: true
+            initialSelection: initialSelection, groundedSelection: grounded, remotePage: page,
+            styleInfoRequested: true, groundingPhase: .initialDetection
         )
 
+        XCTAssertEqual(diagnostics.groundingPhase, .initialDetection)
         XCTAssertTrue(diagnostics.styleInfoRequested)
         XCTAssertEqual(diagnostics.remoteTokenCount, 2)
         XCTAssertEqual(diagnostics.remoteUnderlinedTokenCount, 1)
@@ -628,11 +656,284 @@ final class AnnotationGroundingDiagnosticsTests: XCTestCase {
             initialSelection: MarkerSelectionResult(),
             groundedSelection: AnnotationGrouper.ground(selection: MarkerSelectionResult(), localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page),
             remotePage: page,
-            styleInfoRequested: false
+            styleInfoRequested: false,
+            groundingPhase: .snapshotResume
         )
+        XCTAssertEqual(diagnostics.groundingPhase, .snapshotResume)
         XCTAssertFalse(diagnostics.styleInfoRequested, "false ise sıfır sayılar 'hiç istenmedi' anlamına gelmeli, 'aranıp bulunamadı' değil")
         XCTAssertEqual(diagnostics.remoteUnderlineCandidateCount, 0)
         XCTAssertEqual(diagnostics.remoteBackgroundCandidateCount, 0)
+    }
+}
+
+/// Regression tests for the merge rewrite (real-device trace, 2026-08-04):
+/// 93 local token candidates collapsed into 26 groups spanning whole
+/// paragraphs and table rows. These lock in the replacement rule — same
+/// engine + same literal line + ordinary word spacing merges into one run;
+/// everything else (a different line, a different engine, a large gap)
+/// stays separate, regardless of vertical proximity.
+final class SameLineMergeTests: XCTestCase {
+    /// Regression test 1: two adjacent underlined words on the same Apple
+    /// line combine into one run.
+    func testAdjacentLocalTokensOnTheSameLineMergeIntoOneRun() {
+        let a = localTokenEvidence("a", line: "v0", token: "a_t", x: 0.10, y: 0.20, width: 0.08)
+        // Gap of 0.005 — ordinary word spacing, well under sameMarkGapRatio.
+        let b = localTokenEvidence("b", line: "v0", token: "b_t", x: 0.185, y: 0.20, width: 0.08)
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [a, b], groups: [markerGroup("ga", evidence: a), markerGroup("gb", evidence: b)],
+                autoSelectedGroupIds: ["ga", "gb"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: RemotePage(imageWidth: 1000, imageHeight: 1600, elapsedMs: 1, lines: [], tokens: [])
+        )
+        XCTAssertEqual(grounded.groups.count, 1, "Aynı satırdaki bitişik iki token tek run'a birleşmeli")
+        XCTAssertEqual(Set(grounded.groups.first?.evidenceIds ?? []), ["a", "b"])
+    }
+
+    /// Regression test 2: two underlined phrases far apart on the same
+    /// Apple line stay separate — sharing a line id is not enough on its own.
+    func testFarApartLocalTokensOnTheSameLineStaySeparate() {
+        let a = localTokenEvidence("a", line: "v0", token: "a_t", x: 0.10, y: 0.20, width: 0.08)
+        let b = localTokenEvidence("b", line: "v0", token: "b_t", x: 0.60, y: 0.20, width: 0.08)
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [a, b], groups: [markerGroup("ga", evidence: a), markerGroup("gb", evidence: b)],
+                autoSelectedGroupIds: ["ga", "gb"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: RemotePage(imageWidth: 1000, imageHeight: 1600, elapsedMs: 1, lines: [], tokens: [])
+        )
+        XCTAssertEqual(grounded.groups.count, 2, "Aynı satırı paylaşsalar bile büyük boşlukla ayrılan iki ifade birleşmemeli")
+    }
+
+    /// Regression test 3: two different OCR lines never merge just because
+    /// they sit vertically close — the exact case the old center-distance/
+    /// vertical-gap rule got wrong.
+    func testDifferentLinesDoNotMergeEvenWhenVerticallyClose() {
+        let a = localTokenEvidence("a", line: "line1", token: "a_t", x: 0.10, y: 0.20, width: 0.08, height: 0.03)
+        // Starts right where `a` ends — well within the old rule's 0.045
+        // vertical-gap tolerance, but a genuinely different recognized line.
+        let b = localTokenEvidence("b", line: "line2", token: "b_t", x: 0.10, y: 0.235, width: 0.08, height: 0.03)
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [a, b], groups: [markerGroup("ga", evidence: a), markerGroup("gb", evidence: b)],
+                autoSelectedGroupIds: ["ga", "gb"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: RemotePage(imageWidth: 1000, imageHeight: 1600, elapsedMs: 1, lines: [], tokens: [])
+        )
+        XCTAssertEqual(grounded.groups.count, 2, "Farklı satırlar dikey olarak yakın diye birleşmemeli")
+    }
+
+    /// Regression test 4: three consecutive lines never collapse into one
+    /// giant group, whether via a single pairwise rule or a transitive chain
+    /// through complete-linkage.
+    func testThreeConsecutiveLinesNeverCollapseIntoOneGroup() {
+        let a = localTokenEvidence("a", line: "line1", token: "a_t", x: 0.10, y: 0.20, width: 0.08, height: 0.03)
+        let b = localTokenEvidence("b", line: "line2", token: "b_t", x: 0.10, y: 0.235, width: 0.08, height: 0.03)
+        let c = localTokenEvidence("c", line: "line3", token: "c_t", x: 0.10, y: 0.27, width: 0.08, height: 0.03)
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [a, b, c],
+                groups: [markerGroup("ga", evidence: a), markerGroup("gb", evidence: b), markerGroup("gc", evidence: c)],
+                autoSelectedGroupIds: ["ga", "gb", "gc"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: RemotePage(imageWidth: 1000, imageHeight: 1600, elapsedMs: 1, lines: [], tokens: [])
+        )
+        XCTAssertEqual(grounded.groups.count, 3, "Üç ardışık satır tek dev grup olmamalı")
+    }
+
+    /// Regression test 6: a heading line and the marked item below it stay
+    /// separate groups — merely being the nearest line above does not make
+    /// them one unit. `parentHeading` (a separate, pre-existing mechanism)
+    /// still correctly labels the item's heading, unaffected by the merge fix.
+    func testHeadingAndItemBelowStaySeparateGroups() throws {
+        let heading = localTokenEvidence("h", line: "heading_line", token: "h_t", x: 0.10, y: 0.05, width: 0.30, height: 0.03)
+        let item = localTokenEvidence("i", line: "item_line", token: "i_t", x: 0.10, y: 0.09, width: 0.30, height: 0.03)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                RemoteLine(lineId: "heading_g", text: "Bölüm Başlığı", confidence: 0.97, x: 0.10, y: 0.05, width: 0.30, height: 0.03, tokenIds: ["h_gt"]),
+                RemoteLine(lineId: "item_g", text: "Madde", confidence: 0.97, x: 0.10, y: 0.09, width: 0.30, height: 0.03, tokenIds: ["i_gt"])
+            ],
+            tokens: [
+                RemoteToken(tokenId: "h_gt", text: "Bölüm Başlığı", confidence: 0.9, x: 0.10, y: 0.05, width: 0.30, height: 0.03),
+                RemoteToken(tokenId: "i_gt", text: "Madde", confidence: 0.9, x: 0.10, y: 0.09, width: 0.30, height: 0.03)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [heading, item], groups: [markerGroup("hg", evidence: heading), markerGroup("ig", evidence: item)],
+                autoSelectedGroupIds: ["hg", "ig"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        XCTAssertEqual(grounded.groups.count, 2, "Başlık ile altındaki madde ayrı kalmalı")
+        let itemGroup = try XCTUnwrap(grounded.groups.first { $0.selectedText == "Madde" })
+        XCTAssertEqual(itemGroup.parentHeading, "Bölüm Başlığı")
+    }
+
+    /// Regression test 7: a marker inside a table region and one outside it
+    /// do not merge just because they sit close vertically.
+    func testMarkerInsideAndOutsideATableDoNotMerge() {
+        let inside = localTokenEvidence("in", line: "table_line", token: "in_t", x: 0.20, y: 0.52, width: 0.10, height: 0.03)
+        let outside = localTokenEvidence("out", line: "para_line", token: "out_t", x: 0.20, y: 0.48, width: 0.10, height: 0.03)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [], tokens: [],
+            tables: [RemoteLayoutRegion(id: "t1", kind: .tableCandidate, text: "", confidence: 0.9, x: 0.15, y: 0.50, width: 0.70, height: 0.20)]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [inside, outside], groups: [markerGroup("ing", evidence: inside), markerGroup("outg", evidence: outside)],
+                autoSelectedGroupIds: ["ing", "outg"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        XCTAssertEqual(grounded.groups.count, 2, "Tablo içi ve tablo dışı marker birleşmemeli")
+    }
+
+    /// Regression test 9: a large `localLineFallback` box sitting over two
+    /// genuinely separate remote runs must not swallow both into one union —
+    /// it bridges two mutually-unrelated marks, so it stays its own separate
+    /// candidate instead (§ `isAmbiguousBridge`), and the two runs remain
+    /// independently available exactly as Google reported them.
+    func testLargeLocalLineFallbackDoesNotSwallowTwoSeparateRemoteRuns() throws {
+        let config = try MarkerConfig.bundled()
+        let fallbackEvidence = AnnotationEvidence(
+            id: "fallback_e", type: .underline,
+            boundingBox: NormalizedRect(x: 0.05, y: 0.20, width: 0.85, height: 0.04),
+            lineIds: ["marked_line"], tokenIds: [], confidence: 0.5, decision: .quickConfirm, provenance: .localLineFallback
+        )
+        let fallbackGroup = AnnotationGroup(
+            id: "fallback_g", evidenceIds: [fallbackEvidence.id], selectedLineIds: fallbackEvidence.lineIds, contextLineIds: fallbackEvidence.lineIds,
+            boundingBox: fallbackEvidence.boundingBox, confidence: fallbackEvidence.confidence, needsConfirmation: true, selectionType: .underline
+        )
+        let yellow = RemoteColor(red: 1, green: 1, blue: 0)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [RemoteLine(lineId: "g0", text: "birinci ... ikinci", confidence: 0.97, x: 0.05, y: 0.205, width: 0.85, height: 0.025, tokenIds: ["a", "b"])],
+            tokens: [
+                RemoteToken(tokenId: "a", text: "birinci", confidence: 0.95, x: 0.10, y: 0.205, width: 0.08, height: 0.025, backgroundColor: yellow),
+                RemoteToken(tokenId: "b", text: "ikinci", confidence: 0.95, x: 0.60, y: 0.205, width: 0.08, height: 0.025, backgroundColor: yellow)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [fallbackEvidence], groups: [fallbackGroup], autoSelectedGroupIds: []),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page, config: config
+        )
+
+        XCTAssertEqual(grounded.groups.count, 3, "Fallback ne 'a' ne 'b' ile birleşmemeli; üçü de ayrı kalmalı")
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["a"]) })
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["b"]) })
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains { id in
+            grounded.groups.first { $0.id == id }?.evidenceIds.contains(fallbackEvidence.id) ?? false
+        })
+    }
+}
+
+/// Regression tests for handwriting no longer being auto-attached to a
+/// nearby printed group by proximity (§ item 6/11–14) — it stays a
+/// standalone, same-line-run note candidate until a future, explicit
+/// user action (Prompt 3) attaches it to something.
+final class HandwritingGroupingTests: XCTestCase {
+    /// Regression test 11: a handwritten note sitting close to a printed
+    /// marked group is never folded into that group automatically.
+    func testHandwritingIsNotAutoAttachedToANearbyPrintedGroup() throws {
+        let evidence = markerEvidence("e", line: "vision_0", token: "vision_0_t", x: 0.20, y: 0.20)
+        let base = markerGroup("group", evidence: evidence)
+        let page = RemotePage(
+            imageWidth: 100, imageHeight: 100, elapsedMs: 1,
+            lines: [annotationLine("remote", "Seçili bilgi", x: 0.1, y: 0.19)],
+            tokens: [
+                annotationToken("text", "bilgi", x: 0.2, y: 0.2),
+                // Well within the old 0.16-normalized-radius auto-attach
+                // distance of `base`'s center.
+                RemoteToken(tokenId: "note", text: "not", confidence: 0.8, x: 0.24, y: 0.21, width: 0.06, height: 0.03, isHandwritten: true)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [evidence], groups: [base], autoSelectedGroupIds: ["group"]),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let printedGroup = try XCTUnwrap(grounded.groups.first { $0.selectionType != .handwriting })
+        XCTAssertEqual(printedGroup.handwrittenNoteIds, [], "El yazısı yakın basılı gruba otomatik bağlanmamalı")
+        XCTAssertTrue(grounded.groups.contains { $0.selectionType == .handwriting && $0.handwrittenNoteIds == ["note"] })
+    }
+
+    /// Regression test 12: adjacent handwritten tokens on the same physical
+    /// line become one standalone note, not one purple box per word.
+    func testAdjacentHandwrittenTokensOnTheSameLineFormOneStandaloneNote() {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [RemoteLine(lineId: "note_line", text: "kenar notu", confidence: 0.9, x: 0.70, y: 0.40, width: 0.20, height: 0.03, tokenIds: ["w1", "w2"])],
+            tokens: [
+                RemoteToken(tokenId: "w1", text: "kenar", confidence: 0.9, x: 0.70, y: 0.40, width: 0.09, height: 0.03, isHandwritten: true),
+                RemoteToken(tokenId: "w2", text: "notu", confidence: 0.9, x: 0.795, y: 0.40, width: 0.08, height: 0.03, isHandwritten: true)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(), localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let handwriting = grounded.groups.filter { $0.selectionType == .handwriting }
+        XCTAssertEqual(handwriting.count, 1, "Aynı satırdaki bitişik el yazısı tokenları tek not olmalı, kelime başına kutu değil")
+        XCTAssertEqual(Set(handwriting.first?.handwrittenNoteIds ?? []), ["w1", "w2"])
+    }
+
+    /// Regression test 13: two handwritten notes on different lines stay
+    /// separate — not merged into one giant purple box.
+    func testTwoDifferentHandwritingNotesStaySeparate() {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                RemoteLine(lineId: "note1", text: "ilk not", confidence: 0.9, x: 0.70, y: 0.20, width: 0.15, height: 0.03, tokenIds: ["n1"]),
+                RemoteLine(lineId: "note2", text: "ikinci not", confidence: 0.9, x: 0.70, y: 0.60, width: 0.15, height: 0.03, tokenIds: ["n2"])
+            ],
+            tokens: [
+                RemoteToken(tokenId: "n1", text: "ilk", confidence: 0.9, x: 0.70, y: 0.20, width: 0.10, height: 0.03, isHandwritten: true),
+                RemoteToken(tokenId: "n2", text: "ikinci", confidence: 0.9, x: 0.70, y: 0.60, width: 0.10, height: 0.03, isHandwritten: true)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(), localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let handwriting = grounded.groups.filter { $0.selectionType == .handwriting }
+        XCTAssertEqual(handwriting.count, 2, "Farklı satırlardaki iki el yazısı notu ayrı kalmalı")
+    }
+
+    /// Regression test 14: the same handwritten token never appears inside
+    /// more than one printed group's `handwrittenNoteIds` — trivially true
+    /// now that proximity-based attachment is gone, but locked in as an
+    /// explicit regression rather than an incidental consequence.
+    func testTheSameHandwritingNoteIsNotDuplicatedAcrossTwoPrintedGroups() {
+        let left = markerEvidence("left_e", line: "left", token: "left_t", x: 0.10, y: 0.30)
+        let right = markerEvidence("right_e", line: "right", token: "right_t", x: 0.10, y: 0.60)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                annotationLine("left_r", "Sol bilgi", x: 0.10, y: 0.30),
+                annotationLine("right_r", "Sağ bilgi", x: 0.10, y: 0.60)
+            ],
+            tokens: [
+                annotationToken("left_r_token", "Sol", x: 0.10, y: 0.30),
+                annotationToken("right_r_token", "Sağ", x: 0.10, y: 0.60),
+                // Sits roughly between the two printed groups.
+                RemoteToken(tokenId: "note", text: "not", confidence: 0.9, x: 0.10, y: 0.45, width: 0.08, height: 0.03, isHandwritten: true)
+            ]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(
+                evidence: [left, right], groups: [markerGroup("left_g", evidence: left), markerGroup("right_g", evidence: right)],
+                autoSelectedGroupIds: ["left_g", "right_g"]
+            ),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let printedGroups = grounded.groups.filter { $0.selectionType != .handwriting }
+        XCTAssertTrue(printedGroups.allSatisfy { !$0.handwrittenNoteIds.contains("note") })
+        let noteOwners = grounded.groups.filter { $0.handwrittenNoteIds.contains("note") }
+        XCTAssertEqual(noteOwners.count, 1, "Aynı el yazısı notu ikinci kez başka bir grupta tekrarlanmamalı")
     }
 }
 

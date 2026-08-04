@@ -4,7 +4,20 @@ import Foundation
 /// no image bytes, ever (§7.3). Purely diagnostic: nothing in the pipeline
 /// branches on this, it exists so a real-device run can be reasoned about
 /// after the fact instead of guessed at.
+/// Which call into `AnnotationGrouper.ground` produced a diagnostics
+/// snapshot. The same `jobId` can legitimately go through grounding more
+/// than once (a fresh capture, then a confirmation resume, then a snapshot
+/// resume after relaunch) — without this tag, two different
+/// `mergedGroupCount` values logged for the same job read as a
+/// contradiction rather than as two different, both-correct moments.
+public enum GroundingPhase: String, Sendable, Equatable {
+    case initialDetection = "initial_detection"
+    case userConfirmationResume = "user_confirmation_resume"
+    case snapshotResume = "snapshot_resume"
+}
+
 public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
+    public let groundingPhase: GroundingPhase
     /// Echoes the backend's `DOCUMENTAI_COMPUTE_STYLE_INFO` for this call.
     /// Without this, "the style add-on ran and genuinely found nothing" and
     /// "the style add-on was never requested" are indistinguishable from the
@@ -24,6 +37,7 @@ public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
     public let evidenceCountsByProvenance: [String: Int]
 
     public init(
+        groundingPhase: GroundingPhase,
         styleInfoRequested: Bool,
         remoteTokenCount: Int,
         remoteUnderlinedTokenCount: Int,
@@ -36,6 +50,7 @@ public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
         mergedGroupCount: Int,
         evidenceCountsByProvenance: [String: Int]
     ) {
+        self.groundingPhase = groundingPhase
         self.styleInfoRequested = styleInfoRequested
         self.remoteTokenCount = remoteTokenCount
         self.remoteUnderlinedTokenCount = remoteUnderlinedTokenCount
@@ -62,7 +77,8 @@ public enum AnnotationGrouper {
         initialSelection: MarkerSelectionResult,
         groundedSelection: MarkerSelectionResult,
         remotePage: RemotePage?,
-        styleInfoRequested: Bool
+        styleInfoRequested: Bool,
+        groundingPhase: GroundingPhase
     ) -> AnnotationGroundingDiagnostics {
         let remoteTokens = remotePage?.tokens ?? []
         func localCandidateCount(_ provenance: AnnotationProvenance) -> Int {
@@ -73,6 +89,7 @@ public enum AnnotationGrouper {
             byProvenance[item.provenance.rawValue, default: 0] += 1
         }
         return AnnotationGroundingDiagnostics(
+            groundingPhase: groundingPhase,
             styleInfoRequested: styleInfoRequested,
             remoteTokenCount: remoteTokens.count,
             remoteUnderlinedTokenCount: remoteTokens.filter(\.isUnderlined).count,
@@ -133,12 +150,6 @@ public enum AnnotationGrouper {
             let contextTokens = remotePage.tokens.filter { token in
                 contextLines.contains { $0.tokenIds.contains(token.tokenId) }
             }
-            // Confirmation passes the user's chosen groups back in. Re-running
-            // discovery there would resurrect a handwriting candidate they
-            // explicitly rejected.
-            let handNotes = discoverHandwriting
-                ? nearbyHandwrittenTokens(for: group, from: remotePage.tokens)
-                : remotePage.tokens.filter { group.handwrittenNoteIds.contains($0.tokenId) }
             let layoutKind = layoutKind(for: group, lines: contextLines, tables: remotePage.tables)
             let heading = parentHeading(for: group, lines: remotePage.lines)
             // No line or token resolved at all — including a manual box that
@@ -158,40 +169,28 @@ public enum AnnotationGrouper {
                 contextText: contextLines.map(\.text).joined(separator: " "),
                 selectedTokenIds: selectedTokens.map(\.tokenId),
                 contextTokenIds: contextTokens.map(\.tokenId),
-                handwrittenNoteIds: handNotes.map(\.tokenId),
-                handwrittenNotes: handNotes.map(\.text),
+                // Never auto-attached by proximity here (§ item 6): a marked
+                // group only carries handwriting ids the user, or an earlier
+                // confirmed snapshot, explicitly put there — pass through
+                // unchanged rather than rediscovering by distance every time.
+                handwrittenNoteIds: group.handwrittenNoteIds,
+                handwrittenNotes: group.handwrittenNotes,
                 parentHeading: heading,
                 layoutKind: layoutKind,
-                // A handwriting relationship is an explicitly uncertain
-                // visual claim until the user attaches or rejects it.
-                needsConfirmation: unresolved || group.needsConfirmation || (discoverHandwriting && !handNotes.isEmpty)
+                needsConfirmation: unresolved || group.needsConfirmation
             )
         }
 
-        // A margin note far from all marked information stays a separate,
-        // pending candidate rather than being attached to a random paragraph.
+        // A margin note is never folded into a printed group's box just for
+        // sitting nearby — that was an unverifiable visual guess (§ item 6;
+        // attaching a note to *which* group it actually belongs to is a
+        // Prompt-3 concern, not decided here). Adjacent handwritten tokens on
+        // the very same physical line still become one standalone note
+        // (a remark, not one purple box per word); different lines, or a
+        // large gap on the same line, stay separate notes.
         let attachedHandwriting = Set(groups.flatMap(\.handwrittenNoteIds))
-        for token in remotePage.tokens where discoverHandwriting && token.isHandwritten && !attachedHandwriting.contains(token.tokenId) {
-            let box = token.boundingBox
-            groups.append(
-                AnnotationGroup(
-                    id: "handwriting_\(token.tokenId)",
-                    evidenceIds: [],
-                    selectedLineIds: [],
-                    contextLineIds: [],
-                    selectedTokenIds: [],
-                    contextTokenIds: [],
-                    handwrittenNoteIds: [token.tokenId],
-                    boundingBox: box,
-                    layoutKind: .unknown,
-                    confidence: token.confidence,
-                    needsConfirmation: true,
-                    selectionType: .handwriting,
-                    selectedText: "",
-                    contextText: "",
-                    handwrittenNotes: [token.text]
-                )
-            )
+        if discoverHandwriting {
+            groups.append(contentsOf: standaloneHandwritingGroups(from: remotePage, excluding: attachedHandwriting))
         }
 
         let auto = groups
@@ -237,20 +236,49 @@ public enum AnnotationGrouper {
         )
     }
 
-    /// Merge only visually contiguous evidence in the same horizontal region.
-    /// This joins a three-line mechanism list while preserving two instances
-    /// of the same phrase in distant reversible/irreversible boxes.
+    /// Merges only two kinds of pairs (§ items 2–5): (a) evidence from the
+    /// *same* OCR engine, on the *literal same* recognized line, separated by
+    /// no more than ordinary word spacing — one highlighter stroke or
+    /// underline drawn across more than one word; or (b) evidence from
+    /// *different* sources whose boxes overlap so strongly that they are
+    /// almost certainly the same physical mark measured twice (a local pixel
+    /// hit and Google's own style flag on the same word, say).
+    ///
+    /// Two different OCR lines never merge just because they sit close
+    /// together vertically — not two paragraphs, not two rows of the same
+    /// table, not a heading and the item below it, not two columns at the
+    /// same height. Distinct lines simply do not satisfy either predicate
+    /// above: their boxes do not overlap (real page whitespace separates
+    /// them) and — being different lines — they never share a line id. This
+    /// is the deliberate replacement for the previous "close horizontal
+    /// center, small vertical gap" rule, which merged anything moderately
+    /// close regardless of whether it was actually one physical mark (found
+    /// via real device use, 2026-08-04: 93 local candidates collapsed into
+    /// 26 groups spanning whole paragraphs and table rows).
     ///
     /// A candidate joins a cluster only when it satisfies `shouldMerge`
     /// against **every** current member (complete-linkage), not just the
-    /// cluster's overall bounding envelope or any single member. Checking
-    /// only the envelope (or only the nearest member, single-linkage) is
-    /// exactly what lets a transitive chain form: an unrelated third mark can
-    /// sit close enough to a cluster's *aggregate* extent, or to one lone
-    /// member, without actually being near the other real marks already in
-    /// it. Requiring agreement with every member ties cluster growth to real
-    /// content, not to a geometric average nobody's mark actually occupies.
+    /// cluster's overall bounding envelope or any single member.
+    ///
+    /// That alone is not enough for a large `localLineFallback` box (Apple's
+    /// whole-untokenized-line measurement) sitting over two genuinely
+    /// separate remote marker runs, though: it satisfies (b) against each run
+    /// individually, so complete-linkage would still let it absorb whichever
+    /// one happens to be visited first, arbitrarily, while grounding that
+    /// merged group's now-wide box against the page would then also pull in
+    /// the *other* run's text purely by box overlap (§ item 9) — silently
+    /// reproducing the same "unrelated content in one box" problem one layer
+    /// lower, just with fewer clusters instead of none. `ambiguousBridgeIds`
+    /// below catches this class of candidate — one that would bridge two
+    /// otherwise-independent marks — and excludes it from merging with
+    /// *anything* this round; it stays its own separate, already-`quick_confirm`
+    /// candidate rather than arbitrarily annexing one side.
     private static func merge(_ input: [AnnotationGroup], evidenceById: [String: AnnotationEvidence]) -> [AnnotationGroup] {
+        let ambiguousBridgeIds = Set(
+            input
+                .filter { isAmbiguousBridge($0, among: input, evidenceById: evidenceById) }
+                .map(\.id)
+        )
         var remaining = input.sorted {
             $0.boundingBox.y == $1.boundingBox.y
                 ? $0.boundingBox.x < $1.boundingBox.x
@@ -266,8 +294,9 @@ public enum AnnotationGrouper {
                 var index = 0
                 while index < remaining.count {
                     let candidate = remaining[index]
-                    let eligible = cluster.allSatisfy({ $0.selectionType != .manual }) && candidate.selectionType != .manual
-                    if eligible && cluster.allSatisfy({ shouldMerge($0.boundingBox, candidate.boundingBox) }) {
+                    let eligible = cluster.allSatisfy({ $0.selectionType != .manual && !ambiguousBridgeIds.contains($0.id) })
+                        && candidate.selectionType != .manual && !ambiguousBridgeIds.contains(candidate.id)
+                    if eligible && cluster.allSatisfy({ shouldMerge($0, candidate, evidenceById: evidenceById) }) {
                         cluster.append(remaining.remove(at: index))
                         changed = true
                     } else {
@@ -323,17 +352,82 @@ public enum AnnotationGrouper {
         }
     }
 
-    private static func shouldMerge(_ lhs: NormalizedRect, _ rhs: NormalizedRect) -> Bool {
-        let lhsCenter = lhs.x + lhs.width / 2
-        let rhsCenter = rhs.x + rhs.width / 2
-        guard abs(lhsCenter - rhsCenter) < 0.34 else { return false }
-        let verticalGap = max(lhs.y, rhs.y) - min(lhs.y + lhs.height, rhs.y + rhs.height)
-        return verticalGap <= 0.045
+    private enum SourceFamily { case local, remote }
+
+    /// Which engine produced this (pre-merge) group's one evidence item.
+    /// `merge`'s inputs — fresh `DetectedMarkerSelector`/
+    /// `RemoteAnnotationCandidateBuilder` groups — each carry exactly one
+    /// evidence id apiece; `cluster` only ever holds such pre-merge groups
+    /// during the growth loop (the merged result is built once, after the
+    /// loop ends), so this lookup is always well-defined there.
+    private static func sourceFamily(of group: AnnotationGroup, evidenceById: [String: AnnotationEvidence]) -> SourceFamily? {
+        guard let id = group.evidenceIds.first, let provenance = evidenceById[id]?.provenance else { return nil }
+        switch provenance {
+        case .localToken, .localLineFallback: return .local
+        case .remoteUnderlineStyle, .remoteBackgroundStyle: return .remote
+        case .manual: return nil
+        }
     }
 
-    /// Radius `nearbyHandwrittenTokens` uses for "close enough to belong
-    /// together" between a marked region and a handwritten margin note.
-    private static let manualFallbackMaxDistance = 0.16
+    /// (a) from `shouldMerge`'s doc comment: same engine, same literal
+    /// recognized line, no more than ordinary word spacing between them.
+    /// Local and remote line ids live in unrelated namespaces (each engine
+    /// numbers its own lines independently), so this only ever fires within
+    /// one source family — never across sources, which is exactly right:
+    /// two engines never legitimately share a line id for the same line.
+    private static func isAdjacentOnTheSameLine(
+        _ lhs: AnnotationGroup, _ rhs: AnnotationGroup, evidenceById: [String: AnnotationEvidence]
+    ) -> Bool {
+        guard
+            let family = sourceFamily(of: lhs, evidenceById: evidenceById),
+            sourceFamily(of: rhs, evidenceById: evidenceById) == family,
+            !Set(lhs.selectedLineIds).isDisjoint(with: Set(rhs.selectedLineIds))
+        else { return false }
+        let gap = max(lhs.boundingBox.x, rhs.boundingBox.x)
+            - min(lhs.boundingBox.x + lhs.boundingBox.width, rhs.boundingBox.x + rhs.boundingBox.width)
+        return gap <= RemoteAnnotationCandidateBuilder.sameMarkGapRatio
+    }
+
+    /// (b) from `shouldMerge`'s doc comment. Same "same physical area" bar
+    /// this pipeline already uses elsewhere for the identical question of
+    /// whether two OCR-measured boxes are actually the same physical spot
+    /// (`CapturePipeline.lineOverlapThreshold`, `DetectedMarkerSelector.lineTokenDedupOverlap`,
+    /// `matchingLines`/`matchingTokens` below) — not a new number invented
+    /// for this check.
+    private static let crossSourceOverlapThreshold = 0.3
+
+    private static func isSamePhysicalMarkAcrossSources(_ lhs: NormalizedRect, _ rhs: NormalizedRect) -> Bool {
+        lhs.overlapOfSmallerArea(with: rhs) >= crossSourceOverlapThreshold
+    }
+
+    private static func shouldMerge(
+        _ lhs: AnnotationGroup, _ rhs: AnnotationGroup, evidenceById: [String: AnnotationEvidence]
+    ) -> Bool {
+        isAdjacentOnTheSameLine(lhs, rhs, evidenceById: evidenceById)
+            || isSamePhysicalMarkAcrossSources(lhs.boundingBox, rhs.boundingBox)
+    }
+
+    /// Whether `candidate` would bridge two (or more) *mutually unrelated*
+    /// other candidates — matching each of them individually under
+    /// `shouldMerge`, while those others do not match each other. A coarse
+    /// `localLineFallback` box spanning two genuinely separate remote runs is
+    /// the motivating case (§ item 9), but the check is not fallback-specific:
+    /// any candidate whose own geometry happens to span two independent marks
+    /// gets the same treatment, on the same reasoning.
+    private static func isAmbiguousBridge(
+        _ candidate: AnnotationGroup, among all: [AnnotationGroup], evidenceById: [String: AnnotationEvidence]
+    ) -> Bool {
+        let matches = all.filter {
+            $0.id != candidate.id && $0.selectionType != .manual && shouldMerge(candidate, $0, evidenceById: evidenceById)
+        }
+        guard matches.count >= 2 else { return false }
+        for i in 0..<matches.count {
+            for j in (i + 1)..<matches.count where !shouldMerge(matches[i], matches[j], evidenceById: evidenceById) {
+                return true
+            }
+        }
+        return false
+    }
 
     private static func matchingLines(for box: NormalizedRect, lines: [RemoteLine]) -> [RemoteLine] {
         lines.filter { line in
@@ -370,15 +464,59 @@ public enum AnnotationGrouper {
         }
     }
 
-    private static func nearbyHandwrittenTokens(for group: AnnotationGroup, from tokens: [RemoteToken]) -> [RemoteToken] {
-        let center = group.boundingBox.center
-        return tokens.filter { token in
-            guard token.isHandwritten else { return false }
-            let other = token.boundingBox.center
-            let dx = other.x - center.x
-            let dy = other.y - center.y
-            return (dx * dx + dy * dy).squareRoot() <= manualFallbackMaxDistance
+    /// Standalone handwriting notes, grouped the same way
+    /// `RemoteAnnotationCandidateBuilder.appendRuns` groups style-flagged
+    /// tokens: adjacent tokens sharing a real OCR line become one run (a
+    /// remark, not one purple box per word); a different line, or a gap
+    /// bigger than ordinary word spacing on the same line, starts a new one.
+    /// `excluding` skips any token some earlier, already-confirmed pass
+    /// explicitly attached elsewhere, so the same physical note is never
+    /// shown twice.
+    private static func standaloneHandwritingGroups(from page: RemotePage, excluding: Set<String>) -> [AnnotationGroup] {
+        var tokenLineId: [String: String] = [:]
+        for line in page.lines {
+            for tokenId in line.tokenIds { tokenLineId[tokenId] = line.lineId }
         }
+        let handwritten = page.tokens.filter { $0.isHandwritten && !excluding.contains($0.tokenId) }
+        let byLine = Dictionary(grouping: handwritten) { tokenLineId[$0.tokenId] ?? $0.tokenId }
+
+        var groups: [AnnotationGroup] = []
+        for (lineId, lineTokens) in byLine.sorted(by: { $0.key < $1.key }) {
+            let ordered = lineTokens.sorted { $0.x < $1.x }
+            var runs: [[RemoteToken]] = []
+            for token in ordered {
+                if var last = runs.last, let previous = last.last,
+                   token.x - (previous.x + previous.width) <= RemoteAnnotationCandidateBuilder.sameMarkGapRatio {
+                    last.append(token)
+                    runs[runs.count - 1] = last
+                } else {
+                    runs.append([token])
+                }
+            }
+            for (index, run) in runs.enumerated() {
+                let box = run.map(\.boundingBox).reduce(run[0].boundingBox) { $0.union($1) }
+                groups.append(
+                    AnnotationGroup(
+                        id: "handwriting_\(lineId)_\(index)",
+                        evidenceIds: [],
+                        selectedLineIds: [],
+                        contextLineIds: [],
+                        selectedTokenIds: [],
+                        contextTokenIds: [],
+                        handwrittenNoteIds: run.map(\.tokenId),
+                        boundingBox: box,
+                        layoutKind: .unknown,
+                        confidence: run.map(\.confidence).reduce(0, +) / Double(run.count),
+                        needsConfirmation: true,
+                        selectionType: .handwriting,
+                        selectedText: "",
+                        contextText: "",
+                        handwrittenNotes: run.map(\.text)
+                    )
+                )
+            }
+        }
+        return groups
     }
 
     private static func layoutKind(

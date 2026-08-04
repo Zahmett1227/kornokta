@@ -90,6 +90,14 @@ struct ConfirmationView: View {
         }
     }
 
+    /// Cap on the raw per-line OCR-disagreement list's on-screen height once
+    /// expanded. Without it, a page with many flagged lines could still push
+    /// the photo overlay itself an unbounded distance down the screen even
+    /// from inside a disclosure — this is a fixed layout budget, not a
+    /// marker-detection threshold (§0.6 is about calibrated scoring, not
+    /// scroll-view sizing).
+    private static let technicalDetailMaxHeight: CGFloat = 160
+
     private var disagreementBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let reason = page.lastError, !reason.isEmpty {
@@ -97,10 +105,31 @@ struct ConfirmationView: View {
                     .foregroundStyle(.orange)
                     .font(.footnote)
             }
-            ForEach(page.confirmationFlags, id: \.self) { flag in
-                Text(flag)
-                    .font(.caption2.monospaced())
+            // The raw `replace: kaynak [...] -> okuma [...]` flags are a
+            // developer-facing diagnostic, not something a user reads
+            // productively — unconditionally listing every one of them used
+            // to push the photo overlay itself off the top of the screen on
+            // a page with several disagreements (found via real device use,
+            // 2026-08-04). A short plain-language summary now stands in by
+            // default; the raw list moves behind a collapsed disclosure.
+            if !page.confirmationFlags.isEmpty {
+                Text("OCR okumaları arasında bazı farklılıklar bulundu. İşaretli bölgeleri kontrol et.")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
+                DisclosureGroup("Teknik ayrıntılar") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(page.confirmationFlags, id: \.self) { flag in
+                                Text(flag)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: Self.technicalDetailMaxHeight)
+                }
+                .font(.footnote)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

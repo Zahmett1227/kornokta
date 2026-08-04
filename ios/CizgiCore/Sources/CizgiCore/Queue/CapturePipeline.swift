@@ -371,12 +371,23 @@ public struct CapturePipeline: Sendable {
             config: markerConfig
         )
         #if DEBUG
+        // Distinguishes which of this job's (possibly several) grounding
+        // calls a logged `mergedGroupCount` belongs to — a fresh capture, a
+        // user confirming groups back, or a relaunch resuming a saved
+        // snapshot all call `ground` again for the same jobId, and without
+        // this tag two different counts for the same job read as a
+        // contradiction rather than as two different, both-correct moments
+        // (found via real device use, 2026-08-04).
+        let groundingPhase: GroundingPhase = selectionResultOverride != nil
+            ? .userConfirmationResume
+            : (snapshot != nil ? .snapshotResume : .initialDetection)
         Self.logGroundingDiagnostics(
             AnnotationGrouper.diagnostics(
                 initialSelection: initialSelection,
                 groundedSelection: groundedSelection,
                 remotePage: remote?.page,
-                styleInfoRequested: remote?.styleInfoRequested ?? false
+                styleInfoRequested: remote?.styleInfoRequested ?? false,
+                groundingPhase: groundingPhase
             ),
             jobId: jobId
         )
@@ -628,7 +639,8 @@ public struct CapturePipeline: Sendable {
             styleNote = "istendi ve aday üretti"
         }
         print(
-            "[AnnotationDiagnostics] job=\(jobId) styleInfoRequested=\(diagnostics.styleInfoRequested) (\(styleNote))\n" +
+            "[AnnotationDiagnostics] job=\(jobId) groundingPhase=\(diagnostics.groundingPhase.rawValue)" +
+                " styleInfoRequested=\(diagnostics.styleInfoRequested) (\(styleNote))\n" +
                 "  remoteTokenCount=\(diagnostics.remoteTokenCount)" +
                 " remoteUnderlinedTokenCount=\(diagnostics.remoteUnderlinedTokenCount)" +
                 " remoteBackgroundColorTokenCount=\(diagnostics.remoteBackgroundColorTokenCount)" +
