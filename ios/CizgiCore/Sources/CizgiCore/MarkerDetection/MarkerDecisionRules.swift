@@ -16,6 +16,16 @@ public struct LineMeasurement: Sendable, Equatable {
     public let ocrConfidence: Double
     public let documentQuality: Double
     public let neighboringSeparation: Double
+    /// Whether genuine dark printed text is still visible once
+    /// highlight-coloured pixels are set aside (`MarkerDetector
+    /// .hasUnderlyingDarkText`) — a saturated printed heading or design band
+    /// has none, only a translucent highlighter drawn over real black ink
+    /// does. Defaults to `true` so the shared Python-reference decision
+    /// cases (`evals/shared/marker-decision-cases.json`, which construct this
+    /// directly from raw ratios, no pixels involved) keep testing exactly the
+    /// scoring formula they always have, unaffected by this later,
+    /// pixel-only addition.
+    public let hasUnderlyingDarkText: Bool
 
     public init(
         lineId: String,
@@ -23,7 +33,8 @@ public struct LineMeasurement: Sendable, Equatable {
         underline: UnderlineEvidence,
         ocrConfidence: Double,
         documentQuality: Double,
-        neighboringSeparation: Double
+        neighboringSeparation: Double,
+        hasUnderlyingDarkText: Bool = true
     ) {
         self.lineId = lineId
         self.highlightOverlap = highlightOverlap
@@ -31,6 +42,7 @@ public struct LineMeasurement: Sendable, Equatable {
         self.ocrConfidence = ocrConfidence
         self.documentQuality = documentQuality
         self.neighboringSeparation = neighboringSeparation
+        self.hasUnderlyingDarkText = hasUnderlyingDarkText
     }
 }
 
@@ -55,7 +67,12 @@ extension MarkerDetector {
         let isUnderline = darkRatio >= underlineConfig.minDarkPixelRatio
             && extentRatio >= underlineConfig.minHorizontalExtentRatio
             && !rejected
+        // A colour match alone is not enough (§ item 5): a printed heading or
+        // a solid design band is itself the coloured ink, with no genuine
+        // black text underneath it the way a real translucent highlighter
+        // stroke always has.
         let isHighlight = measurement.highlightOverlap >= config.highlight.minOverlapRatio
+            && measurement.hasUnderlyingDarkText
 
         let selectionType: SelectionKind
         let markerOverlap: Double
@@ -142,7 +159,8 @@ extension MarkerDetector {
                     underline: underlineEvidence(in: buffer, line: line),
                     ocrConfidence: line.ocrConfidence,
                     documentQuality: documentQuality,
-                    neighboringSeparation: Self.neighboringSeparation(line, among: lines)
+                    neighboringSeparation: Self.neighboringSeparation(line, among: lines),
+                    hasUnderlyingDarkText: hasUnderlyingDarkText(in: buffer, line: line)
                 )
             )
         }
@@ -170,7 +188,8 @@ extension MarkerDetector {
                         underline: underlineEvidence(in: buffer, line: box),
                         ocrConfidence: token.ocrConfidence,
                         documentQuality: documentQuality,
-                        neighboringSeparation: Self.neighboringSeparation(parent, among: Array(parentLines.values))
+                        neighboringSeparation: Self.neighboringSeparation(parent, among: Array(parentLines.values)),
+                        hasUnderlyingDarkText: hasUnderlyingDarkText(in: buffer, line: box)
                     )
                 )
             )

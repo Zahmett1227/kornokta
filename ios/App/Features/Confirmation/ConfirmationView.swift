@@ -139,12 +139,26 @@ struct ConfirmationView: View {
     }
 
     private func footer(snapshot: OCRSnapshot) -> some View {
-        VStack(spacing: 8) {
+        let eligibility = eligibility(snapshot)
+        return VStack(spacing: 8) {
             Text("Yeşil otomatik aday, turuncu kesikli hızlı onay, mor el yazısı notudur. Bölgeye dokunarak seçimi değiştir.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
+
+            // A selection that looks blue/active on the photo but cannot yet
+            // become a card must say so in plain language, not just leave
+            // the button inert (found via real device use, 2026-08-04: §9
+            // item 11 — "boş metin varsa uygulama neden ilerleyemediğini
+            // açıklamalı").
+            if eligibility == .selectedGroupNeedsTextReview {
+                Text("Seçili bölge için okunabilir metin bulunamadı. Yukarıdan farklı bir bölge seç ya da 'Metni incele' bölümünden kontrol et.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
 
             Button(isDrawingManualRectangle ? "Fotoğrafta dikdörtgen çiz" : "Manuel alan ekle") {
                 isDrawingManualRectangle.toggle()
@@ -162,11 +176,23 @@ struct ConfirmationView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(selectedGroupIds.isEmpty || isSubmitting)
+            .disabled(eligibility != .enabled || isSubmitting)
+            .accessibilityHint(eligibility == .selectedGroupNeedsTextReview ? "Seçili bölge için okunabilir metin bulunamadı" : "")
             .padding(.horizontal)
             .padding(.bottom, 8)
         }
         .background(.bar)
+    }
+
+    /// Pure decision, shared with `submit()` — the button's disabled state
+    /// and the message shown for it must never diverge (§9 item 7: "mavi
+    /// görünüm ile gerçek selected/confirmed state farklı kaynaklardan
+    /// hesaplanmamalı").
+    private func eligibility(_ snapshot: OCRSnapshot) -> CardCreationEligibility {
+        CardCreationEligibilityEvaluator.evaluate(
+            groups: snapshot.selection.groups + manualGroups,
+            selectedGroupIds: selectedGroupIds
+        )
     }
 
     private func displayLines(_ snapshot: OCRSnapshot) -> [ConfirmationLine] {
@@ -197,16 +223,16 @@ struct ConfirmationView: View {
     }
 
     private func submit(snapshot: OCRSnapshot) async {
+        // Same decision the button's disabled state and its inline
+        // explanation already used — never a second, divergent check here
+        // (§9 item 7). Reachable only via a race (e.g. an accessibility
+        // action firing before the button visually updates), so silently
+        // doing nothing is correct: the screen already explains why.
+        guard eligibility(snapshot) == .enabled else { return }
         let chosenGroups = (snapshot.selection.groups + manualGroups)
             .filter { selectedGroupIds.contains($0.id) }
             .map { $0.markedConfirmed() }
         guard !chosenGroups.isEmpty else { return }
-        guard chosenGroups.contains(where: {
-            $0.selectionType == .manual || !$0.contextText.isEmpty || !$0.selectedText.isEmpty
-        }) else {
-            errorMessage = "Bağımsız el yazısı notunu önce bir bilgi grubuna bağla."
-            return
-        }
 
         isSubmitting = true
         defer { isSubmitting = false }

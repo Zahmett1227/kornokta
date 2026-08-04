@@ -305,6 +305,81 @@ final class MarkerDetectorPixelTests: XCTestCase {
         XCTAssertTrue(evidence.overrunObserved)
         XCTAssertLessThan(evidence.overrunRatio, 0.3)
     }
+
+    /// Printed, colour-only "ink" — no separate black text at all — must not
+    /// read as a highlighter mark just because it passes the raw hue/
+    /// saturation/value gate (found via real device use, 2026-08-04: a
+    /// saturated printed heading such as "SJÖGREN SENDROMU" produced a false
+    /// marker candidate).
+    func testPrintedColoredHeadingIsNotReadAsAHighlight() throws {
+        let page = try syntheticPage { context in
+            // Within the configured "yellow" hue range, same as a real
+            // saturated printed heading colour — but, unlike the highlighter
+            // fixtures below, with no separate black ink anywhere at all.
+            context.setFillColor(CGColor.sRGB(1, 0.75, 0, alpha: 1))
+            context.fill(flipped(CGRect(x: 20, y: 40, width: 60, height: 16), in: 120))
+        }
+        XCTAssertGreaterThanOrEqual(
+            detector.highlightOverlap(in: page, line: line), 0.25,
+            "Test kurgusu geçersiz: renk eşiğini geçmiyor"
+        )
+        XCTAssertFalse(
+            detector.hasUnderlyingDarkText(in: page, line: line),
+            "Basılı renkli mürekkebin altında ayrı bir siyah metin yok"
+        )
+        let detection = detector.analyze(page: page, lines: [line]).first
+        XCTAssertNotEqual(detection?.selectionType, .highlight, "Basılı renkli başlık fosforlu kalem sayılmamalı")
+    }
+
+    /// The positive counterpart: a translucent highlighter drawn over real
+    /// black print must still be detected — the new gate only rejects the
+    /// *absence* of underlying text, not colour itself.
+    func testRealHighlighterOverBlackTextStillReadsAsAHighlight() throws {
+        let page = try syntheticPage { context in
+            context.setFillColor(CGColor.sRGB(1, 0.95, 0.1, alpha: 1))
+            context.fill(flipped(CGRect(x: 20, y: 40, width: 120, height: 16), in: 120))
+            context.setFillColor(CGColor.sRGBGray(0.05, alpha: 1))
+            for stripeX in stride(from: 24, to: 136, by: 12) {
+                context.fill(flipped(CGRect(x: CGFloat(stripeX), y: 44, width: 3, height: 8), in: 120))
+            }
+        }
+        XCTAssertTrue(detector.hasUnderlyingDarkText(in: page, line: line))
+        let detection = detector.analyze(page: page, lines: [line]).first
+        XCTAssertEqual(detection?.selectionType, .highlight)
+    }
+
+    /// A line-level fallback has no token geometry to narrow its evidence box
+    /// to — but the pixel measurement that judged it already knows where
+    /// within the line the mark sits, and must not report the whole line
+    /// (§3: markerBounds vs textBounds).
+    func testHighlightPixelBoundsAreTighterThanTheWholeLine() throws {
+        let page = try syntheticPage { context in
+            context.setFillColor(CGColor.sRGB(1, 0.95, 0.1, alpha: 1))
+            context.fill(flipped(CGRect(x: 20, y: 40, width: 30, height: 16), in: 120))
+        }
+        let bounds = try XCTUnwrap(detector.markerPixelBounds(in: page, line: line, selectionType: .highlight))
+        XCTAssertEqual(bounds.width, 30, accuracy: 2)
+        XCTAssertLessThan(bounds.width, Double(line.width))
+    }
+
+    func testUnderlinePixelBoundsAreTighterThanTheWholeLine() throws {
+        let page = try syntheticPage { context in
+            context.setFillColor(CGColor.sRGBGray(0.15, alpha: 1))
+            context.fill(flipped(CGRect(x: 60, y: 56, width: 20, height: 2), in: 120))
+        }
+        let bounds = try XCTUnwrap(detector.markerPixelBounds(in: page, line: line, selectionType: .underline))
+        XCTAssertEqual(bounds.minX, 60, accuracy: 2)
+        XCTAssertLessThan(bounds.width, Double(line.width))
+        XCTAssertEqual(bounds.height, Double(line.height))
+    }
+
+    /// `nil` (no matching pixel at all) must not crash a caller that force-
+    /// unwraps — a blank region simply has no bounds to report.
+    func testMarkerPixelBoundsIsNilWhenNothingMatches() throws {
+        let page = try syntheticPage { _ in }
+        XCTAssertNil(detector.markerPixelBounds(in: page, line: line, selectionType: .highlight))
+        XCTAssertNil(detector.markerPixelBounds(in: page, line: line, selectionType: .underline))
+    }
 }
 
 final class NeighborSeparationTests: XCTestCase {

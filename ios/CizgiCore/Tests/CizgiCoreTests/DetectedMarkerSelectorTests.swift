@@ -139,4 +139,81 @@ final class DetectedMarkerSelectorTests: XCTestCase {
         XCTAssertEqual(result.groups.count, 1)
         XCTAssertEqual(result.evidence.first?.provenance, .localToken, "Daha hassas token adayı önceliklidir")
     }
+
+    /// §3/§4, end to end: a `localLineFallback` candidate's evidence box must
+    /// reflect the actual marked pixels within its recognized line, not the
+    /// whole (wider) line rectangle — the direct fix for a real-device
+    /// symptom where a marked phrase inside a longer line produced an
+    /// oversized box (found via real device use, 2026-08-04).
+    func testLineFallbackEvidenceBoxIsTighterThanTheWholeRecognizedLine() async throws {
+        let width = 240, height = 100
+        // A dark stroke covering 60% of a 90px-wide line (well past the
+        // calibrated darkness/extent bars, unlike a stroke over a much
+        // smaller fraction of a very wide line, which the detector would not
+        // yet call marked at all).
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor.sRGB(1, 1, 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.setFillColor(CGColor.sRGBGray(0.1, alpha: 1))
+        context.fill(CGRect(x: 20, y: height - 58, width: 54, height: 2))
+        let image = context.makeImage()!
+
+        let config = try MarkerConfig.bundled()
+        let detector = MarkerDetector(config: config)
+        let wideLineBox = CGRect(
+            x: Double(20) / Double(width), y: Double(40) / Double(height),
+            width: Double(90) / Double(width), height: Double(16) / Double(height)
+        )
+        let markedLine = RecognizedLine(id: "marked", text: "", confidence: 0.5, box: wideLineBox, tokens: [])
+        let page = RecognizedPage(lines: [markedLine], elapsed: 0)
+
+        let selector = DetectedMarkerSelector(detector: detector, loadImage: { _ in image })
+        let result = try await selector.select(in: page, imageURL: URL(fileURLWithPath: "/dev/null"))
+
+        let markedGroup = try XCTUnwrap(result.groups.first { $0.selectedLineIds == ["marked"] })
+        XCTAssertEqual(markedGroup.selectionType, .underline, "Test kurgusu geçersiz: işaret satır seviyesinde tespit edilmedi")
+        XCTAssertLessThan(
+            markedGroup.boundingBox.width, wideLineBox.width * 0.8,
+            "Kutu genişliği tüm satırı değil, gerçek işaretli bölgeyi yansıtmalı"
+        )
+    }
+
+    /// §5/§6, end to end: a printed, saturated-colour heading line (no
+    /// separate black ink at all) must not surface as a candidate through
+    /// the real selection pipeline — not a text/coordinate hardcode, a
+    /// general colour+darkness signal (found via real device use,
+    /// 2026-08-04: a heading such as "SJÖGREN SENDROMU" produced a false
+    /// marker candidate).
+    func testAPrintedColoredHeadingProducesNoCandidate() async throws {
+        let width = 240, height = 100
+        let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor.sRGB(1, 1, 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        // Solid, saturated "yellow"-range ink covering the whole heading
+        // line — no black pixels anywhere in it.
+        context.setFillColor(CGColor.sRGB(1, 0.75, 0, alpha: 1))
+        context.fill(CGRect(x: 20, y: height - 56, width: 120, height: 16))
+        let image = context.makeImage()!
+
+        let config = try MarkerConfig.bundled()
+        let detector = MarkerDetector(config: config)
+        let headingBox = CGRect(
+            x: Double(20) / Double(width), y: Double(40) / Double(height),
+            width: Double(120) / Double(width), height: Double(16) / Double(height)
+        )
+        let headingLine = RecognizedLine(id: "heading", text: "", confidence: 0.9, box: headingBox, tokens: [])
+        let page = RecognizedPage(lines: [headingLine], elapsed: 0)
+
+        let selector = DetectedMarkerSelector(detector: detector, loadImage: { _ in image })
+        let result = try await selector.select(in: page, imageURL: URL(fileURLWithPath: "/dev/null"))
+
+        XCTAssertTrue(result.evidence.isEmpty, "Basılı renkli başlık hiçbir aday üretmemeli")
+        XCTAssertTrue(result.groups.isEmpty)
+    }
 }

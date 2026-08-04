@@ -650,7 +650,16 @@ public struct CapturePipeline: Sendable {
                 " remoteUnderlineCandidateCount=\(diagnostics.remoteUnderlineCandidateCount)" +
                 " remoteBackgroundCandidateCount=\(diagnostics.remoteBackgroundCandidateCount)\n" +
                 "  mergedGroupCount=\(diagnostics.mergedGroupCount)" +
-                " evidenceCountsByProvenance=\(diagnostics.evidenceCountsByProvenance)"
+                " totalEvidenceCount=\(diagnostics.totalEvidenceCount)" +
+                " evidenceCountsByProvenance=\(diagnostics.evidenceCountsByProvenance)\n" +
+                "  groupCountsBySelectionType=\(diagnostics.groupCountsBySelectionType)" +
+                " localLineFallbackGroupCount=\(diagnostics.localLineFallbackGroupCount)" +
+                " multiLineGroupCount=\(diagnostics.multiLineGroupCount)\n" +
+                "  emptyGroundedTextGroupCount=\(diagnostics.emptyGroundedTextGroupCount)" +
+                " unresolvedGroupCount=\(diagnostics.unresolvedGroupCount)" +
+                " selectedGroupCount=\(diagnostics.selectedGroupCount)\n" +
+                "  maxGroupHeight=\(diagnostics.maxGroupHeight)" +
+                " p95GroupHeight=\(diagnostics.p95GroupHeight)"
         )
     }
     #endif

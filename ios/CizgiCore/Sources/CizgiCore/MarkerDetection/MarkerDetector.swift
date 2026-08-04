@@ -220,6 +220,108 @@ public struct MarkerDetector: Sendable {
         return Double(matching) / Double(region.width * region.height)
     }
 
+    /// How close to zero a percentage has to be to read as "essentially
+    /// none", not a calibrated precision bar — this only ever *rejects* a
+    /// candidate that already passed `highlight.minOverlapRatio`, it never
+    /// grants a new auto-accept, so a wrong value here costs recall (a real
+    /// mark misses a shortcut and still reaches manual confirmation), never
+    /// precision (§0.6: this is intentionally not plumbed through
+    /// `MarkerConfig`/the Python reference the way a scored weight is —
+    /// tightening the geometric gate below, not the calibrated formula).
+    private static let underlyingDarkTextExistenceBar = 0.01
+
+    /// Whether `line`'s own region still shows genuine dark printed text once
+    /// its highlight-coloured pixels are set aside — the visual signature of
+    /// a translucent highlighter drawn over black ink (a real fosforlu kalem
+    /// "metin pikselini tamamen ortadan kaldırmaz", § item 5). A saturated
+    /// *printed* heading or a solid coloured design band has no separate dark
+    /// component at all: every dark-looking pixel there already is the
+    /// coloured ink itself, none of it is left over as plain text underneath.
+    /// Reuses `darkMask`'s own per-region adaptive darkness bar rather than a
+    /// new absolute brightness threshold (found via real device use,
+    /// 2026-08-04: a bright printed heading such as "SJÖGREN SENDROMU" passed
+    /// the plain colour/overlap gate and produced a false marker candidate).
+    func hasUnderlyingDarkText(in buffer: PixelBuffer, line: LineBox) -> Bool {
+        guard let region = PixelRegion(x: line.x, y: line.y, width: line.width, height: line.height, in: buffer) else {
+            return false
+        }
+        let ranges = config.hueRanges
+        let mask = darkMask(in: buffer, region: region)
+        var darkNonColoredCount = 0
+        for row in 0..<region.height {
+            for column in 0..<region.width where mask[row][column] {
+                let (h, s, v) = buffer.hsv(x: region.x + column, y: region.y + row)
+                let isHighlightColored = s >= config.highlight.minSaturation && v >= config.highlight.minValue
+                    && ranges.contains { h >= $0.low && h <= $0.high }
+                if !isHighlightColored { darkNonColoredCount += 1 }
+            }
+        }
+        return Double(darkNonColoredCount) / Double(region.width * region.height) >= Self.underlyingDarkTextExistenceBar
+    }
+
+    /// Tight pixel bounding box of the marked pixels within `line`'s own
+    /// rectangle — the marker's actual physical extent, not the whole
+    /// recognized-line rectangle a line-level (no-token) measurement is
+    /// forced to use as its measuring window. `nil` when no matching pixel is
+    /// found (should not happen once a caller has already confirmed
+    /// `selectionType != .none`, but a caller must not force-unwrap a pixel
+    /// measurement) — the caller falls back to the whole line box in that
+    /// rare case, the pre-existing and already-tested behaviour, rather than
+    /// crash (§3: markerBounds vs textBounds — found via real device use,
+    /// 2026-08-04: a single marked word inside a long line produced a
+    /// whole-paragraph-wide box because the fallback candidate had no way to
+    /// say *where* in the line the mark actually was).
+    public func markerPixelBounds(in buffer: PixelBuffer, line: LineBox, selectionType: SelectionKind) -> CGRect? {
+        switch selectionType {
+        case .highlight: return highlightPixelBounds(in: buffer, line: line)
+        case .underline: return underlinePixelBounds(in: buffer, line: line)
+        case .none: return nil
+        }
+    }
+
+    private func highlightPixelBounds(in buffer: PixelBuffer, line: LineBox) -> CGRect? {
+        guard let region = PixelRegion(x: line.x, y: line.y, width: line.width, height: line.height, in: buffer) else {
+            return nil
+        }
+        let ranges = config.hueRanges
+        var minX = Int.max, maxX = Int.min, minY = Int.max, maxY = Int.min
+        for row in region.y..<(region.y + region.height) {
+            for column in region.x..<(region.x + region.width) {
+                let (h, s, v) = buffer.hsv(x: column, y: row)
+                guard s >= config.highlight.minSaturation, v >= config.highlight.minValue,
+                      ranges.contains(where: { h >= $0.low && h <= $0.high })
+                else { continue }
+                minX = min(minX, column); maxX = max(maxX, column)
+                minY = min(minY, row); maxY = max(maxY, row)
+            }
+        }
+        guard minX <= maxX, minY <= maxY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// Horizontal extent only: an underline's vertical position is already
+    /// the measured band itself (baseline-anchored), not something a per-
+    /// column pixel scan should shrink further — only *where along the line*
+    /// the dark stroke starts and stops is unknown ahead of time.
+    private func underlinePixelBounds(in buffer: PixelBuffer, line: LineBox) -> CGRect? {
+        let underline = config.underline
+        let bandHeight = max(3, Int((Double(line.height) * underline.bandHeightRatio).rounded()))
+        let bandTop = line.y2 - 2
+        let bandFullHeight = bandHeight + 2
+        guard let band = PixelRegion(x: line.x, y: bandTop, width: line.width, height: bandFullHeight, in: buffer) else {
+            return nil
+        }
+        let mask = darkMask(in: buffer, region: band)
+        var minX = Int.max, maxX = Int.min
+        for row in 0..<band.height {
+            for column in 0..<band.width where mask[row][column] {
+                minX = min(minX, column); maxX = max(maxX, column)
+            }
+        }
+        guard minX <= maxX else { return nil }
+        return CGRect(x: band.x + minX, y: line.y, width: maxX - minX + 1, height: line.height)
+    }
+
     // MARK: - Underline
 
     /// Dark-pixel mask for a region: below the mean by two standard

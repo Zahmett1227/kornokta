@@ -109,11 +109,35 @@ public struct DetectedMarkerSelector: MarkerSelecting {
         // page had tokens. Running both passes and deduping by geometry (below)
         // instead of picking one for the whole page keeps that line's mark
         // alive as a fallback candidate.
+        let pixelLineBoxes = page.lines.map { LineBox($0, imageWidth: buffer.width, imageHeight: buffer.height) }
+        let pixelLineBoxById = Dictionary(uniqueKeysWithValues: pixelLineBoxes.map { ($0.lineId, $0) })
         let rawLineCandidates: [Candidate] = detector
-            .analyze(page: buffer, lines: page.lines.map { LineBox($0, imageWidth: buffer.width, imageHeight: buffer.height) }, documentQuality: quality)
+            .analyze(page: buffer, lines: pixelLineBoxes, documentQuality: quality)
             .compactMap { detection in
                 guard let line = lineLookup[detection.lineId] else { return nil }
-                return Candidate(detection: detection, lineId: line.id, tokenId: nil, box: NormalizedRect(line.box), provenance: .localLineFallback)
+                // The marked region *within* this line, not the whole
+                // recognized-line box — a line-level fallback has no token
+                // geometry to narrow to, but the pixel measurement that just
+                // judged it already knows exactly where the mark sits (§3:
+                // markerBounds vs textBounds; found via real device use,
+                // 2026-08-04: a single marked word inside a long line
+                // produced a whole-paragraph-wide box). Falls back to the
+                // whole line box — the pre-existing, already-tested
+                // behaviour — in the rare case no matching pixel is found.
+                let box: NormalizedRect
+                if detection.selectionType != .none,
+                   let pixelLine = pixelLineBoxById[detection.lineId],
+                   let tightPixelBox = detector.markerPixelBounds(in: buffer, line: pixelLine, selectionType: detection.selectionType) {
+                    box = NormalizedRect(
+                        x: Double(tightPixelBox.minX) / Double(buffer.width),
+                        y: Double(tightPixelBox.minY) / Double(buffer.height),
+                        width: Double(tightPixelBox.width) / Double(buffer.width),
+                        height: Double(tightPixelBox.height) / Double(buffer.height)
+                    )
+                } else {
+                    box = NormalizedRect(line.box)
+                }
+                return Candidate(detection: detection, lineId: line.id, tokenId: nil, box: box, provenance: .localLineFallback)
             }
 
         // Only a token the detector actually judged marked can suppress a

@@ -664,6 +664,55 @@ final class AnnotationGroundingDiagnosticsTests: XCTestCase {
         XCTAssertEqual(diagnostics.remoteUnderlineCandidateCount, 0)
         XCTAssertEqual(diagnostics.remoteBackgroundCandidateCount, 0)
     }
+
+    /// §10: the expanded counters must tell apart a group that resolved real
+    /// text from one that a `localLineFallback` produced and grounding never
+    /// managed to match against anything on the page.
+    func testExpandedCountersReflectFallbackAndUnresolvedGroups() throws {
+        let resolvedEvidence = localTokenEvidence("resolved", line: "vision_0", token: "resolved_t", x: 0.44, y: 0.20, width: 0.09, height: 0.025)
+        let resolvedGroup = markerGroup("resolved_g", evidence: resolvedEvidence)
+
+        // Far from every remote line — grounding must leave it unresolved.
+        let fallbackEvidence = AnnotationEvidence(
+            id: "fallback", type: .underline,
+            boundingBox: NormalizedRect(x: 0.10, y: 0.90, width: 0.08, height: 0.03),
+            lineIds: ["vision_1"], tokenIds: [], confidence: 0.5, decision: .quickConfirm,
+            provenance: .localLineFallback
+        )
+        let fallbackGroup = AnnotationGroup(
+            id: "fallback_g", evidenceIds: [fallbackEvidence.id], selectedLineIds: fallbackEvidence.lineIds,
+            contextLineIds: fallbackEvidence.lineIds, boundingBox: fallbackEvidence.boundingBox,
+            confidence: fallbackEvidence.confidence, needsConfirmation: true, selectionType: .underline
+        )
+
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [annotationToken("g0_token", "hipoksi", x: 0.44, y: 0.20)]
+        )
+
+        let initialSelection = MarkerSelectionResult(
+            evidence: [resolvedEvidence, fallbackEvidence],
+            groups: [resolvedGroup, fallbackGroup],
+            autoSelectedGroupIds: ["resolved_g"]
+        )
+        let grounded = AnnotationGrouper.ground(
+            selection: initialSelection, localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        let diagnostics = AnnotationGrouper.diagnostics(
+            initialSelection: initialSelection, groundedSelection: grounded, remotePage: page,
+            styleInfoRequested: false, groundingPhase: .initialDetection
+        )
+
+        XCTAssertEqual(diagnostics.totalEvidenceCount, 2)
+        XCTAssertEqual(diagnostics.localLineFallbackGroupCount, 1)
+        XCTAssertEqual(diagnostics.emptyGroundedTextGroupCount, 1, "Çözülemeyen fallback grubu boş metinli sayılmalı")
+        XCTAssertEqual(diagnostics.unresolvedGroupCount, 1)
+        XCTAssertEqual(diagnostics.selectedGroupCount, 1, "Yalnız çözülen grup otomatik seçilmeli")
+        XCTAssertEqual(diagnostics.groupCountsBySelectionType["underline"], 2)
+        XCTAssertGreaterThan(diagnostics.maxGroupHeight, 0)
+        XCTAssertGreaterThan(diagnostics.p95GroupHeight, 0)
+    }
 }
 
 /// Regression tests for the merge rewrite (real-device trace, 2026-08-04):

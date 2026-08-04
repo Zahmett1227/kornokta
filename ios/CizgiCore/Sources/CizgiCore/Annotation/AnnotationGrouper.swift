@@ -35,6 +35,32 @@ public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
     /// Keyed by `AnnotationProvenance.rawValue`, counted after merge (merge
     /// only clusters groups — it never drops or duplicates evidence).
     public let evidenceCountsByProvenance: [String: Int]
+    public let totalEvidenceCount: Int
+    /// Keyed by `AnnotationType.rawValue`.
+    public let groupCountsBySelectionType: [String: Int]
+    /// Groups carrying at least one `.localLineFallback` evidence item — the
+    /// whole-line pixel measurement with no token geometry to fall back to
+    /// (§4; the class of candidate most at risk of an over-wide box).
+    public let localLineFallbackGroupCount: Int
+    /// Groups whose grounded box overlaps more than one OCR line
+    /// (`selectedLineIds.count > 1`) — legitimate for a same-line multi-word
+    /// run split across two adjacent recognized lines by the OCR engine, but
+    /// worth watching for on a real page (§7 item 7).
+    public let multiLineGroupCount: Int
+    /// Groups where grounding resolved to no usable text at all (`§0.5`— a
+    /// group that reaches the confirmation screen with nothing readable
+    /// inside its box).
+    public let emptyGroundedTextGroupCount: Int
+    /// Groups still requesting confirmation after this grounding pass —
+    /// distinct from `mergedGroupCount - autoSelectedGroupIds.count` only in
+    /// that this reads directly off each group's own flag, not derived.
+    public let unresolvedGroupCount: Int
+    public let selectedGroupCount: Int
+    /// Tallest and 95th-percentile normalized group box height, over every
+    /// grounded group — a page dominated by whole-paragraph boxes shows up
+    /// here as numbers, not just as a subjective "boxes look big" report.
+    public let maxGroupHeight: Double
+    public let p95GroupHeight: Double
 
     public init(
         groundingPhase: GroundingPhase,
@@ -48,7 +74,16 @@ public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
         remoteUnderlineCandidateCount: Int,
         remoteBackgroundCandidateCount: Int,
         mergedGroupCount: Int,
-        evidenceCountsByProvenance: [String: Int]
+        evidenceCountsByProvenance: [String: Int],
+        totalEvidenceCount: Int = 0,
+        groupCountsBySelectionType: [String: Int] = [:],
+        localLineFallbackGroupCount: Int = 0,
+        multiLineGroupCount: Int = 0,
+        emptyGroundedTextGroupCount: Int = 0,
+        unresolvedGroupCount: Int = 0,
+        selectedGroupCount: Int = 0,
+        maxGroupHeight: Double = 0,
+        p95GroupHeight: Double = 0
     ) {
         self.groundingPhase = groundingPhase
         self.styleInfoRequested = styleInfoRequested
@@ -62,6 +97,15 @@ public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
         self.remoteBackgroundCandidateCount = remoteBackgroundCandidateCount
         self.mergedGroupCount = mergedGroupCount
         self.evidenceCountsByProvenance = evidenceCountsByProvenance
+        self.totalEvidenceCount = totalEvidenceCount
+        self.groupCountsBySelectionType = groupCountsBySelectionType
+        self.localLineFallbackGroupCount = localLineFallbackGroupCount
+        self.multiLineGroupCount = multiLineGroupCount
+        self.emptyGroundedTextGroupCount = emptyGroundedTextGroupCount
+        self.unresolvedGroupCount = unresolvedGroupCount
+        self.selectedGroupCount = selectedGroupCount
+        self.maxGroupHeight = maxGroupHeight
+        self.p95GroupHeight = p95GroupHeight
     }
 }
 
@@ -88,6 +132,13 @@ public enum AnnotationGrouper {
         for item in groundedSelection.evidence {
             byProvenance[item.provenance.rawValue, default: 0] += 1
         }
+        let groups = groundedSelection.groups
+        let evidenceById = Dictionary(uniqueKeysWithValues: groundedSelection.evidence.map { ($0.id, $0) })
+        var byType: [String: Int] = [:]
+        for group in groups {
+            byType[group.selectionType.rawValue, default: 0] += 1
+        }
+        let heights = groups.map(\.boundingBox.height).sorted()
         return AnnotationGroundingDiagnostics(
             groundingPhase: groundingPhase,
             styleInfoRequested: styleInfoRequested,
@@ -99,9 +150,31 @@ public enum AnnotationGrouper {
             localLineFallbackCandidateCount: localCandidateCount(.localLineFallback),
             remoteUnderlineCandidateCount: byProvenance[AnnotationProvenance.remoteUnderlineStyle.rawValue] ?? 0,
             remoteBackgroundCandidateCount: byProvenance[AnnotationProvenance.remoteBackgroundStyle.rawValue] ?? 0,
-            mergedGroupCount: groundedSelection.groups.count,
-            evidenceCountsByProvenance: byProvenance
+            mergedGroupCount: groups.count,
+            evidenceCountsByProvenance: byProvenance,
+            totalEvidenceCount: groundedSelection.evidence.count,
+            groupCountsBySelectionType: byType,
+            localLineFallbackGroupCount: groups.filter { group in
+                group.evidenceIds.contains { evidenceById[$0]?.provenance == .localLineFallback }
+            }.count,
+            multiLineGroupCount: groups.filter { $0.selectedLineIds.count > 1 }.count,
+            emptyGroundedTextGroupCount: groups.filter {
+                $0.selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    && $0.contextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }.count,
+            unresolvedGroupCount: groups.filter(\.needsConfirmation).count,
+            selectedGroupCount: groundedSelection.autoSelectedGroupIds.count,
+            maxGroupHeight: heights.last ?? 0,
+            p95GroupHeight: percentile(heights, 0.95)
         )
+    }
+
+    /// Nearest-rank percentile over an already-sorted array — no external
+    /// statistics dependency needed for a diagnostics-only number.
+    private static func percentile(_ sorted: [Double], _ fraction: Double) -> Double {
+        guard !sorted.isEmpty else { return 0 }
+        let index = min(sorted.count - 1, Int((fraction * Double(sorted.count)).rounded(.up)) - 1)
+        return sorted[max(0, index)]
     }
 
     /// Resolves local marker evidence against the primary (Google) OCR result,
