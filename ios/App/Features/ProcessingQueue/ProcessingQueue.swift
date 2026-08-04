@@ -231,8 +231,12 @@ final class ProcessingQueue: ObservableObject {
             // Not an error, but the reason has to survive: §19.2 requires the
             // confirmation, and a confirmation with no reason attached is one
             // the user cannot answer well. `lastError` is the field the queue
-            // and the confirmation screen already read.
-            page.lastError = outcome.reconciliation?.reason
+            // and the confirmation screen already read. `confirmationReason`
+            // covers every stop reason (nothing marked, thin passage, no
+            // cards), not just the OCR-reconciliation one — falling back to
+            // `outcome.reconciliation?.reason` alone left this `nil` whenever
+            // the reason had nothing to do with OCR disagreement.
+            page.lastError = outcome.confirmationReason ?? outcome.reconciliation?.reason
             page.confirmationFlags = outcome.reconciliation?.lines
                 .flatMap(\.criticalTokenFlags) ?? []
 

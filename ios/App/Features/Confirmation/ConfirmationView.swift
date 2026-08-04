@@ -181,7 +181,20 @@ struct ConfirmationView: View {
             autoSelectedGroupIds: chosenGroups.map(\.id)
         )
         await environment.queue.process(page, selection: confirmed)
-        dismiss()
+        // `page` is the same SwiftData object `process` just mutated, so its
+        // state already reflects this run. Dismissing unconditionally here
+        // used to make a genuine `confirmationRequired` bounce (nothing
+        // grounded, a group's passage came back empty) look identical to
+        // success — the screen just closed with no explanation, and the only
+        // way to learn why was to back out to the queue and read
+        // `page.lastError` there (found via real device use, 2026-08-04).
+        // Staying on screen and showing it immediately means the user can fix
+        // the selection without leaving.
+        if page.processingState == .confirmationRequired {
+            errorMessage = page.lastError ?? "Kart üretilemedi. Farklı bir bölge seçmeyi dene."
+        } else {
+            dismiss()
+        }
     }
 }
 

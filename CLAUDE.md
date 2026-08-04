@@ -27,11 +27,15 @@ yorumları **İngilizce**.
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. 2026-08-04'te Faz 3 öncesi annotation-grounding katmanı eklendi: token/bbox kanıtı, grup sözleşmesi, tek-çağrılık OCR snapshot ve fotoğraf üstü onay. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
-| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı** (kullanıcı kendi telefonunda çalıştırdı, gerçek bir sayfa çekti). **Bu oturumda telefon backend'e bağlandı** (Vercel cihaz tokenı girildi) ve **153/153 Swift testi kullanıcı tarafından doğrulandı** — önceki oturumun açık kalan en öncelikli maddesi kapandı. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı ama süreçte dört gerçek hata bulunup düzeltildi — ayrıntı `docs/FAZ5-DURUM.md`. |
+| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı**. Telefon backend'e bağlandı, 153/153 Swift testi bir Mac'te doğrulandı — ama sonrasında main annotation-grounding'e geçti (madde 9) ve o doğrulama artık eski bir kod tabanına ait. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı; süreçte gerçek hatalar bulunup düzeltildi (dördü madde 1-4, üçü madde 9) — ayrıntı `docs/FAZ5-DURUM.md`. |
 
-**Dal durumu:** `claude/project-review-issue-j0ycif` (bu oturumun dalı,
-`main`'in `598b93c`'i üzerine). Önceki `main` durumu: `15e68b0`+PR #3/#4/#5,
-2026-08-03.
+**Dal durumu:** `claude/project-review-issue-j0ycif`, `main`'in `0bca0d0`'i
+(PR #7/#8/#9/#10 dahil güncel uç) üzerine **sıfırdan kuruldu** — önceki bir
+oturumun aynı isimli dalı (`598b93c` üzerine kurulmuştu, commit `25e3fdd`)
+main'in `1c1855d`'ten sonra annotation-grounding'e gittiğini fark etmeden
+push edilmişti; o dal madde 9'da anlatıldığı gibi geçersiz kaldı ve terk
+edildi (obje veritabanında hâlâ erişilebilir ama branch ref'i artık ona
+işaret etmiyor).
 
 **Bugünkü gerçek cihaz oturumunda bulunan ve düzeltilen sorunlar** (ayrıntı
 `docs/FAZ5-DURUM.md`, madde 4 bu oturuma ait):
@@ -103,27 +107,73 @@ yorumları **İngilizce**.
    edildi (tamamen zararsız bir açıklama da onay ister) çünkü serbest metni
    güvenilir biçimde ayıramıyoruz. Ayrıntı: ADR-003'ün "Üçüncü düzeltme"
    bölümü.
+8. **(Yeni oturum, PR #7 merge sonrası gerçek cihaz raporu, sonradan
+   revize edildi — bkz. madde 9)** Kullanıcı PR #7 dağıtıldıktan sonra
+   "Kart oluştur"un hâlâ kart oluşturmadığını bildirdi. `[String]` satır-id
+   seçim modeline göre üç kök neden bulunup düzeltilmiş, bir dala push
+   edilmişti (commit `25e3fdd`). **Bu dal hiç merge edilmedi** — bkz. madde 9.
+9. **(Yeni oturum, aynı şikayet main'de tekrar edince)** Kullanıcı "main'e
+   bazı değişiklikler yaptım ama onay ekranı hâlâ hiçbir şeyi onaylamıyor,
+   düzeltip merge eder misin" dedi. `main`'i kontrol edince: madde 8'in dalı
+   (`25e3fdd`) ile eşzamanlı, **aynı temel commit'ten (`1c1855d`)** başka bir
+   oturum (muhtemelen Codex, `codex/annotation-grounding` dalından) çok daha
+   büyük bir yeniden tasarım yapmış ve PR #8/#9/#10 ile merge etmiş: "annotation
+   grounding" — satır-id yerine görsel kanıt/token tabanlı `AnnotationGroup`,
+   sayfa başına tek Google OCR çağrısı, cihazda saklanan `OCRSnapshot`, ve
+   fotoğraf üstü kutu onayı (bkz. `docs/ADR-004-annotation-grounding.md`).
+   **Bu dal madde 8'in düzeltmelerini hiç içermiyordu** — aynı üç kök neden,
+   yeni mimari içinde sessizce yeniden ortaya çıkmıştı:
+   - `CapturePipeline.swift`: bir kart `requiresUserApproval` ile
+     işaretlendiğinde `finalState` `.confirmationRequired` oluyordu — kart
+     zaten kaydedilmiş olsa bile (`ProcessingQueue.apply` `generatedGroups`'u
+     `finalState`'ten bağımsız kaydediyor). Bir sonraki "Kart oluştur"
+     denemesinde `completedGroupIds` bu zaten-kaydedilmiş grubu
+     `selectedGroups`'tan eleyip hiçbir şey üretmiyordu — kalıcı bir tıkanma,
+     "Kart oluştur" hiçbir şey yapmıyormuş gibi görünüyordu. §12.2'nin gereği
+     olan v1.1 promptu çoğu karta `explanation` eklediği ve `cardGate.ts` bunu
+     `quick_confirm`'e yükselttiği için bu neredeyse her gerçek sayfada
+     oluyordu. Düzeltme: onay isteyen kart artık `.ready` ile birlikte
+     `CardStatus.needsReview` olarak kaydediliyor.
+   - `LibraryView.swift`: `.needsReview` kartları hâlâ görünmüyordu — hiçbir
+     "Onay bekliyor" bölümü, Onayla/Sil düğmesi yoktu. Madde 8'in dalındaki
+     aynı 71 satırlık ekleme yeniden uygulandı.
+   - `ConfirmationView.swift`: `submit()` sonucu kontrol etmeden `dismiss()`
+     çağırıyordu. Artık `page.processingState`'i kontrol ediyor, hâlâ
+     `confirmationRequired`'sa nedeni (`PipelineOutcome.confirmationReason`,
+     yeni alan — `.confirmationRequired`'a giden her yol artık bir sebep
+     taşıyor) uyarı olarak gösteriyor.
+   - Yol boyunca ayrı bir gerçek hata daha bulundu: çok-gruplu bir gönderimde
+     bir grup başarıyla üretildikten SONRA aynı gönderimdeki bir sonraki grup
+     başarısız olursa (`passage.isEmpty`, `knowledge.cards.isEmpty`,
+     `sourceInsufficient`), önceki grubun ürettiği kartlar `PipelineOutcome`a
+     hiç taşınmıyordu (`generatedGroups` varsayılan `[]`) — parayla üretilmiş
+     kartlar sessizce kayboluyordu. Üç dönüş noktasına da `generatedGroups:
+     generated` eklendi.
+   - Backend tarafında bu turda **hiçbir değişiklik yok**: `_ocr.ts` ve
+     `reconcile.ts` madde 4-7'deki haliyle değişmeden duruyor (ADR-004
+     mimarisinde seçim OCR çağrısından SONRA oluştuğu için madde 8 dalındaki
+     `selectedLineIds`/`selectedBoxes` sayfa-içi daraltma mekanizması bu
+     mimariye hiç uymuyor ve gerekli de değil — asıl tıkanma zaten
+     `needsApproval` yönlendirmesindeydi).
+   Testler: backend'e dokunulmadı (451/451 hâlâ yeşil, doğrulandı). Swift'e 3
+   yeni test eklendi (167 toplam) — **henüz bir Mac'te koşulmadı**.
 
 **Test durumu:**
-- Python (`evals/`): 511 test, yeşil — `python -m pytest evals -q` (bu
-  oturumda gerçekten çalıştırıldı)
-- Backend (`backend/`): **450 test**, yeşil — `npm test` (bu oturumda
-  gerçekten çalıştırıldı; PR #7 incelemesinin iki turunda eklenen testler
-  dahil — gate/cardGate/criticalTokens'a Codex'in senaryoları)
-- Swift (`ios/CizgiCore/`): 153 test. **Kullanıcı bu oturumda `swift test`
-  çalıştırdı, 153/153 yeşil** — önceki oturumun açık kalan riski (sütun
-  tespitinin son 8 düzeltmesi hiç derlenmemişti) kapandı. **Dikkat:** bu
-  doğrulamadan *sonra*, bu oturumda `BackendPipelineTests.swift`'teki bir
-  örnek etiket metni (kaynak/okuma yön düzeltmesi için) değiştirildi —
-  testin kendisi `reconcile.ts`'i çalıştırmıyor (sentetik veriyle kuruluyor),
-  yani mantıken kırılması beklenmez, ama bu haliyle bir Mac'te henüz
-  **kimse çalıştırmadı**. Sıradaki oturumda önce bu koşulmalı.
+- Python (`evals/`): 511 test — bu oturumda dokunulmadı/koşulmadı.
+- Backend (`backend/`): **451 test**, yeşil — `npm test` bu oturumda
+  gerçekten çalıştırıldı. Bu oturumda backend'e hiç dokunulmadı (madde 9);
+  451 rakamı annotation-grounding oturumunun eklediği `documentAI.test.ts`
+  dahil main'in kendi sayısı.
+- Swift (`ios/CizgiCore/`): **167 test** (main'in 165'i + bu oturumda eklenen
+  3) — **henüz bir Mac'te koşulmadı**. `swift test` yalnız `CizgiCore`
+  paketini derliyor; App hedefini (ConfirmationView/LibraryView'daki
+  değişiklikler dahil) yalnız Xcode'da gerçek bir build/çalıştırma doğrular.
 
-**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), uçtan uca
-doğrulandı. **Telefon bu oturumda backend'e bağlandı** (Vercel cihaz tokenı
-Ayarlar'a girildi) — kart üretimi artık Mock'tan gerçek yapay zekaya geçmiş
-olmalı; bu oturumda yalnız reconcile.ts/prompt kod tarafı değişti, telefonun
-güncellenmiş kodu henüz çalıştırmadığı unutulmamalı (yeni build gerekiyor).
+**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`). **Bu
+oturumun değişiklikleri (needsApproval→ready yönlendirmesi, Bilgilerim'de
+Onay bekliyor, confirmationReason) henüz Vercel'e/telefona dağıtılmadı** —
+dal `claude/project-review-issue-j0ycif`, `main`'in güncel ucu üzerine
+sıfırdan kuruldu, merge edilmedi.
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -180,8 +230,8 @@ Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
 python -m pytest evals -q                    # 511 test
-cd ios/CizgiCore && swift test                # 153 test (153/153 Mac'te doğrulandı; bu oturumun etiket-metni değişikliği sonrası henüz yeniden koşulmadı, yukarı bak)
-cd backend && npm test                        # 450 test
+cd ios/CizgiCore && swift test                # 167 test (bu oturumdan sonra hiç Mac'te koşulmadı, yukarı bak)
+cd backend && npm test                        # 451 test
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ```
 
@@ -213,38 +263,51 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli:** gerçek karmaşık bir sayfa fotoğrafını
-`evals/fixtures/complex-annotations/` altına yerleştirip yeni fotoğraf-tabanlı
-grounding/onay akışını telefonda denemek. Beklenenler: kısa alt çizgi yalnız
-tokenı seçmeli, aynı metin farklı yerlerde ayrı kalmalı, tek OCR çağrısından
-sonra onay ekranı tekrar OCR yapmamalı. Ayrıntı: ADR-004.
+**En öncelikli:** madde 9'un düzeltmelerini (needsApproval→ready,
+Bilgilerim'de Onay bekliyor, confirmationReason) doğrulamak. Bir Mac'te
+`swift test` (167 test, 3'ü hiç koşulmadı), sonra bu dal main'e merge edilip
+Vercel'e/telefona dağıtılıp gerçek bir sayfa çekilmeli: (a) onay isteyen bir
+kart üretilince sayfanın `.ready` olduğu ve kartın Bilgilerim > "Onay
+bekliyor"da göründüğü, (b) gerçekten üretilemeyen bir durumda ekranın artık
+sessizce kapanmayıp nedeni gösterdiği görülmeli.
+
+**Bir önceki oturumdan devralınan, hâlâ geçerli öncelik:** gerçek karmaşık
+bir sayfa fotoğrafını `evals/fixtures/complex-annotations/` altına
+yerleştirip fotoğraf-tabanlı grounding/onay akışını telefonda denemek.
+Beklenenler: kısa alt çizgi yalnız tokenı seçmeli, aynı metin farklı
+yerlerde ayrı kalmalı, tek OCR çağrısından sonra onay ekranı tekrar OCR
+yapmamalı. Ayrıntı: ADR-004. Bu ikisi aynı anda, aynı gerçek cihaz
+oturumunda doğrulanabilir.
 
 1. Bu dal (`claude/project-review-issue-j0ycif`) merge edilip Vercel'in
    Production dağıtımı güncellenmeli (Production Branch ayarına dikkat —
-   `backend/README.md`'deki tuzak). Sonra telefonda aynı "Tip 4
-   hipersensitivite" sayfası yeniden çekilip davranış doğrulanmalı.
-2. Bir Mac'te `cd ios/CizgiCore && swift test` — 153/153 bu oturumda
-   doğrulandı ama sonrasında `BackendPipelineTests.swift`'te küçük bir örnek
-   metin değişikliği yapıldı (kaynak/okuma yönü); yeniden koşulması ucuz ve
-   kesinleştirir.
-3. `docs/FAZ5-DURUM.md`'deki 10 maddelik iPhone kabul listesinin geri
+   `backend/README.md`'deki tuzak).
+2. `docs/FAZ5-DURUM.md`'deki 10 maddelik iPhone kabul listesinin geri
    kalanını (bildirim, yedek, sınırlar, uçak modu) koş.
-4. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
+3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
    hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
    sayfasından doldurulmalı.
-5. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
+4. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
    yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
    altında not edildi).
-6. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
+5. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
    var ama hiç `UNUserNotification` çağrısı yok), süre-bütçeli hızlı mod,
    ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
-7. (Düşük öncelik) Codex'in PR #5'te bulduğu 8. bulgu ertelendi: yarım sayfa
+6. (Düşük öncelik) Codex'in PR #5'te bulduğu 8. bulgu ertelendi: yarım sayfa
    genişliğinden dar ama yine de gerçek sütun boşluğunu kesen ortalanmış bir
    ayraç/başlık, boşluğu hâlâ gizleyebilir (`documentAI.ts`/`ReadingOrder.swift`
    içindeki `MAX_COLUMN_ITEM_WIDTH` sabitiyle ilgili — ayrıntı PR #5'in
    yorumlarında). Gerçek kullanımda düşük olasılık, kullanıcı kararıyla
    ertelendi.
-8. (Düşük öncelik, ADR-003 "Açık kalan") `evals/ocr_eval/metrics.py`'deki
+7. (Düşük öncelik, ADR-003 "Açık kalan") `evals/ocr_eval/metrics.py`'deki
    manifest-tabanlı `critical_token_error_rate` ölçümü `hypo_hyper` için
    hâlâ tüm kelimeyi kıyaslıyor — altın-set ölçümünde aynı yanlış-pozitif
    görülürse `canonical_hypo_hyper` oraya da taşınmalı.
+8. (Bu oturumdan) `ProcessingQueue.completedGroupIds`/`CapturePipeline`'ın
+   çok-gruplu kısmi seçim modeli tam doğrulanmadı: bir kullanıcı bir
+   sayfadaki 5 gruptan 2'sini onaylayıp gönderirse, snapshot'ın
+   `autoSelectedGroupIds`'i yalnız o 2 grupla daralıyor — kalan 3 gruba aynı
+   sayfadan daha sonra dönmek şu an desteklenmiyor gibi görünüyor (kod
+   okumasıyla tespit edildi, cihazda doğrulanmadı). Gerçek kullanımda bir
+   sorun çıkarsa `CapturePipeline.swift`'teki `selection`/`groundedSelection`
+   inşasına bak.

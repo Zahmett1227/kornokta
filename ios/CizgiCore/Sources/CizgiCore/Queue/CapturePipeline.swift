@@ -38,6 +38,16 @@ public struct PipelineOutcome: Sendable, Equatable {
     /// confirmation, and a confirmation with no reason attached is one the
     /// user cannot answer well.
     public let reconciliation: RemoteReconciliation?
+    /// Why this run stopped at `confirmationRequired`, in the pipeline's own
+    /// words.
+    ///
+    /// `reconciliation?.reason` only covers the OCR-disagreement case. A run
+    /// that stopped because nothing was marked, a group's passage came back
+    /// empty, or card generation produced nothing usable has nothing to do
+    /// with OCR disagreement — reusing that field there left the screen with
+    /// no explanation at all (§19.2: a confirmation with no reason is one the
+    /// user cannot answer).
+    public let confirmationReason: String?
     /// Provider call accounting for this run's card generation (§16.8), when
     /// the generator made one. Mirrors `knowledge.modelRun` — carried on the
     /// outcome too so the caller can persist it without reaching back into
@@ -57,6 +67,7 @@ public struct PipelineOutcome: Sendable, Equatable {
         generatedGroups: [GeneratedAnnotationGroup] = [],
         failure: FailureKind? = nil,
         reconciliation: RemoteReconciliation? = nil,
+        confirmationReason: String? = nil,
         modelRun: ModelRunMetadata? = nil
     ) {
         self.jobId = jobId
@@ -71,6 +82,7 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.generatedGroups = generatedGroups
         self.failure = failure
         self.reconciliation = reconciliation
+        self.confirmationReason = confirmationReason
         self.modelRun = modelRun
     }
 }
@@ -381,7 +393,9 @@ public struct CapturePipeline: Sendable {
                 recognized: recognized,
                 selection: selection,
                 ocrSnapshot: checkpoint,
-                reconciliation: remote?.reconciliation
+                reconciliation: remote?.reconciliation,
+                confirmationReason: "Sayfada işaretli bir bölge bulunamadı. Fotoğrafta bir alana dokun veya "
+                    + "'Manuel alan ekle' ile kendin çiz."
             )
         }
 
@@ -395,7 +409,10 @@ public struct CapturePipeline: Sendable {
                 annotationGroups: selection.groups,
                 ocrSnapshot: checkpoint,
                 passage: firstPassage,
-                reconciliation: remote?.reconciliation
+                reconciliation: remote?.reconciliation,
+                confirmationReason: selection.needsConfirmation
+                    ? "Bazı işaretli bölgeler için onayın gerekiyor. Turuncu kesikli çerçeveli bölgelere dokunup gözden geçir."
+                    : "Seçili bölgelerin tamamı zaten işlendi. Karta dönüşmesini istediğin yeni bir bölge seç."
             )
         }
 
@@ -426,7 +443,8 @@ public struct CapturePipeline: Sendable {
                 annotationGroups: selection.groups,
                 ocrSnapshot: checkpoint,
                 passage: firstPassage,
-                reconciliation: remote?.reconciliation
+                reconciliation: remote?.reconciliation,
+                confirmationReason: remote?.reconciliation?.reason
             )
         case .autoAccept, nil:
             break
@@ -445,7 +463,16 @@ public struct CapturePipeline: Sendable {
                         selection: selection,
                         annotationGroups: selection.groups,
                         ocrSnapshot: checkpoint,
-                        reconciliation: remote?.reconciliation
+                        // Carries whatever earlier groups in this same batch
+                        // already generated — dropping them here (the default
+                        // `[]`) would silently lose already-paid-for cards the
+                        // moment a *later* group in a multi-group submission
+                        // failed, with nothing in the outcome for
+                        // `ProcessingQueue.apply`'s partial-progress persist
+                        // to find.
+                        generatedGroups: generated,
+                        reconciliation: remote?.reconciliation,
+                        confirmationReason: "Seçilen bölgeden pasaj oluşturulamadı. Farklı bir bölge seçmeyi dene."
                     )
                 }
                 let knowledge = try await generator.generate(
@@ -476,17 +503,34 @@ public struct CapturePipeline: Sendable {
                         annotationGroups: selection.groups,
                         ocrSnapshot: checkpoint,
                         passage: passage,
-                        reconciliation: remote?.reconciliation
+                        // See the comment on the same field a few lines above.
+                        generatedGroups: generated,
+                        reconciliation: remote?.reconciliation,
+                        confirmationReason: "Seçilen bölgeden kart üretilemedi. Daha geniş bir bölge seçmeyi "
+                            + "ya da 'Manuel alan ekle' ile genişletmeyi dene."
                     )
                 }
                 generated.append(GeneratedAnnotationGroup(group: group, knowledge: knowledge))
             }
-            let needsApproval = generated.contains {
-                $0.knowledge.cards.contains { $0.requiresUserApproval } || $0.knowledge.sourceConcern != nil
-            }
+            // A card the model or the gate flagged (`requiresUserApproval`) —
+            // or a group whose knowledge carries a `sourceConcern` — is still
+            // a real, generated card, not a reason to bounce the whole page
+            // back to `confirmationRequired`. Persisting always happens
+            // regardless of `finalState` (`ProcessingQueue.apply`), so the old
+            // `.confirmationRequired` here did not protect anything; it only
+            // meant the group's `Self.persistenceKey` landed in
+            // `completedGroupIds` on the very next resume, `selectedGroups`
+            // filtered it straight back out, and every subsequent tap of
+            // "Kart oluştur" regenerated nothing and looked like it did
+            // nothing at all — a permanent stuck loop for any page whose
+            // cards needed review, which is most real pages once the v1.1
+            // prompt started adding `explanation` text (cardGate.ts escalates
+            // any non-empty explanation to `quick_confirm`). The cards are
+            // reviewed in Bilgilerim now (`CardStatus.needsReview`), not by
+            // re-opening this screen (found via real device use, 2026-08-04).
             return PipelineOutcome(
                 jobId: jobId,
-                finalState: needsApproval ? .confirmationRequired : .ready,
+                finalState: .ready,
                 recognized: recognized,
                 selectedLineIds: selectedLineIds,
                 selection: selection,
@@ -509,7 +553,11 @@ public struct CapturePipeline: Sendable {
                     annotationGroups: selection.groups,
                     ocrSnapshot: checkpoint,
                     passage: firstPassage,
-                    reconciliation: remote?.reconciliation
+                    // See the comment further up this same loop.
+                    generatedGroups: generated,
+                    reconciliation: remote?.reconciliation,
+                    confirmationReason: "Seçilen bölge tek başına yetersiz kaldı. İlgili bağlamı da kapsayan "
+                        + "bir bölge seçmeyi dene."
                 )
             }
             let kind = Self.failureKind(for: error)
