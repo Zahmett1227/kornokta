@@ -2,8 +2,33 @@
 
 > **Belge amacı:** Bu dosya Claude Code, Codex veya başka bir yazılım geliştirme ajanına doğrudan verilebilecek ana proje şartnamesidir. Ürün kararı, kapsam, mimari, veri modeli, API sözleşmeleri, kalite kapıları, testler ve geliştirme sırası bakımından kaynak kabul edilmelidir.
 
+> ## ⚠️ REVİZYON (2026-08-05) — kişisel kullanım için vision-öncelikli pivot (Faz 6 / B)
+>
+> Uygulama sahibi bilinçli bir ürün pivotu kararı verdi. Bu belge Faz 5'e kadar
+> geçerli olan **tıbbi-güvenlik / kaynağa-sadakat** mimarisini anlatır. **2026-08-05
+> itibarıyla ana akış, kişisel kullanım için vision-öncelikli bir mimariye
+> geçiriliyor:** işaretli sayfa fotoğrafı doğrudan OpenAI vision modeline gider,
+> model kullanıcının önemsediği kısmı okuyup zenginleştirilmiş kartları üretir,
+> kartlar onaysız desteye girer.
+>
+> Bunun sonucu olarak aşağıdaki ilkeler **kişisel kullanım için gevşetilir/
+> süperseded edilir:** §0.5 (sessiz düzeltme yasağı artık sert kapı değil),
+> §9 (deterministik işaret tespiti ana akıştan çıkar), §10 (Apple Vision +
+> Google Document AI + uzlaştırma birincil metin yolu olmaktan çıkar), §12.1
+> (cevap yalnız kaynaktan kuralı kalkar, zenginleştirme varsayılan olur), §19
+> (zorunlu onay kapıları auto-accept'e iner), §0 talimat-2 (bu ürün için
+> bilinçle iptal).
+>
+> **Değişmeyen ilkeler:** güvenlik/gizlilik (§0.7, §7.3), deterministik FSRS
+> tekrarı (§0.8, P6), config-güdümlü model/eşik (§0.6, §11.3), kişisel kullanım
+> sadeliği (P7).
+>
+> Güncel karar ve plan: [`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`](docs/ADR-005-kisisel-vision-yeniden-tasarim.md)
+> ve [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md). Aşağıdaki bölümler tarihsel/
+> referans amaçlı ve hâlâ yazılı olan (Faz 6 öncesi) kodu açıklamak için duruyor.
+
 Belge tarihi: 1 Ağustos 2026
-Durum: Uygulamaya hazır ürün/teknik plan
+Durum: Uygulamaya hazır ürün/teknik plan — **2026-08-05'te Faz 6 / B ile revize edildi (yukarı bak)**
 Çalışma adı: Çizgi
 Hedef kullanıcı: Tek kullanıcı — uygulamanın sahibi, hekim ve TUS öğrencisi
 Hedef platform: Native iOS, SwiftUI

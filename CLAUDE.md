@@ -3,6 +3,24 @@
 Bu dosya her yeni Claude Code oturumunun başında otomatik okunur. Amacı: bir
 önceki oturumun hafızasını taşımadan, buradan devam edilebilmesi.
 
+## ⚠️ Yön değişikliği — Faz 6 / "B" (2026-08-05)
+
+Uygulama sahibi bilinçli bir ürün pivotu kararı verdi: uygulama **tıbbi-güvenlik
+/ kaynağa-sadakat omurgasından**, **kişisel kullanım için vision-öncelikli** bir
+mimariye geçiyor. Yeni ana akış: *işaretli sayfa fotoğrafını doğrudan OpenAI
+vision modeline gönder → model kullanıcının önemsediği (fosforlu/altı çizili/
+dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş kartları
+üretsin → kartlar onaysız doğrudan desteye girsin → FSRS ile tekrar edilsin*.
+
+- **Neden ve hangi ilkeler gevşedi:** [`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`](docs/ADR-005-kisisel-vision-yeniden-tasarim.md)
+- **Uygulama planı (detaylı, dosya bazlı, aşamalı):** [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md)
+- **Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
+  değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
+- **Durum:** yalnız planlama/doküman yazıldı — **kod henüz değişmedi**.
+  Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11 maddeleri Faz 6 ÖNCESİ
+  (süperseded) mimariyi anlatır; tarihsel bağlam için duruyor, **güncel yön
+  yukarıdadır**.
+
 ## Proje ne
 
 Tek kullanıcılık (sahibi için) iOS uygulaması: kitapta işaretlenen (altı
@@ -28,6 +46,7 @@ yorumları **İngilizce**.
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı**. Telefon backend'e bağlandı, 153/153 Swift testi bir Mac'te doğrulandı — ama sonrasında main annotation-grounding'e geçti (madde 9) ve o doğrulama artık eski bir kod tabanına ait. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı; süreçte gerçek hatalar bulunup düzeltildi (dördü madde 1-4, üçü madde 9) — ayrıntı `docs/FAZ5-DURUM.md`. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | 🔵 **Planlandı (2026-08-05), kod yazılmadı.** Deterministik işaret-tespiti + OCR-uzlaştırma + onay makinesi ana akıştan çıkıyor; yerine tek vision çağrısı (işaretli sayfa → OpenAI vision → onaysız kart). Bkz. `docs/FAZ6-PLAN.md` ve `docs/ADR-005-kisisel-vision-yeniden-tasarim.md`. |
 
 **Dal durumu:** `claude/project-review-issue-j0ycif`, `main`'in `0bca0d0`'i
 (PR #7/#8/#9/#10 dahil güncel uç) üzerine **sıfırdan kuruldu** — önceki bir
@@ -255,6 +274,15 @@ değişiklikleri **henüz commit edilmedi**, çalışma dizininde duruyor.
 
 ## Kararlar (değiştirmeden önce oku)
 
+> **Faz 6 / B (2026-08-05):** Aşağıdaki kararların çoğu tıbbi-güvenlik
+> omurgasına aittir ve Faz 6'da **bilinçle gevşetiliyor**. Güncel karar
+> `docs/ADR-005-kisisel-vision-yeniden-tasarim.md` + `docs/FAZ6-PLAN.md`.
+> Aşağıdakiler Faz 6 öncesi (süperseded) mimarinin kararlarıdır; kod hâlâ o
+> haldeyken geçerlidir.
+
+- **`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`** — **GÜNCEL YÖN:**
+  kişisel kullanım için vision-öncelikli pivot; §0.5/§10/§12.1/§19'un
+  gevşetilmesi. Ana akışa dokunmadan önce bunu oku.
 - **`docs/ADR-002-birincil-ocr-secimi.md`** — Apple Vision Türkçe metin
   tanımayı desteklemiyor (ölçüldü, `docs/FAZ0-BULGULAR.md`). Google Document
   AI birincil ve tek metin kaynağı; Vision yalnız önizleme + satır geometrisi
@@ -317,6 +345,10 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 - `docs/RUNBOOK.md` — nasıl çalıştırılır, sorun giderme
 - `docs/ARCHITECTURE.md` — bileşenler, işlem hattı, anti-drift mekanizması
+- `docs/ADR-005-kisisel-vision-yeniden-tasarim.md` — **GÜNCEL YÖN:** kişisel
+  vision-öncelikli pivot kararı (Faz 6 / B)
+- `docs/FAZ6-PLAN.md` — **GÜNCEL YÖN:** Faz 6'nın detaylı, dosya bazlı uygulama
+  planı, sadeleşmiş sözleşme ve aşamalı süre tahmini
 - `docs/FAZ2-PLAN.md` — Faz 2'nin tam kaydı: ne yapıldı, hangi hatalar
   bulundu/düzeltildi, çıkış kapısının neden atlandığı
 - `docs/FAZ3-PLAN.md` — Faz 3'ün tam kaydı: backend'de ne yazıldı, hangi
@@ -341,7 +373,20 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli:** madde 11'in üç değişikliğini gerçek cihazda doğrulamak
+**En öncelikli (Faz 6 / B — YENİ YÖN, bkz. `docs/FAZ6-PLAN.md` §9):**
+`docs/FAZ6-PLAN.md`'deki B1 adımını uygulamaya başla — backend'de: (a) kart
+üretim promptunu v2.0'a (işaret-odaklı, zenginleştirmeli vision okuması)
+çevir, (b) `/api/cards`'ta `cleanText` zorunluluğunu kaldırıp tam sayfa
+görüntüsü kabul et, (c) `cardGate`'i varsayılan auto-accept'e sadeleştir, (d)
+çıktı şemasını v2'ye sadeleştir. Ardından B2 (iOS akış sadeleştirme). Kod
+işi bir dalda yapılmalı (ör. `faz6-vision`); planlama dokümanları main'de.
+
+---
+
+**Aşağıdakiler Faz 6 ÖNCESİ (süperseded) önceliklerdir; B'ye geçilince çoğu
+geçersiz olacak, tarihsel bağlam için duruyor:**
+
+**Eski en öncelikli:** madde 11'in üç değişikliğini gerçek cihazda doğrulamak
 (hiçbiri henüz commit edilmedi): (a) yeni app icon'un ana ekranda beklendiği
 gibi göründüğü, (b) her sayfadaki ev ikonunun gerçekten Yakala'ya dönüp tüm
 yığınları sıfırladığı (özellikle Onay ekranından ortadayken), (c) manuel

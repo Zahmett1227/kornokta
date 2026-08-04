@@ -2,6 +2,15 @@
 
 > Ayrıntılar için ana kaynak: [ANA-PLAN](../Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md) §7 (teknik mimari), §16 (veri modeli), §17 (iş kuyruğu ve durum makinesi).
 
+> **⚠️ Faz 6 / B (2026-08-05):** Aşağıda anlatılan deterministik işlem hattı
+> (Apple Vision + cihaz-üstü işaret tespiti + Google Document AI + uzlaştırma +
+> grounding + fotoğraf-üstü onay) **ana akış olmaktan çıkarılıyor.** Yeni ana
+> akış tek bir vision çağrısıdır: *işaretli tam sayfa fotoğrafı → OpenAI vision
+> modeli işaretleri okur + zenginleştirilmiş kartları üretir → kartlar onaysız
+> desteye girer → FSRS*. Aşağıdaki bölümler Faz 6 öncesi (süperseded) mimariyi
+> anlatır; ilgili kod repoda kalır ama ana akışta çağrılmaz. Güncel yön:
+> [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md), [`FAZ6-PLAN`](FAZ6-PLAN.md).
+
 ## Bileşenler
 
 - **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, gerçek kart üretimi istemcisi (Faz 3), gerçek FSRS-6 tekrarı (Faz 4). Faz 1'de başladı, Faz 2-4'te tamamlandı; hepsi bir Mac'te `swift test` ile doğrulandı.

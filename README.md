@@ -4,6 +4,15 @@ Kitapta işaretlenen (altı çizili / fosforlu) tıbbi bilgiyi fotoğraftan güv
 biçimde yakalayan, kaynak-sadık öğrenme kartlarına dönüştüren ve bilgiyi FSRS
 ile unutmadan önce yeniden soran **kişisel** iOS uygulaması.
 
+> **⚠️ Yön değişikliği (2026-08-05) — Faz 6 / B:** Uygulama, kişisel kullanım
+> için **vision-öncelikli** bir mimariye geçiriliyor: işaretli sayfa fotoğrafı
+> doğrudan OpenAI vision modeline gider, model önemsenen kısmı okuyup
+> zenginleştirilmiş kartları onaysız üretir. Bu, "kaynağa-sadık + onaylı"
+> omurgayı kişisel kullanım için bilinçle gevşetir. Neden ve plan:
+> [`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`](docs/ADR-005-kisisel-vision-yeniden-tasarim.md),
+> [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md). Aşağıdaki durum tablosu Faz 6 öncesi
+> (süperseded) mimariyi anlatır.
+
 Ana şartname:
 [`Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md`](Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md)
 — tüm ürün, mimari ve kalite kararlarının kaynağıdır.
@@ -22,6 +31,7 @@ adım orada.
 | **Faz 3** | AI kart üretimi (OpenAI Structured Outputs, Gemini el yazısı ikinci görüşü) | ✅ Backend kodu, testleri, **gerçek anahtarla uçtan uca doğrulaması** ve **gold pasaj kart kalite ölçümü** (kullanıcıyla birlikte, %100 kabul) tamam. iOS istemcisi yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı**. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (Python referansı + Swift portu), Faz 1'in offline review akışına bağlandı. Python tarafı bu ortamda çalıştırıldı; Swift portu **kullanıcı tarafından bir Mac'te doğrulandı**. Bkz. `docs/FAZ4-PLAN.md` |
 | **Faz 5** | Sertleştirme | 🟡 Kod tamam: recovery, bildirim, oturum limitleri, sürümlü JSON dışa aktarma ve görüntü saklama politikası hazır. Gerçek iPhone kabul testi bekliyor; bkz. `docs/FAZ5-DURUM.md` |
+| **Faz 6** | Vision-öncelikli kişisel yeniden tasarım (B) | 🔵 **Planlandı (2026-08-05), kod yazılmadı.** İşaret-tespiti/OCR-uzlaştırma/onay makinesi ana akıştan çıkıyor; yerine tek vision çağrısı geliyor. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005-kisisel-vision-yeniden-tasarim.md` |
 
 Backend gerçek bir Vercel dağıtımında çalışıyor ve uçtan uca doğrulandı:
 gerçek bir kitap sayfası fotoğrafı → Google Document AI → doğru Türkçe metin
