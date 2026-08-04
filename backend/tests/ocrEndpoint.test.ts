@@ -105,6 +105,24 @@ describe("POST /api/ocr", () => {
     expect(body.page.lines[0]!.text).toBe("merhaba");
   });
 
+  it("echoes styleInfoRequested=false when the style add-on was never requested", async () => {
+    const response = await handleOcrRequest(
+      post({ jobId: "job-1", mimeType: "image/jpeg", imageBase64: IMAGE }),
+      deps({ documentAI: { languageHints: ["tr", "en"] } }),
+    );
+    const body = (await response.json()) as { styleInfoRequested: boolean };
+    expect(body.styleInfoRequested).toBe(false);
+  });
+
+  it("echoes styleInfoRequested=true when DOCUMENTAI_COMPUTE_STYLE_INFO is on for this call", async () => {
+    const response = await handleOcrRequest(
+      post({ jobId: "job-1", mimeType: "image/jpeg", imageBase64: IMAGE }),
+      deps({ documentAI: { languageHints: ["tr", "en"], computeStyleInfo: true } }),
+    );
+    const body = (await response.json()) as { styleInfoRequested: boolean };
+    expect(body.styleInfoRequested).toBe(true);
+  });
+
   it("passes the image bytes through unchanged", async () => {
     const { recognizer, seen } = stubRecognizer(pageWith(["x"]));
     await handleOcrRequest(

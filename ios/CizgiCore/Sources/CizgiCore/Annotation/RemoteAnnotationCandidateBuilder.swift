@@ -35,7 +35,9 @@ public enum RemoteAnnotationCandidateBuilder {
     ///   `isUnderlined` candidates need no such gate and are unaffected.
     public static func build(from page: RemotePage, config: MarkerConfig?) -> (evidence: [AnnotationEvidence], groups: [AnnotationGroup]) {
         var tokenLineId: [String: String] = [:]
+        var lineTokenIds: [String: [String]] = [:]
         for line in page.lines {
+            lineTokenIds[line.lineId] = line.tokenIds
             for tokenId in line.tokenIds { tokenLineId[tokenId] = line.lineId }
         }
 
@@ -45,9 +47,14 @@ public enum RemoteAnnotationCandidateBuilder {
         appendRuns(
             page.tokens.filter(\.isUnderlined),
             tokenLineId: tokenLineId,
+            lineTokenIds: lineTokenIds,
             type: .underline,
             provenance: .remoteUnderlineStyle,
             idPrefix: "remote_underline",
+            // An underline is Google's own literal mark signal, not a
+            // colour guess — not subject to the design-band suppression
+            // below.
+            suppressFullLineSpanningRuns: false,
             evidence: &evidence,
             groups: &groups
         )
@@ -62,9 +69,11 @@ public enum RemoteAnnotationCandidateBuilder {
             appendRuns(
                 highlightLike,
                 tokenLineId: tokenLineId,
+                lineTokenIds: lineTokenIds,
                 type: .highlight,
                 provenance: .remoteBackgroundStyle,
                 idPrefix: "remote_highlight",
+                suppressFullLineSpanningRuns: true,
                 evidence: &evidence,
                 groups: &groups
             )
@@ -81,9 +90,11 @@ public enum RemoteAnnotationCandidateBuilder {
     private static func appendRuns(
         _ tokens: [RemoteToken],
         tokenLineId: [String: String],
+        lineTokenIds: [String: [String]],
         type: AnnotationType,
         provenance: AnnotationProvenance,
         idPrefix: String,
+        suppressFullLineSpanningRuns: Bool,
         evidence: inout [AnnotationEvidence],
         groups: inout [AnnotationGroup]
     ) {
@@ -100,6 +111,9 @@ public enum RemoteAnnotationCandidateBuilder {
                 }
             }
             for (index, run) in runs.enumerated() {
+                if suppressFullLineSpanningRuns, isFullLineSpanningDesignElement(run: run, lineTokenIds: lineTokenIds[lineId] ?? []) {
+                    continue
+                }
                 let box = run.map(\.boundingBox).reduce(run[0].boundingBox) { $0.union($1) }
                 let evidenceId = "\(idPrefix)_\(lineId)_\(index)"
                 let item = AnnotationEvidence(
@@ -128,6 +142,26 @@ public enum RemoteAnnotationCandidateBuilder {
                 )
             }
         }
+    }
+
+    /// A backgroundColor run that covers every single token Document AI
+    /// assigned to its line — not a marked phrase within it — reads
+    /// structurally as a printed design element (a heading band, a shaded
+    /// table row, a colored section bar), not a highlighter mark: a student
+    /// highlighting a phrase virtually never colors literally every word on
+    /// the line, trailing punctuation and all. Dropping these outright
+    /// (rather than merely capping them at quick_confirm, which every
+    /// backgroundColor candidate already is) keeps a page with a repeating
+    /// colored design element — e.g. a shaded table with one colored row
+    /// per entry — from flooding the confirmation screen with one box per
+    /// row. Requires more than one token on the line: a one-token line
+    /// trivially "covers every token" for any real single-word highlight
+    /// too, and must not be swept up by this rule (a genuine short
+    /// highlighted phrase inside a longer, multi-token line is unaffected
+    /// either way, since it never covers the *whole* line).
+    private static func isFullLineSpanningDesignElement(run: [RemoteToken], lineTokenIds: [String]) -> Bool {
+        guard lineTokenIds.count > 1 else { return false }
+        return Set(run.map(\.tokenId)) == Set(lineTokenIds)
     }
 
     /// Same OpenCV-scale conversion `PixelBuffer.hsv` uses (H 0–179, S/V

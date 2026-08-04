@@ -56,6 +56,15 @@ export interface OcrSuccess {
   page: OCRPage;
   /** Present only when the request carried a local reading to compare against. */
   reconciliation?: Reconciliation;
+  /**
+   * Echoes `DOCUMENTAI_COMPUTE_STYLE_INFO` for this call. Without it, a
+   * client cannot tell "the style add-on ran and genuinely found nothing"
+   * apart from "the style add-on was never requested" — both look
+   * identical (`isUnderlined: false`, no `backgroundColor`) once the
+   * response reaches `page.tokens`, and only this server actually knows
+   * which one happened.
+   */
+  styleInfoRequested: boolean;
 }
 
 /**
@@ -113,7 +122,7 @@ export interface OcrFailure {
 
 export interface Dependencies {
   recognizer: TextRecognizer;
-  documentAI: Pick<DocumentAIConfig, "languageHints">;
+  documentAI: Pick<DocumentAIConfig, "languageHints" | "computeStyleInfo">;
   deviceToken: string | undefined;
   /**
    * Where request-level telemetry goes. Content never reaches it — only the
@@ -250,7 +259,10 @@ export async function handleOcrRequest(
       elapsedMs: Date.now() - started,
     });
 
-    return json({ jobId, page, reconciliation } satisfies OcrSuccess, 200);
+    return json(
+      { jobId, page, reconciliation, styleInfoRequested: deps.documentAI.computeStyleInfo === true } satisfies OcrSuccess,
+      200,
+    );
   } catch (error) {
     const documentAIError = error instanceof DocumentAIError ? error : null;
 

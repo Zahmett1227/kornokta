@@ -370,6 +370,17 @@ public struct CapturePipeline: Sendable {
             discoverHandwriting: selectionResultOverride == nil,
             config: markerConfig
         )
+        #if DEBUG
+        Self.logGroundingDiagnostics(
+            AnnotationGrouper.diagnostics(
+                initialSelection: initialSelection,
+                groundedSelection: groundedSelection,
+                remotePage: remote?.page,
+                styleInfoRequested: remote?.styleInfoRequested ?? false
+            ),
+            jobId: jobId
+        )
+        #endif
         let selection: MarkerSelectionResult
         if selectionResultOverride != nil {
             let confirmedGroups = groundedSelection.groups.map { $0.markedConfirmed() }
@@ -600,6 +611,37 @@ public struct CapturePipeline: Sendable {
             )
         }
     }
+
+    /// DEBUG-only, counts-only trace (§7.3 — no OCR text, no image bytes)
+    /// telling a real-device run apart along the two axes that otherwise look
+    /// identical from the outside: "the style add-on was never requested for
+    /// this call" vs. "it ran and genuinely found nothing on this page".
+    #if DEBUG
+    static func logGroundingDiagnostics(_ diagnostics: AnnotationGroundingDiagnostics, jobId: String) {
+        let styleNote: String
+        if !diagnostics.styleInfoRequested {
+            styleNote = "istenmedi (DOCUMENTAI_COMPUTE_STYLE_INFO=false ya da backend'de kapalı) — " +
+                "aşağıdaki remote* sayıları bu yüzden sıfır, sayfada bulunamadığından değil"
+        } else if diagnostics.remoteUnderlineCandidateCount == 0 && diagnostics.remoteBackgroundCandidateCount == 0 {
+            styleNote = "istendi, çalıştı, bu sayfada gerçekten sıfır aday üretti"
+        } else {
+            styleNote = "istendi ve aday üretti"
+        }
+        print(
+            "[AnnotationDiagnostics] job=\(jobId) styleInfoRequested=\(diagnostics.styleInfoRequested) (\(styleNote))\n" +
+                "  remoteTokenCount=\(diagnostics.remoteTokenCount)" +
+                " remoteUnderlinedTokenCount=\(diagnostics.remoteUnderlinedTokenCount)" +
+                " remoteBackgroundColorTokenCount=\(diagnostics.remoteBackgroundColorTokenCount)" +
+                " remoteHandwrittenTokenCount=\(diagnostics.remoteHandwrittenTokenCount)\n" +
+                "  localTokenCandidateCount=\(diagnostics.localTokenCandidateCount)" +
+                " localLineFallbackCandidateCount=\(diagnostics.localLineFallbackCandidateCount)" +
+                " remoteUnderlineCandidateCount=\(diagnostics.remoteUnderlineCandidateCount)" +
+                " remoteBackgroundCandidateCount=\(diagnostics.remoteBackgroundCandidateCount)\n" +
+                "  mergedGroupCount=\(diagnostics.mergedGroupCount)" +
+                " evidenceCountsByProvenance=\(diagnostics.evidenceCountsByProvenance)"
+        )
+    }
+    #endif
 
     /// Single mapping from a generator error to the retry classification.
     static func failureKind(for error: CardGenerationError) -> FailureKind {

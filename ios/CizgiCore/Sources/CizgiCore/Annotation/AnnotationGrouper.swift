@@ -1,9 +1,92 @@
 import Foundation
 
+/// Privacy-safe, counts-only snapshot of one grounding pass — no OCR text,
+/// no image bytes, ever (§7.3). Purely diagnostic: nothing in the pipeline
+/// branches on this, it exists so a real-device run can be reasoned about
+/// after the fact instead of guessed at.
+public struct AnnotationGroundingDiagnostics: Sendable, Equatable {
+    /// Echoes the backend's `DOCUMENTAI_COMPUTE_STYLE_INFO` for this call.
+    /// Without this, "the style add-on ran and genuinely found nothing" and
+    /// "the style add-on was never requested" are indistinguishable from the
+    /// candidate counts alone — both leave every remote-style count at 0.
+    public let styleInfoRequested: Bool
+    public let remoteTokenCount: Int
+    public let remoteUnderlinedTokenCount: Int
+    public let remoteBackgroundColorTokenCount: Int
+    public let remoteHandwrittenTokenCount: Int
+    public let localTokenCandidateCount: Int
+    public let localLineFallbackCandidateCount: Int
+    public let remoteUnderlineCandidateCount: Int
+    public let remoteBackgroundCandidateCount: Int
+    public let mergedGroupCount: Int
+    /// Keyed by `AnnotationProvenance.rawValue`, counted after merge (merge
+    /// only clusters groups — it never drops or duplicates evidence).
+    public let evidenceCountsByProvenance: [String: Int]
+
+    public init(
+        styleInfoRequested: Bool,
+        remoteTokenCount: Int,
+        remoteUnderlinedTokenCount: Int,
+        remoteBackgroundColorTokenCount: Int,
+        remoteHandwrittenTokenCount: Int,
+        localTokenCandidateCount: Int,
+        localLineFallbackCandidateCount: Int,
+        remoteUnderlineCandidateCount: Int,
+        remoteBackgroundCandidateCount: Int,
+        mergedGroupCount: Int,
+        evidenceCountsByProvenance: [String: Int]
+    ) {
+        self.styleInfoRequested = styleInfoRequested
+        self.remoteTokenCount = remoteTokenCount
+        self.remoteUnderlinedTokenCount = remoteUnderlinedTokenCount
+        self.remoteBackgroundColorTokenCount = remoteBackgroundColorTokenCount
+        self.remoteHandwrittenTokenCount = remoteHandwrittenTokenCount
+        self.localTokenCandidateCount = localTokenCandidateCount
+        self.localLineFallbackCandidateCount = localLineFallbackCandidateCount
+        self.remoteUnderlineCandidateCount = remoteUnderlineCandidateCount
+        self.remoteBackgroundCandidateCount = remoteBackgroundCandidateCount
+        self.mergedGroupCount = mergedGroupCount
+        self.evidenceCountsByProvenance = evidenceCountsByProvenance
+    }
+}
+
 /// Deterministic page-grounding pass. It intentionally uses only geometry and
 /// the OCR snapshot: an LLM may later interpret relationships, but cannot
 /// upgrade a missing visual selection into an automatic card (§0.5, §0.8).
 public enum AnnotationGrouper {
+    /// Builds the counts-only diagnostic snapshot for one `ground(...)` call.
+    /// Pure and side-effect free on purpose — logging (DEBUG-only, §7.3) is
+    /// the caller's job (`CapturePipeline`), so this stays independently
+    /// testable without capturing console output.
+    public static func diagnostics(
+        initialSelection: MarkerSelectionResult,
+        groundedSelection: MarkerSelectionResult,
+        remotePage: RemotePage?,
+        styleInfoRequested: Bool
+    ) -> AnnotationGroundingDiagnostics {
+        let remoteTokens = remotePage?.tokens ?? []
+        func localCandidateCount(_ provenance: AnnotationProvenance) -> Int {
+            initialSelection.evidence.filter { $0.provenance == provenance }.count
+        }
+        var byProvenance: [String: Int] = [:]
+        for item in groundedSelection.evidence {
+            byProvenance[item.provenance.rawValue, default: 0] += 1
+        }
+        return AnnotationGroundingDiagnostics(
+            styleInfoRequested: styleInfoRequested,
+            remoteTokenCount: remoteTokens.count,
+            remoteUnderlinedTokenCount: remoteTokens.filter(\.isUnderlined).count,
+            remoteBackgroundColorTokenCount: remoteTokens.filter { $0.backgroundColor != nil }.count,
+            remoteHandwrittenTokenCount: remoteTokens.filter(\.isHandwritten).count,
+            localTokenCandidateCount: localCandidateCount(.localToken),
+            localLineFallbackCandidateCount: localCandidateCount(.localLineFallback),
+            remoteUnderlineCandidateCount: byProvenance[AnnotationProvenance.remoteUnderlineStyle.rawValue] ?? 0,
+            remoteBackgroundCandidateCount: byProvenance[AnnotationProvenance.remoteBackgroundStyle.rawValue] ?? 0,
+            mergedGroupCount: groundedSelection.groups.count,
+            evidenceCountsByProvenance: byProvenance
+        )
+    }
+
     /// Resolves local marker evidence against the primary (Google) OCR result,
     /// merges nearby evidence into independent information groups and keeps
     /// uncertain handwriting as a confirmation candidate.

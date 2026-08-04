@@ -116,17 +116,27 @@ public struct DetectedMarkerSelector: MarkerSelecting {
                 return Candidate(detection: detection, lineId: line.id, tokenId: nil, box: NormalizedRect(line.box), provenance: .localLineFallback)
             }
 
+        // Only a token the detector actually judged marked can suppress a
+        // line fallback. A line box always geometrically overlaps its own
+        // ordinary, unmarked tokens too — comparing against every token
+        // candidate regardless of its own `.none` verdict meant a marked
+        // line with even one Vision-tokenized-but-unmarked word (a common
+        // case, not the empty-tokens edge case) had its real underline/
+        // highlight silently deduped away before evidence construction ever
+        // got a chance to look at it.
+        let markedTokenCandidates = tokenCandidates.filter { $0.detection.selectionType != .none }
+
         // A line candidate is redundant, not a second mark, wherever a more
-        // precise token candidate already covers the same physical area —
-        // matched by normalized geometry, not by line id or text, so this
-        // still works if token/line ids ever diverge.
+        // precise marked-token candidate already covers the same physical
+        // area — matched by normalized geometry, not by line id or text, so
+        // this still works if token/line ids ever diverge.
         let lineCandidates = rawLineCandidates.filter { lineCandidate in
-            lineCandidate.detection.selectionType != .none && !tokenCandidates.contains { tokenCandidate in
+            lineCandidate.detection.selectionType != .none && !markedTokenCandidates.contains { tokenCandidate in
                 lineCandidate.box.overlapOfSmallerArea(with: tokenCandidate.box) >= Self.lineTokenDedupOverlap
             }
         }
 
-        let candidates = tokenCandidates + lineCandidates
+        let candidates = markedTokenCandidates + lineCandidates
 
         let evidence = candidates.compactMap { candidate -> AnnotationEvidence? in
             let detection = candidate.detection

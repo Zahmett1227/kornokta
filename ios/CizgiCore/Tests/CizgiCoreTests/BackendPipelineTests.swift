@@ -703,3 +703,30 @@ final class ReconciliationPassthroughTests: XCTestCase {
         XCTAssertNil(outcome.reconciliation)
     }
 }
+
+/// `styleInfoRequested` is new on `RemoteRecognition`. A device-local
+/// `OCRSnapshot` saved before this field existed has no such key in its
+/// persisted JSON at all — this must decode to `false`, not fail or crash.
+final class RemoteRecognitionStyleInfoDecodingTests: XCTestCase {
+    private func minimalPageJSON() -> String {
+        """
+        {"imageWidth":100,"imageHeight":100,"elapsedMs":1,"lines":[],"tokens":[],"paragraphs":[],"blocks":[],"tables":[]}
+        """
+    }
+
+    func testMissingStyleInfoRequestedKeyDecodesToFalse() throws {
+        let json = """
+        {"jobId":"job","page":\(minimalPageJSON())}
+        """
+        let decoded = try JSONDecoder().decode(RemoteRecognition.self, from: Data(json.utf8))
+        XCTAssertFalse(decoded.styleInfoRequested, "Eski (alan eklenmeden önce kaydedilmiş) bir OCRSnapshot false'a düşmeli, hataya değil")
+    }
+
+    func testPresentStyleInfoRequestedKeyRoundTrips() throws {
+        let json = """
+        {"jobId":"job","page":\(minimalPageJSON()),"styleInfoRequested":true}
+        """
+        let decoded = try JSONDecoder().decode(RemoteRecognition.self, from: Data(json.utf8))
+        XCTAssertTrue(decoded.styleInfoRequested)
+    }
+}

@@ -389,6 +389,164 @@ final class RemoteAnnotationCandidateTests: XCTestCase {
         XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["left", "middle"]) })
     }
 
+    /// A printed, high-saturation heading band spans every token on its own
+    /// line — not a marked phrase within it — and must never even reach the
+    /// confirmation screen as a candidate, let alone auto-accept. This is
+    /// the realistic false-positive the pastel-heading test above does not
+    /// cover: real printed headings are frequently fully saturated (a bright
+    /// yellow banner, not a washed-out pastel), so saturation/value alone
+    /// cannot reject them — only the structural "covers the *entire* line"
+    /// signal can.
+    func testFullLineSpanningPrintedHeadingBackgroundIsSuppressed() throws {
+        let config = try MarkerConfig.bundled()
+        let yellow = RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [RemoteLine(
+                lineId: "heading", text: "BÖLÜM BAŞLIĞI BURADA GÖRÜNÜR",
+                confidence: 0.97, x: 0.05, y: 0.05, width: 0.70, height: 0.04,
+                tokenIds: ["h0", "h1", "h2", "h3"]
+            )],
+            tokens: [
+                RemoteToken(tokenId: "h0", text: "BÖLÜM", confidence: 0.95, x: 0.05, y: 0.05, width: 0.15, height: 0.04, backgroundColor: yellow),
+                RemoteToken(tokenId: "h1", text: "BAŞLIĞI", confidence: 0.95, x: 0.21, y: 0.05, width: 0.18, height: 0.04, backgroundColor: yellow),
+                RemoteToken(tokenId: "h2", text: "BURADA", confidence: 0.95, x: 0.40, y: 0.05, width: 0.16, height: 0.04, backgroundColor: yellow),
+                RemoteToken(tokenId: "h3", text: "GÖRÜNÜR", confidence: 0.95, x: 0.57, y: 0.05, width: 0.18, height: 0.04, backgroundColor: yellow)
+            ]
+        )
+
+        let candidates = RemoteAnnotationCandidateBuilder.build(from: page, config: config)
+
+        XCTAssertTrue(candidates.groups.isEmpty, "Tüm satırı kaplayan basılı başlık bandı hiç aday üretmemeli")
+        XCTAssertTrue(candidates.evidence.isEmpty)
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page,
+            config: config
+        )
+        XCTAssertTrue(grounded.groups.isEmpty)
+        XCTAssertTrue(grounded.autoSelectedGroupIds.isEmpty)
+    }
+
+    /// The suppression above must not sweep up a genuine short highlighted
+    /// phrase that happens to share a page with a printed heading: the
+    /// heading (all 4 of its line's tokens colored) is dropped, but a real
+    /// two-word highlight covering only part of a longer, unrelated line
+    /// still produces a normal quick_confirm candidate.
+    func testFullLineSuppressionDoesNotDeleteAGenuineShortHighlightedWord() throws {
+        let config = try MarkerConfig.bundled()
+        let yellow = RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                RemoteLine(
+                    lineId: "heading", text: "BÖLÜM BAŞLIĞI",
+                    confidence: 0.97, x: 0.05, y: 0.05, width: 0.40, height: 0.04,
+                    tokenIds: ["h0", "h1"]
+                ),
+                RemoteLine(
+                    lineId: "body", text: "Hücre hasarının en sık sebebi hipoksidir.",
+                    confidence: 0.97, x: 0.10, y: 0.30, width: 0.60, height: 0.03,
+                    tokenIds: ["b0", "b1", "b2", "b3", "b4", "b5"]
+                )
+            ],
+            tokens: [
+                RemoteToken(tokenId: "h0", text: "BÖLÜM", confidence: 0.95, x: 0.05, y: 0.05, width: 0.15, height: 0.04, backgroundColor: yellow),
+                RemoteToken(tokenId: "h1", text: "BAŞLIĞI", confidence: 0.95, x: 0.21, y: 0.05, width: 0.18, height: 0.04, backgroundColor: yellow),
+                RemoteToken(tokenId: "b0", text: "Hücre", confidence: 0.95, x: 0.10, y: 0.30, width: 0.09, height: 0.03),
+                RemoteToken(tokenId: "b1", text: "hasarının", confidence: 0.95, x: 0.20, y: 0.30, width: 0.09, height: 0.03),
+                RemoteToken(tokenId: "b2", text: "en", confidence: 0.95, x: 0.30, y: 0.30, width: 0.04, height: 0.03),
+                RemoteToken(tokenId: "b3", text: "sık", confidence: 0.95, x: 0.35, y: 0.30, width: 0.04, height: 0.03),
+                RemoteToken(tokenId: "b4", text: "sebebi", confidence: 0.95, x: 0.40, y: 0.30, width: 0.08, height: 0.03),
+                RemoteToken(tokenId: "b5", text: "hipoksidir", confidence: 0.95, x: 0.49, y: 0.30, width: 0.10, height: 0.03, backgroundColor: yellow)
+            ]
+        )
+
+        let candidates = RemoteAnnotationCandidateBuilder.build(from: page, config: config)
+
+        XCTAssertEqual(candidates.groups.count, 1, "Yalnız gerçek kısa fosforlu kelime hayatta kalmalı, başlık bastırılmalı")
+        XCTAssertEqual(candidates.groups.first?.selectedTokenIds, ["b5"])
+    }
+
+    /// A backgroundColor signal alone — no local pixel/token evidence at
+    /// all, no design-band suppression triggered — must still never exceed
+    /// quick_confirm: there is no gold-set calibration behind the color
+    /// gate yet (unlike the pixel formula), so a color match alone can never
+    /// read as confident.
+    func testBackgroundColorOnlySignalIsCappedAtQuickConfirmAndNeverAutoSelected() throws {
+        let config = try MarkerConfig.bundled()
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [
+                RemoteToken(
+                    tokenId: "g0_token", text: "hipoksi", confidence: 0.95,
+                    x: 0.44, y: 0.20, width: 0.09, height: 0.025,
+                    backgroundColor: RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+                )
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page,
+            config: config
+        )
+
+        XCTAssertEqual(grounded.groups.count, 1)
+        let group = try XCTUnwrap(grounded.groups.first)
+        XCTAssertTrue(group.needsConfirmation, "Yalnız backgroundColor sinyali quick_confirm'i aşmamalı")
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains(group.id))
+    }
+
+    /// A remote backgroundColor candidate over the same area as a *local*
+    /// candidate must not auto-accept unless that local candidate was
+    /// itself already qualified (auto-worthy) on its own — mere presence of
+    /// some local evidence is not "corroboration" if that evidence was
+    /// itself uncertain (e.g. a line-level fallback, not a calibrated token
+    /// measurement).
+    func testBackgroundColorNotCorroboratedByAQualifiedLocalMarkerNeverAutoAccepts() throws {
+        let config = try MarkerConfig.bundled()
+        let uncertainLocalEvidence = AnnotationEvidence(
+            id: "local_e", type: .highlight,
+            boundingBox: NormalizedRect(x: 0.44, y: 0.20, width: 0.09, height: 0.025),
+            lineIds: ["vision_0"], tokenIds: [], confidence: 0.4, decision: .quickConfirm,
+            provenance: .localLineFallback
+        )
+        let uncertainLocalGroup = AnnotationGroup(
+            id: "local_g", evidenceIds: [uncertainLocalEvidence.id],
+            selectedLineIds: uncertainLocalEvidence.lineIds, contextLineIds: uncertainLocalEvidence.lineIds,
+            selectedTokenIds: [], boundingBox: uncertainLocalEvidence.boundingBox,
+            confidence: uncertainLocalEvidence.confidence, needsConfirmation: true, selectionType: .highlight
+        )
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [
+                RemoteToken(
+                    tokenId: "g0_token", text: "hipoksi", confidence: 0.95,
+                    x: 0.44, y: 0.20, width: 0.09, height: 0.025,
+                    backgroundColor: RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+                )
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [uncertainLocalEvidence], groups: [uncertainLocalGroup], autoSelectedGroupIds: []),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page,
+            config: config
+        )
+
+        XCTAssertEqual(grounded.groups.count, 1, "Aynı fiziksel alan tek gruba birleşmeli")
+        let group = try XCTUnwrap(grounded.groups.first)
+        XCTAssertTrue(group.needsConfirmation, "Nitelikli olmayan yerel kanıt, backgroundColor sinyalini otomatik kabule taşımamalı")
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains(group.id))
+    }
+
     /// Regression test 6 (remote-only variant of the local-only column test
     /// above): two columns' worth of Google-only underline candidates at the
     /// same row height must not merge just because they share a height.
@@ -409,6 +567,72 @@ final class RemoteAnnotationCandidateTests: XCTestCase {
         )
 
         XCTAssertEqual(grounded.groups.count, 2)
+    }
+}
+
+/// Regression tests for `AnnotationGrouper.diagnostics` — the privacy-safe,
+/// counts-only trace that lets a real-device run be told apart along "style
+/// feature never requested" vs. "requested but found zero" (§7.3: counts
+/// only, never OCR text).
+final class AnnotationGroundingDiagnosticsTests: XCTestCase {
+    func testCountsReflectRemoteTokensAndCandidatesByProvenance() throws {
+        let yellow = RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+        let localEvidence = markerEvidence("local_e", line: "vision_0", token: "vision_0_t", x: 0.44, y: 0.20)
+        let localGroup = markerGroup("local_g", evidence: localEvidence)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [
+                RemoteToken(
+                    tokenId: "g0_token", text: "hipoksi", confidence: 0.95,
+                    x: 0.44, y: 0.20, width: 0.09, height: 0.025, isUnderlined: true
+                ),
+                RemoteToken(
+                    tokenId: "note_token", text: "not", confidence: 0.9,
+                    x: 0.80, y: 0.20, width: 0.08, height: 0.03,
+                    isHandwritten: true, backgroundColor: yellow
+                )
+            ]
+        )
+        let initialSelection = MarkerSelectionResult(evidence: [localEvidence], groups: [localGroup], autoSelectedGroupIds: ["local_g"])
+        let config = try MarkerConfig.bundled()
+        let grounded = AnnotationGrouper.ground(
+            selection: initialSelection, localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page, config: config
+        )
+
+        let diagnostics = AnnotationGrouper.diagnostics(
+            initialSelection: initialSelection, groundedSelection: grounded, remotePage: page, styleInfoRequested: true
+        )
+
+        XCTAssertTrue(diagnostics.styleInfoRequested)
+        XCTAssertEqual(diagnostics.remoteTokenCount, 2)
+        XCTAssertEqual(diagnostics.remoteUnderlinedTokenCount, 1)
+        XCTAssertEqual(diagnostics.remoteBackgroundColorTokenCount, 1)
+        XCTAssertEqual(diagnostics.remoteHandwrittenTokenCount, 1)
+        XCTAssertEqual(diagnostics.localTokenCandidateCount, 1)
+        XCTAssertEqual(diagnostics.localLineFallbackCandidateCount, 0)
+        XCTAssertEqual(diagnostics.remoteUnderlineCandidateCount, 1)
+        XCTAssertEqual(diagnostics.remoteBackgroundCandidateCount, 1)
+        XCTAssertEqual(diagnostics.evidenceCountsByProvenance["local_token"], 1)
+        XCTAssertEqual(diagnostics.evidenceCountsByProvenance["remote_underline_style"], 1)
+        XCTAssertEqual(diagnostics.evidenceCountsByProvenance["remote_background_style"], 1)
+    }
+
+    func testZeroRemoteStyleCountsWithStyleInfoRequestedFalseMeansNeverAskedNotFoundNothing() {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [], tokens: [RemoteToken(tokenId: "t", text: "kelime", confidence: 0.9, x: 0.1, y: 0.1, width: 0.1, height: 0.03)]
+        )
+        let diagnostics = AnnotationGrouper.diagnostics(
+            initialSelection: MarkerSelectionResult(),
+            groundedSelection: AnnotationGrouper.ground(selection: MarkerSelectionResult(), localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page),
+            remotePage: page,
+            styleInfoRequested: false
+        )
+        XCTAssertFalse(diagnostics.styleInfoRequested, "false ise sıfır sayılar 'hiç istenmedi' anlamına gelmeli, 'aranıp bulunamadı' değil")
+        XCTAssertEqual(diagnostics.remoteUnderlineCandidateCount, 0)
+        XCTAssertEqual(diagnostics.remoteBackgroundCandidateCount, 0)
     }
 }
 

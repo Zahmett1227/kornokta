@@ -290,6 +290,30 @@ public struct RemoteRecognition: Codable, Sendable, Equatable {
     public let page: RemotePage
     /// Absent when the request carried no local reading to compare against.
     public let reconciliation: RemoteReconciliation?
+    /// Echoes the backend's `DOCUMENTAI_COMPUTE_STYLE_INFO` for this call —
+    /// without it, `isUnderlined: false`/no `backgroundColor` on every token
+    /// looks identical whether the style add-on ran and found nothing, or
+    /// was never requested at all, and only the server actually knows which.
+    public let styleInfoRequested: Bool
+
+    public init(jobId: String, page: RemotePage, reconciliation: RemoteReconciliation?, styleInfoRequested: Bool = false) {
+        self.jobId = jobId
+        self.page = page
+        self.reconciliation = reconciliation
+        self.styleInfoRequested = styleInfoRequested
+    }
+
+    /// A persisted `OCRSnapshot` from before this field existed has no
+    /// `styleInfoRequested` key at all. Defaulting to `false` there is the
+    /// safe reading: those snapshots predate the style feature entirely, so
+    /// they certainly never requested it.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try container.decode(String.self, forKey: .jobId)
+        page = try container.decode(RemotePage.self, forKey: .page)
+        reconciliation = try container.decodeIfPresent(RemoteReconciliation.self, forKey: .reconciliation)
+        styleInfoRequested = try container.decodeIfPresent(Bool.self, forKey: .styleInfoRequested) ?? false
+    }
 }
 
 public enum BackendError: Error, Sendable, Equatable {
