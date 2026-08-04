@@ -63,6 +63,14 @@ public final class CapturedPage {
     /// image orphaned forever; `shouldProcess` never revisits a `.ready`
     /// page, so nothing else would ever retry the deletion.
     public var pendingOriginalImageDeletion: Bool = false
+    /// Set when the user deletes a page while it is mid-`pipeline.run`
+    /// (`ProcessingQueue` tracks this via `inFlightPageIDs`). Deleting the
+    /// SwiftData record out from under that in-flight run would hand `apply`
+    /// a page that is a fault by the time the run's `await`s resume; instead
+    /// the request is recorded here and `apply` performs the actual deletion
+    /// once the run finishes, so the tap is honored without racing it.
+    /// Declaration-time default keeps this a lightweight migration.
+    public var pendingDeletion: Bool = false
     /// Device-local checkpoint of the completed primary OCR run. The data is
     /// intentionally held only on the phone and is cleared after successful
     /// persistence; the backend remains stateless (§7.2, §22).
@@ -93,6 +101,7 @@ public final class CapturedPage {
         self.confirmationFlags = []
         self.retryCount = 0
         self.pendingOriginalImageDeletion = false
+        self.pendingDeletion = false
         self.ocrSnapshotData = nil
         self.regions = []
     }

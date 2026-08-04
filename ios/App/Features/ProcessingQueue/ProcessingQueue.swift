@@ -16,6 +16,12 @@ final class ProcessingQueue: ObservableObject {
     /// edits Settings; the rest of the pipeline never changes.
     private var pipeline: CapturePipeline
     private let retryPolicy = RetryPolicy()
+    /// Ids of pages currently inside `pipeline.run` — a suspension point
+    /// (network/OCR `await`) an in-flight `process(_:)` call is parked at.
+    /// `ProcessingQueue` is `@MainActor`, so a user's delete tap can still
+    /// interleave there; `delete(_:)` checks this before touching the
+    /// SwiftData model (PR #12 review, Codex P1).
+    private var inFlightPageIDs: Set<UUID> = []
 
     @Published private(set) var isRunning = false
 
@@ -156,6 +162,7 @@ final class ProcessingQueue: ObservableObject {
     ) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
+        let pageID = page.id
 
         // Read the ceiling per run rather than caching it at init, so changing
         // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
@@ -165,6 +172,12 @@ final class ProcessingQueue: ObservableObject {
 
         page.processingState = .localOCR
         try? context.save()
+
+        // Marks the window `delete(_:)` has to check before touching this
+        // page's SwiftData model — `run` below awaits network/OCR calls, and
+        // this actor is free to run a queued delete tap in between.
+        inFlightPageIDs.insert(pageID)
+        defer { inFlightPageIDs.remove(pageID) }
 
         let outcome = await effectivePipeline.run(
             jobId: page.id.uuidString,
@@ -180,6 +193,15 @@ final class ProcessingQueue: ObservableObject {
     }
 
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {
+        // The user asked to delete this page while it was mid-run
+        // (`delete(_:)` below); honor that now instead of persisting a
+        // result for a page they no longer want. Whatever this run produced
+        // is discarded — deleting is what was actually requested.
+        guard !page.pendingDeletion else {
+            performDelete(page)
+            return
+        }
+
         // Keep the local OCR even when a later step failed (§21.2).
         if let recognized = outcome.recognized, page.regions.isEmpty {
             page.documentQualityScore = recognized.lines
@@ -446,20 +468,49 @@ final class ProcessingQueue: ObservableObject {
     }
 
     /// Removes a queue entry entirely, unlike `cancel` which only marks it
-    /// `.cancelled` and leaves it in the list forever. SwiftData cascades the
-    /// delete to `regions`/`knowledgeUnits`/`cards` (`deleteRule: .cascade`),
-    /// but the crop and original page files it stored on disk are its own —
-    /// those are read out and removed before the model objects go, since
-    /// `page`/`region` become invalid to read once deleted.
+    /// `.cancelled` and leaves it in the list forever.
+    ///
+    /// If `page` is mid-`pipeline.run` (PR #12 review, Codex P1), deleting
+    /// its SwiftData model out from under that in-flight `process(_:)` call
+    /// would hand `apply` a faulted object once its `await`s resume. This
+    /// just records the request; `apply` performs the real deletion as soon
+    /// as the run finishes, so the tap is honored rather than raced.
     func delete(_ page: CapturedPage) {
+        guard !inFlightPageIDs.contains(page.id) else {
+            page.pendingDeletion = true
+            try? container.mainContext.save()
+            return
+        }
+        performDelete(page)
+    }
+
+    /// SwiftData cascades the model delete to `regions`/`knowledgeUnits`/
+    /// `cards` (`deleteRule: .cascade`), but the crop and original page files
+    /// it stored on disk are its own.
+    ///
+    /// The model delete is saved *before* any file is removed (PR #12
+    /// review, Codex P2) — the reverse of `pendingOriginalImageDeletion`'s
+    /// order elsewhere in this file, and deliberately so: there, the record
+    /// itself is the durable intent and a crash before the file goes just
+    /// means a retry. Here there is no separate durable flag once this
+    /// returns, so if `context.save()` failed after the files were already
+    /// gone, the surviving record would point at nothing and no code path
+    /// would ever revisit it. Saving first means a failed save simply leaves
+    /// both the record and its files in place, exactly as they were.
+    private func performDelete(_ page: CapturedPage) {
         let context = container.mainContext
+        let originalPath = page.originalImagePath
         let cropPaths = page.regions.compactMap(\.sourceCropPath)
-        try? imageStore.remove(relativePath: page.originalImagePath)
+        context.delete(page)
+        do {
+            try context.save()
+        } catch {
+            return
+        }
+        try? imageStore.remove(relativePath: originalPath)
         for path in cropPaths {
             try? imageStore.remove(relativePath: path)
         }
-        context.delete(page)
-        try? context.save()
     }
 
     func retry(_ page: CapturedPage) async {
