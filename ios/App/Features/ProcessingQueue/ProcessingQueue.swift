@@ -201,7 +201,22 @@ final class ProcessingQueue: ObservableObject {
         inFlightPageCounts[pageID, default: 0] += 1
         defer {
             let remaining = (inFlightPageCounts[pageID] ?? 1) - 1
-            inFlightPageCounts[pageID] = remaining > 0 ? remaining : nil
+            if remaining > 0 {
+                inFlightPageCounts[pageID] = remaining
+            } else {
+                inFlightPageCounts[pageID] = nil
+                // Only the call that brings the count to zero may act on a
+                // pending deletion (PR #12 review, Codex P1 — third round).
+                // `apply` below runs unconditionally and may persist a full
+                // result for `page` even though deletion was requested mid-run
+                // — wasted work in that rare race, but safe: an earlier call
+                // finishing first must never delete the model while a later,
+                // still-in-flight call for the same page is going to read or
+                // write it in its own `apply`.
+                if page.pendingDeletion {
+                    performDelete(page)
+                }
+            }
         }
 
         let outcome = await effectivePipeline.run(
@@ -218,15 +233,6 @@ final class ProcessingQueue: ObservableObject {
     }
 
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {
-        // The user asked to delete this page while it was mid-run
-        // (`delete(_:)` below); honor that now instead of persisting a
-        // result for a page they no longer want. Whatever this run produced
-        // is discarded — deleting is what was actually requested.
-        guard !page.pendingDeletion else {
-            performDelete(page)
-            return
-        }
-
         // Keep the local OCR even when a later step failed (§21.2).
         if let recognized = outcome.recognized, page.regions.isEmpty {
             page.documentQualityScore = recognized.lines
