@@ -188,6 +188,50 @@ final class AnnotationGrouperTests: XCTestCase {
         XCTAssertEqual(grounded.groups.count, 2)
         XCTAssertTrue(grounded.groups.contains { $0.selectionType == .manual })
     }
+
+    func testManualRectangleThatMissesTheOverlapThresholdStillGroundsToTheNearestLine() {
+        let manual = AnnotationGroup(
+            id: "manual_g", evidenceIds: [], selectedLineIds: [], contextLineIds: [],
+            boundingBox: NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03),
+            confidence: 1, needsConfirmation: false, selectionType: .manual
+        )
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                annotationLine("near", "Yakın satır", x: 0.10, y: 0.30),
+                annotationLine("far", "Uzak satır", x: 0.10, y: 0.80)
+            ],
+            tokens: []
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(groups: [manual], autoSelectedGroupIds: ["manual_g"]),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+
+        XCTAssertEqual(grounded.groups.first?.selectedLineIds, ["near"])
+        XCTAssertEqual(grounded.groups.first?.selectedText, "Yakın satır")
+    }
+
+    func testOfflineManualRectangleFallsBackToNearestLineWhenOverlapIsTooLow() {
+        let manual = AnnotationGroup(
+            id: "manual", evidenceIds: [], selectedLineIds: [], contextLineIds: [],
+            boundingBox: NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03),
+            confidence: 1, needsConfirmation: false, selectionType: .manual
+        )
+        let local = RecognizedPage(lines: [
+            RecognizedLine(id: "near", text: "Yakın satır", confidence: 0.9, box: CGRect(x: 0.10, y: 0.30, width: 0.36, height: 0.04)),
+            RecognizedLine(id: "far", text: "Uzak satır", confidence: 0.9, box: CGRect(x: 0.10, y: 0.80, width: 0.36, height: 0.04))
+        ], elapsed: 0)
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(groups: [manual], autoSelectedGroupIds: ["manual"]),
+            localPage: local, remotePage: nil
+        )
+
+        XCTAssertEqual(grounded.groups.first?.selectedLineIds, ["near"])
+        XCTAssertEqual(grounded.groups.first?.selectedText, "Yakın satır")
+    }
 }
 
 final class PageOverlayTransformTests: XCTestCase {
@@ -203,6 +247,19 @@ final class PageOverlayTransformTests: XCTestCase {
         }
         XCTAssertEqual(point.x, 0.25, accuracy: 0.0001)
         XCTAssertEqual(point.y, 0.35, accuracy: 0.0001)
+    }
+
+    func testDragOutsideTheImageClampsToItsEdgeInsteadOfFailing() {
+        let transform = PageOverlayTransform(
+            imageWidth: 1000, imageHeight: 2000,
+            viewportWidth: 1000, viewportHeight: 1000,
+            zoom: 1, panX: 0, panY: 0
+        )
+        guard let point = transform.normalizedPoint(viewX: -500, viewY: 5000) else {
+            return XCTFail("Kenar dışı bir nokta artık nil değil, kenara kenetlenmiş dönmeli")
+        }
+        XCTAssertEqual(point.x, 0, accuracy: 0.0001)
+        XCTAssertEqual(point.y, 1, accuracy: 0.0001)
     }
 }
 

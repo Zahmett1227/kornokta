@@ -46,6 +46,7 @@ struct ConfirmationView: View {
         // one-task screen anyway — hiding the tab bar while it's open matches
         // how the rest of the app treats a blocking confirmation step.
         .toolbar(.hidden, for: .tabBar)
+        .homeButtonToolbar()
         .task { await loadSnapshot() }
         .alert("Hata", isPresented: .constant(errorMessage != nil && !isLoading)) {
             Button("Tamam") { errorMessage = nil }
@@ -220,6 +221,12 @@ private struct PhotoOverlayCanvas: View {
 
     @State private var zoom = 1.0
     @State private var pan = CGSize.zero
+    // `pan` only holds the committed value between gestures; without these,
+    // a fresh drag's `.translation` starts back at zero and overwrites `pan`
+    // outright, snapping the image to the origin at the start of every new
+    // pan gesture (found via code review, 2026-08-04).
+    @State private var dragStartPan = CGSize.zero
+    @State private var isPanning = false
     @State private var manualDragRect: CGRect?
 
     var body: some View {
@@ -264,9 +271,28 @@ private struct PhotoOverlayCanvas: View {
                             .frame(width: max(24, rect.width), height: max(24, rect.height))
                     }
                     .buttonStyle(.plain)
+                    // While drawing a manual rectangle, a drag that starts on
+                    // top of an existing region must not also toggle that
+                    // region's own selection underneath it.
+                    .allowsHitTesting(!isDrawingManualRectangle)
                     .position(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2)
                     .accessibilityLabel(accessibilityLabel(for: group))
                     .accessibilityAddTraits(selectedGroupIds.contains(group.id) ? .isSelected : [])
+
+                    if group.selectionType == .manual {
+                        Button {
+                            removeManual(group.id)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, .blue)
+                                .background(Circle().fill(.white))
+                        }
+                        .buttonStyle(.plain)
+                        .allowsHitTesting(!isDrawingManualRectangle)
+                        .position(x: rect.x + rect.width, y: rect.y)
+                        .accessibilityLabel("Manuel alanı sil")
+                    }
                 }
 
                 if let manualDragRect {
@@ -294,10 +320,25 @@ private struct PhotoOverlayCanvas: View {
                     if isDrawingManualRectangle {
                         updateManualRectangle(transform: transform, value: value)
                     } else {
-                        pan = value.translation
+                        if !isPanning {
+                            dragStartPan = pan
+                            isPanning = true
+                        }
+                        let candidate = CGSize(
+                            width: dragStartPan.width + value.translation.width,
+                            height: dragStartPan.height + value.translation.height
+                        )
+                        // The image can never be dragged fully off-screen —
+                        // clamped to how far it can move before its own edge
+                        // would pull away from the viewport.
+                        pan = CGSize(
+                            width: min(max(candidate.width, -transform.maxPanX), transform.maxPanX),
+                            height: min(max(candidate.height, -transform.maxPanY), transform.maxPanY)
+                        )
                     }
                 }
                 .onEnded { value in
+                    isPanning = false
                     if isDrawingManualRectangle {
                         finishManualRectangle(transform: transform, value: value)
                     }
@@ -316,15 +357,26 @@ private struct PhotoOverlayCanvas: View {
         }
     }
 
+    private func removeManual(_ id: String) {
+        if let removed = manualGroups.first(where: { $0.id == id }) {
+            let evidenceIds = Set(removed.evidenceIds)
+            manualEvidence.removeAll { evidenceIds.contains($0.id) }
+        }
+        manualGroups.removeAll { $0.id == id }
+        selectedGroupIds.remove(id)
+    }
+
     private func updateManualRectangle(transform: PageOverlayTransform, value: DragGesture.Value) {
-        guard transform.normalizedPoint(viewX: value.startLocation.x, viewY: value.startLocation.y) != nil,
-              transform.normalizedPoint(viewX: value.location.x, viewY: value.location.y) != nil
-        else { return }
+        // Clamped to the rendered image rather than left in raw view space,
+        // so the live preview stays pinned to the edge instead of trailing
+        // off past it while the finger is still past the image bounds.
+        let start = transform.clampedViewPoint(viewX: value.startLocation.x, viewY: value.startLocation.y)
+        let end = transform.clampedViewPoint(viewX: value.location.x, viewY: value.location.y)
         manualDragRect = CGRect(
-            x: min(value.startLocation.x, value.location.x),
-            y: min(value.startLocation.y, value.location.y),
-            width: abs(value.location.x - value.startLocation.x),
-            height: abs(value.location.y - value.startLocation.y)
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
         )
     }
 

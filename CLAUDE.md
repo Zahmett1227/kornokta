@@ -181,26 +181,77 @@ işaret etmiyor).
     kartın bağlı olduğu `TextRegion`/kırpma görüntüsünü temizlemiyor (bir
     `KnowledgeUnit` birden çok kart taşıyabilir; kalan boş bölge zararsız,
     `PageDetailView`'da görünmez bir "Pasaj" girdisi olarak kalır — mevcut
-    davranışla tutarlı, kapsam dışı bırakıldı). Üçü de App hedefinde
-    (`ios/App/...`), bu yüzden `swift test`in kapsamı dışında — yalnız
-    Xcode'da gerçek bir build/çalıştırma doğrular, bu oturumda hiç
-    çalıştırılmadı.
+    davranışla tutarlı, kapsam dışı bırakıldı). Bu madde PR #12 (`ab9e0b1`)
+    ile main'e merge edildi (bir sonraki oturumun `git pull`ıyla görüldü).
+11. **(Yeni oturum, 2026-08-04, üç ayrı istek)** Kullanıcı üç şey istedi: app
+    icon, her sayfada bir "geri gelme" butonu, manuel alan ekleme
+    stabilizasyonu.
+    - **Icon:** `ios/App/Assets.xcassets/AppIcon.appiconset/` sıfırdan
+      oluşturuldu (proje hiç asset katalog içermiyordu —
+      `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon` ayarı vardı ama
+      karşılıksızdı, muhtemelen önceki bir `xcodegen generate` çalıştırması
+      asset katalog daha eklenmeden önce bu ayarı otomatik yazmıştı).
+      Görsel Canva MCP ile üretildi (fosforlu kalem motifi: beyaz zemin,
+      tek amber vurgu çizgisi + lacivert metin çizgisi, tam kadraj),
+      1024×1024 opak PNG. Yeni Swift dosyalarını (`AppNavigator.swift`,
+      `HomeButton.swift`) ve asset katalogu projeye bağlamak için
+      `project.pbxproj` elle düzenlenmedi — `ios/project.yml`'in `App`
+      klasörünü glob'ladığı fark edilince `cd ios && xcodegen generate`
+      çalıştırıldı, proje temiz baştan üretildi (README'nin kendi kuralı:
+      `.xcodeproj` bilerek commit edilmiyor).
+    - **"Ana sayfaya dön" butonu:** İncelemede görüldü ki push edilen her
+      ekran zaten SwiftUI'nin otomatik geri okunu alıyor — kullanıcı
+      netleştirmede bunun yerine sekme kök ekranları dahil her sayfada
+      doğrudan Yakala'ya dönen tek bir buton istedi. Yeni
+      `AppNavigator` (ObservableObject; seçili sekme + `capturePath`/
+      `libraryPath` `NavigationPath`'leri) ve `HomeButton`/
+      `.homeButtonToolbar()` eklendi; `RootView` artık `TabView(selection:)`
+      kullanıyor. Sekiz ekranın hepsine (`CaptureView`, `ReviewView`,
+      `LibraryView`, `SettingsView`, `QueueView`, `PageDetailView`,
+      `ConfirmationView`, `CardDetailView`) sol üstte ev ikonu eklendi; push
+      edilen ekranlarda sistemin geri okunun yanında ikinci bir kontrol
+      olarak duruyor.
+    - **Manuel alan ekleme stabilizasyonu** (kod okumasıyla bulunan beş
+      kırılganlık, hepsi düzeltildi): (a) `PageOverlayTransform.normalizedPoint`
+      artık görüntü sınırı dışındaki bir sürükleme noktasında `nil` dönüp
+      dikdörtgeni sessizce iptal etmek yerine kenara kenetleniyor; (b) canlı
+      önizleme dikdörtgeni de aynı şekilde kenetleniyor (yeni
+      `clampedViewPoint`); (c) çizim modundayken alttaki otomatik-bölge
+      butonları `.allowsHitTesting(false)` ile devre dışı, artık bir bölgenin
+      üzerinden çizime başlamak o bölgenin seçimini de değiştirmiyor; (d) pan
+      artık kalıcı bir state'te birikip (`dragStartPan`/`isPanning`) her yeni
+      dokunuşta sıfıra zıplamıyor, ayrıca görüntü ekran dışına tamamen
+      sürüklenemeyecek şekilde kenetlendi (`maxPanX`/`maxPanY`); (e)
+      `AnnotationGrouper.ground`/`groundLocally`'de yalnız `.manual` seçim
+      tipi için: örtüşme eşiğini (0.3/0.25) ıskalayan ama merkeze yakın
+      (≤0.16 normalize mesafe — `nearbyHandwrittenTokens`'ın kullandığı
+      yarıçapla aynı) bir kutu artık boş pasajla onay ekranına sekmek yerine
+      en yakın satıra düşüyor; mesafe sınırı bilerek düşük tutuldu çünkü
+      `BackendPipelineTests.testCloudReadingThatMissesTheMarkedRegionAsksInsteadOfFallingBack`
+      testi, alâkasız bir satıra sessizce düşmenin (kutunun gerçekten
+      hiçbir ilgili içerik bulamadığı durumda) kasıtlı olarak yasak
+      olduğunu doğruluyor — bu test hâlâ yeşil. (f) Manuel kutuya artık
+      "×" ile sil/geri al eklendi (önceden yalnızca seçimi kaldırıp
+      göndermemek mümkündü, kutu ekranda kalıyordu).
+    - `ios/CizgiCore/Tests/CizgiCoreTests/AnnotationGroundingTests.swift`'e
+      3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
+      local yollar için).
 
 **Test durumu:**
 - Python (`evals/`): 511 test — bu oturumda dokunulmadı/koşulmadı.
 - Backend (`backend/`): **451 test**, yeşil — bu oturumda backend'e hiç
   dokunulmadı.
-- Swift (`ios/CizgiCore/`): main'de 167 test (madde 9 ile birlikte merge
-  edildi). Bu oturumun madde 10 değişiklikleri App hedefinde olduğu için
-  `CizgiCore` test sayısını değiştirmedi — **henüz bir Mac'te koşulmadı**,
-  ne CizgiCore paketi ne de App hedefi bu oturumda derlendi (App hedefini
-  yalnız Xcode gerçek bir build/çalıştırma ile doğrular).
+- Swift (`ios/CizgiCore/`): **171 test, yeşil** (168 mevcut + 3 yeni),
+  bu ortamda `swift test` ile gerçekten koşuldu (2026-08-04). App hedefi
+  de bu ortamda ilk kez gerçekten derlendi
+  (`xcodebuild -scheme Cizgi -destination 'generic/platform=iOS Simulator'
+  build`, **BUILD SUCCEEDED**, uyarısız) — ama gerçek cihaz/simülatör
+  çalıştırması hâlâ yapılmadı; `AppNavigator`/`HomeButton`/gesture
+  değişiklikleri yalnız derleme ile doğrulandı, davranışı değil.
 
-**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), `main`
-`e0ee22f`'i içeriyor (madde 9, PR #11). **Madde 10'un üç değişikliği
-(sekme çubuğu gizleme, kuyruk silme, kart silme) henüz main'e merge edilmedi**
-— dal `claude/project-review-issue-j0ycif`, `main`'in güncel ucu üzerine
-kuruldu, kullanıcı henüz merge istemedi.
+**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`). Yerel
+`main`, `ab9e0b1`'i (PR #12, madde 10) içeriyor — bu oturumun madde 11
+değişiklikleri **henüz commit edilmedi**, çalışma dizininde duruyor.
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -290,16 +341,22 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli:** madde 10'un üç değişikliğini gerçek cihazda doğrulamak
-(henüz merge edilmedi, kullanıcı isteğini bekliyor): (a) `ConfirmationView`
-açıkken sekme çubuğunun artık gizlendiği ve "Seçili gruplardan kart
-oluştur"un tam görünüp dokunulabilir olduğu, (b) İşleme Kuyruğu'nda bir
-satırı sola kaydırıp "Sil"in satırı (ve diskteki görüntülerini) gerçekten
-kaldırdığı, (c) Bilgilerim'de hem kaydırarak hem kart detayındaki "Sil"
-butonuyla bir kartın silinebildiği. `.toolbar(.hidden, for: .tabBar)`
-düzeltmesi kök neden araştırılmadan uygulandı (App hedefi bu ortamda
-derlenemiyor) — sorun gerçek cihazda hâlâ görülürse `RootView.swift`'teki
-`TabView` kurulumuna ve iOS sürümüne bakılmalı.
+**En öncelikli:** madde 11'in üç değişikliğini gerçek cihazda doğrulamak
+(hiçbiri henüz commit edilmedi): (a) yeni app icon'un ana ekranda beklendiği
+gibi göründüğü, (b) her sayfadaki ev ikonunun gerçekten Yakala'ya dönüp tüm
+yığınları sıfırladığı (özellikle Onay ekranından ortadayken), (c) manuel
+alan çizerken kenar kenetlemesinin/pan düzeltmesinin/sil butonunun gerçek
+parmak hareketiyle beklenen gibi çalıştığı ve bir kutunun artık boş pasajla
+geri sekmediği. Bu oturumda yalnız `swift test` (171 yeşil) ve
+`xcodebuild … build` (BUILD SUCCEEDED) çalıştırılabildi — gerçek
+cihaz/simülatör çalıştırması hiç yapılmadı.
+
+Madde 10'un üç değişikliği (PR #12, `ab9e0b1`) main'e merge edildi ama
+kendi gerçek cihaz doğrulaması da hâlâ bekliyor: (a) `ConfirmationView`
+açıkken sekme çubuğunun gizlendiği ve "Seçili gruplardan kart oluştur"un
+tam görünüp dokunulabilir olduğu, (b) İşleme Kuyruğu'nda "Sil"in satırı
+(ve diskteki görüntülerini) gerçekten kaldırdığı, (c) Bilgilerim'de bir
+kartın silinebildiği.
 
 Madde 9'un doğrulaması (needsApproval→ready, Bilgilerim'de Onay bekliyor,
 confirmationReason) hâlâ bekliyor — main'e merge edildi ama gerçek cihazda

@@ -23,11 +23,20 @@ public enum AnnotationGrouper {
             let directLines = matchingLines(for: group.boundingBox, lines: remotePage.lines)
             // A short underline may only cover the end of its source line. Token
             // membership is then a stronger grounding signal than box overlap.
-            let selectedLines = directLines.isEmpty
+            let tokenLines = directLines.isEmpty
                 ? remotePage.lines.filter { line in
                     selectedTokens.contains { token in line.tokenIds.contains(token.tokenId) }
                 }
                 : directLines
+            // A manual box is a deliberate, explicit user selection, not a
+            // guess to be filtered by the same overlap threshold that guards
+            // automatic detection against false positives. If it missed
+            // every line/token by a hair, ground it to the nearest line
+            // rather than bouncing the whole submission with an empty
+            // passage (found via real device use, 2026-08-04).
+            let selectedLines = tokenLines.isEmpty && group.selectionType == .manual
+                ? nearestLine(to: group.boundingBox, in: remotePage.lines).map { [$0] } ?? []
+                : tokenLines
             let selectedText = selectedTokens.isEmpty
                 ? selectedLines.map(\.text).joined(separator: " ")
                 : selectedTokens.map(\.text).joined(separator: " ")
@@ -101,12 +110,17 @@ public enum AnnotationGrouper {
             let explicit = group.selectedLineIds.compactMap { lines[$0] }
             // A freehand confirmation rectangle has no line id. Ground it
             // against local Vision geometry so offline confirmation is usable.
-            let selected = explicit.isEmpty
+            let overlapping = explicit.isEmpty
                 ? page.lines.filter { line in
                     group.boundingBox.overlapOfSmallerArea(with: NormalizedRect(line.box)) >= 0.25
                         || contains(group.boundingBox, NormalizedRect(line.box).center)
                 }
                 : explicit
+            // Same reasoning as the remote path above: a manual box always
+            // grounds to something rather than coming back empty.
+            let selected = overlapping.isEmpty && group.selectionType == .manual
+                ? nearestLocalLine(to: group.boundingBox, in: page.lines).map { [$0] } ?? []
+                : overlapping
             return group.with(
                 selectedLineIds: selected.map(\.id),
                 contextLineIds: selected.map(\.id),
@@ -178,6 +192,36 @@ public enum AnnotationGrouper {
         guard abs(lhsCenter - rhsCenter) < 0.34 else { return false }
         let verticalGap = max(lhs.y, rhs.y) - min(lhs.y + lhs.height, rhs.y + rhs.height)
         return verticalGap <= 0.045
+    }
+
+    /// Same nearness radius `nearbyHandwrittenTokens` uses below for "close
+    /// enough to belong together" — far enough to absorb a manual box that
+    /// merely missed its target line's overlap threshold, not so far that a
+    /// cloud reading with no relevant content at all gets matched to some
+    /// unrelated line elsewhere on the page (that must still bounce to
+    /// confirmation instead of silently shipping the wrong text).
+    private static let manualFallbackMaxDistance = 0.16
+
+    private static func nearestLine(to box: NormalizedRect, in lines: [RemoteLine]) -> RemoteLine? {
+        let center = box.center
+        return lines
+            .map { ($0, distanceSquared(rect(of: $0).center, center)) }
+            .filter { $0.1 <= manualFallbackMaxDistance * manualFallbackMaxDistance }
+            .min { $0.1 < $1.1 }?.0
+    }
+
+    private static func nearestLocalLine(to box: NormalizedRect, in lines: [RecognizedLine]) -> RecognizedLine? {
+        let center = box.center
+        return lines
+            .map { ($0, distanceSquared(NormalizedRect($0.box).center, center)) }
+            .filter { $0.1 <= manualFallbackMaxDistance * manualFallbackMaxDistance }
+            .min { $0.1 < $1.1 }?.0
+    }
+
+    private static func distanceSquared(_ a: (x: Double, y: Double), _ b: (x: Double, y: Double)) -> Double {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return dx * dx + dy * dy
     }
 
     private static func matchingLines(for box: NormalizedRect, lines: [RemoteLine]) -> [RemoteLine] {

@@ -41,6 +41,22 @@ public struct PageOverlayTransform: Sendable, Equatable {
     public var originX: Double { (viewportWidth - renderedWidth) / 2 + panX }
     public var originY: Double { (viewportHeight - renderedHeight) / 2 + panY }
 
+    /// How far the image can pan in each direction before its edge would
+    /// pull away from the viewport entirely. Independent of the current
+    /// `panX`/`panY` — callers clamp a *candidate* pan against this.
+    public var maxPanX: Double { max(0, (renderedWidth - viewportWidth) / 2) }
+    public var maxPanY: Double { max(0, (renderedHeight - viewportHeight) / 2) }
+
+    /// The nearest point still inside the rendered image, in view space —
+    /// used to keep a live drag preview visually pinned to the edge instead
+    /// of trailing off past it while the finger is still moving.
+    public func clampedViewPoint(viewX: Double, viewY: Double) -> (x: Double, y: Double) {
+        (
+            min(max(viewX, originX), originX + renderedWidth),
+            min(max(viewY, originY), originY + renderedHeight)
+        )
+    }
+
     public func viewRect(for normalized: NormalizedRect) -> NormalizedRect {
         NormalizedRect(
             x: originX + normalized.x * imageWidth * scale,
@@ -50,12 +66,15 @@ public struct PageOverlayTransform: Sendable, Equatable {
         )
     }
 
+    /// Clamps to the image bounds rather than failing outside them: a manual
+    /// selection drag routinely overshoots the rendered image by a few points
+    /// (letterboxing, finger overshoot on release), and returning `nil` there
+    /// used to make the whole gesture vanish with no feedback instead of
+    /// simply stopping at the edge.
     public func normalizedPoint(viewX: Double, viewY: Double) -> (x: Double, y: Double)? {
-        let renderedX = viewX - originX
-        let renderedY = viewY - originY
-        guard renderedX >= 0, renderedY >= 0, renderedX <= renderedWidth, renderedY <= renderedHeight else {
-            return nil
-        }
+        guard renderedWidth > 0, renderedHeight > 0 else { return nil }
+        let renderedX = min(max(viewX - originX, 0), renderedWidth)
+        let renderedY = min(max(viewY - originY, 0), renderedHeight)
         return (renderedX / renderedWidth, renderedY / renderedHeight)
     }
 }
