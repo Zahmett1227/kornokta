@@ -1,14 +1,14 @@
 /**
- * `POST /api/cards` — the endpoint the phone calls once a passage's
- * transcription has already been reconciled, to have source-faithful cards
- * generated from it (ANA-PLAN §7.2, §14, §25 Faz 3).
+ * `POST /api/cards-vision` (also reachable at the legacy `/api/cards`) — the
+ * endpoint the phone calls with a marked *full-page* photo to have enriched
+ * study cards generated directly from it (Faz 6 — docs/FAZ6-PLAN.md §5.1).
  *
- * Deliberately takes `cleanText`, not a raw image to OCR: reconciliation
- * (`providers/reconcile.ts`) has already run by the time this is called —
- * either it auto-accepted or the user confirmed it — so this endpoint is not
- * asked to re-derive the transcription, only to generate cards from a text
- * that is already trusted (§17: `card_generation` is a distinct pipeline step
- * after `transcription_reconciliation`, not a replacement for it).
+ * The Faz 6 pivot (docs/ADR-005) removed the deterministic OCR-reconcile +
+ * approval machine from the main flow: this endpoint no longer takes a
+ * pre-reconciled `cleanText`, and does not wait on Google OCR. It hands the
+ * marked page straight to the vision model, which reads what the student
+ * highlighted/underlined/circled/annotated and emits cards (v2 prompt, v2
+ * schema). An optional `hint` lets the user steer ("sadece sol sütun").
  *
  * Same privacy discipline as `_ocr.ts`: no database, no image/text in a log
  * line, bytes held only for the duration of the call (§7.3).
@@ -30,12 +30,11 @@ import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 export interface CardsRequestBody {
   /** Client-generated job id; doubles as the generated output's `requestId` (§14). */
   jobId?: unknown;
+  /** The marked full page (§5.2), not a crop. */
   imageBase64?: unknown;
   mimeType?: unknown;
-  /** Text that has already passed OCR reconciliation — see file header. */
-  cleanText?: unknown;
-  selectedLineIds?: unknown;
-  isHandwritten?: unknown;
+  /** Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun". */
+  hint?: unknown;
 }
 
 export interface CardsSuccess {
@@ -85,13 +84,6 @@ function json(body: unknown, status: number): Response {
 
 function fail(message: string, status: number, retryable: boolean): Response {
   return json({ error: message, retryable } satisfies CardsFailure, status);
-}
-
-/** `undefined` for an absent field, `[]`/array for a valid one, `null` for a malformed one. */
-export function parseSelectedLineIds(value: unknown): string[] | null {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
-  return value as string[];
 }
 
 function summarizeDecisions(verdicts: CardVerdict[]): Record<CardDecision, number> {
@@ -149,21 +141,12 @@ export async function handleCardsRequest(
     return fail(`Görüntü çok büyük (en fazla ${MAX_IMAGE_BYTES} bayt).`, 413, false);
   }
 
-  const cleanText = typeof body.cleanText === "string" ? body.cleanText.trim() : "";
-  if (!cleanText) {
-    return fail(
-      "cleanText zorunlu: bu uç nokta zaten uzlaştırılmış metin bekler, ham OCR yapmaz (§17).",
-      400,
-      false,
-    );
+  // Optional free-text steer (§5.1). Absent/blank is normal; a non-string is
+  // a malformed body, not something to silently ignore.
+  if (body.hint !== undefined && typeof body.hint !== "string") {
+    return fail("hint bir metin (string) olmalı.", 400, false);
   }
-
-  const selectedLineIds = parseSelectedLineIds(body.selectedLineIds);
-  if (selectedLineIds === null) {
-    return fail("selectedLineIds bir metin (string) dizisi olmalı.", 400, false);
-  }
-
-  const isHandwritten = body.isHandwritten === true;
+  const hint = typeof body.hint === "string" ? body.hint.trim() : undefined;
 
   // §21.3: refuse before spending, using the only bound knowable before the
   // call — the output-token ceiling. Input-token cost depends on the image
@@ -187,9 +170,7 @@ export async function handleCardsRequest(
       requestId: jobId,
       image,
       mimeType,
-      cleanText,
-      selectedLineIds,
-      isHandwritten,
+      hint,
     });
 
     const gate = runCardGate(output, { maxCardsPerKnowledgeUnit: deps.openai.maxCardsPerKnowledgeUnit });
@@ -235,5 +216,5 @@ export async function handleCardsRequest(
       retryable,
     );
   }
-  // `image` and `cleanText` go out of scope here and are never written anywhere (§7.3).
+  // `image` goes out of scope here and is never written anywhere (§7.3).
 }

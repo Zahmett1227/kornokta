@@ -1,14 +1,22 @@
 /**
- * TypeScript shape of the canonical LLM output contract (ANA-PLAN §14).
+ * TypeScript shape of the canonical LLM output contract (ANA-PLAN §14),
+ * simplified to v2 in Faz 6 (docs/FAZ6-PLAN.md §6).
  *
- * `RiskFlag` and `CardType` are exported as `as const` arrays rather than
- * plain union types so a value list actually exists at runtime — the same
- * reason `ios/CizgiCore/.../Enums.swift` uses raw-valued enums instead of a
- * bare Swift enum. `evals/tests/test_ts_contract_sync.py` reads this file as
- * text and checks both lists against `llm_output.schema.json`'s `$defs`, the
- * same way it already checks the Swift enums — this project has hit "one
- * behaviour, two places, only one updated" three times (docs/ADR-001), and a
- * third undefended copy of this particular list would be a fourth.
+ * The v2 card drops the source-fidelity accounting (`sourceQuote`,
+ * `sourceLineIds`, `sourceFaithful`, `enriched`, `riskFlags`) and the separate
+ * `transcription`/`knowledgeUnits`/`quality` blocks: the model now reads a
+ * marked page and emits enriched cards directly (§4), so there is nothing to
+ * reconcile a card back against on the server.
+ *
+ * `RISK_FLAGS` and `CARD_TYPES` are still exported as `as const` arrays so a
+ * value list exists at runtime — the same reason `ios/CizgiCore/.../Enums.swift`
+ * uses raw-valued enums. `evals/tests/test_ts_contract_sync.py` reads this file
+ * as text and checks both lists against `llm_output.schema.json`'s `$defs`, the
+ * same way it checks the Swift enums. `RISK_FLAGS` is retained (though the v2
+ * `Card` no longer carries a `riskFlags` array — it uses the single boolean
+ * `lowConfidence` instead) both for ADR-005's rollback/SAFE_MODE path and to
+ * keep that anti-drift guard on a single source across TS/Swift/Python without
+ * churning `Enums.swift`.
  */
 
 export const RISK_FLAGS = [
@@ -40,6 +48,11 @@ export const CARD_TYPES = [
 
 export type CardType = (typeof CARD_TYPES)[number];
 
+/**
+ * Not part of the v2 `LlmOutput`. Retained because the handwriting
+ * second-opinion path (`providers/gemini.ts`, kept on disk for ADR-005's
+ * rollback) reuses this shape for its uncertain-span payload.
+ */
 export interface UncertainSpan {
   text: string;
   alternatives: string[];
@@ -48,46 +61,17 @@ export interface UncertainSpan {
   requiresUserConfirmation: boolean;
 }
 
-export interface Transcription {
-  exactText: string;
-  cleanText: string;
-  language: string;
-  overallConfidence: number;
-  isHandwritten: boolean;
-  selectedLineIds: string[];
-  uncertainSpans: UncertainSpan[];
-}
-
-export interface KnowledgeUnit {
-  id: string;
-  canonicalClaim: string;
-  mechanism: string | null;
-  tags: string[];
-  sourceConcern: string | null;
-  requiresUserApproval: boolean;
-}
-
 export interface Card {
   id: string;
-  knowledgeUnitId: string;
   type: CardType;
   front: string;
   back: string;
+  /** May carry non-source context (mechanism, clinical relevance); may be empty (§4, §6). */
   explanation: string;
-  sourceQuote: string;
-  sourceLineIds: string[];
-  sourceFaithful: boolean;
-  enriched: boolean;
   difficulty: number;
-  riskFlags: RiskFlag[];
-  requiresUserApproval: boolean;
-}
-
-export interface Quality {
-  sourceCoverage: number;
-  duplicateCardRisk: number;
-  medicalMeaningChangeRisk: number;
-  warnings: string[];
+  tags: string[];
+  /** The model's own "I am unsure" signal (§6). Does not trigger approval. */
+  lowConfidence: boolean;
 }
 
 export interface Usage {
@@ -99,11 +83,10 @@ export interface Usage {
 }
 
 export interface LlmOutput {
-  schemaVersion: "1.0";
+  schemaVersion: "2.0";
   requestId: string;
-  transcription: Transcription;
-  knowledgeUnits: KnowledgeUnit[];
+  /** The raw text the model read off the marked content — audit only (§6.3). */
+  readText: string;
   cards: Card[];
-  quality: Quality;
   usage: Usage;
 }

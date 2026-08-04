@@ -3,53 +3,24 @@ import { describe, expect, it } from "vitest";
 import { assertLlmOutput, validateLlmOutput } from "../schemas/validateLlmOutput.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 
-/** A minimal but fully schema-conformant §14 response, cloned per test. */
+/** A minimal but fully schema-conformant v2 response, cloned per test. */
 function validOutput(): LlmOutput {
   return {
-    schemaVersion: "1.0",
+    schemaVersion: "2.0",
     requestId: "req_1",
-    transcription: {
-      exactText: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
-      cleanText: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
-      language: "tr",
-      overallConfidence: 0.97,
-      isHandwritten: false,
-      selectedLineIds: ["line_04"],
-      uncertainSpans: [],
-    },
-    knowledgeUnits: [
-      {
-        id: "ku_1",
-        canonicalClaim: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
-        mechanism: null,
-        tags: ["Farmakoloji"],
-        sourceConcern: null,
-        requiresUserApproval: false,
-      },
-    ],
+    readText: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
     cards: [
       {
         id: "card_1",
-        knowledgeUnitId: "ku_1",
         type: "direct_recall",
         front: "Anafilakside ilk seçenek tedavi nedir?",
         back: "0,3–0,5 mg IM adrenalin.",
         explanation: "",
-        sourceQuote: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
-        sourceLineIds: ["line_04"],
-        sourceFaithful: true,
-        enriched: false,
         difficulty: 2,
-        riskFlags: ["critical_number", "critical_unit"],
-        requiresUserApproval: false,
+        tags: ["Farmakoloji"],
+        lowConfidence: false,
       },
     ],
-    quality: {
-      sourceCoverage: 0.98,
-      duplicateCardRisk: 0.05,
-      medicalMeaningChangeRisk: 0.01,
-      warnings: [],
-    },
     usage: {
       provider: "openai",
       model: "gpt-5.6-sol",
@@ -67,17 +38,10 @@ describe("validateLlmOutput", () => {
 
   it("rejects a missing top-level field", () => {
     const broken = validOutput() as Partial<LlmOutput>;
-    delete broken.quality;
+    delete broken.cards;
     const result = validateLlmOutput(broken);
     expect(result.valid).toBe(false);
-    expect(result.errors.join(" ")).toContain("quality");
-  });
-
-  it("rejects an unknown risk flag rather than passing it through (§14 riskFlags enum)", () => {
-    const broken = validOutput();
-    // @ts-expect-error deliberately invalid for the test
-    broken.cards[0]!.riskFlags = ["not_a_real_flag"];
-    expect(validateLlmOutput(broken).valid).toBe(false);
+    expect(result.errors.join(" ")).toContain("cards");
   });
 
   it("rejects an unknown card type", () => {
@@ -87,21 +51,33 @@ describe("validateLlmOutput", () => {
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 
+  it("rejects a difficulty outside 1..5", () => {
+    const broken = validOutput();
+    broken.cards[0]!.difficulty = 9;
+    expect(validateLlmOutput(broken).valid).toBe(false);
+  });
+
+  it("rejects an empty front (schema minLength 1)", () => {
+    const broken = validOutput();
+    broken.cards[0]!.front = "";
+    expect(validateLlmOutput(broken).valid).toBe(false);
+  });
+
   it("rejects additional properties a provider might add unbidden", () => {
     const broken = validOutput() as unknown as Record<string, unknown>;
     broken.unexpectedField = "sürpriz";
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 
-  it("rejects confidence values outside 0..1", () => {
-    const broken = validOutput();
-    broken.transcription.overallConfidence = 1.5;
+  it("rejects a non-boolean lowConfidence", () => {
+    const broken = validOutput() as unknown as { cards: Array<Record<string, unknown>> };
+    broken.cards[0]!.lowConfidence = "evet";
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 
-  it("rejects schemaVersion values other than the pinned one", () => {
+  it("rejects schemaVersion values other than the pinned v2 one", () => {
     const broken = validOutput() as unknown as Record<string, unknown>;
-    broken.schemaVersion = "2.0";
+    broken.schemaVersion = "1.0";
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 

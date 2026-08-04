@@ -1,96 +1,37 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cizgi.local/schemas/llm_output.schema.json",
-  "title": "Kanonik LLM çıktı sözleşmesi",
-  "description": "ANA-PLAN §14: backend her sağlayıcı yanıtını bu yapıya dönüştürür. Şema doğrulanmayan yanıt kaydedilmez.",
+  "title": "Kanonik LLM çıktı sözleşmesi (v2, Faz 6)",
+  "description": "ANA-PLAN §14, Faz 6 (docs/FAZ6-PLAN.md §6) ile sadeleştirildi: işaret-odaklı vision okuması. Kaynağa-sadakat muhasebesi (sourceQuote/sourceFaithful/enriched/transcription/knowledgeUnits) ana akıştan çıkarıldı; model işaretli sayfayı okuyup doğrudan zenginleştirilmiş kartlar üretir. Şema doğrulanmayan yanıt yine kaydedilmez.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "requestId", "transcription", "knowledgeUnits", "cards", "quality", "usage"],
+  "required": ["schemaVersion", "requestId", "readText", "cards", "usage"],
   "properties": {
-    "schemaVersion": { "type": "string", "const": "1.0" },
+    "schemaVersion": { "type": "string", "const": "2.0" },
     "requestId": { "type": "string", "minLength": 1 },
-    "transcription": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["exactText", "cleanText", "language", "overallConfidence", "isHandwritten", "selectedLineIds", "uncertainSpans"],
-      "properties": {
-        "exactText": { "type": "string" },
-        "cleanText": { "type": "string" },
-        "language": { "type": "string" },
-        "overallConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
-        "isHandwritten": { "type": "boolean" },
-        "selectedLineIds": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
-        "uncertainSpans": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["text", "alternatives", "reason", "critical", "requiresUserConfirmation"],
-            "properties": {
-              "text": { "type": "string" },
-              "alternatives": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 3 },
-              "reason": { "type": "string" },
-              "critical": { "type": "boolean" },
-              "requiresUserConfirmation": { "type": "boolean" }
-            }
-          }
-        }
-      }
-    },
-    "knowledgeUnits": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "canonicalClaim", "mechanism", "tags", "sourceConcern", "requiresUserApproval"],
-        "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "canonicalClaim": { "type": "string", "minLength": 1 },
-          "mechanism": { "type": ["string", "null"] },
-          "tags": { "type": "array", "items": { "type": "string" } },
-          "sourceConcern": { "type": ["string", "null"] },
-          "requiresUserApproval": { "type": "boolean" }
-        }
-      }
+    "readText": {
+      "type": "string",
+      "description": "§6.3: modelin işaretli/vurgulanmış içerikten okuduğu ham metin. Yalnız denetim (audit) için; ayrı bir transkripsiyon-doğrulama adımı yok. Boş olabilir."
     },
     "cards": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "knowledgeUnitId", "type", "front", "back", "explanation", "sourceQuote", "sourceLineIds", "sourceFaithful", "enriched", "difficulty", "riskFlags", "requiresUserApproval"],
+        "required": ["id", "type", "front", "back", "explanation", "difficulty", "tags", "lowConfidence"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "knowledgeUnitId": { "type": "string", "minLength": 1 },
           "type": { "type": "string", "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
           "front": { "type": "string", "minLength": 1 },
           "back": { "type": "string", "minLength": 1 },
           "explanation": { "type": "string" },
-          "sourceQuote": { "type": "string" },
-          "sourceLineIds": { "type": "array", "items": { "type": "string" } },
-          "sourceFaithful": { "type": "boolean" },
-          "enriched": { "type": "boolean" },
           "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
-          "riskFlags": {
-            "type": "array",
-            "items": { "$ref": "#/$defs/riskFlag" }
-          },
-          "requiresUserApproval": { "type": "boolean" }
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "lowConfidence": {
+            "type": "boolean",
+            "description": "§6: modelin kendi 'emin değilim' sinyali (ör. okunamayan el yazısı/değer). Onay tetiklemez; kartın içinde de belirtilebilir."
+          }
         }
-      }
-    },
-    "quality": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["sourceCoverage", "duplicateCardRisk", "medicalMeaningChangeRisk", "warnings"],
-      "properties": {
-        "sourceCoverage": { "type": "number", "minimum": 0, "maximum": 1 },
-        "duplicateCardRisk": { "type": "number", "minimum": 0, "maximum": 1 },
-        "medicalMeaningChangeRisk": { "type": "number", "minimum": 0, "maximum": 1 },
-        "warnings": { "type": "array", "items": { "type": "string" } }
       }
     },
     "usage": {
@@ -108,6 +49,7 @@
   },
   "$defs": {
     "riskFlag": {
+      "description": "Faz 6 ana akışında kullanılmıyor: v2 kart yalnız boolean `lowConfidence` taşır. Bu $def ve eşleşen RISK_FLAGS/RiskFlag enum'ları, ADR-005'in geri-dönüş (SAFE_MODE) maddesi için ve TS/Swift/Python anti-drift senkron testlerini (evals/tests/test_*_contract_sync.py) tek kaynaktan tutmak için korunuyor.",
       "type": "string",
       "enum": [
         "ocr_disagreement",

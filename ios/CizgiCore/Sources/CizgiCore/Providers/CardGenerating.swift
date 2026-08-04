@@ -106,6 +106,10 @@ public struct CardGenerationRequest: Sendable {
     /// compatibility projection for providers that have not yet adopted batch
     /// group output, while new providers can preserve group identity.
     public let annotationGroups: [AnnotationGroup]
+    /// Optional free-text steer from the user for the Faz 6 vision endpoint
+    /// (docs/FAZ6-PLAN.md §5.1), e.g. "sadece sol sütun". Providers that do not
+    /// use it (`MockCardProvider`, the OCR-era path) simply ignore it.
+    public let hint: String?
 
     public init(
         jobId: String,
@@ -117,7 +121,8 @@ public struct CardGenerationRequest: Sendable {
         mimeType: String? = nil,
         selectedLineIds: [String] = [],
         isHandwritten: Bool = false,
-        annotationGroups: [AnnotationGroup] = []
+        annotationGroups: [AnnotationGroup] = [],
+        hint: String? = nil
     ) {
         self.jobId = jobId
         self.passage = passage
@@ -129,6 +134,7 @@ public struct CardGenerationRequest: Sendable {
         self.selectedLineIds = selectedLineIds
         self.isHandwritten = isHandwritten
         self.annotationGroups = annotationGroups
+        self.hint = hint
     }
 }
 

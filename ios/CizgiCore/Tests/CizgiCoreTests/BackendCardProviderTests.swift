@@ -4,16 +4,19 @@ import XCTest
 /// `BackendCardProvider.map` is the one piece of the real card generator
 /// worth unit testing directly (no HTTP mocking in this package — see
 /// `BackendPipelineTests.swift`'s header comment on `BackendClient` for why).
-/// It is also the highest-risk new logic in it: the server's §19 gate
-/// (`runCardGate`) never removes a rejected card from `output.cards`, it only
-/// scores it in a separate `gate.verdicts` array — so this mapping is what
-/// actually keeps a rejected card off the phone (§0.5, §19.3).
+/// It is also the highest-risk logic in it: the server's gate (`runCardGate`)
+/// never removes a rejected card from `output.cards`, it only scores it in a
+/// separate `gate.verdicts` array — so this mapping is what actually keeps a
+/// rejected card off the phone (§0.5, §5.3).
+///
+/// Faz 6 (docs/FAZ6-PLAN.md): the v2 gate only ever returns `auto_accept` or
+/// `reject`. Kept cards are always active — there is no approval step.
 final class BackendCardProviderTests: XCTestCase {
     private func card(
         id: String = "card_1",
         explanation: String = "",
-        riskFlags: [RiskFlag] = [],
-        requiresUserApproval: Bool = false
+        tags: [String] = ["Farmakoloji"],
+        lowConfidence: Bool = false
     ) -> RemoteCard {
         RemoteCard(
             id: id,
@@ -21,23 +24,9 @@ final class BackendCardProviderTests: XCTestCase {
             front: "Ön yüz",
             back: "Arka yüz",
             explanation: explanation,
-            sourceQuote: "kaynak alıntı",
-            riskFlags: riskFlags,
-            requiresUserApproval: requiresUserApproval
-        )
-    }
-
-    private func unit(
-        canonicalClaim: String = "iddia",
-        tags: [String] = ["Farmakoloji"],
-        sourceConcern: String? = nil,
-        requiresUserApproval: Bool = false
-    ) -> RemoteKnowledgeUnit {
-        RemoteKnowledgeUnit(
-            canonicalClaim: canonicalClaim,
+            difficulty: 2,
             tags: tags,
-            sourceConcern: sourceConcern,
-            requiresUserApproval: requiresUserApproval
+            lowConfidence: lowConfidence
         )
     }
 
@@ -46,36 +35,35 @@ final class BackendCardProviderTests: XCTestCase {
     }
 
     private func success(
-        knowledgeUnits: [RemoteKnowledgeUnit],
+        readText: String = "işaretli ham metin",
         cards: [RemoteCard],
         verdicts: [RemoteCardVerdict],
         warnings: [String] = []
     ) -> RemoteCardsSuccess {
         RemoteCardsSuccess(
-            output: RemoteCardsOutput(requestId: "req-1", knowledgeUnits: knowledgeUnits, cards: cards, usage: usage()),
+            output: RemoteCardsOutput(requestId: "req-1", readText: readText, cards: cards, usage: usage()),
             gate: RemoteCardGateReport(verdicts: verdicts, warnings: warnings),
-            cardPromptVersion: "cardGeneration.v1"
+            cardPromptVersion: "2.0"
         )
     }
 
-    func testAutoAcceptedCardIsKeptAsIs() throws {
+    func testAutoAcceptedCardIsKeptAndActive() throws {
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
         let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
 
         XCTAssertEqual(knowledge.cards.count, 1)
+        // Faz 6: cards go straight to the active deck, no approval.
         XCTAssertFalse(knowledge.cards[0].requiresUserApproval)
     }
 
     func testRejectedCardNeverReachesTheDeck() throws {
-        // The server's own comment: `runCardGate` never mutates `output.cards`,
-        // so a rejected card is still physically present here — this is the
-        // one thing standing between it and the user's deck (§0.5, §19.3).
+        // `runCardGate` never mutates `output.cards`, so a rejected card is
+        // still physically present here — this mapping is the one thing
+        // standing between it and the user's deck (§0.5, §5.3).
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card(id: "card_1"), card(id: "card_2")],
             verdicts: [
                 RemoteCardVerdict(cardId: "card_1", decision: "auto_accept"),
@@ -87,52 +75,22 @@ final class BackendCardProviderTests: XCTestCase {
         XCTAssertEqual(knowledge.cards.count, 1)
     }
 
-    func testQuickConfirmForcesApprovalEvenIfTheModelSaidFalse() throws {
-        // ADR-001's floor-not-ceiling rule: the gate can only escalate.
+    func testAnUnscoredCardIdDefaultsToKeptAndActive() throws {
+        // The v2 gate scores every card, so an unscored id only happens on a
+        // malformed response. Faz 6 has no confirmation lane, so the honest
+        // fallback is an active card the user can delete in Bilgilerim.
         let decoded = success(
-            knowledgeUnits: [unit()],
-            cards: [card(requiresUserApproval: false)],
-            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "quick_confirm")]
-        )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
-
-        XCTAssertTrue(knowledge.cards[0].requiresUserApproval)
-    }
-
-    func testModelApprovalRequirementSurvivesAnAutoAcceptVerdict() throws {
-        // The gate never relaxes a model-reported `true` back down (ADR-001).
-        let decoded = success(
-            knowledgeUnits: [unit()],
-            cards: [card(requiresUserApproval: true)],
-            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
-        )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
-
-        XCTAssertTrue(knowledge.cards[0].requiresUserApproval)
-    }
-
-    func testACardIdTheGateNeverScoredIsNeverTrustedSilently() throws {
-        let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card(id: "card_1")],
             verdicts: []
         )
         let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
 
         XCTAssertEqual(knowledge.cards.count, 1)
-        XCTAssertTrue(knowledge.cards[0].requiresUserApproval)
-    }
-
-    func testNoKnowledgeUnitsIsTreatedAsSourceInsufficient() {
-        let decoded = success(knowledgeUnits: [], cards: [card()], verdicts: [])
-        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100)) { error in
-            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
-        }
+        XCTAssertFalse(knowledge.cards[0].requiresUserApproval)
     }
 
     func testEveryCardRejectedIsTreatedAsSourceInsufficient() {
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "reject")]
         )
@@ -141,9 +99,15 @@ final class BackendCardProviderTests: XCTestCase {
         }
     }
 
+    func testNoCardsAtAllIsTreatedAsSourceInsufficient() {
+        let decoded = success(cards: [], verdicts: [])
+        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100)) { error in
+            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
+        }
+    }
+
     func testEmptyExplanationBecomesNilNotAnEmptyString() throws {
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card(explanation: "")],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
@@ -151,24 +115,20 @@ final class BackendCardProviderTests: XCTestCase {
         XCTAssertNil(knowledge.cards[0].explanation)
     }
 
-    func testConcernCombinesTheKnowledgeUnitAndTheGateWarnings() throws {
+    func testConcernComesFromTheGateWarnings() throws {
         let decoded = success(
-            knowledgeUnits: [unit(sourceConcern: "Kaynak belirsiz.", requiresUserApproval: true)],
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")],
-            warnings: ["Sayfa geneli duplicate kart riski yüksek."]
+            warnings: ["2 kart pasaj limitini aştığı için reddedildi."]
         )
         let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
 
         XCTAssertNotNil(knowledge.sourceConcern)
-        XCTAssertTrue(knowledge.sourceConcern?.contains("Kaynak belirsiz.") ?? false)
-        XCTAssertTrue(knowledge.sourceConcern?.contains("onay istiyor") ?? false)
-        XCTAssertTrue(knowledge.sourceConcern?.contains("duplicate kart riski") ?? false)
+        XCTAssertTrue(knowledge.sourceConcern?.contains("pasaj limitini") ?? false)
     }
 
-    func testNoConcernAtAllStaysNil() throws {
+    func testNoWarningsMeansNoConcern() throws {
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
@@ -178,7 +138,6 @@ final class BackendCardProviderTests: XCTestCase {
 
     func testModelRunCarriesTheRealUsageAndThePromptVersionFromTheResponse() throws {
         let decoded = success(
-            knowledgeUnits: [unit()],
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
@@ -188,21 +147,37 @@ final class BackendCardProviderTests: XCTestCase {
         XCTAssertEqual(knowledge.modelRun?.provider, "openai")
         XCTAssertEqual(knowledge.modelRun?.model, "gpt-5.6-sol")
         XCTAssertEqual(knowledge.modelRun?.purpose, "card_generation")
-        XCTAssertEqual(knowledge.modelRun?.promptVersion, "cardGeneration.v1")
+        XCTAssertEqual(knowledge.modelRun?.promptVersion, "2.0")
         XCTAssertEqual(knowledge.modelRun?.latencyMs, 1234)
         XCTAssertEqual(knowledge.modelRun?.inputTokens, 1012)
         XCTAssertEqual(knowledge.modelRun?.outputTokens, 571)
     }
 
-    func testCanonicalClaimAndTagsComeFromTheFirstKnowledgeUnit() throws {
+    func testCanonicalClaimIsTheReadTextAndTagsAreTheUnionOfCardTags() throws {
         let decoded = success(
-            knowledgeUnits: [unit(canonicalClaim: "Anafilaksi tedavisi", tags: ["Acil", "Farmakoloji"])],
-            cards: [card()],
-            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+            readText: "Anafilaksi tedavisi",
+            cards: [
+                card(id: "card_1", tags: ["Acil", "Farmakoloji"]),
+                card(id: "card_2", tags: ["Farmakoloji", "Dahiliye"]),
+            ],
+            verdicts: [
+                RemoteCardVerdict(cardId: "card_1", decision: "auto_accept"),
+                RemoteCardVerdict(cardId: "card_2", decision: "auto_accept"),
+            ]
         )
         let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
 
         XCTAssertEqual(knowledge.canonicalClaim, "Anafilaksi tedavisi")
-        XCTAssertEqual(knowledge.tags, ["Acil", "Farmakoloji"])
+        XCTAssertEqual(knowledge.tags, ["Acil", "Farmakoloji", "Dahiliye"])
+    }
+
+    func testCanonicalClaimFallsBackToFirstFrontWhenReadTextIsEmpty() throws {
+        let decoded = success(
+            readText: "   ",
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        XCTAssertEqual(knowledge.canonicalClaim, "Ön yüz")
     }
 }

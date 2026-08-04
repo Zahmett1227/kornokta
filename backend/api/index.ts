@@ -131,7 +131,15 @@ export async function handler(request: Request): Promise<Response> {
     return handleOcrRequest(request, dependencies);
   }
 
-  if (url.pathname === "/api/cards" || url.pathname === "/cards") {
+  // Faz 6 (docs/FAZ6-PLAN.md §5.1) renamed the main route to `/api/cards-vision`;
+  // the legacy `/api/cards` paths stay mapped to the same handler so an older
+  // client build keeps working during the transition.
+  if (
+    url.pathname === "/api/cards-vision" ||
+    url.pathname === "/cards-vision" ||
+    url.pathname === "/api/cards" ||
+    url.pathname === "/cards"
+  ) {
     let dependencies: CardsDependencies;
     try {
       dependencies = buildCardsDependencies();

@@ -1,23 +1,29 @@
 /**
- * Deterministic post-generation quality gate for cards (ANA-PLAN §19).
+ * Deterministic post-generation health check for cards, simplified for Faz 6
+ * (docs/FAZ6-PLAN.md §5.3).
  *
- * Card generation (§17: `card_generation`) is followed by a separate
- * `quality_validation` step before a card can reach `ready`. This module is
- * that step. It runs on output that has already passed
- * `validateLlmOutput` — schema conformance is necessary but not sufficient,
- * because §19's rules are business rules a JSON Schema cannot express:
- * `riskFlags` implies a decision, a passage caps at N cards, and a card must
- * not introduce a critical value its own cited quote does not have.
+ * Before the pivot this module ran ANA-PLAN §19's full source-fidelity gate:
+ * critical-token reconciliation against each card's cited quote, `enriched`/
+ * `explanation` escalations to `quick_confirm`, risk-flag rules. Faz 6 removes
+ * all of that from the main flow — the student accepted the error risk (ADR-005)
+ * and cards go to the active deck without an approval step. What remains is only
+ * the couple of checks that keep a *broken* card out of the deck:
  *
- * ADR-001's rule for the OCR reconciliation gate (`providers/gate.ts`)
- * applies here unchanged: the model's own `requiresUserApproval` is a floor,
- * never a ceiling. This module can turn a model-reported `false` into
- * `quick_confirm` or `reject`; it never turns a model-reported `true` into
- * `auto_accept` (§0.5, §19.2).
+ *   - empty `front`/`back` → `reject` (schema already enforces minLength 1, so
+ *     this is defence-in-depth, not the only guard);
+ *   - more than `maxCardsPerKnowledgeUnit` cards from one page → the surplus is
+ *     rejected (§11.3, §13.2 — still a real limit, still not left to the prompt).
+ *
+ * Every other healthy card is `auto_accept`. Approval only ever happens later,
+ * on the user's own initiative (edit/delete in Bilgilerim).
+ *
+ * The critical-token *engine* it used to call (`gate.ts` / `criticalTokens.ts`)
+ * is not deleted — it still backs `reconcile.ts`, and ADR-005's rollback path
+ * (`SAFE_MODE`) can rewire this gate back to it. This file just no longer wires
+ * a v2 card (which has no `sourceQuote`) into it.
  */
 
-import { addedCriticalTokens } from "./gate.js";
-import type { Card, LlmOutput, RiskFlag } from "../schemas/llmOutputTypes.js";
+import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 
 export type CardDecision = "auto_accept" | "quick_confirm" | "reject";
 
@@ -30,10 +36,6 @@ export interface CardVerdict {
 export interface CardGateOptions {
   /** §11.3, §13.2, §24.4 — enforced here because asking the prompt nicely is not a limit. */
   maxCardsPerKnowledgeUnit: number;
-  /** Page-wide `quality.duplicateCardRisk` above this adds a warning (§24.4). Default 0.5. */
-  maxDuplicateCardRisk?: number;
-  /** Page-wide `quality.medicalMeaningChangeRisk` above this forces confirmation on every card (§19.2). Default 0.05. */
-  maxMedicalMeaningChangeRisk?: number;
 }
 
 export interface CardGateReport {
@@ -45,160 +47,31 @@ export interface CardGateReport {
   warnings: string[];
 }
 
-const DEFAULT_MAX_DUPLICATE_CARD_RISK = 0.5;
-const DEFAULT_MAX_MEDICAL_MEANING_CHANGE_RISK = 0.05;
-
-/** §19.2 — the model flagging one of these is itself sufficient grounds to ask the user. */
-const ALWAYS_CONFIRM_FLAGS: ReadonlySet<RiskFlag> = new Set([
-  "ocr_disagreement",
-  "handwriting_uncertain",
-  "critical_number",
-  "critical_unit",
-  "negation_risk",
-  "symbol_risk",
-  "drug_name_risk",
-  "organism_name_risk",
-  "source_possible_error",
-  "model_added_information",
-  "ambiguous_question",
-  "multiple_possible_answers",
-]);
-
-/** §19.1/§19.3/§24.4 — these mean the card should not have reached the deck at all. */
-const ALWAYS_REJECT_FLAGS: ReadonlySet<RiskFlag> = new Set(["source_insufficient", "duplicate_card"]);
-
-function worseOf(a: CardDecision, b: CardDecision): CardDecision {
-  const rank: Record<CardDecision, number> = { auto_accept: 0, quick_confirm: 1, reject: 2 };
-  return rank[a] >= rank[b] ? a : b;
-}
-
-/**
- * Checks one card's front/back against its own cited `sourceQuote` for an
- * invented critical value — a dose, unit, route, or negation that appears in
- * the answer but not in the quote it claims to come from.
- *
- * Reuses the detector the OCR reconciliation gate uses
- * (`addedCriticalTokens` in `providers/gate.ts`) rather than writing a second
- * implementation: "does this critical value actually appear in the cited
- * source" is the same question in both places, and this project has already
- * paid once for treating it as two (docs/ADR-001).
- */
-export function cardIntroducesUnsourcedCriticalToken(
-  card: Pick<Card, "front" | "back" | "sourceQuote">,
-): string[] {
-  return addedCriticalTokens(card.sourceQuote, `${card.front}\n${card.back}`);
-}
-
-/**
- * Checks whether the card's own `explanation` introduces a critical value not
- * backed by its cited `sourceQuote`.
- *
- * A narrow, precise signal used only to make the confirmation reason
- * specific ("invented value X") when one of §10.5's enumerated classes is
- * involved. It is **not** the full safety check for `explanation` — see
- * `hasNonEmptyExplanation` below and its use in `verdictForCard` for why a
- * critical-token detector alone is not enough here.
- */
-export function explanationIntroducesUnsourcedCriticalToken(
-  card: Pick<Card, "explanation" | "sourceQuote">,
-): string[] {
-  if (!card.explanation.trim()) return [];
-  return addedCriticalTokens(card.sourceQuote, card.explanation);
-}
-
-function verdictForCard(card: Card): CardVerdict {
+/** A single card's health verdict: `auto_accept` unless it is structurally broken. */
+function verdictForCard(card: Pick<LlmOutput["cards"][number], "id" | "front" | "back">): CardVerdict {
   const reasons: string[] = [];
   let decision: CardDecision = "auto_accept";
 
-  if (!card.sourceQuote.trim()) {
-    decision = worseOf(decision, "reject");
-    reasons.push("sourceQuote boş: kart kaynağa geri bağlanamıyor (§24.4).");
-  }
-
-  const invented = cardIntroducesUnsourcedCriticalToken(card);
-  if (invented.length > 0) {
-    if (card.enriched) {
-      decision = worseOf(decision, "quick_confirm");
-      reasons.push(
-        `Zenginleştirilmiş kart kaynakta olmayan kritik değer içeriyor: ${invented.join(", ")} (§12.2).`,
-      );
-    } else {
-      decision = worseOf(decision, "reject");
-      reasons.push(
-        `Kaynağa sadık kart, kaynakta olmayan kritik değer içeriyor: ${invented.join(", ")} (§0.5, §19.3).`,
-      );
-    }
-  }
-
-  // The card prompt (v1.1, §12.2) lets `explanation` carry non-source
-  // context (mechanism, clinical relevance) specifically so `front`/`back`
-  // don't have to. A critical-token detector can only prove a narrow class
-  // of fabrication (dose/route/diagnosis/etc.) — it cannot tell whether
-  // arbitrary prose ("Adrenalin mast hücresi degranülasyonunu tetikler") is
-  // actually grounded in the source or invented outright; that is a
-  // semantic judgment no deterministic detector can make (§0.5). So this
-  // does not try to detect fabrication in prose — any non-empty explanation
-  // needs confirmation, independent of both `card.enriched` and whether a
-  // critical token happens to be present. `explanationIntroducesUnsourced-
-  // CriticalToken` only sharpens the *reason* when it can (PR #7 review,
-  // second round — a critical-token-only check still let unsourced prose
-  // without a recognized critical value straight through).
-  if (card.explanation.trim()) {
-    decision = worseOf(decision, "quick_confirm");
-    const explanationInvented = explanationIntroducesUnsourcedCriticalToken(card);
-    reasons.push(
-      explanationInvented.length > 0
-        ? `Açıklama kaynakta olmayan kritik değer içeriyor: ${explanationInvented.join(", ")} (§12.2, §19.2).`
-        : "Açıklama kaynak dışı içerik taşıyabilir; onay gerekiyor (§12.2, §19.2).",
-    );
-  }
-
-  if (!card.sourceFaithful && !card.enriched) {
-    decision = worseOf(decision, "reject");
-    reasons.push("sourceFaithful=false ve enriched=false: cevabın kaynağı belirsiz.");
-  }
-
-  for (const flag of card.riskFlags) {
-    if (ALWAYS_REJECT_FLAGS.has(flag)) {
-      decision = worseOf(decision, "reject");
-      reasons.push(`riskFlag=${flag} (§19.1, §19.3, §24.4).`);
-    } else if (ALWAYS_CONFIRM_FLAGS.has(flag)) {
-      decision = worseOf(decision, "quick_confirm");
-      reasons.push(`riskFlag=${flag} (§19.2).`);
-    }
-  }
-
-  if (card.enriched) {
-    decision = worseOf(decision, "quick_confirm");
-    reasons.push("enriched=true kartlar onaysız aktif desteye eklenmez (§12.2, §19.2).");
-  }
-
-  if (card.requiresUserApproval) {
-    // ADR-001: a model-set `true` is a floor. It is never overridden downward
-    // by anything in this function — only ever confirmed or escalated.
-    decision = worseOf(decision, "quick_confirm");
-    reasons.push("Model requiresUserApproval=true işaretledi.");
+  if (!card.front.trim() || !card.back.trim()) {
+    decision = "reject";
+    reasons.push("Boş front/back: bozuk kart aktif desteye giremez (§5.3).");
   }
 
   return { cardId: card.id, decision, reasons };
 }
 
 /**
- * Runs the full §19 gate over a validated LLM output's cards.
+ * Runs the simplified Faz 6 gate over a validated LLM output's cards.
  *
- * Takes `Pick<LlmOutput, "cards" | "quality">` rather than the whole output:
- * this module has no use for the transcription or knowledge-unit fields, and
- * a narrower input type is easier to construct in a test and cannot silently
- * start depending on a field it should not.
+ * Takes `Pick<LlmOutput, "cards">` rather than the whole output: this module
+ * has no use for the other fields, and a narrower input type is easier to
+ * construct in a test and cannot silently start depending on a field it should
+ * not.
  */
 export function runCardGate(
-  output: Pick<LlmOutput, "cards" | "quality">,
+  output: Pick<LlmOutput, "cards">,
   options: CardGateOptions,
 ): CardGateReport {
-  const maxDuplicateCardRisk = options.maxDuplicateCardRisk ?? DEFAULT_MAX_DUPLICATE_CARD_RISK;
-  const maxMedicalMeaningChangeRisk =
-    options.maxMedicalMeaningChangeRisk ?? DEFAULT_MAX_MEDICAL_MEANING_CHANGE_RISK;
-
   const warnings: string[] = [];
   const droppedForLimit = output.cards.slice(options.maxCardsPerKnowledgeUnit).map((card) => card.id);
   if (droppedForLimit.length > 0) {
@@ -208,19 +81,6 @@ export function runCardGate(
   }
   const droppedIds = new Set(droppedForLimit);
 
-  const medicalRiskTooHigh = output.quality.medicalMeaningChangeRisk > maxMedicalMeaningChangeRisk;
-  if (medicalRiskTooHigh) {
-    warnings.push(
-      `Sayfa geneli tıbbi anlam değişikliği riski yüksek: ${output.quality.medicalMeaningChangeRisk} > ${maxMedicalMeaningChangeRisk} (§19.2).`,
-    );
-  }
-  if (output.quality.duplicateCardRisk > maxDuplicateCardRisk) {
-    warnings.push(
-      `Sayfa geneli duplicate kart riski yüksek: ${output.quality.duplicateCardRisk} > ${maxDuplicateCardRisk} (§24.4). ` +
-        "Hangi kartın kopya olduğu ayrıca kartın kendi riskFlags alanıyla işaretlenmeli.",
-    );
-  }
-
   const verdicts = output.cards.map((card): CardVerdict => {
     if (droppedIds.has(card.id)) {
       return {
@@ -229,12 +89,7 @@ export function runCardGate(
         reasons: [`Pasaj başına en fazla ${options.maxCardsPerKnowledgeUnit} kart kabul edilir (§13.2, §24.4).`],
       };
     }
-    const verdict = verdictForCard(card);
-    if (medicalRiskTooHigh) {
-      verdict.decision = worseOf(verdict.decision, "quick_confirm");
-      verdict.reasons.push("Sayfa geneli tıbbi anlam değişikliği riski yüksek (§19.2).");
-    }
-    return verdict;
+    return verdictForCard(card);
   });
 
   return { verdicts, droppedForLimit, warnings };

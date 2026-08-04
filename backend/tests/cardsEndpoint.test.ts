@@ -4,7 +4,6 @@ import { MIN_TOKEN_LENGTH } from "../api/_auth.js";
 import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES } from "../api/_ocr.js";
 import {
   handleCardsRequest,
-  parseSelectedLineIds,
   type CardsDependencies,
   type CardGeneratorLike,
 } from "../api/_cards.js";
@@ -18,45 +17,21 @@ const IMAGE = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]).toString("base64
 
 function validOutput(overrides: Partial<LlmOutput> = {}): LlmOutput {
   return {
-    schemaVersion: "1.0",
+    schemaVersion: "2.0",
     requestId: "job-1",
-    transcription: {
-      exactText: "0,5 mg IM adrenalin",
-      cleanText: "0,5 mg IM adrenalin",
-      language: "tr",
-      overallConfidence: 0.97,
-      isHandwritten: false,
-      selectedLineIds: ["line_00"],
-      uncertainSpans: [],
-    },
-    knowledgeUnits: [
-      {
-        id: "ku_1",
-        canonicalClaim: "0,5 mg IM adrenalin",
-        mechanism: null,
-        tags: [],
-        sourceConcern: null,
-        requiresUserApproval: false,
-      },
-    ],
+    readText: "0,5 mg IM adrenalin",
     cards: [
       {
         id: "card_1",
-        knowledgeUnitId: "ku_1",
         type: "direct_recall",
-        front: "Doz nedir?",
+        front: "Anaflakside ilk doz nedir?",
         back: "0,5 mg IM adrenalin",
         explanation: "",
-        sourceQuote: "0,5 mg IM adrenalin",
-        sourceLineIds: ["line_00"],
-        sourceFaithful: true,
-        enriched: false,
         difficulty: 2,
-        riskFlags: [],
-        requiresUserApproval: false,
+        tags: ["anafilaksi"],
+        lowConfidence: false,
       },
     ],
-    quality: { sourceCoverage: 0.98, duplicateCardRisk: 0.05, medicalMeaningChangeRisk: 0.01, warnings: [] },
     usage: { provider: "openai", model: "gpt-5.6-sol", inputTokens: 500, outputTokens: 120, estimatedCostUSD: 0 },
     ...overrides,
   };
@@ -91,38 +66,21 @@ function deps(overrides: Partial<CardsDependencies> = {}): CardsDependencies & {
 function post(body: unknown, token: string | null = TOKEN): Request {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
-  return new Request("https://example.test/api/cards", {
+  return new Request("https://example.test/api/cards-vision", {
     method: "POST",
     headers,
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
 
+// Faz 6: no `cleanText`/`selectedLineIds` — the marked full page is the input.
 const VALID_BODY = {
   jobId: "job-1",
   mimeType: "image/jpeg",
   imageBase64: IMAGE,
-  cleanText: "0,5 mg IM adrenalin",
-  selectedLineIds: ["line_00"],
 };
 
-describe("parseSelectedLineIds", () => {
-  it("defaults an absent field to an empty array", () => {
-    expect(parseSelectedLineIds(undefined)).toEqual([]);
-  });
-
-  it("accepts a string array", () => {
-    expect(parseSelectedLineIds(["line_00", "line_01"])).toEqual(["line_00", "line_01"]);
-  });
-
-  it("rejects a non-array or an array with a non-string entry", () => {
-    expect(parseSelectedLineIds("not an array")).toBeNull();
-    expect(parseSelectedLineIds([1, 2])).toBeNull();
-    expect(parseSelectedLineIds(["ok", 2])).toBeNull();
-  });
-});
-
-describe("POST /api/cards", () => {
+describe("POST /api/cards-vision", () => {
   it("returns the generated output and a per-card gate report", async () => {
     const response = await handleCardsRequest(post(VALID_BODY), deps());
     expect(response.status).toBe(200);
@@ -138,12 +96,18 @@ describe("POST /api/cards", () => {
     expect(body.cardPromptVersion).toBe(CARD_PROMPT_VERSION);
   });
 
-  it("passes the already-reconciled text through unchanged, not re-deriving it", async () => {
+  it("does not require cleanText any more — the model reads the marked page itself (Faz 6)", async () => {
     const { generator, seen } = stubGenerator(validOutput());
-    await handleCardsRequest(post(VALID_BODY), deps({ generator }));
-    expect(seen[0]!.cleanText).toBe("0,5 mg IM adrenalin");
-    expect(seen[0]!.selectedLineIds).toEqual(["line_00"]);
+    const response = await handleCardsRequest(post(VALID_BODY), deps({ generator }));
+    expect(response.status).toBe(200);
     expect(seen[0]!.requestId).toBe("job-1");
+    expect(seen).toHaveLength(1);
+  });
+
+  it("forwards an optional user hint to the generator", async () => {
+    const { generator, seen } = stubGenerator(validOutput());
+    await handleCardsRequest(post({ ...VALID_BODY, hint: "sadece sol sütun" }), deps({ generator }));
+    expect(seen[0]!.hint).toBe("sadece sol sütun");
   });
 
   describe("authorization", () => {
@@ -166,7 +130,7 @@ describe("POST /api/cards", () => {
 
   describe("validation", () => {
     it("rejects a non-POST method", async () => {
-      const request = new Request("https://example.test/api/cards", { method: "GET" });
+      const request = new Request("https://example.test/api/cards-vision", { method: "GET" });
       expect((await handleCardsRequest(request, deps())).status).toBe(405);
     });
 
@@ -214,15 +178,8 @@ describe("POST /api/cards", () => {
       expect(seen).toHaveLength(0);
     });
 
-    it("requires cleanText — this endpoint does not do its own OCR (§17)", async () => {
-      const { cleanText: _drop, ...withoutText } = VALID_BODY;
-      const response = await handleCardsRequest(post(withoutText), deps());
-      expect(response.status).toBe(400);
-      expect(await response.text()).toContain("cleanText");
-    });
-
-    it("rejects a malformed selectedLineIds instead of silently dropping it", async () => {
-      const response = await handleCardsRequest(post({ ...VALID_BODY, selectedLineIds: "line_00" }), deps());
+    it("rejects a non-string hint instead of silently dropping it", async () => {
+      const response = await handleCardsRequest(post({ ...VALID_BODY, hint: ["nope"] }), deps());
       expect(response.status).toBe(400);
     });
   });
@@ -284,20 +241,11 @@ describe("POST /api/cards", () => {
     });
   });
 
-  describe("card gate integration (§19)", () => {
-    it("reports auto_accept for a clean card", async () => {
+  describe("card gate integration (Faz 6 §5.3)", () => {
+    it("reports auto_accept for a healthy card", async () => {
       const response = await handleCardsRequest(post(VALID_BODY), deps());
       const body = (await response.json()) as { gate: { verdicts: Array<{ decision: string }> } };
       expect(body.gate.verdicts[0]!.decision).toBe("auto_accept");
-    });
-
-    it("reports quick_confirm for a card the model itself flagged", async () => {
-      const output = validOutput();
-      output.cards[0]!.riskFlags = ["critical_number"];
-      const { generator } = stubGenerator(output);
-      const response = await handleCardsRequest(post(VALID_BODY), deps({ generator }));
-      const body = (await response.json()) as { gate: { verdicts: Array<{ decision: string }> } };
-      expect(body.gate.verdicts[0]!.decision).toBe("quick_confirm");
     });
 
     it("uses the configured maxCardsPerKnowledgeUnit, not a hardcoded 4", async () => {
@@ -318,7 +266,7 @@ describe("POST /api/cards", () => {
   });
 
   describe("privacy (§7.3)", () => {
-    it("logs metrics but never card or transcription content", async () => {
+    it("logs metrics but never card or read content", async () => {
       const secretFront = "gizli kalması gereken soru metni";
       const output = validOutput();
       output.cards[0]!.front = secretFront;
@@ -329,7 +277,6 @@ describe("POST /api/cards", () => {
 
       const serialized = JSON.stringify(d.logged);
       expect(serialized).not.toContain(secretFront);
-      expect(serialized).not.toContain(VALID_BODY.cleanText);
       expect(serialized).not.toContain(IMAGE);
       expect(d.logged[0]).toMatchObject({ jobId: "job-1", event: "cards.ok", cardCount: 1 });
       expect(d.logged[0]).toHaveProperty("elapsedMs");

@@ -77,17 +77,20 @@ export const fetchTransport: Transport = {
 export interface CardGenerationRequest {
   /** Assigned by the caller, never invented by the model. Echoed into the final `usage`-adjacent output. */
   requestId: string;
-  /** The marked-passage crop (§8.2) — not the full page, for cost control (§20.3). */
+  /**
+   * The marked *full* page (Faz 6 — docs/FAZ6-PLAN.md §5.2), not a crop: the
+   * model needs to see the highlighter, circles and margin notes itself to
+   * decide what the student cared about. Cost/resolution tradeoff is handled on
+   * the client (`UploadImage.swift`) and by the cost cap in `_cards.ts`.
+   */
   image: Uint8Array;
   mimeType: string;
   /**
-   * Text that has already passed OCR reconciliation (`providers/reconcile.ts`)
-   * — either auto-accepted or user-confirmed. This call generates cards from
-   * it; it is not asked to re-derive the transcription from scratch.
+   * Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun".
+   * There is no pre-reconciled transcription any more: the model reads the
+   * marked content off the image itself (v2 prompt).
    */
-  cleanText: string;
-  selectedLineIds: string[];
-  isHandwritten: boolean;
+  hint?: string;
 }
 
 export interface CardGenerationResult {
@@ -165,18 +168,12 @@ function extractOutputText(body: ResponsesApiBody): string {
 }
 
 function buildUserInstruction(request: CardGenerationRequest): string {
+  const hint = request.hint?.trim();
   return [
     `requestId: ${request.requestId}`,
-    "Aşağıdaki metin bu pasaj için zaten uzlaştırılmış/onaylanmış transkripsiyondur; " +
-      "sessizce değiştirme (§0.5):",
-    request.cleanText,
-    "",
-    `Seçili satır kimlikleri: ${request.selectedLineIds.join(", ") || "(yok)"}`,
-    `El yazısı mı: ${request.isHandwritten ? "evet" : "hayır"}`,
-    "",
-    "transcription alanını bu metinle doldur (exactText ve cleanText olarak) ve selectedLineIds'i " +
-      "yukarıdaki kimliklerle doldur; yalnız görüntüde açıkça gördüğün ve bu metinle çelişen bir " +
-      "belirsizlik varsa uncertainSpans'a ekle. Ardından bu pasajdan kartlar üret.",
+    "Ekteki fotoğraf, öğrencinin işaretlediği ders kitabı sayfasının tamamıdır. " +
+      "Sistem yönergesindeki kurallara göre işaretli/vurgulanmış içeriği oku ve kartları üret.",
+    hint ? `Kullanıcı ipucu: ${hint}` : "Kullanıcı ipucu: (yok)",
   ].join("\n");
 }
 
