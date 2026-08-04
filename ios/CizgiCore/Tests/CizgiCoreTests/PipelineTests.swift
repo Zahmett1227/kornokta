@@ -2,7 +2,9 @@ import XCTest
 import CoreGraphics
 @testable import CizgiCore
 
-/// Deterministic stand-in for Vision so the pipeline is testable anywhere.
+/// Deterministic stand-in for Vision. The Faz 6 vision pipeline no longer runs
+/// local OCR, but `CapturePipeline.init` still takes a recognizer (retained
+/// seam), so tests need one to construct the pipeline.
 struct StubRecognizer: TextRecognizing {
     var lines: [RecognizedLine]
     var error: TextRecognitionError?
@@ -22,139 +24,138 @@ struct FailingGenerator: CardGenerating {
     }
 }
 
-/// Records what the pipeline actually asked for. An actor because
-/// `CardGenerating` is Sendable and this one has mutable state.
+/// A canned vision generator: returns fixed cards without touching the passage,
+/// the way `BackendCardProvider` returns cards read off the image. Records what
+/// the pipeline asked for so the request-shaping can be checked.
 actor RecordingGenerator: CardGenerating {
     private(set) var lastMaxCards: Int?
+    private(set) var lastImageData: Data?
     private(set) var lastPassage: String?
 
     func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
         lastMaxCards = request.maxCards
+        lastImageData = request.imageData
         lastPassage = request.passage
-        return try await MockCardProvider().generate(request)
+        return PipelineTestFixtures.knowledge()
     }
 }
 
-private func line(_ id: String, _ text: String, y: Double) -> RecognizedLine {
-    RecognizedLine(
-        id: id,
-        text: text,
-        confidence: 0.95,
-        box: CGRect(x: 0.1, y: y, width: 0.8, height: 0.04)
-    )
+enum PipelineTestFixtures {
+    static func knowledge(
+        canonicalClaim: String = "İşaretli içerik",
+        cards: [GeneratedCard]? = nil,
+        modelRun: ModelRunMetadata? = nil
+    ) -> GeneratedKnowledge {
+        GeneratedKnowledge(
+            canonicalClaim: canonicalClaim,
+            tags: ["Farmakoloji"],
+            sourceConcern: nil,
+            cards: cards ?? [
+                GeneratedCard(
+                    type: .directRecall,
+                    front: "Anafilakside ilk doz nedir?",
+                    back: "0,3–0,5 mg IM adrenalin",
+                    explanation: nil,
+                    sourceQuote: "",
+                    riskFlags: []
+                )
+            ],
+            modelRun: modelRun
+        )
+    }
 }
 
+/// Fixed-knowledge generator for the success path, with an optional modelRun.
+struct StubVisionGenerator: CardGenerating {
+    var knowledge: GeneratedKnowledge = PipelineTestFixtures.knowledge()
+    func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
+        knowledge
+    }
+}
+
+/// Faz 6 vision flow (docs/FAZ6-PLAN.md §2): marked full page →
+/// `/api/cards-vision` → active cards. No local OCR, no marker detection, no
+/// confirmation. The pre-Faz-6 OCR-flow pipeline tests were archived per §8.
 final class CapturePipelineTests: XCTestCase {
-    let imageURL = URL(fileURLWithPath: "/tmp/page.jpg")
+    private var imageURL: URL!
 
-    let page = [
-        line("line_00", "Anafilakside ilk seçenek tedavi", y: 0.10),
-        line("line_01", "0,3–0,5 mg IM adrenalindir.", y: 0.16),
-        line("line_02", "İkinci basamak sıvı replasmanıdır.", y: 0.22)
-    ]
+    override func setUpWithError() throws {
+        imageURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jpg")
+        // Undecodable bytes are sent as-is by `UploadImageEncoder`, so this is
+        // enough of a "page" for the pipeline to read and forward.
+        try Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]).write(to: imageURL)
+    }
 
-    func testSelectedLinesBecomeCards() async {
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00", "line_01"])
-        )
-        let outcome = await pipeline.run(jobId: "job-1", imageURL: imageURL)
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: imageURL)
+    }
+
+    private func pipeline(generator: any CardGenerating) -> CapturePipeline {
+        CapturePipeline(recognizer: StubRecognizer(lines: []), generator: generator)
+    }
+
+    func testMarkedPageBecomesReadyWithActiveCards() async {
+        let outcome = await pipeline(generator: StubVisionGenerator()).run(jobId: "job-1", imageURL: imageURL)
 
         XCTAssertEqual(outcome.finalState, .ready)
-        XCTAssertEqual(outcome.selectedLineIds, ["line_00", "line_01"])
-        XCTAssertEqual(
-            outcome.passage,
-            "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir."
-        )
         XCTAssertFalse(outcome.knowledge?.cards.isEmpty ?? true)
+        XCTAssertEqual(outcome.generatedGroups.count, 1)
+        // No approval step in Faz 6.
+        XCTAssertFalse(outcome.knowledge?.cards.first?.requiresUserApproval ?? true)
     }
 
-    func testPassageFollowsPageOrderNotTapOrder() async {
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            // Tapped bottom line first.
-            selector: FixedSelection(lineIds: ["line_01", "line_00"])
-        )
-        let outcome = await pipeline.run(jobId: "job-2", imageURL: imageURL)
-        XCTAssertEqual(
-            outcome.passage,
-            "Anafilakside ilk seçenek tedavi 0,3–0,5 mg IM adrenalindir."
-        )
+    func testTheOneGroupSpansTheWholePage() async {
+        let outcome = await pipeline(generator: StubVisionGenerator()).run(jobId: "job-2", imageURL: imageURL)
+        let box = outcome.annotationGroups.first?.boundingBox
+        XCTAssertEqual(box, NormalizedRect(x: 0, y: 0, width: 1, height: 1))
     }
 
-    func testNoSelectionAsksTheUserInsteadOfGuessing() async {
-        // §19.3: no marker and no manual selection must not become a card.
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: ManualSelectionOnly()
+    func testModelRunReachesTheOutcome() async {
+        let modelRun = ModelRunMetadata(
+            requestId: "req-1", provider: "openai", model: "gpt-5.6-sol", purpose: "card_generation",
+            promptVersion: "2.0", latencyMs: 120, inputTokens: 1012, outputTokens: 571, estimatedCostUSD: 0
         )
-        let outcome = await pipeline.run(jobId: "job-3", imageURL: imageURL)
-
-        XCTAssertEqual(outcome.finalState, .confirmationRequired)
-        XCTAssertNil(outcome.knowledge)
+        let generator = StubVisionGenerator(knowledge: PipelineTestFixtures.knowledge(modelRun: modelRun))
+        let outcome = await pipeline(generator: generator).run(jobId: "job-3", imageURL: imageURL)
+        XCTAssertEqual(outcome.modelRun?.requestId, "req-1")
+        XCTAssertEqual(outcome.modelRun?.promptVersion, "2.0")
     }
 
     func testUnreadableImageIsAPermanentFailure() async {
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: [], error: .cannotReadImage(imageURL))
-        )
-        let outcome = await pipeline.run(jobId: "job-4", imageURL: imageURL)
+        let missing = URL(fileURLWithPath: "/tmp/\(UUID().uuidString)-does-not-exist.jpg")
+        let outcome = await pipeline(generator: StubVisionGenerator()).run(jobId: "job-4", imageURL: missing)
         XCTAssertEqual(outcome.finalState, .permanentFailure)
         XCTAssertEqual(outcome.failure, .configuration)
     }
 
-    func testPageWithNoTextIsRejected() async {
-        let pipeline = CapturePipeline(recognizer: StubRecognizer(lines: []))
-        let outcome = await pipeline.run(jobId: "job-5", imageURL: imageURL)
+    func testSourceInsufficientIsATerminalFailureNotAConfirmation() async {
+        // Faz 6 has no confirmation lane: "the model found nothing to make cards
+        // from" is a terminal permanent failure, not a bounce to the user.
+        let outcome = await pipeline(generator: FailingGenerator(error: .sourceInsufficient))
+            .run(jobId: "job-5", imageURL: imageURL)
         XCTAssertEqual(outcome.finalState, .permanentFailure)
     }
 
-    func testGeneratorOutageIsTransientAndKeepsTheOCRResult() async {
-        // §21.2: a provider failure must not lose the capture or the local OCR.
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: .providerUnavailable("bağlantı yok"))
-        )
-        let outcome = await pipeline.run(jobId: "job-6", imageURL: imageURL)
-
+    func testGeneratorOutageIsTransient() async {
+        let outcome = await pipeline(generator: FailingGenerator(error: .providerUnavailable("ağ yok")))
+            .run(jobId: "job-6", imageURL: imageURL)
         XCTAssertEqual(outcome.finalState, .temporaryFailure)
         XCTAssertEqual(outcome.failure, .providerUnavailable)
-        XCTAssertNotNil(outcome.recognized)
-        XCTAssertEqual(outcome.passage, "Anafilakside ilk seçenek tedavi")
     }
 
     func testMalformedResponseIsNotRetriedForever() async {
-        // §17: a schema violation will violate the schema again on replay, so
-        // it must not go round the retry loop. This case used to be reported as
-        // transient, which contradicted `FailureKind.invalidResponse`.
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: .schemaInvalid("bozuk"))
-        )
-        let outcome = await pipeline.run(jobId: "job-6b", imageURL: imageURL)
-
+        let outcome = await pipeline(generator: FailingGenerator(error: .schemaInvalid("bozuk")))
+            .run(jobId: "job-7", imageURL: imageURL)
         XCTAssertEqual(outcome.finalState, .permanentFailure)
         XCTAssertEqual(outcome.failure, .invalidResponse)
-        // The capture and the local OCR survive either way (§21.2).
-        XCTAssertNotNil(outcome.recognized)
-        XCTAssertEqual(outcome.passage, "Anafilakside ilk seçenek tedavi")
     }
 
-    func testThinPassageAsksTheUserRatherThanRetrying() async {
-        // §12.1/§19.3: too little source is not a machine failure — replaying
-        // it cannot help, so the user is asked to widen the selection.
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: .sourceInsufficient)
-        )
-        let outcome = await pipeline.run(jobId: "job-6c", imageURL: imageURL)
-
-        XCTAssertEqual(outcome.finalState, .confirmationRequired)
-        XCTAssertNil(outcome.knowledge)
-        XCTAssertEqual(outcome.selectedLineIds, ["line_00"])
+    func testBudgetExceededDoesNotRetryForever() async {
+        let outcome = await pipeline(generator: FailingGenerator(error: .budgetExceeded))
+            .run(jobId: "job-8", imageURL: imageURL)
+        XCTAssertEqual(outcome.finalState, .permanentFailure)
+        XCTAssertEqual(outcome.failure, .budgetExceeded)
     }
 
     func testEveryGeneratorErrorHasARetryClassification() {
@@ -177,25 +178,11 @@ final class CapturePipelineTests: XCTestCase {
         }
     }
 
-    func testBudgetExceededDoesNotRetryForever() async {
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00"]),
-            generator: FailingGenerator(error: .budgetExceeded)
-        )
-        let outcome = await pipeline.run(jobId: "job-7", imageURL: imageURL)
-        XCTAssertEqual(outcome.finalState, .permanentFailure)
-        XCTAssertEqual(outcome.failure, .budgetExceeded)
-    }
-
     func testRerunningTheSameJobGivesTheSameResult() async {
         // Idempotence: replaying a job must not drift (§17).
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_01"])
-        )
-        let first = await pipeline.run(jobId: "job-8", imageURL: imageURL)
-        let second = await pipeline.run(jobId: "job-8", imageURL: imageURL)
+        let p = pipeline(generator: StubVisionGenerator())
+        let first = await p.run(jobId: "job-9", imageURL: imageURL)
+        let second = await p.run(jobId: "job-9", imageURL: imageURL)
         XCTAssertEqual(first, second)
     }
 
@@ -203,13 +190,8 @@ final class CapturePipelineTests: XCTestCase {
         // The "Pasaj başına kart" setting was displayed in Ayarlar but never
         // reached the request, so changing it did nothing.
         let recorder = RecordingGenerator()
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00", "line_01"]),
-            generator: recorder
-        ).withMaxCards(2)
-
-        _ = await pipeline.run(jobId: "job-10", imageURL: imageURL)
+        let p = pipeline(generator: recorder).withMaxCards(2)
+        _ = await p.run(jobId: "job-10", imageURL: imageURL)
         let seen = await recorder.lastMaxCards
         XCTAssertEqual(seen, 2)
     }
@@ -217,35 +199,19 @@ final class CapturePipelineTests: XCTestCase {
     func testMaxCardsIsClampedToAtLeastOne() async {
         // A zero ceiling would produce a page that silently generates nothing.
         let recorder = RecordingGenerator()
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_00"]),
-            generator: recorder
-        ).withMaxCards(0)
-
-        _ = await pipeline.run(jobId: "job-11", imageURL: imageURL)
+        let p = pipeline(generator: recorder).withMaxCards(0)
+        _ = await p.run(jobId: "job-11", imageURL: imageURL)
         let seen = await recorder.lastMaxCards
         XCTAssertEqual(seen, 1)
     }
 
-    func testWithMaxCardsKeepsTheSelector() async {
-        // `withSelector` and `withMaxCards` are both copy-with-change; one must
-        // not drop what the other set.
-        let pipeline = CapturePipeline(recognizer: StubRecognizer(lines: page))
-            .withSelector(FixedSelection(lineIds: ["line_00"]))
-            .withMaxCards(3)
-        let outcome = await pipeline.run(jobId: "job-12", imageURL: imageURL)
-        XCTAssertEqual(outcome.selectedLineIds, ["line_00"])
-        XCTAssertEqual(outcome.finalState, .ready)
-    }
-
-    func testUnknownLineIdsAreIgnored() async {
-        let pipeline = CapturePipeline(
-            recognizer: StubRecognizer(lines: page),
-            selector: FixedSelection(lineIds: ["line_99"])
-        )
-        let outcome = await pipeline.run(jobId: "job-9", imageURL: imageURL)
-        XCTAssertEqual(outcome.finalState, .confirmationRequired)
+    func testTheGeneratorReceivesThePageBytes() async {
+        // The vision endpoint reads the marked page itself, so the pipeline must
+        // actually forward the page bytes to the generator.
+        let recorder = RecordingGenerator()
+        _ = await pipeline(generator: recorder).run(jobId: "job-12", imageURL: imageURL)
+        let sent = await recorder.lastImageData
+        XCTAssertEqual(sent, Data([0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3]))
     }
 }
 

@@ -33,25 +33,21 @@ describe("prompt contracts (§15)", () => {
     expect(TRANSCRIPTION_SYSTEM_PROMPT).toContain("uncertainSpans");
   });
 
-  it("card prompt caps output at four cards and forbids external knowledge (§13.2, §15.2)", () => {
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("en fazla dört");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Harici tıbbi bilgiyi cevap anahtarına ekleme");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("source_insufficient");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("sourceConcern");
+  it("card prompt (v2) prioritises the marked/highlighted content (Faz 6 §4)", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Önceliğin işaretli/vurgulanmış içeriktir");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("El yazısı notları öğrencinin niyet sinyalidir");
   });
 
-  it("card prompt (v1.1) asks for the passage's teaching point before framing the question", () => {
-    // The question may be framed around what the passage is actually
-    // teaching, not just its sentence structure — but this must not loosen
-    // the answer's source-boundedness, which the prompt says explicitly.
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("kazandırmak istediğini");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("cevap yine yalnızca kaynaktan");
+  it("card prompt (v2) allows enrichment but forbids fabrication when unsure (Faz 6 §4)", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Zenginleştirmeye izin var");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("uydurma");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("lowConfidence");
   });
 
-  it("card prompt (v1.1) confines non-source context to explanation, gated by enriched (§12.2, §19.2)", () => {
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("explanation alanına kaynakta bulunmayan bağlam");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("yalnız bu alanda, front/back'te değil");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("enriched=true");
+  it("card prompt (v2) no longer asks for approval or source-fidelity accounting (Faz 6 pivot)", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("onay isteme");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).not.toContain("source_insufficient");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).not.toContain("sourceConcern");
   });
 
   it("handwriting prompt asks for transcription only, never a card (§10.4, §15.3)", () => {

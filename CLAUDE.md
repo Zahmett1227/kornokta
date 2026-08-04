@@ -16,10 +16,18 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
 - **Uygulama planı (detaylı, dosya bazlı, aşamalı):** [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md)
 - **Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
   değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
-- **Durum:** yalnız planlama/doküman yazıldı — **kod henüz değişmedi**.
-  Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11 maddeleri Faz 6 ÖNCESİ
-  (süperseded) mimariyi anlatır; tarihsel bağlam için duruyor, **güncel yön
-  yukarıdadır**.
+- **Durum (2026-08-05):** **B1 (backend) uygulandı** ve **B2'nin çekirdeği
+  (iOS `BackendCardProvider` + `CapturePipeline` vision akışı) uygulandı**;
+  hepsi `faz6-vision` dalında. Backend 425 + Python 513 + Swift **185** test
+  yeşil, `tsc` temiz. `CapturePipeline` artık tam sayfayı doğrudan
+  `/api/cards-vision`'a gönderiyor; yerel OCR/işaret-tespiti/onay ana akıştan
+  çıktı; kartlar `.active`. App hedefi (`ProcessingQueue`) dokunulmadan var
+  olan `.ready` yolundan kaydediyor. **Kalan (App hedefi, gerçek cihaz gerekir):**
+  `ConfirmationView`'ı çıkar, tam-sayfa crop'u atla, `needsReview` arayüzü,
+  `Models` göçü. Dosya-bazlı ayrıntı: `docs/FAZ6-PLAN.md`'nin iki "Uygulama
+  notu" bölümü. Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11 maddeleri Faz 6
+  ÖNCESİ (süperseded) mimariyi anlatır; tarihsel bağlam için duruyor, **güncel
+  yön yukarıdadır**.
 
 ## Proje ne
 
@@ -46,7 +54,7 @@ yorumları **İngilizce**.
 | Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalan (çıkış kapısını engellemiyor): bildirimler, süre-bütçeli hızlı mod, ayrı bir "yeni kart limiti". Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı**. Telefon backend'e bağlandı, 153/153 Swift testi bir Mac'te doğrulandı — ama sonrasında main annotation-grounding'e geçti (madde 9) ve o doğrulama artık eski bir kod tabanına ait. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı; süreçte gerçek hatalar bulunup düzeltildi (dördü madde 1-4, üçü madde 9) — ayrıntı `docs/FAZ5-DURUM.md`. |
-| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | 🔵 **Planlandı (2026-08-05), kod yazılmadı.** Deterministik işaret-tespiti + OCR-uzlaştırma + onay makinesi ana akıştan çıkıyor; yerine tek vision çağrısı (işaretli sayfa → OpenAI vision → onaysız kart). Bkz. `docs/FAZ6-PLAN.md` ve `docs/ADR-005-kisisel-vision-yeniden-tasarim.md`. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | 🟡 **B1 tam + B2 çekirdeği uygulandı (2026-08-05, `faz6-vision` dalı).** Backend kart yolu yerinde v2'ye revize edildi: prompt v2.0, `/api/cards-vision`, `cleanText` kalktı, `cardGate` auto_accept'e sadeleşti, çıktı şeması v2 (`schemaVersion "2.0"`; transcription/knowledgeUnits/source-fidelity alanları çıktı, kart `tags`+`lowConfidence`). iOS: `BackendCardProvider` `/api/cards-vision`'a bağlandı; **`CapturePipeline.run()` vision akışına çevrildi** (tam sayfa → vision → tek sentetik grupla `.ready`; yerel OCR/işaret-tespiti/onay ana akıştan çıktı), kartlar `.active`. OCR-akış pipeline testleri §8 gereği arşivlendi. Backend 425 + Python 513 + Swift **185** test yeşil. Geri dönüş için OCR/reconcile/detection modülleri (backend+iOS) dokunulmadan diskte. **Kalan (App hedefi, gerçek cihaz):** `ConfirmationView` navigasyondan çıkarma, `persist` tam-sayfa crop atlama, `needsReview` arayüz bölümleri, `Models` alan sadeleşmesi + SwiftData göçü. Bkz. `docs/FAZ6-PLAN.md` §9 iki "Uygulama notu" ve `docs/ADR-005`. |
 
 **Dal durumu:** `claude/project-review-issue-j0ycif`, `main`'in `0bca0d0`'i
 (PR #7/#8/#9/#10 dahil güncel uç) üzerine **sıfırdan kuruldu** — önceki bir
@@ -374,12 +382,26 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 ## Sıradaki iş
 
 **En öncelikli (Faz 6 / B — YENİ YÖN, bkz. `docs/FAZ6-PLAN.md` §9):**
-`docs/FAZ6-PLAN.md`'deki B1 adımını uygulamaya başla — backend'de: (a) kart
-üretim promptunu v2.0'a (işaret-odaklı, zenginleştirmeli vision okuması)
-çevir, (b) `/api/cards`'ta `cleanText` zorunluluğunu kaldırıp tam sayfa
-görüntüsü kabul et, (c) `cardGate`'i varsayılan auto-accept'e sadeleştir, (d)
-çıktı şemasını v2'ye sadeleştir. Ardından B2 (iOS akış sadeleştirme). Kod
-işi bir dalda yapılmalı (ör. `faz6-vision`); planlama dokümanları main'de.
+B1 (backend) ve B2'nin çekirdeği (iOS `BackendCardProvider` + `CapturePipeline`
+vision akışı) `faz6-vision` dalında uygulandı ve testlerle doğrulandı (henüz
+commit edilmedi, çalışma dizininde; backend 425 / Python 513 / Swift 185 yeşil).
+
+**Sıradaki: B2 App-hedefi cilası (bu ortamda derlenemez — gerçek cihaz gerekir):**
+- `ConfirmationView`'ı navigasyondan çıkar (artık ulaşılmaz, ölü kod).
+- `ProcessingQueue.persist`: vision grupları için tam-sayfa crop kaydetmeyi atla
+  (şu an her sayfayı gereksizce crop olarak da saklıyor).
+- `LibraryView`'daki `needsReview`/"Onay bekliyor" bölümlerini kaldır (vision
+  akışında kart üretilmiyor).
+- (İsteğe bağlı) `ProcessingState.confirmationRequired`/`CardStatus.needsReview`
+  enum vakalarını kaldır — App hedefindeki exhaustive switch'lere dikkat.
+- `Models.swift`: `sourceQuote` vb. kaldırılan alanlar için SwiftData göçü
+  (tek cihaz, düşük risk).
+- Gerçek iPhone'da uçtan uca: işaretli sayfa → onaysız aktif kart → FSRS tekrar.
+Sonra B3 (prompt kalite döngüsü) + B4 (cila).
+
+Ayrıca: gerçek maliyet rakamları hâlâ 0 (`OPENAI_USD_PER_MILLION_*`, §7); tam
+sayfa girdi crop'tan pahalı, ilk çağrılarda `ModelRun.usage`'dan okunup
+doldurulmalı.
 
 ---
 

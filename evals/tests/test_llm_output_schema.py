@@ -1,4 +1,3 @@
-import copy
 import json
 from pathlib import Path
 
@@ -14,60 +13,23 @@ def load_schema():
 
 
 def sample_payload():
-    """Canonical §14 example, minimally filled."""
+    """Canonical v2 example (Faz 6, docs/FAZ6-PLAN.md §6), minimally filled."""
     return {
-        "schemaVersion": "1.0",
+        "schemaVersion": "2.0",
         "requestId": "req-0001",
-        "transcription": {
-            "exactText": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
-            "cleanText": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
-            "language": "tr",
-            "overallConfidence": 0.97,
-            "isHandwritten": False,
-            "selectedLineIds": ["line_07"],
-            "uncertainSpans": [
-                {
-                    "text": "0,1",
-                    "alternatives": ["0,1", "1"],
-                    "reason": "decimal_disagreement",
-                    "critical": True,
-                    "requiresUserConfirmation": True,
-                }
-            ],
-        },
-        "knowledgeUnits": [
-            {
-                "id": "ku_1",
-                "canonicalClaim": "Hiperkalemide EKG'deki en erken bulgu sivri T dalgasıdır.",
-                "mechanism": None,
-                "tags": ["Dahiliye", "Elektrolit bozuklukları"],
-                "sourceConcern": None,
-                "requiresUserApproval": False,
-            }
-        ],
+        "readText": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
         "cards": [
             {
                 "id": "card_1",
-                "knowledgeUnitId": "ku_1",
                 "type": "direct_recall",
                 "front": "Hiperkalemide EKG'deki en erken bulgu nedir?",
                 "back": "Sivri T dalgası.",
                 "explanation": "",
-                "sourceQuote": "Hiperkalemide EKG'de en erken bulgu sivri T dalgasıdır.",
-                "sourceLineIds": ["line_07"],
-                "sourceFaithful": True,
-                "enriched": False,
                 "difficulty": 2,
-                "riskFlags": [],
-                "requiresUserApproval": False,
+                "tags": ["Dahiliye", "Elektrolit bozuklukları"],
+                "lowConfidence": False,
             }
         ],
-        "quality": {
-            "sourceCoverage": 0.98,
-            "duplicateCardRisk": 0.05,
-            "medicalMeaningChangeRisk": 0.01,
-            "warnings": [],
-        },
         "usage": {
             "provider": "openai",
             "model": "gpt-5.6-sol",
@@ -87,26 +49,19 @@ class TestLlmOutputSchema:
     def test_canonical_payload_valid(self):
         assert errors_for(sample_payload()) == []
 
-    def test_unknown_risk_flag_rejected(self):
-        payload = sample_payload()
-        payload["cards"][0]["riskFlags"] = ["made_up_flag"]
-        assert errors_for(payload)
-
-    def test_all_spec_risk_flags_accepted(self):
-        spec_flags = [
-            "ocr_disagreement", "handwriting_uncertain", "critical_number",
-            "critical_unit", "negation_risk", "symbol_risk", "drug_name_risk",
-            "organism_name_risk", "source_insufficient", "source_possible_error",
-            "model_added_information", "duplicate_card", "ambiguous_question",
-            "multiple_possible_answers",
-        ]
-        payload = sample_payload()
-        payload["cards"][0]["riskFlags"] = spec_flags
-        assert errors_for(payload) == []
-
     def test_unknown_card_type_rejected(self):
         payload = sample_payload()
         payload["cards"][0]["type"] = "multiple_choice"
+        assert errors_for(payload)
+
+    def test_difficulty_out_of_range_rejected(self):
+        payload = sample_payload()
+        payload["cards"][0]["difficulty"] = 9
+        assert errors_for(payload)
+
+    def test_empty_front_rejected(self):
+        payload = sample_payload()
+        payload["cards"][0]["front"] = ""
         assert errors_for(payload)
 
     def test_missing_usage_rejected(self):
@@ -120,8 +75,17 @@ class TestLlmOutputSchema:
         payload["cards"][0]["hallucinatedField"] = True
         assert errors_for(payload)
 
-    def test_max_three_alternatives_per_uncertain_span(self):
-        # §15.3: her uyuşmazlık için en fazla üç aday.
+    def test_non_boolean_low_confidence_rejected(self):
         payload = sample_payload()
-        payload["transcription"]["uncertainSpans"][0]["alternatives"] = ["a", "b", "c", "d"]
+        payload["cards"][0]["lowConfidence"] = "evet"
         assert errors_for(payload)
+
+    def test_pinned_schema_version(self):
+        payload = sample_payload()
+        payload["schemaVersion"] = "1.0"
+        assert errors_for(payload)
+
+    def test_risk_flag_def_retained_for_rollback(self):
+        # The riskFlag $def is intentionally kept (SAFE_MODE / anti-drift sync
+        # tests) even though the v2 card no longer references it.
+        assert "riskFlag" in load_schema()["$defs"]

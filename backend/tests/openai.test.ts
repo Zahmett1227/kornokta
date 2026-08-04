@@ -24,52 +24,26 @@ const REQUEST = {
   requestId: "req_1",
   image: new Uint8Array([1, 2, 3]),
   mimeType: "image/jpeg",
-  cleanText: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
-  selectedLineIds: ["line_04"],
-  isHandwritten: false,
+  hint: "sadece sol sütun",
 };
 
-/** The shape the model itself must produce: the full contract minus usage/requestId. */
+/** The shape the model itself must produce: the full v2 contract minus usage/requestId. */
 function modelOutput(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: "1.0",
-    transcription: {
-      exactText: REQUEST.cleanText,
-      cleanText: REQUEST.cleanText,
-      language: "tr",
-      overallConfidence: 0.97,
-      isHandwritten: false,
-      selectedLineIds: ["line_04"],
-      uncertainSpans: [],
-    },
-    knowledgeUnits: [
-      {
-        id: "ku_1",
-        canonicalClaim: REQUEST.cleanText,
-        mechanism: null,
-        tags: ["Farmakoloji"],
-        sourceConcern: null,
-        requiresUserApproval: false,
-      },
-    ],
+    schemaVersion: "2.0",
+    readText: "Anafilakside ilk seçenek 0,3–0,5 mg IM adrenalindir.",
     cards: [
       {
         id: "card_1",
-        knowledgeUnitId: "ku_1",
         type: "direct_recall",
         front: "Anafilakside ilk seçenek tedavi nedir?",
         back: "0,3–0,5 mg IM adrenalin.",
         explanation: "",
-        sourceQuote: REQUEST.cleanText,
-        sourceLineIds: ["line_04"],
-        sourceFaithful: true,
-        enriched: false,
         difficulty: 2,
-        riskFlags: [],
-        requiresUserApproval: false,
+        tags: ["Farmakoloji"],
+        lowConfidence: false,
       },
     ],
-    quality: { sourceCoverage: 0.98, duplicateCardRisk: 0.05, medicalMeaningChangeRisk: 0.01, warnings: [] },
     ...overrides,
   };
 }
@@ -102,7 +76,7 @@ describe("buildModelResponseSchema", () => {
     expect(schema.properties.requestId).toBeUndefined();
     // Everything else survives.
     expect(schema.required).toContain("cards");
-    expect(schema.required).toContain("transcription");
+    expect(schema.required).toContain("readText");
   });
 
   it("caps cards at the configured limit, not a hardcoded 4 (§0.6, §13.2)", () => {
@@ -119,7 +93,7 @@ describe("buildModelResponseSchema", () => {
   it("never leaves a const/enum node without an explicit 'type' — OpenAI's Structured Outputs rejects that", () => {
     // Confirmed with a real (keyed) call: OpenAI returned
     // `400 Invalid schema for response_format ...: schema must have a 'type'
-    // key` for `schemaVersion: { const: "1.0" }`. Plain JSON Schema does not
+    // key` for `schemaVersion: { const: "2.0" }`. Plain JSON Schema does not
     // require `type` alongside `const`/`enum` — ajv accepted it happily —
     // but OpenAI's stricter subset does, so this has to be checked
     // separately from `validateLlmOutput`.
@@ -154,7 +128,7 @@ describe("estimateOpenAICostUSD", () => {
 });
 
 describe("OpenAICardGenerator", () => {
-  it("sends the system prompt, the image, and the reconciled text — not asking the model to re-derive it", async () => {
+  it("sends the system prompt, the full-page image, and the optional hint (Faz 6)", async () => {
     const { transport, calls } = stubTransport(200, responsesEnvelope(modelOutput()));
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
 
@@ -166,11 +140,19 @@ describe("OpenAICardGenerator", () => {
     expect(calls[0]!.body.reasoning.effort).toBe("low");
     expect(calls[0]!.body.input[0].content[0].text).toBe(CARD_GENERATION_SYSTEM_PROMPT);
     const userText = calls[0]!.body.input[1].content[0].text as string;
-    expect(userText).toContain(REQUEST.cleanText);
-    expect(userText).toContain("line_04");
+    expect(userText).toContain("sadece sol sütun");
     const imagePart = calls[0]!.body.input[1].content[1];
     expect(imagePart.type).toBe("input_image");
     expect(imagePart.image_url).toBe(`data:image/jpeg;base64,${Buffer.from(REQUEST.image).toString("base64")}`);
+  });
+
+  it("works without a hint", async () => {
+    const { transport, calls } = stubTransport(200, responsesEnvelope(modelOutput()));
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    const { hint: _drop, ...noHint } = REQUEST;
+    await generator.generateCards(noHint);
+    const userText = calls[0]!.body.input[1].content[0].text as string;
+    expect(userText).toContain("(yok)");
   });
 
   it("splices in requestId and a computed usage block rather than trusting the model", async () => {
@@ -195,12 +177,12 @@ describe("OpenAICardGenerator", () => {
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
     const result = await generator.generateCards(REQUEST);
     expect(result.output.cards).toHaveLength(1);
-    expect(result.output.schemaVersion).toBe("1.0");
+    expect(result.output.schemaVersion).toBe("2.0");
   });
 
   it("throws when the model's own JSON fails §14 validation, rather than returning it", async () => {
     const broken = modelOutput();
-    (broken as any).cards[0].riskFlags = ["not_a_real_flag"];
+    (broken as any).cards[0].difficulty = 9; // schema caps difficulty at 5
     const { transport } = stubTransport(200, responsesEnvelope(broken));
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
 
@@ -226,7 +208,7 @@ describe("OpenAICardGenerator", () => {
     const { transport } = stubTransport(200, {
       status: "incomplete",
       incomplete_details: { reason: "max_output_tokens" },
-      output: [{ type: "message", content: [{ type: "output_text", text: '{"schemaVersion":"1.0"' }] }],
+      output: [{ type: "message", content: [{ type: "output_text", text: '{"schemaVersion":"2.0"' }] }],
       usage: { input_tokens: 500, output_tokens: 700 },
     });
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
@@ -267,14 +249,14 @@ describe("OpenAICardGenerator", () => {
     await expect(generator.generateCards(REQUEST)).rejects.toThrow(/Invalid API key provided/);
   });
 
-  it("never puts the API key or the image/text content into a thrown error (§7.3)", async () => {
-    const secretText = "hasta bilgisi olmayan ama yine de gizli tutulması gereken pasaj";
+  it("never puts the API key or the hint content into a thrown error (§7.3)", async () => {
+    const secretText = "hasta bilgisi olmayan ama yine de gizli tutulması gereken ipucu";
     const { transport } = stubTransport(500, { error: { message: "sunucu hatası" } });
     const generator = new OpenAICardGenerator(CONFIG, "sk-super-secret-key", COST, transport);
 
     let message = "";
     try {
-      await generator.generateCards({ ...REQUEST, cleanText: secretText });
+      await generator.generateCards({ ...REQUEST, hint: secretText });
       expect.unreachable("500 hata fırlatmalıydı");
     } catch (caught) {
       message = (caught as Error).message;

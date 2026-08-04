@@ -129,9 +129,7 @@ async function main(): Promise<number> {
       requestId: "smoke-test",
       image: Buffer.from(BLANK_JPEG_BASE64, "base64"),
       mimeType: "image/jpeg",
-      cleanText: options.text,
-      selectedLineIds: ["line_00"],
-      isHandwritten: false,
+      hint: options.text,
     });
     const elapsedMs = Date.now() - started;
     const gate = runCardGate(result, { maxCardsPerKnowledgeUnit: config.openai.maxCardsPerKnowledgeUnit });

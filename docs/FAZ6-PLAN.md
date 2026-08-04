@@ -1,7 +1,9 @@
 # Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B)
 
-**Durum:** Planlandı (2026-08-05). Kod henüz yazılmadı; bu belge uygulama
-rehberidir.
+**Durum:** B1 (backend) uygulandı ve testlerle doğrulandı; B2'nin test
+edilebilir katmanı (iOS `BackendCardProvider`) uygulandı. Derin B2 (pipeline/
+kuyruk/arayüz sadeleştirmesi) henüz yapılmadı. Ayrıntı §9 tablosunda.
+Çalışma dalı: `faz6-vision`.
 
 **Karar kaydı:** [`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`](ADR-005-kisisel-vision-yeniden-tasarim.md)
 — bu fazın *neden* yapıldığı ve hangi ANA-PLAN ilkelerini gevşettiği orada.
@@ -239,13 +241,79 @@ Tek kullanıcı için önemsiz ama kaydedilmeli (§0.6, §20.3 — uydurma rakam
 > Tahminler odaklı çalışma içindir; en büyük değişken kod değil **prompt
 > kalite döngüsüdür** (B3).
 
-| Adım | Kapsam | Tahmini |
+| Adım | Kapsam | Durum / Tahmini |
 |---|---|---|
-| **B0** | Bu belge + ADR-005 + roadmap güncellemesi | ✅ Bu oturum |
-| **B1** | Backend: yeni prompt (v2), `/api/cards-vision`, `cleanText` kaldır, `cardGate` sadeleştir, şema v2, testler | ~3–5 gün |
-| **B2** | iOS: yakalama → tam sayfa gönder → kartları `.active` kaydet; tespit/gruplama/onay adımlarını akıştan çıkar; kuyruk sadeleştir | ~4–6 gün |
+| **B0** | Bu belge + ADR-005 + roadmap güncellemesi | ✅ Önceki oturum |
+| **B1** | Backend: yeni prompt (v2.0), `/api/cards-vision`, `cleanText` kaldır, `cardGate` sadeleştir (auto_accept), şema v2, testler | ✅ **Uygulandı** (2026-08-05). Backend 425 test + Python 513 test yeşil; `tsc` temiz. Bkz. "Uygulama notu" altta. |
+| **B2** | iOS: yakalama → tam sayfa gönder → kartları `.active` kaydet; tespit/gruplama/onay adımlarını akıştan çıkar; kuyruk sadeleştir | 🟡 **Büyük kısmı yapıldı (CizgiCore).** `BackendCardProvider` → `/api/cards-vision`, v2 çözümleme, kartlar `.active`. **`CapturePipeline.run()` vision akışına çevrildi**: tam sayfa → `/api/cards-vision` → tek sentetik tam-sayfa grupla `.ready`; yerel OCR/işaret-tespiti/gruplama/onay ana akıştan çıktı (OCR-era parametreler imzada duruyor ama yok sayılıyor). OCR-akış pipeline testleri §8 gereği arşivlendi; korunan birim testleri yeşil. `swift build` + `swift test` **185 yeşil**. **Kalan (App hedefi, bu ortamda derlenemez, gerçek cihaz gerekir):** `ConfirmationView`'ı navigasyondan çıkar, `ProcessingQueue.persist`'te tam-sayfa crop'u atla, `needsReview`/`confirmationRequired` arayüz bölümlerini kaldır, `Models` alan sadeleşmesi + SwiftData göçü. |
 | **B3** | Gerçek sayfalarla prompt kalite döngüsü (işaret odağı + el yazısı okuma) | İteratif, ~1–2 hafta (kullanılabilir sürüm erken çıkar) |
 | **B4** | Cila: maliyet takibi, hata/çevrimdışı kuyruk, FSRS bildirimleri (Faz 4 kalanı) | ~3–5 gün |
+
+### Uygulama notu — B1 + B2 test edilebilir katman (2026-08-05)
+
+Karar: kart yolu **yerinde v2'ye revize edildi** (§3.2). §3.3'ün "geri dönüş için
+silinmez" listesindeki modüller (OCR/reconcile/detection: `documentAI.ts`,
+`reconcile.ts`, `gate.ts`, `criticalTokens.ts`, `googleAuth.ts`, `_ocr.ts`,
+iOS `MarkerDetection/*`, `Annotation/*`, `OCR/*`, `Confirmation/*`) **hiç
+dokunulmadı** — hepsi diskte, testleri yeşil.
+
+Somut değişiklikler:
+- **Şema v2** (`backend/schemas/llm_output.schema.json`, `schemaVersion: "2.0"`):
+  `transcription`/`knowledgeUnits`/`quality` blokları ve kartın
+  `sourceQuote`/`sourceLineIds`/`sourceFaithful`/`enriched`/`riskFlags`
+  alanları kaldırıldı; kart artık `tags` + boolean `lowConfidence` taşıyor;
+  `readText` (opsiyonel audit) eklendi; `usage` korundu. `$defs.riskFlag` ve
+  `RISK_FLAGS`/`RiskFlag` enum'ları **bilerek korundu** — SAFE_MODE geri dönüşü
+  ve TS/Swift/Python anti-drift senkron testlerini tek kaynaktan tutmak için
+  (v2 kart bunları kullanmıyor).
+- **Prompt v2.0** (`backend/prompts/cardGeneration.ts`): §4 taslağı
+  (işaret-odaklı, zenginleştirmeli, el yazısı okuma, "onay isteme").
+- **`openai.ts`**: `CardGenerationRequest` → `{ requestId, image (tam sayfa),
+  mimeType, hint? }`; `buildUserInstruction` `cleanText` yerine opsiyonel
+  `hint`.
+- **`cardGate.ts`**: sadeleştirildi — her sağlıklı kart `auto_accept`; yalnız
+  boş front/back → `reject` ve pasaj limiti. Eski kritik-token motoru
+  `gate.ts`/`criticalTokens.ts`'te duruyor (reconcile.ts hâlâ kullanıyor).
+- **`api/_cards.ts`**: `cleanText`/`selectedLineIds`/`isHandwritten` zorunlulukları
+  kaldırıldı; opsiyonel `hint`; maliyet üst-sınırı korundu. Rota
+  `/api/cards-vision` (eski `/api/cards` de geçişte aynı handler'a bağlı).
+- **iOS `BackendCardProvider.swift`**: `/api/cards-vision`'a gidiyor, v2
+  çözümlüyor, kartları `.active` üretiyor (onay yok); `CardGenerationRequest`'e
+  opsiyonel `hint` eklendi. `GeneratedCard`/`GeneratedKnowledge` şekilleri
+  (App hedefi bağımlı) korundu; v2 alanları bunlara eşlendi.
+
+### Uygulama notu — B2 pipeline çekirdeği (2026-08-05)
+
+`CapturePipeline.run()` **vision akışına çevrildi** (CizgiCore, test edilebilir):
+
+- Akış artık: tam sayfa görüntüsünü hazırla (`prepareUpload`) → `generator.generate`
+  (gerçek sağlayıcı `/api/cards-vision`'a gider) → başarılıysa `.ready`, tek
+  **sentetik tam-sayfa `GeneratedAnnotationGroup`** ile (kutu 0,0,1,1). Yerel
+  OCR, işaret-tespiti, cloud OCR, grounding ve onay kapısı ana akıştan **çıktı**.
+- **İmza ve `PipelineOutcome` şekli korundu**: OCR-era parametreler (`snapshot`,
+  `selectionOverride`, `selectionResultOverride`, `completedGroupIds`) kabul
+  edilip yok sayılıyor. Böylece App hedefindeki `ProcessingQueue` **hiç
+  değişmeden** var olan `.ready`/`generatedGroups` yolundan kartları `.active`
+  kaydediyor; onay/`needsReview` dalları artık ölü (ulaşılmaz) ama zararsız.
+- Kullanılmayan OCR-yolu private helper'ları (`cloudReading`, `outcome(for:)`,
+  `logGroundingDiagnostics`) düştü; korunan modüller (`documentAI`/`reconcile`/
+  `MarkerDetection`/`Annotation`/`Confirmation`) diskte, kendi birim testleri
+  yeşil.
+- OCR-akış pipeline testleri (`CapturePipelineTests` eski hali,
+  `BackendPipelineTests` cloud/reconcile/confirmation sınıfları,
+  `ReconciliationPassthroughTests`) **§8 gereği arşivlendi**; yerlerine vision
+  akış testleri yazıldı. `LineOverlapTests`/`MimeTypeTests`/
+  `RemoteRecognitionStyleInfoDecodingTests`/`MockCardProviderTests` korundu.
+
+**Offline sınır:** backend yapılandırılmadığında generator `MockCardProvider`
+olur; vision modunda OCR pasajı olmadığı için mock `sourceInsufficient` verir →
+`permanentFailure`. Faz 6 yapılandırılmış bir backend bekler; bu dürüst
+davranış dokümante edildi.
+
+**Kalan (App hedefi, bu ortamda derlenemez — gerçek cihaz doğrulaması):**
+`ConfirmationView`'ı navigasyondan çıkarma, `persist`'te tam-sayfa crop'u atlama,
+`needsReview`/`confirmationRequired` arayüz bölümleri, `Models` alan sadeleşmesi
++ SwiftData göçü. Bkz. §11 kabul kriterleri.
 
 **Kullanılabilir v1:** ~1–2 hafta. **Oturmuş sürüm:** ~3–4 hafta.
 
