@@ -100,18 +100,29 @@ final class ProcessingQueue: ObservableObject {
         guard let pages = try? context.fetch(descriptor) else { return }
 
         for page in pages {
-            // `pendingDeletion` is only ever consumed by `apply`, reached
-            // after `pipeline.run` returns — but if the app was terminated
-            // between an in-flight `delete(_:)` marking this flag and that
-            // run finishing, a fresh launch's `inFlightPageCounts` starts empty
-            // and `shouldProcess` would accept the page's still-`.localOCR`
-            // state, re-uploading and re-OCR'ing an image the user already
-            // asked to delete before ever reaching that check (PR #12
-            // review, Codex P1 — second round). Handling it here, before
-            // `shouldProcess` is even asked, means a deletion always wins
-            // over resuming work, on every launch, with no network call.
+            // A deletion always wins over resuming work, without a network
+            // call, on every launch (PR #12 review, Codex P1 — second
+            // round): if the app was terminated between an in-flight
+            // `delete(_:)` marking `pendingDeletion` and that run finishing,
+            // a fresh launch's `inFlightPageCounts` starts empty and
+            // `shouldProcess` would otherwise accept the page's still-
+            // `.localOCR` state and re-upload/re-OCR an image the user
+            // already asked to delete.
+            //
+            // But `pendingDeletion` alone is not enough to act immediately —
+            // `retry(_:)` doesn't set `isRunning`, so a manual "Tekrar dene"
+            // can already be inside `process` for this exact page (counted
+            // in `inFlightPageCounts`) when a concurrent pull-to-refresh
+            // reaches it here. Deleting the model out from under that still-
+            // running call is the same race `delete(_:)` itself guards
+            // against; only the in-flight call's own `defer` may finish a
+            // pending deletion once it is truly the last one (PR #12 review,
+            // Codex P1 — fifth round). Nothing else to do here either way:
+            // `process` must not be started for a page marked for deletion.
             if page.pendingDeletion {
-                performDelete(page)
+                if (inFlightPageCounts[page.id] ?? 0) == 0 {
+                    performDelete(page)
+                }
                 continue
             }
             guard shouldProcess(page) else { continue }
