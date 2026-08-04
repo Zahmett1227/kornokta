@@ -189,10 +189,16 @@ final class AnnotationGrouperTests: XCTestCase {
         XCTAssertTrue(grounded.groups.contains { $0.selectionType == .manual })
     }
 
-    func testManualRectangleThatMissesTheOverlapThresholdStillGroundsToTheNearestLine() {
+    /// Regression test 7: a manual box that overlaps no line at all must not
+    /// be silently pinned to whatever line happens to sit nearest — it stays
+    /// in the result, empty, forced to confirmation, with its bounding box
+    /// intact (§0.5). Superseded 2026-08-04's nearest-line fallback, which
+    /// this exact test used to assert the opposite of.
+    func testManualRectangleWithNoMeaningfulOverlapStaysUnresolvedRatherThanGuessingTheNearestLine() {
+        let box = NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03)
         let manual = AnnotationGroup(
             id: "manual_g", evidenceIds: [], selectedLineIds: [], contextLineIds: [],
-            boundingBox: NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03),
+            boundingBox: box,
             confidence: 1, needsConfirmation: false, selectionType: .manual
         )
         let page = RemotePage(
@@ -209,14 +215,27 @@ final class AnnotationGrouperTests: XCTestCase {
             localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
         )
 
-        XCTAssertEqual(grounded.groups.first?.selectedLineIds, ["near"])
-        XCTAssertEqual(grounded.groups.first?.selectedText, "Yakın satır")
+        XCTAssertEqual(grounded.groups.count, 1, "Grup kaybolmamalı")
+        XCTAssertEqual(grounded.groups.first?.selectedLineIds, [])
+        XCTAssertEqual(grounded.groups.first?.selectedText, "")
+        // Accuracy, not exact equality: `merge`'s bounds computation round-trips
+        // through `CGRect.union` even for a single-member cluster, which can
+        // introduce a last-bit float difference unrelated to this behaviour.
+        XCTAssertEqual(grounded.groups.first?.boundingBox.x ?? -1, box.x, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.y ?? -1, box.y, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.width ?? -1, box.width, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.height ?? -1, box.height, accuracy: 1e-9)
+        XCTAssertTrue(grounded.groups.first?.needsConfirmation ?? false)
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains("manual_g"))
     }
 
-    func testOfflineManualRectangleFallsBackToNearestLineWhenOverlapIsTooLow() {
+    /// Offline counterpart of the test above (§ item 8: backend olmadan da
+    /// aynı davranış).
+    func testOfflineManualRectangleWithNoMeaningfulOverlapStaysUnresolvedRatherThanGuessingTheNearestLine() {
+        let box = NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03)
         let manual = AnnotationGroup(
             id: "manual", evidenceIds: [], selectedLineIds: [], contextLineIds: [],
-            boundingBox: NormalizedRect(x: 0.10, y: 0.335, width: 0.10, height: 0.03),
+            boundingBox: box,
             confidence: 1, needsConfirmation: false, selectionType: .manual
         )
         let local = RecognizedPage(lines: [
@@ -229,8 +248,167 @@ final class AnnotationGrouperTests: XCTestCase {
             localPage: local, remotePage: nil
         )
 
-        XCTAssertEqual(grounded.groups.first?.selectedLineIds, ["near"])
-        XCTAssertEqual(grounded.groups.first?.selectedText, "Yakın satır")
+        XCTAssertEqual(grounded.groups.count, 1, "Grup kaybolmamalı")
+        XCTAssertEqual(grounded.groups.first?.selectedLineIds, [])
+        XCTAssertEqual(grounded.groups.first?.selectedText, "")
+        XCTAssertEqual(grounded.groups.first?.boundingBox.x ?? -1, box.x, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.y ?? -1, box.y, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.width ?? -1, box.width, accuracy: 1e-9)
+        XCTAssertEqual(grounded.groups.first?.boundingBox.height ?? -1, box.height, accuracy: 1e-9)
+        XCTAssertTrue(grounded.groups.first?.needsConfirmation ?? false)
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains("manual"))
+    }
+}
+
+/// Regression tests for Google Document AI's own style signals
+/// (`isUnderlined`, `backgroundColor`) becoming selectable candidates in
+/// their own right, not just grounding for a pre-existing local candidate.
+final class RemoteAnnotationCandidateTests: XCTestCase {
+    /// Regression test 2: Apple never tokenized the marked word at all (no
+    /// local evidence whatsoever), but Google's own underline flag is enough
+    /// to surface a pending candidate with the correct box.
+    func testGoogleUnderlineStyleAloneProducesAQuickConfirmCandidateWithNoLocalEvidence() throws {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [
+                RemoteToken(
+                    tokenId: "g0_token", text: "hipoksi", confidence: 0.95,
+                    x: 0.44, y: 0.20, width: 0.09, height: 0.025, isUnderlined: true
+                )
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page
+        )
+
+        XCTAssertEqual(grounded.groups.count, 1)
+        let group = try XCTUnwrap(grounded.groups.first)
+        XCTAssertEqual(group.selectionType, .underline)
+        XCTAssertEqual(group.selectedText, "hipoksi")
+        XCTAssertTrue(group.needsConfirmation, "Yalnız Google stil sinyali sessizce otomatik kabul edilmemeli")
+        XCTAssertFalse(grounded.autoSelectedGroupIds.contains(group.id))
+        let provenances = group.evidenceIds.compactMap { id in grounded.evidence.first { $0.id == id }?.provenance }
+        XCTAssertEqual(provenances, [.remoteUnderlineStyle])
+    }
+
+    /// Regression test 3: the same physical mark reaches grounding from both
+    /// a local (Apple/pixel) candidate and Google's own underline flag. They
+    /// must resolve to one user-facing group, and the group must stay
+    /// auto-accepted (the local candidate already qualified on its own —
+    /// merely being *also* corroborated by an uncalibrated style flag must
+    /// not drag it back into needing confirmation), while both evidence
+    /// sources remain individually recoverable.
+    func testGoogleUnderlineAndLocalTokenOverTheSameAreaMergeIntoOneGroupPreservingBothProvenances() throws {
+        let localEvidence = markerEvidence("local_e", line: "vision_0", token: "vision_0_t", x: 0.44, y: 0.20)
+        let localGroup = markerGroup("local_g", evidence: localEvidence)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [annotationLine("g0", "Hücre hasarının en sık sebebi hipoksidir.", x: 0.10, y: 0.19)],
+            tokens: [
+                RemoteToken(
+                    tokenId: "g0_token", text: "hipoksi", confidence: 0.95,
+                    x: 0.44, y: 0.20, width: 0.09, height: 0.025, isUnderlined: true
+                )
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(evidence: [localEvidence], groups: [localGroup], autoSelectedGroupIds: ["local_g"]),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page
+        )
+
+        XCTAssertEqual(grounded.groups.count, 1)
+        let group = try XCTUnwrap(grounded.groups.first)
+        XCTAssertFalse(group.needsConfirmation, "Yerelde zaten nitelikli aday, tek başına Google stiliyle onaya düşmemeli")
+        XCTAssertEqual(group.selectedText, "hipoksi")
+        let provenances = Set(group.evidenceIds.compactMap { id in grounded.evidence.first { $0.id == id }?.provenance })
+        XCTAssertEqual(provenances, [.localToken, .remoteUnderlineStyle])
+    }
+
+    /// Regression test 4: a printed, pastel heading/table background must not
+    /// pass the same hue/saturation/value gate a real highlighter pixel has
+    /// to — `backgroundColor` alone is not "fosforlu kalem".
+    func testPrintedPastelBackgroundIsRejectedButGenuineHighlighterColorPasses() throws {
+        let config = try MarkerConfig.bundled()
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [],
+            tokens: [
+                RemoteToken(
+                    tokenId: "heading_token", text: "Başlığı", confidence: 0.95,
+                    x: 0.12, y: 0.05, width: 0.10, height: 0.03,
+                    backgroundColor: RemoteColor(red: 0.85, green: 0.87, blue: 0.93)
+                ),
+                RemoteToken(
+                    tokenId: "marked_token", text: "bilgi", confidence: 0.95,
+                    x: 0.20, y: 0.40, width: 0.10, height: 0.03,
+                    backgroundColor: RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+                )
+            ]
+        )
+
+        let candidates = RemoteAnnotationCandidateBuilder.build(from: page, config: config)
+
+        XCTAssertEqual(candidates.groups.count, 1)
+        XCTAssertEqual(candidates.groups.first?.selectedTokenIds, ["marked_token"])
+        XCTAssertEqual(candidates.groups.first?.selectionType, .highlight)
+    }
+
+    /// Regression test 5: three remote-style highlights sit on the same row.
+    /// The middle one is close enough to merge with both its neighbours
+    /// individually, but the two outer ones are not close enough to each
+    /// other — a transitive chain through the middle candidate must not
+    /// collapse all three (or the two far ones) into a single group.
+    func testTwoFarApartHighlightsOnTheSameRowDoNotChainMergeThroughAMiddleCandidate() throws {
+        let config = try MarkerConfig.bundled()
+        let yellow = RemoteColor(red: 1.0, green: 1.0, blue: 0.0)
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [],
+            tokens: [
+                RemoteToken(tokenId: "left", text: "Sol", confidence: 0.95, x: 0.00, y: 0.30, width: 0.05, height: 0.03, backgroundColor: yellow),
+                RemoteToken(tokenId: "middle", text: "Orta", confidence: 0.95, x: 0.25, y: 0.30, width: 0.05, height: 0.03, backgroundColor: yellow),
+                RemoteToken(tokenId: "right", text: "Sağ", confidence: 0.95, x: 0.58, y: 0.30, width: 0.05, height: 0.03, backgroundColor: yellow)
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page,
+            config: config
+        )
+
+        XCTAssertEqual(grounded.groups.count, 2, "Sağdaki, ortadaki köprü aday üzerinden sola zincirlenerek birleşmemeli")
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["right"]) })
+        XCTAssertTrue(grounded.groups.contains { Set($0.selectedTokenIds) == Set(["left", "middle"]) })
+    }
+
+    /// Regression test 6 (remote-only variant of the local-only column test
+    /// above): two columns' worth of Google-only underline candidates at the
+    /// same row height must not merge just because they share a height.
+    func testTwoColumnsOfRemoteOnlyCandidatesStaySeparate() throws {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [],
+            tokens: [
+                RemoteToken(tokenId: "left_col", text: "Nekroz", confidence: 0.95, x: 0.10, y: 0.30, width: 0.08, height: 0.03, isUnderlined: true),
+                RemoteToken(tokenId: "right_col", text: "Apoptoz", confidence: 0.95, x: 0.62, y: 0.30, width: 0.08, height: 0.03, isUnderlined: true)
+            ]
+        )
+
+        let grounded = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0),
+            remotePage: page
+        )
+
+        XCTAssertEqual(grounded.groups.count, 2)
     }
 }
 

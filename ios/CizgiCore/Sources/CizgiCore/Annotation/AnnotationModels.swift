@@ -50,6 +50,27 @@ public enum AnnotationType: String, Codable, Sendable, CaseIterable {
     case manual
 }
 
+/// Where one visual claim came from. Kept separate from `AnnotationType`
+/// (highlight vs underline, what it looks like) because two different sources
+/// can independently claim the same physical mark — a manual box drawn over a
+/// spot Apple's own pixel detector also flagged, for instance — and merging
+/// them into one group must not erase which of them actually fired (§ see
+/// `AnnotationGrouper.ground`, `RemoteAnnotationCandidateBuilder`).
+public enum AnnotationProvenance: String, Codable, Sendable, Equatable, CaseIterable {
+    /// Local pixel measurement over an Apple Vision word box.
+    case localToken = "local_token"
+    /// Local pixel measurement over a whole Apple Vision line, used only where
+    /// no token-level candidate covered the same area (§9, `DetectedMarkerSelector`).
+    case localLineFallback = "local_line_fallback"
+    /// Google Document AI's own `styleInfo.underlined` flag on a token.
+    case remoteUnderlineStyle = "remote_underline_style"
+    /// Google Document AI's own `styleInfo.backgroundColor` on a token, after
+    /// the same highlighter hue/saturation/value gate local detection uses.
+    case remoteBackgroundStyle = "remote_background_style"
+    /// The user's own drawn rectangle.
+    case manual
+}
+
 public enum AnnotationLayoutKind: String, Codable, Sendable, CaseIterable {
     case paragraph
     /// Generic Document AI layout block. It is distinct on the wire even
@@ -95,6 +116,7 @@ public struct AnnotationEvidence: Codable, Sendable, Equatable, Identifiable {
     public let confidence: Double
     public let decision: MarkerDecision
     public let measurements: AnnotationVisualMeasurements?
+    public let provenance: AnnotationProvenance
 
     public init(
         id: String,
@@ -104,7 +126,8 @@ public struct AnnotationEvidence: Codable, Sendable, Equatable, Identifiable {
         tokenIds: [String] = [],
         confidence: Double,
         decision: MarkerDecision,
-        measurements: AnnotationVisualMeasurements? = nil
+        measurements: AnnotationVisualMeasurements? = nil,
+        provenance: AnnotationProvenance = .localToken
     ) {
         self.id = id
         self.type = type
@@ -114,6 +137,24 @@ public struct AnnotationEvidence: Codable, Sendable, Equatable, Identifiable {
         self.confidence = confidence
         self.decision = decision
         self.measurements = measurements
+        self.provenance = provenance
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        type = try container.decode(AnnotationType.self, forKey: .type)
+        boundingBox = try container.decode(NormalizedRect.self, forKey: .boundingBox)
+        lineIds = try container.decode([String].self, forKey: .lineIds)
+        tokenIds = try container.decodeIfPresent([String].self, forKey: .tokenIds) ?? []
+        confidence = try container.decode(Double.self, forKey: .confidence)
+        decision = try container.decode(MarkerDecision.self, forKey: .decision)
+        measurements = try container.decodeIfPresent(AnnotationVisualMeasurements.self, forKey: .measurements)
+        // Absent on any OCRSnapshot persisted before provenance existed. Every
+        // evidence produced before this change came from local token-level
+        // detection, so defaulting there reproduces its old, already-tested
+        // gating exactly instead of guessing at a new one.
+        provenance = try container.decodeIfPresent(AnnotationProvenance.self, forKey: .provenance) ?? .localToken
     }
 }
 

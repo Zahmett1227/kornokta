@@ -30,6 +30,14 @@ public struct DetectedMarkerSelector: MarkerSelecting {
         self.init(detector: MarkerDetector(config: try MarkerConfig.bundled()))
     }
 
+    /// The overlap bar (of the smaller box) above which a line-level fallback
+    /// candidate is considered the same physical mark as an already-found
+    /// token candidate, not a second one. Same "same physical area" bar
+    /// `CapturePipeline.lineOverlapThreshold` and `AnnotationGrouper`'s
+    /// `matchingLines` already use elsewhere in this pipeline for the same
+    /// question, not a new number invented for this check.
+    static let lineTokenDedupOverlap = 0.3
+
     public static let defaultImageLoader: @Sendable (URL) -> CGImage? = { url in
         #if canImport(ImageIO)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -62,40 +70,77 @@ public struct DetectedMarkerSelector: MarkerSelecting {
         let tokenBoxes = page.lines.flatMap { line in
             line.tokens.map { TokenBox($0, lineId: line.id, imageWidth: buffer.width, imageHeight: buffer.height) }
         }
+        let lineLookup = Dictionary(uniqueKeysWithValues: page.lines.map { ($0.id, $0) })
 
-        let candidates: [(detection: LineDetection, lineId: String, tokenId: String?, box: NormalizedRect)]
-        if tokenBoxes.isEmpty {
-            let lineDetections = detector.analyze(
-                page: buffer,
-                lines: page.lines.map { LineBox($0, imageWidth: buffer.width, imageHeight: buffer.height) },
-                documentQuality: quality
-            )
-            let lookup = Dictionary(uniqueKeysWithValues: page.lines.map { ($0.id, $0) })
-            candidates = lineDetections.compactMap { detection in
-                guard let line = lookup[detection.lineId] else { return nil }
-                return (detection, line.id, nil, NormalizedRect(line.box))
-            }
-        } else {
-            candidates = detector.analyze(page: buffer, tokens: tokenBoxes, documentQuality: quality).map { tokenDetection in
+        struct Candidate {
+            let detection: LineDetection
+            let lineId: String
+            let tokenId: String?
+            let box: NormalizedRect
+            let provenance: AnnotationProvenance
+        }
+
+        // Token-level analysis: the finer-grained, more precise signal
+        // whenever Vision produced word boxes for this page at all.
+        let tokenCandidates: [Candidate] = tokenBoxes.isEmpty ? [] : detector
+            .analyze(page: buffer, tokens: tokenBoxes, documentQuality: quality)
+            .map { tokenDetection in
                 let token = tokenDetection.token
-                return (
-                    tokenDetection.detection,
-                    token.lineId,
-                    token.tokenId,
-                    NormalizedRect(
+                return Candidate(
+                    detection: tokenDetection.detection,
+                    lineId: token.lineId,
+                    tokenId: token.tokenId,
+                    box: NormalizedRect(
                         x: Double(token.x) / Double(buffer.width),
                         y: Double(token.y) / Double(buffer.height),
                         width: Double(token.width) / Double(buffer.width),
                         height: Double(token.height) / Double(buffer.height)
-                    )
+                    ),
+                    provenance: .localToken
                 )
             }
+
+        // Line-level analysis always runs too — not only when the page has no
+        // tokens at all. A page can have hundreds of Apple tokens and still
+        // miss tokenizing the one physical line carrying the actual marked
+        // word (Apple cannot read Turkish reliably, ADR-002); the old
+        // page-wide `if tokenBoxes.isEmpty` branch meant that single untokenized
+        // line got no candidate whatsoever as long as *some other* line on the
+        // page had tokens. Running both passes and deduping by geometry (below)
+        // instead of picking one for the whole page keeps that line's mark
+        // alive as a fallback candidate.
+        let rawLineCandidates: [Candidate] = detector
+            .analyze(page: buffer, lines: page.lines.map { LineBox($0, imageWidth: buffer.width, imageHeight: buffer.height) }, documentQuality: quality)
+            .compactMap { detection in
+                guard let line = lineLookup[detection.lineId] else { return nil }
+                return Candidate(detection: detection, lineId: line.id, tokenId: nil, box: NormalizedRect(line.box), provenance: .localLineFallback)
+            }
+
+        // A line candidate is redundant, not a second mark, wherever a more
+        // precise token candidate already covers the same physical area —
+        // matched by normalized geometry, not by line id or text, so this
+        // still works if token/line ids ever diverge.
+        let lineCandidates = rawLineCandidates.filter { lineCandidate in
+            lineCandidate.detection.selectionType != .none && !tokenCandidates.contains { tokenCandidate in
+                lineCandidate.box.overlapOfSmallerArea(with: tokenCandidate.box) >= Self.lineTokenDedupOverlap
+            }
         }
+
+        let candidates = tokenCandidates + lineCandidates
 
         let evidence = candidates.compactMap { candidate -> AnnotationEvidence? in
             let detection = candidate.detection
             guard detection.selectionType != .none else { return nil }
             let type: AnnotationType = detection.selectionType == .highlight ? .highlight : .underline
+            // A whole recognized line is a coarser measuring window than a
+            // single word box — it can average in neighbouring, unmarked
+            // text — so a line-only fallback (no token corroborates it) is
+            // capped at quick_confirm and never silently auto-accepted,
+            // however high its raw score. Only the finer, calibrated
+            // token-level measurement can reach auto_candidate on its own.
+            let decision: MarkerDecision = candidate.provenance == .localLineFallback && detection.decision == .autoCandidate
+                ? .quickConfirm
+                : detection.decision
             return AnnotationEvidence(
                 id: "evidence_\(candidate.lineId)_\(candidate.tokenId ?? "line")",
                 type: type,
@@ -103,13 +148,14 @@ public struct DetectedMarkerSelector: MarkerSelecting {
                 lineIds: [candidate.lineId],
                 tokenIds: candidate.tokenId.map { [$0] } ?? [],
                 confidence: detection.selectionConfidence,
-                decision: detection.decision,
+                decision: decision,
                 measurements: AnnotationVisualMeasurements(
                     highlightOverlap: detection.highlightOverlap,
                     underlineDarkRatio: detection.underlineDarkRatio,
                     underlineExtentRatio: detection.underlineExtentRatio,
                     confidence: detection.selectionConfidence
-                )
+                ),
+                provenance: candidate.provenance
             )
         }
 

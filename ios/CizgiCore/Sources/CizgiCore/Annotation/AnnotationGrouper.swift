@@ -7,36 +7,42 @@ public enum AnnotationGrouper {
     /// Resolves local marker evidence against the primary (Google) OCR result,
     /// merges nearby evidence into independent information groups and keeps
     /// uncertain handwriting as a confirmation candidate.
+    ///
+    /// - Parameter config: Forwarded to `RemoteAnnotationCandidateBuilder` for
+    ///   its backgroundColor highlighter gate. `nil` simply skips
+    ///   backgroundColor-based candidates for this run (see that type's doc
+    ///   comment) — `isUnderlined`-based candidates are unaffected.
     public static func ground(
         selection: MarkerSelectionResult,
         localPage: RecognizedPage,
         remotePage: RemotePage?,
-        discoverHandwriting: Bool = true
+        discoverHandwriting: Bool = true,
+        config: MarkerConfig? = nil
     ) -> MarkerSelectionResult {
         guard let remotePage else {
             return groundLocally(selection: selection, page: localPage)
         }
 
-        var groups = merge(selection.groups)
+        // Google's own style signals (isUnderlined, backgroundColor) become
+        // ordinary candidate groups here, alongside whatever Apple/local pixel
+        // detection already found — so a mark Apple never tokenized (it
+        // cannot read Turkish reliably, ADR-002) still reaches the merge step
+        // instead of only being usable to ground a *pre-existing* group.
+        let remoteCandidates = RemoteAnnotationCandidateBuilder.build(from: remotePage, config: config)
+        let combinedEvidence = selection.evidence + remoteCandidates.evidence
+        let evidenceById = Dictionary(uniqueKeysWithValues: combinedEvidence.map { ($0.id, $0) })
+
+        var groups = merge(selection.groups + remoteCandidates.groups, evidenceById: evidenceById)
         groups = groups.map { group in
             let selectedTokens = matchingTokens(for: group.boundingBox, tokens: remotePage.tokens)
             let directLines = matchingLines(for: group.boundingBox, lines: remotePage.lines)
             // A short underline may only cover the end of its source line. Token
             // membership is then a stronger grounding signal than box overlap.
-            let tokenLines = directLines.isEmpty
+            let selectedLines = directLines.isEmpty
                 ? remotePage.lines.filter { line in
                     selectedTokens.contains { token in line.tokenIds.contains(token.tokenId) }
                 }
                 : directLines
-            // A manual box is a deliberate, explicit user selection, not a
-            // guess to be filtered by the same overlap threshold that guards
-            // automatic detection against false positives. If it missed
-            // every line/token by a hair, ground it to the nearest line
-            // rather than bouncing the whole submission with an empty
-            // passage (found via real device use, 2026-08-04).
-            let selectedLines = tokenLines.isEmpty && group.selectionType == .manual
-                ? nearestLine(to: group.boundingBox, in: remotePage.lines).map { [$0] } ?? []
-                : tokenLines
             let selectedText = selectedTokens.isEmpty
                 ? selectedLines.map(\.text).joined(separator: " ")
                 : selectedTokens.map(\.text).joined(separator: " ")
@@ -52,6 +58,16 @@ public enum AnnotationGrouper {
                 : remotePage.tokens.filter { group.handwrittenNoteIds.contains($0.tokenId) }
             let layoutKind = layoutKind(for: group, lines: contextLines, tables: remotePage.tables)
             let heading = parentHeading(for: group, lines: remotePage.lines)
+            // No line or token resolved at all — including a manual box that
+            // missed every line by more than a genuine overlap — must never
+            // read as a silently-grounded passage (§0.5). It stays in the
+            // result with its bounding box intact and forced to
+            // confirmation, rather than guessing at the nearest line or
+            // vanishing from the submission (found via real device use,
+            // 2026-08-04; superseded here — a wrong guess is worse than
+            // asking, and the crop itself is preserved for a future
+            // photo-based/manual-text review instead).
+            let unresolved = selectedLines.isEmpty && selectedTokens.isEmpty
             return group.with(
                 selectedLineIds: selectedLines.map(\.lineId),
                 contextLineIds: contextLines.map(\.lineId),
@@ -65,7 +81,7 @@ public enum AnnotationGrouper {
                 layoutKind: layoutKind,
                 // A handwriting relationship is an explicitly uncertain
                 // visual claim until the user attaches or rejects it.
-                needsConfirmation: group.needsConfirmation || (discoverHandwriting && !handNotes.isEmpty)
+                needsConfirmation: unresolved || group.needsConfirmation || (discoverHandwriting && !handNotes.isEmpty)
             )
         }
 
@@ -98,7 +114,7 @@ public enum AnnotationGrouper {
         let auto = groups
             .filter { !$0.needsConfirmation && $0.selectionType != .handwriting }
             .map(\.id)
-        return MarkerSelectionResult(evidence: selection.evidence, groups: groups, autoSelectedGroupIds: auto)
+        return MarkerSelectionResult(evidence: combinedEvidence, groups: groups, autoSelectedGroupIds: auto)
     }
 
     private static func groundLocally(
@@ -106,7 +122,8 @@ public enum AnnotationGrouper {
         page: RecognizedPage
     ) -> MarkerSelectionResult {
         let lines = Dictionary(uniqueKeysWithValues: page.lines.map { ($0.id, $0) })
-        let groups = merge(selection.groups).map { group in
+        let evidenceById = Dictionary(uniqueKeysWithValues: selection.evidence.map { ($0.id, $0) })
+        let groups = merge(selection.groups, evidenceById: evidenceById).map { group in
             let explicit = group.selectedLineIds.compactMap { lines[$0] }
             // A freehand confirmation rectangle has no line id. Ground it
             // against local Vision geometry so offline confirmation is usable.
@@ -116,18 +133,18 @@ public enum AnnotationGrouper {
                         || contains(group.boundingBox, NormalizedRect(line.box).center)
                 }
                 : explicit
-            // Same reasoning as the remote path above: a manual box always
-            // grounds to something rather than coming back empty.
-            let selected = overlapping.isEmpty && group.selectionType == .manual
-                ? nearestLocalLine(to: group.boundingBox, in: page.lines).map { [$0] } ?? []
-                : overlapping
+            // No meaningful local overlap at all: same rule as the remote
+            // path above — never guess at the nearest line, keep the group
+            // around unresolved and forced to confirmation instead.
+            let unresolved = overlapping.isEmpty
             return group.with(
-                selectedLineIds: selected.map(\.id),
-                contextLineIds: selected.map(\.id),
-                selectedText: selected.map(\.text).joined(separator: " "),
-                contextText: selected.map(\.text).joined(separator: " "),
-                selectedTokenIds: selected.flatMap { $0.tokens.map(\.id) },
-                contextTokenIds: selected.flatMap { $0.tokens.map(\.id) }
+                selectedLineIds: overlapping.map(\.id),
+                contextLineIds: overlapping.map(\.id),
+                selectedText: overlapping.map(\.text).joined(separator: " "),
+                contextText: overlapping.map(\.text).joined(separator: " "),
+                selectedTokenIds: overlapping.flatMap { $0.tokens.map(\.id) },
+                contextTokenIds: overlapping.flatMap { $0.tokens.map(\.id) },
+                needsConfirmation: unresolved || group.needsConfirmation
             )
         }
         return MarkerSelectionResult(
@@ -140,7 +157,17 @@ public enum AnnotationGrouper {
     /// Merge only visually contiguous evidence in the same horizontal region.
     /// This joins a three-line mechanism list while preserving two instances
     /// of the same phrase in distant reversible/irreversible boxes.
-    private static func merge(_ input: [AnnotationGroup]) -> [AnnotationGroup] {
+    ///
+    /// A candidate joins a cluster only when it satisfies `shouldMerge`
+    /// against **every** current member (complete-linkage), not just the
+    /// cluster's overall bounding envelope or any single member. Checking
+    /// only the envelope (or only the nearest member, single-linkage) is
+    /// exactly what lets a transitive chain form: an unrelated third mark can
+    /// sit close enough to a cluster's *aggregate* extent, or to one lone
+    /// member, without actually being near the other real marks already in
+    /// it. Requiring agreement with every member ties cluster growth to real
+    /// content, not to a geometric average nobody's mark actually occupies.
+    private static func merge(_ input: [AnnotationGroup], evidenceById: [String: AnnotationEvidence]) -> [AnnotationGroup] {
         var remaining = input.sorted {
             $0.boundingBox.y == $1.boundingBox.y
                 ? $0.boundingBox.x < $1.boundingBox.x
@@ -153,12 +180,11 @@ public enum AnnotationGrouper {
             var changed = true
             while changed {
                 changed = false
-                let clusterBounds = cluster.map(\.boundingBox).reduce(first.boundingBox) { $0.union($1) }
                 var index = 0
                 while index < remaining.count {
-                    if cluster.allSatisfy({ $0.selectionType != .manual })
-                        && remaining[index].selectionType != .manual
-                        && shouldMerge(clusterBounds, remaining[index].boundingBox) {
+                    let candidate = remaining[index]
+                    let eligible = cluster.allSatisfy({ $0.selectionType != .manual }) && candidate.selectionType != .manual
+                    if eligible && cluster.allSatisfy({ shouldMerge($0.boundingBox, candidate.boundingBox) }) {
                         cluster.append(remaining.remove(at: index))
                         changed = true
                     } else {
@@ -168,6 +194,19 @@ public enum AnnotationGrouper {
             }
             let bounds = cluster.map(\.boundingBox).reduce(first.boundingBox) { $0.union($1) }
             let confidence = cluster.map(\.confidence).reduce(0, +) / Double(cluster.count)
+            // A cluster made up *only* of not-yet-calibrated Google-style
+            // candidates (no local pixel-verified member at all) must never
+            // read as confident just because none of its members individually
+            // asked for confirmation for the same reason — there is no real
+            // calibration behind that signal yet (§19.2). A cluster that
+            // includes at least one local (Apple/manual pixel-measured)
+            // candidate keeps exactly its previous, already-tested pessimistic
+            // OR across those local members: a remote-style member merely
+            // corroborating that spot cannot drag an already-qualified local
+            // group back into needing confirmation, but it also cannot grant
+            // one on its own.
+            let localMembers = cluster.filter { !isRemoteStyleOnly($0, evidenceById: evidenceById) }
+            let needsConfirmation = localMembers.isEmpty ? true : localMembers.contains(where: \.needsConfirmation)
             result.append(
                 AnnotationGroup(
                     id: first.id,
@@ -178,12 +217,27 @@ public enum AnnotationGrouper {
                     contextTokenIds: unique(cluster.flatMap(\.contextTokenIds)),
                     boundingBox: bounds,
                     confidence: confidence,
-                    needsConfirmation: cluster.contains(where: \.needsConfirmation),
+                    needsConfirmation: needsConfirmation,
                     selectionType: first.selectionType
                 )
             )
         }
         return result
+    }
+
+    /// Whether every evidence id behind `group` traces back to a Google
+    /// style-only candidate (`RemoteAnnotationCandidateBuilder`), as opposed
+    /// to any locally/manually sourced one. A group with no evidence ids at
+    /// all (should not occur for a real candidate) is treated as local —
+    /// never silently treated as "corroborated" from nothing.
+    private static func isRemoteStyleOnly(_ group: AnnotationGroup, evidenceById: [String: AnnotationEvidence]) -> Bool {
+        guard !group.evidenceIds.isEmpty else { return false }
+        return group.evidenceIds.allSatisfy { id in
+            switch evidenceById[id]?.provenance {
+            case .remoteUnderlineStyle, .remoteBackgroundStyle: return true
+            default: return false
+            }
+        }
     }
 
     private static func shouldMerge(_ lhs: NormalizedRect, _ rhs: NormalizedRect) -> Bool {
@@ -194,35 +248,9 @@ public enum AnnotationGrouper {
         return verticalGap <= 0.045
     }
 
-    /// Same nearness radius `nearbyHandwrittenTokens` uses below for "close
-    /// enough to belong together" — far enough to absorb a manual box that
-    /// merely missed its target line's overlap threshold, not so far that a
-    /// cloud reading with no relevant content at all gets matched to some
-    /// unrelated line elsewhere on the page (that must still bounce to
-    /// confirmation instead of silently shipping the wrong text).
+    /// Radius `nearbyHandwrittenTokens` uses for "close enough to belong
+    /// together" between a marked region and a handwritten margin note.
     private static let manualFallbackMaxDistance = 0.16
-
-    private static func nearestLine(to box: NormalizedRect, in lines: [RemoteLine]) -> RemoteLine? {
-        let center = box.center
-        return lines
-            .map { ($0, distanceSquared(rect(of: $0).center, center)) }
-            .filter { $0.1 <= manualFallbackMaxDistance * manualFallbackMaxDistance }
-            .min { $0.1 < $1.1 }?.0
-    }
-
-    private static func nearestLocalLine(to box: NormalizedRect, in lines: [RecognizedLine]) -> RecognizedLine? {
-        let center = box.center
-        return lines
-            .map { ($0, distanceSquared(NormalizedRect($0.box).center, center)) }
-            .filter { $0.1 <= manualFallbackMaxDistance * manualFallbackMaxDistance }
-            .min { $0.1 < $1.1 }?.0
-    }
-
-    private static func distanceSquared(_ a: (x: Double, y: Double), _ b: (x: Double, y: Double)) -> Double {
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        return dx * dx + dy * dy
-    }
 
     private static func matchingLines(for box: NormalizedRect, lines: [RemoteLine]) -> [RemoteLine] {
         lines.filter { line in
@@ -266,7 +294,7 @@ public enum AnnotationGrouper {
             let other = token.boundingBox.center
             let dx = other.x - center.x
             let dy = other.y - center.y
-            return (dx * dx + dy * dy).squareRoot() <= 0.16
+            return (dx * dx + dy * dy).squareRoot() <= manualFallbackMaxDistance
         }
     }
 

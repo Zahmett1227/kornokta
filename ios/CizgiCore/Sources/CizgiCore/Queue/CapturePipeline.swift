@@ -354,11 +354,21 @@ public struct CapturePipeline: Sendable {
             }
         }
 
+        // Loaded independently of `selector`'s own copy: it is a static
+        // bundled resource (same file, no divergence risk), and grounding
+        // needs the highlighter hue/saturation/value gate for Google's
+        // `backgroundColor` style candidates (`RemoteAnnotationCandidateBuilder`).
+        // A load failure here (should not happen in practice) only means this
+        // run skips backgroundColor-based candidates, not a crash — no
+        // invented substitute numbers, just a graceful skip of that one
+        // feature (§0.6).
+        let markerConfig = try? MarkerConfig.bundled()
         let groundedSelection = AnnotationGrouper.ground(
             selection: initialSelection,
             localPage: recognized,
             remotePage: remote?.page,
-            discoverHandwriting: selectionResultOverride == nil
+            discoverHandwriting: selectionResultOverride == nil,
+            config: markerConfig
         )
         let selection: MarkerSelectionResult
         if selectionResultOverride != nil {
