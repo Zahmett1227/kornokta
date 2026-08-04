@@ -106,6 +106,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Ayarlar")
+            .homeButtonToolbar()
             .onAppear {
                 // Shown as a placeholder, never as text: reading the stored
                 // token back into an on-screen field would put it somewhere a

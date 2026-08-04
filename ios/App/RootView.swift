@@ -5,21 +5,27 @@ import CizgiCore
 struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var navigator = AppNavigator()
 
     var body: some View {
-        TabView {
+        TabView(selection: $navigator.selectedTab) {
             CaptureView()
                 .tabItem { Label("Yakala", systemImage: "camera") }
+                .tag(AppNavigator.RootTab.capture)
 
             ReviewView()
                 .tabItem { Label("Tekrar", systemImage: "rectangle.stack") }
+                .tag(AppNavigator.RootTab.review)
 
             LibraryView()
                 .tabItem { Label("Bilgilerim", systemImage: "books.vertical") }
+                .tag(AppNavigator.RootTab.library)
 
             SettingsView()
                 .tabItem { Label("Ayarlar", systemImage: "gearshape") }
+                .tag(AppNavigator.RootTab.settings)
         }
+        .environmentObject(navigator)
         .task {
             // Pick up anything left unfinished by a previous launch (§24.1:
             // pending work must survive the app closing).

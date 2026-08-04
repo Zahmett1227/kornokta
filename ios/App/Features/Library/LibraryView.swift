@@ -5,6 +5,7 @@ import CizgiCore
 /// "Bilgilerim" (ANA-PLAN §6.6). No charts in the MVP — the section explicitly
 /// says complex graphics are not required.
 struct LibraryView: View {
+    @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var cards: [Card]
     @State private var searchText = ""
@@ -34,7 +35,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigator.libraryPath) {
             List {
                 if cards.isEmpty {
                     ContentUnavailableView(
@@ -87,6 +88,7 @@ struct LibraryView: View {
             }
             .navigationTitle("Bilgilerim")
             .searchable(text: $searchText, prompt: "Kartlarda ara")
+            .homeButtonToolbar()
         }
     }
 
@@ -218,5 +220,6 @@ struct CardDetailView: View {
             }
         }
         .navigationTitle("Kart")
+        .homeButtonToolbar()
     }
 }

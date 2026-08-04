@@ -66,6 +66,7 @@ struct ReviewView: View {
                 }
             }
             .navigationTitle("Tekrar")
+            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     if !queue.isEmpty && currentIndex < queue.count {

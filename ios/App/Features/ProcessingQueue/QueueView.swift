@@ -30,6 +30,7 @@ struct QueueView: View {
             }
         }
         .navigationTitle("İşleme Kuyruğu")
+        .homeButtonToolbar()
         .refreshable {
             await environment.queue.processPending()
         }
@@ -131,6 +132,7 @@ struct PageDetailView: View {
             }
         }
         .navigationTitle("Sayfa")
+        .homeButtonToolbar()
     }
 
     private func loadImage() -> Image? {

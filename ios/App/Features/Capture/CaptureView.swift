@@ -9,6 +9,7 @@ import CizgiCore
 /// pushes the user into an editor — they go straight back to shooting.
 struct CaptureView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
 
     @Query(sort: \CapturedPage.captureDate, order: .reverse)
@@ -27,7 +28,7 @@ struct CaptureView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigator.capturePath) {
             VStack(spacing: 24) {
                 Spacer()
 
@@ -72,6 +73,7 @@ struct CaptureView: View {
             }
             .padding()
             .navigationTitle("Yakala")
+            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink {
