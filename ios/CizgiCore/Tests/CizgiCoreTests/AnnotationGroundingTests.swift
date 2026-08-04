@@ -98,6 +98,69 @@ final class AnnotationGrouperTests: XCTestCase {
         XCTAssertFalse(resumed.groups.contains { $0.selectionType == .handwriting })
     }
 
+    /// Real-device crash regression (2026-08-04): a confirmation-resume
+    /// pass's `selection` already carries remote-style evidence ids forwarded
+    /// from the first grounding pass. Rebuilding every remote candidate again
+    /// on that pass handed `Dictionary(uniqueKeysWithValues:)` the exact same
+    /// id twice — "Fatal error: Duplicate values for key" — and, short of the
+    /// crash, would have silently reintroduced the *unselected* remote
+    /// candidate too. `discoverRemoteCandidates: false` (wired from
+    /// `CapturePipeline` on both resume kinds) is how a resume pass avoids
+    /// both.
+    func testConfirmationResumeDoesNotRebuildRemoteCandidatesOrCrash() throws {
+        let page = RemotePage(
+            imageWidth: 1000, imageHeight: 1600, elapsedMs: 1,
+            lines: [
+                annotationLine("line_03", "Seçilen ifade burada", x: 0.10, y: 0.19),
+                annotationLine("line_04", "Seçilmeyen başka ifade", x: 0.10, y: 0.30),
+            ],
+            tokens: [
+                RemoteToken(
+                    tokenId: "line_03_token", text: "ifade", confidence: 0.95,
+                    x: 0.10, y: 0.19, width: 0.20, height: 0.03, isUnderlined: true
+                ),
+                RemoteToken(
+                    tokenId: "line_04_token", text: "başka", confidence: 0.95,
+                    x: 0.10, y: 0.30, width: 0.20, height: 0.03, isUnderlined: true
+                ),
+            ]
+        )
+        // Pass 1 — fresh detection: discovers both remote-underline runs.
+        let initial = AnnotationGrouper.ground(
+            selection: MarkerSelectionResult(),
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page
+        )
+        XCTAssertEqual(
+            initial.groups.filter { $0.selectionType == .underline }.count, 2,
+            "Test kurgusu geçersiz: iki ayrı satır algılanmadı"
+        )
+
+        // The user confirms only the first — mirrors `ConfirmationView
+        // .submit()`: the confirmed selection keeps only the chosen group's
+        // own evidence, still carrying its original remote-style id.
+        let chosen = try XCTUnwrap(initial.groups.first { $0.selectedLineIds == ["line_03"] })
+        let confirmedGroups = [chosen.markedConfirmed()]
+        let evidenceIds = Set(confirmedGroups.flatMap(\.evidenceIds))
+        let confirmedSelection = MarkerSelectionResult(
+            evidence: initial.evidence.filter { evidenceIds.contains($0.id) },
+            groups: confirmedGroups,
+            autoSelectedGroupIds: confirmedGroups.map(\.id)
+        )
+
+        // Pass 2 — confirmation resume: must not crash, and must not
+        // resurrect the unselected `line_04` remote candidate.
+        let resumed = AnnotationGrouper.ground(
+            selection: confirmedSelection,
+            localPage: RecognizedPage(lines: [], elapsed: 0), remotePage: page,
+            discoverRemoteCandidates: false
+        )
+        XCTAssertEqual(resumed.groups.count, 1)
+        XCTAssertFalse(
+            resumed.groups.contains { $0.selectedLineIds == ["line_04"] },
+            "Kullanıcının seçmediği uzak aday yeniden eklenmemeli"
+        )
+    }
+
     func testShortPhraseUnderlineUsesTokenGeometryAndExpandsOnlyToItsLine() {
         let evidence = markerEvidence("e", line: "vision_0", token: "vision_0_t", x: 0.44, y: 0.20)
         let group = markerGroup("g", evidence: evidence)

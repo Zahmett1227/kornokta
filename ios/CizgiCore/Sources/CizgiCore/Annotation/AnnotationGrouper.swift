@@ -185,11 +185,23 @@ public enum AnnotationGrouper {
     ///   its backgroundColor highlighter gate. `nil` simply skips
     ///   backgroundColor-based candidates for this run (see that type's doc
     ///   comment) — `isUnderlined`-based candidates are unaffected.
+    /// - Parameter discoverRemoteCandidates: `false` on a confirmation/
+    ///   snapshot resume pass, the same way `discoverHandwriting` already is.
+    ///   `selection` on a resume call is the user's already-confirmed subset,
+    ///   which can itself already carry remote-style evidence ids (e.g.
+    ///   `remote_underline_line_03_0`) forwarded from the first grounding
+    ///   pass. Rebuilding *every* remote-style candidate on the page again
+    ///   here would (a) hand `Dictionary(uniqueKeysWithValues:)` the same id
+    ///   twice — a real crash on device, "Duplicate values for key" — and
+    ///   (b) silently reintroduce every remote candidate the user never
+    ///   selected, which `CapturePipeline` then auto-confirms wholesale on a
+    ///   resume (found via real device use, 2026-08-04).
     public static func ground(
         selection: MarkerSelectionResult,
         localPage: RecognizedPage,
         remotePage: RemotePage?,
         discoverHandwriting: Bool = true,
+        discoverRemoteCandidates: Bool = true,
         config: MarkerConfig? = nil
     ) -> MarkerSelectionResult {
         guard let remotePage else {
@@ -201,7 +213,9 @@ public enum AnnotationGrouper {
         // detection already found — so a mark Apple never tokenized (it
         // cannot read Turkish reliably, ADR-002) still reaches the merge step
         // instead of only being usable to ground a *pre-existing* group.
-        let remoteCandidates = RemoteAnnotationCandidateBuilder.build(from: remotePage, config: config)
+        let remoteCandidates = discoverRemoteCandidates
+            ? RemoteAnnotationCandidateBuilder.build(from: remotePage, config: config)
+            : (evidence: [AnnotationEvidence](), groups: [AnnotationGroup]())
         let combinedEvidence = selection.evidence + remoteCandidates.evidence
         let evidenceById = Dictionary(uniqueKeysWithValues: combinedEvidence.map { ($0.id, $0) })
 

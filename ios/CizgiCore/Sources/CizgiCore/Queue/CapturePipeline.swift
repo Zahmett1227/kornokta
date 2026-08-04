@@ -363,24 +363,32 @@ public struct CapturePipeline: Sendable {
         // invented substitute numbers, just a graceful skip of that one
         // feature (§0.6).
         let markerConfig = try? MarkerConfig.bundled()
+        // Distinguishes which of this job's (possibly several) grounding
+        // calls this pass is — a fresh capture, a user confirming groups
+        // back, or a relaunch resuming a saved snapshot all call `ground`
+        // again for the same jobId. Only a genuinely fresh pass should
+        // (re)discover candidates: on both resume kinds, `initialSelection`
+        // is itself a *previously grounded* selection that already carries
+        // any remote-style/handwriting groups a first pass produced.
+        // Rediscovering them again handed `Dictionary(uniqueKeysWithValues:)`
+        // the same remote-candidate id twice — a real "Duplicate values for
+        // key" crash on device — and, short of a hard crash, silently
+        // reintroduced every remote candidate and handwriting note on the
+        // page, not just the ones actually confirmed (found via real device
+        // use, 2026-08-04).
+        let groundingPhase: GroundingPhase = selectionResultOverride != nil
+            ? .userConfirmationResume
+            : (snapshot != nil ? .snapshotResume : .initialDetection)
+        let isFreshGrounding = groundingPhase == .initialDetection
         let groundedSelection = AnnotationGrouper.ground(
             selection: initialSelection,
             localPage: recognized,
             remotePage: remote?.page,
-            discoverHandwriting: selectionResultOverride == nil,
+            discoverHandwriting: isFreshGrounding,
+            discoverRemoteCandidates: isFreshGrounding,
             config: markerConfig
         )
         #if DEBUG
-        // Distinguishes which of this job's (possibly several) grounding
-        // calls a logged `mergedGroupCount` belongs to — a fresh capture, a
-        // user confirming groups back, or a relaunch resuming a saved
-        // snapshot all call `ground` again for the same jobId, and without
-        // this tag two different counts for the same job read as a
-        // contradiction rather than as two different, both-correct moments
-        // (found via real device use, 2026-08-04).
-        let groundingPhase: GroundingPhase = selectionResultOverride != nil
-            ? .userConfirmationResume
-            : (snapshot != nil ? .snapshotResume : .initialDetection)
         Self.logGroundingDiagnostics(
             AnnotationGrouper.diagnostics(
                 initialSelection: initialSelection,
