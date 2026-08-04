@@ -39,6 +39,13 @@ struct ConfirmationView: View {
         }
         .navigationTitle("İşaretlenen bölgeler")
         .navigationBarTitleDisplayMode(.inline)
+        // The root TabView's floating tab bar sits over the bottom of the
+        // screen rather than reserving its own strip, so the submit button in
+        // `footer` rendered partly behind it and was hard or impossible to
+        // tap (found via real device use, 2026-08-04). This is a focused,
+        // one-task screen anyway — hiding the tab bar while it's open matches
+        // how the rest of the app treats a blocking confirmation step.
+        .toolbar(.hidden, for: .tabBar)
         .task { await loadSnapshot() }
         .alert("Hata", isPresented: .constant(errorMessage != nil && !isLoading)) {
             Button("Tamam") { errorMessage = nil }

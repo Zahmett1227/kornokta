@@ -16,6 +16,18 @@ final class ProcessingQueue: ObservableObject {
     /// edits Settings; the rest of the pipeline never changes.
     private var pipeline: CapturePipeline
     private let retryPolicy = RetryPolicy()
+    /// How many `process(_:)` calls are currently parked inside `pipeline.run`
+    /// for each page id — a suspension point (network/OCR `await`) a call can
+    /// be at while `ProcessingQueue` (`@MainActor`) runs other queued work,
+    /// including a user's delete tap, in between. A plain count rather than a
+    /// `Set<UUID>`: `retry(_:)` doesn't set `isRunning`, so a manual "Tekrar
+    /// dene" can already be awaiting `run` for a page when a pull-to-refresh
+    /// starts a second `process` call for that same page — a `Set` would lose
+    /// the first call's membership the moment either one's `defer` fired,
+    /// even though the other was still in flight. `delete(_:)` checks this
+    /// before touching the SwiftData model (PR #12 review, Codex P1, both
+    /// rounds).
+    private var inFlightPageCounts: [UUID: Int] = [:]
 
     @Published private(set) var isRunning = false
 
@@ -87,7 +99,33 @@ final class ProcessingQueue: ObservableObject {
         )
         guard let pages = try? context.fetch(descriptor) else { return }
 
-        for page in pages where shouldProcess(page) {
+        for page in pages {
+            // A deletion always wins over resuming work, without a network
+            // call, on every launch (PR #12 review, Codex P1 — second
+            // round): if the app was terminated between an in-flight
+            // `delete(_:)` marking `pendingDeletion` and that run finishing,
+            // a fresh launch's `inFlightPageCounts` starts empty and
+            // `shouldProcess` would otherwise accept the page's still-
+            // `.localOCR` state and re-upload/re-OCR an image the user
+            // already asked to delete.
+            //
+            // But `pendingDeletion` alone is not enough to act immediately —
+            // `retry(_:)` doesn't set `isRunning`, so a manual "Tekrar dene"
+            // can already be inside `process` for this exact page (counted
+            // in `inFlightPageCounts`) when a concurrent pull-to-refresh
+            // reaches it here. Deleting the model out from under that still-
+            // running call is the same race `delete(_:)` itself guards
+            // against; only the in-flight call's own `defer` may finish a
+            // pending deletion once it is truly the last one (PR #12 review,
+            // Codex P1 — fifth round). Nothing else to do here either way:
+            // `process` must not be started for a page marked for deletion.
+            if page.pendingDeletion {
+                if (inFlightPageCounts[page.id] ?? 0) == 0 {
+                    performDelete(page)
+                }
+                continue
+            }
+            guard shouldProcess(page) else { continue }
             await process(page)
         }
     }
@@ -156,6 +194,7 @@ final class ProcessingQueue: ObservableObject {
     ) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
+        let pageID = page.id
 
         // Read the ceiling per run rather than caching it at init, so changing
         // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
@@ -165,6 +204,31 @@ final class ProcessingQueue: ObservableObject {
 
         page.processingState = .localOCR
         try? context.save()
+
+        // Marks the window `delete(_:)` has to check before touching this
+        // page's SwiftData model — `run` below awaits network/OCR calls, and
+        // this actor is free to run a queued delete tap (or a second,
+        // overlapping `process` call for the same page) in between.
+        inFlightPageCounts[pageID, default: 0] += 1
+        defer {
+            let remaining = (inFlightPageCounts[pageID] ?? 1) - 1
+            if remaining > 0 {
+                inFlightPageCounts[pageID] = remaining
+            } else {
+                inFlightPageCounts[pageID] = nil
+                // Only the call that brings the count to zero may act on a
+                // pending deletion (PR #12 review, Codex P1 — third round).
+                // `apply` below runs unconditionally and may persist a full
+                // result for `page` even though deletion was requested mid-run
+                // — wasted work in that rare race, but safe: an earlier call
+                // finishing first must never delete the model while a later,
+                // still-in-flight call for the same page is going to read or
+                // write it in its own `apply`.
+                if page.pendingDeletion {
+                    performDelete(page)
+                }
+            }
+        }
 
         let outcome = await effectivePipeline.run(
             jobId: page.id.uuidString,
@@ -443,6 +507,54 @@ final class ProcessingQueue: ObservableObject {
         guard PipelineStateMachine.canTransition(from: page.processingState, to: .cancelled) else { return }
         page.processingState = .cancelled
         try? container.mainContext.save()
+    }
+
+    /// Removes a queue entry entirely, unlike `cancel` which only marks it
+    /// `.cancelled` and leaves it in the list forever.
+    ///
+    /// If `page` is mid-`pipeline.run` (PR #12 review, Codex P1, both
+    /// rounds), deleting its SwiftData model out from under that in-flight
+    /// `process(_:)` call — or from under a *second*, overlapping one for the
+    /// same page (manual retry racing a pull-to-refresh) — would hand `apply`
+    /// a faulted object once its `await`s resume. This just records the
+    /// request; `apply` performs the real deletion once every in-flight call
+    /// for this page has finished, so the tap is honored rather than raced.
+    func delete(_ page: CapturedPage) {
+        guard (inFlightPageCounts[page.id] ?? 0) == 0 else {
+            page.pendingDeletion = true
+            try? container.mainContext.save()
+            return
+        }
+        performDelete(page)
+    }
+
+    /// SwiftData cascades the model delete to `regions`/`knowledgeUnits`/
+    /// `cards` (`deleteRule: .cascade`), but the crop and original page files
+    /// it stored on disk are its own.
+    ///
+    /// The model delete is saved *before* any file is removed (PR #12
+    /// review, Codex P2) — the reverse of `pendingOriginalImageDeletion`'s
+    /// order elsewhere in this file, and deliberately so: there, the record
+    /// itself is the durable intent and a crash before the file goes just
+    /// means a retry. Here there is no separate durable flag once this
+    /// returns, so if `context.save()` failed after the files were already
+    /// gone, the surviving record would point at nothing and no code path
+    /// would ever revisit it. Saving first means a failed save simply leaves
+    /// both the record and its files in place, exactly as they were.
+    private func performDelete(_ page: CapturedPage) {
+        let context = container.mainContext
+        let originalPath = page.originalImagePath
+        let cropPaths = page.regions.compactMap(\.sourceCropPath)
+        context.delete(page)
+        do {
+            try context.save()
+        } catch {
+            return
+        }
+        try? imageStore.remove(relativePath: originalPath)
+        for path in cropPaths {
+            try? imageStore.remove(relativePath: path)
+        }
     }
 
     func retry(_ page: CapturedPage) async {

@@ -156,24 +156,51 @@ işaret etmiyor).
      mimariye hiç uymuyor ve gerekli de değil — asıl tıkanma zaten
      `needsApproval` yönlendirmesindeydi).
    Testler: backend'e dokunulmadı (451/451 hâlâ yeşil, doğrulandı). Swift'e 3
-   yeni test eklendi (167 toplam) — **henüz bir Mac'te koşulmadı**.
+   yeni test eklendi (167 toplam) — **henüz bir Mac'te koşulmadı**. **Bu dal
+   kullanıcı isteğiyle PR #11 olarak merge edildi** (`main`'de `e0ee22f`).
+10. **(Yeni oturum, gerçek cihaz ekran görüntüsüyle üç ayrı istek)** Kullanıcı
+    telefonda bir ekran görüntüsü paylaştı: kök `TabView`'ın yüzen (floating)
+    sekme çubuğu, `ConfirmationView`'ın alt kısmındaki "Seçili gruplardan kart
+    oluştur" düğmesinin üstüne biniyordu — düğme metni çubuğun camsı
+    arkasından görünüyordu, dokunmak güvenilir değildi. Kök neden araştırılmadı
+    (App hedefi bu ortamda derlenemiyor); en güvenilir düzeltme uygulandı:
+    `ConfirmationView` artık `.toolbar(.hidden, for: .tabBar)` ile açıkken
+    sekme çubuğunu tamamen gizliyor — zaten odaklı, engelleyici bir onay adımı
+    olduğu için ekranı tam kullanması makul. Ayrıca iki eksik özellik
+    eklendi: (a) `ProcessingQueue.delete(_:)` — işleme kuyruğundan bir
+    kaydı, SwiftData'nın `regions`/`knowledgeUnits`/`cards` zincirini
+    kademeli (`cascade`) silmesine ek olarak orijinal sayfa görüntüsünü ve
+    varsa bölge kırpma görüntülerini diskten de temizleyerek tamamen
+    kaldırıyor (`QueueView`'da yeni "Sil" kaydırma eylemi; eski "İptal" yalnız
+    durumu `.cancelled` yapıp satırı sonsuza dek listede bırakıyordu — o da
+    duruyor, artık zaten iptal edilmiş satırlarda gizleniyor). (b) Bilgilerim'e
+    kart silme: `LibraryView`'ın üç listesine (`Onay bekliyor`, `En çok
+    unutulanlar`, `Son eklenenler`) kaydırarak silme (`onDelete`) eklendi;
+    `CardDetailView`'da `.needsReview` olmayan kartlar için de (önceden
+    yalnız onay bekleyenlerde vardı) ayrı bir "Sil" bölümü eklendi. Hiçbiri
+    kartın bağlı olduğu `TextRegion`/kırpma görüntüsünü temizlemiyor (bir
+    `KnowledgeUnit` birden çok kart taşıyabilir; kalan boş bölge zararsız,
+    `PageDetailView`'da görünmez bir "Pasaj" girdisi olarak kalır — mevcut
+    davranışla tutarlı, kapsam dışı bırakıldı). Üçü de App hedefinde
+    (`ios/App/...`), bu yüzden `swift test`in kapsamı dışında — yalnız
+    Xcode'da gerçek bir build/çalıştırma doğrular, bu oturumda hiç
+    çalıştırılmadı.
 
 **Test durumu:**
 - Python (`evals/`): 511 test — bu oturumda dokunulmadı/koşulmadı.
-- Backend (`backend/`): **451 test**, yeşil — `npm test` bu oturumda
-  gerçekten çalıştırıldı. Bu oturumda backend'e hiç dokunulmadı (madde 9);
-  451 rakamı annotation-grounding oturumunun eklediği `documentAI.test.ts`
-  dahil main'in kendi sayısı.
-- Swift (`ios/CizgiCore/`): **167 test** (main'in 165'i + bu oturumda eklenen
-  3) — **henüz bir Mac'te koşulmadı**. `swift test` yalnız `CizgiCore`
-  paketini derliyor; App hedefini (ConfirmationView/LibraryView'daki
-  değişiklikler dahil) yalnız Xcode'da gerçek bir build/çalıştırma doğrular.
+- Backend (`backend/`): **451 test**, yeşil — bu oturumda backend'e hiç
+  dokunulmadı.
+- Swift (`ios/CizgiCore/`): main'de 167 test (madde 9 ile birlikte merge
+  edildi). Bu oturumun madde 10 değişiklikleri App hedefinde olduğu için
+  `CizgiCore` test sayısını değiştirmedi — **henüz bir Mac'te koşulmadı**,
+  ne CizgiCore paketi ne de App hedefi bu oturumda derlendi (App hedefini
+  yalnız Xcode gerçek bir build/çalıştırma ile doğrular).
 
-**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`). **Bu
-oturumun değişiklikleri (needsApproval→ready yönlendirmesi, Bilgilerim'de
-Onay bekliyor, confirmationReason) henüz Vercel'e/telefona dağıtılmadı** —
-dal `claude/project-review-issue-j0ycif`, `main`'in güncel ucu üzerine
-sıfırdan kuruldu, merge edilmedi.
+**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), `main`
+`e0ee22f`'i içeriyor (madde 9, PR #11). **Madde 10'un üç değişikliği
+(sekme çubuğu gizleme, kuyruk silme, kart silme) henüz main'e merge edilmedi**
+— dal `claude/project-review-issue-j0ycif`, `main`'in güncel ucu üzerine
+kuruldu, kullanıcı henüz merge istemedi.
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -263,21 +290,29 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli:** madde 9'un düzeltmelerini (needsApproval→ready,
-Bilgilerim'de Onay bekliyor, confirmationReason) doğrulamak. Bir Mac'te
-`swift test` (167 test, 3'ü hiç koşulmadı), sonra bu dal main'e merge edilip
-Vercel'e/telefona dağıtılıp gerçek bir sayfa çekilmeli: (a) onay isteyen bir
-kart üretilince sayfanın `.ready` olduğu ve kartın Bilgilerim > "Onay
-bekliyor"da göründüğü, (b) gerçekten üretilemeyen bir durumda ekranın artık
-sessizce kapanmayıp nedeni gösterdiği görülmeli.
+**En öncelikli:** madde 10'un üç değişikliğini gerçek cihazda doğrulamak
+(henüz merge edilmedi, kullanıcı isteğini bekliyor): (a) `ConfirmationView`
+açıkken sekme çubuğunun artık gizlendiği ve "Seçili gruplardan kart
+oluştur"un tam görünüp dokunulabilir olduğu, (b) İşleme Kuyruğu'nda bir
+satırı sola kaydırıp "Sil"in satırı (ve diskteki görüntülerini) gerçekten
+kaldırdığı, (c) Bilgilerim'de hem kaydırarak hem kart detayındaki "Sil"
+butonuyla bir kartın silinebildiği. `.toolbar(.hidden, for: .tabBar)`
+düzeltmesi kök neden araştırılmadan uygulandı (App hedefi bu ortamda
+derlenemiyor) — sorun gerçek cihazda hâlâ görülürse `RootView.swift`'teki
+`TabView` kurulumuna ve iOS sürümüne bakılmalı.
+
+Madde 9'un doğrulaması (needsApproval→ready, Bilgilerim'de Onay bekliyor,
+confirmationReason) hâlâ bekliyor — main'e merge edildi ama gerçek cihazda
+hiç denenmedi. Bir Mac'te `swift test` (167 test, hiçbiri bu oturumdan sonra
+koşulmadı) her iki maddeyle birlikte yapılabilir.
 
 **Bir önceki oturumdan devralınan, hâlâ geçerli öncelik:** gerçek karmaşık
 bir sayfa fotoğrafını `evals/fixtures/complex-annotations/` altına
 yerleştirip fotoğraf-tabanlı grounding/onay akışını telefonda denemek.
 Beklenenler: kısa alt çizgi yalnız tokenı seçmeli, aynı metin farklı
 yerlerde ayrı kalmalı, tek OCR çağrısından sonra onay ekranı tekrar OCR
-yapmamalı. Ayrıntı: ADR-004. Bu ikisi aynı anda, aynı gerçek cihaz
-oturumunda doğrulanabilir.
+yapmamalı. Ayrıntı: ADR-004. Üçü aynı anda, aynı gerçek cihaz oturumunda
+doğrulanabilir.
 
 1. Bu dal (`claude/project-review-issue-j0ycif`) merge edilip Vercel'in
    Production dağıtımı güncellenmeli (Production Branch ayarına dikkat —

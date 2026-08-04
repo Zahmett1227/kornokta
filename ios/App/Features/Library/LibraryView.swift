@@ -5,6 +5,7 @@ import CizgiCore
 /// "Bilgilerim" (ANA-PLAN §6.6). No charts in the MVP — the section explicitly
 /// says complex graphics are not required.
 struct LibraryView: View {
+    @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var cards: [Card]
     @State private var searchText = ""
 
@@ -55,6 +56,7 @@ struct LibraryView: View {
                                     CardRow(card: card)
                                 }
                             }
+                            .onDelete { deleteCards(needsReview, at: $0) }
                         } header: {
                             Text("Onay bekliyor (\(needsReview.count))")
                         } footer: {
@@ -65,8 +67,11 @@ struct LibraryView: View {
                     if !mostForgotten.isEmpty {
                         Section("En çok unutulanlar") {
                             ForEach(mostForgotten) { card in
-                                CardRow(card: card)
+                                NavigationLink { CardDetailView(card: card) } label: {
+                                    CardRow(card: card)
+                                }
                             }
+                            .onDelete { deleteCards(mostForgotten, at: $0) }
                         }
                     }
 
@@ -76,12 +81,20 @@ struct LibraryView: View {
                                 CardRow(card: card)
                             }
                         }
+                        .onDelete { deleteCards(filtered, at: $0) }
                     }
                 }
             }
             .navigationTitle("Bilgilerim")
             .searchable(text: $searchText, prompt: "Kartlarda ara")
         }
+    }
+
+    private func deleteCards(_ source: [Card], at offsets: IndexSet) {
+        for index in offsets {
+            context.delete(source[index])
+        }
+        try? context.save()
     }
 }
 
@@ -193,6 +206,13 @@ struct CardDetailView: View {
                         card.status = card.status == .suspended ? .active : .suspended
                         card.updatedAt = .now
                         try? context.save()
+                    }
+                }
+                Section {
+                    Button("Sil", role: .destructive) {
+                        context.delete(card)
+                        try? context.save()
+                        dismiss()
                     }
                 }
             }

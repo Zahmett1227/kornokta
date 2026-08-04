@@ -78,8 +78,14 @@ struct QueueView: View {
             .accessibilityLabel("\(state.label), \(page.captureDate.formatted(.dateTime.hour().minute()))")
         }
         .swipeActions {
-            Button("İptal", role: .destructive) {
-                environment.queue.cancel(page)
+            Button("Sil", role: .destructive) {
+                environment.queue.delete(page)
+            }
+            if state != .cancelled {
+                Button("İptal") {
+                    environment.queue.cancel(page)
+                }
+                .tint(.orange)
             }
         }
     }
