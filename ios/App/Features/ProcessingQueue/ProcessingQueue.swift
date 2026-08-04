@@ -16,12 +16,18 @@ final class ProcessingQueue: ObservableObject {
     /// edits Settings; the rest of the pipeline never changes.
     private var pipeline: CapturePipeline
     private let retryPolicy = RetryPolicy()
-    /// Ids of pages currently inside `pipeline.run` — a suspension point
-    /// (network/OCR `await`) an in-flight `process(_:)` call is parked at.
-    /// `ProcessingQueue` is `@MainActor`, so a user's delete tap can still
-    /// interleave there; `delete(_:)` checks this before touching the
-    /// SwiftData model (PR #12 review, Codex P1).
-    private var inFlightPageIDs: Set<UUID> = []
+    /// How many `process(_:)` calls are currently parked inside `pipeline.run`
+    /// for each page id — a suspension point (network/OCR `await`) a call can
+    /// be at while `ProcessingQueue` (`@MainActor`) runs other queued work,
+    /// including a user's delete tap, in between. A plain count rather than a
+    /// `Set<UUID>`: `retry(_:)` doesn't set `isRunning`, so a manual "Tekrar
+    /// dene" can already be awaiting `run` for a page when a pull-to-refresh
+    /// starts a second `process` call for that same page — a `Set` would lose
+    /// the first call's membership the moment either one's `defer` fired,
+    /// even though the other was still in flight. `delete(_:)` checks this
+    /// before touching the SwiftData model (PR #12 review, Codex P1, both
+    /// rounds).
+    private var inFlightPageCounts: [UUID: Int] = [:]
 
     @Published private(set) var isRunning = false
 
@@ -97,7 +103,7 @@ final class ProcessingQueue: ObservableObject {
             // `pendingDeletion` is only ever consumed by `apply`, reached
             // after `pipeline.run` returns — but if the app was terminated
             // between an in-flight `delete(_:)` marking this flag and that
-            // run finishing, a fresh launch's `inFlightPageIDs` starts empty
+            // run finishing, a fresh launch's `inFlightPageCounts` starts empty
             // and `shouldProcess` would accept the page's still-`.localOCR`
             // state, re-uploading and re-OCR'ing an image the user already
             // asked to delete before ever reaching that check (PR #12
@@ -190,9 +196,13 @@ final class ProcessingQueue: ObservableObject {
 
         // Marks the window `delete(_:)` has to check before touching this
         // page's SwiftData model — `run` below awaits network/OCR calls, and
-        // this actor is free to run a queued delete tap in between.
-        inFlightPageIDs.insert(pageID)
-        defer { inFlightPageIDs.remove(pageID) }
+        // this actor is free to run a queued delete tap (or a second,
+        // overlapping `process` call for the same page) in between.
+        inFlightPageCounts[pageID, default: 0] += 1
+        defer {
+            let remaining = (inFlightPageCounts[pageID] ?? 1) - 1
+            inFlightPageCounts[pageID] = remaining > 0 ? remaining : nil
+        }
 
         let outcome = await effectivePipeline.run(
             jobId: page.id.uuidString,
@@ -485,13 +495,15 @@ final class ProcessingQueue: ObservableObject {
     /// Removes a queue entry entirely, unlike `cancel` which only marks it
     /// `.cancelled` and leaves it in the list forever.
     ///
-    /// If `page` is mid-`pipeline.run` (PR #12 review, Codex P1), deleting
-    /// its SwiftData model out from under that in-flight `process(_:)` call
-    /// would hand `apply` a faulted object once its `await`s resume. This
-    /// just records the request; `apply` performs the real deletion as soon
-    /// as the run finishes, so the tap is honored rather than raced.
+    /// If `page` is mid-`pipeline.run` (PR #12 review, Codex P1, both
+    /// rounds), deleting its SwiftData model out from under that in-flight
+    /// `process(_:)` call — or from under a *second*, overlapping one for the
+    /// same page (manual retry racing a pull-to-refresh) — would hand `apply`
+    /// a faulted object once its `await`s resume. This just records the
+    /// request; `apply` performs the real deletion once every in-flight call
+    /// for this page has finished, so the tap is honored rather than raced.
     func delete(_ page: CapturedPage) {
-        guard !inFlightPageIDs.contains(page.id) else {
+        guard (inFlightPageCounts[page.id] ?? 0) == 0 else {
             page.pendingDeletion = true
             try? container.mainContext.save()
             return
