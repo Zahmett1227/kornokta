@@ -128,9 +128,19 @@ final class AppEnvironment: ObservableObject {
         guard let configuration = resolvedBackendConfiguration(settings: settings, tokens: tokens) else {
             return MockCardProvider()
         }
+        // The vision card call can run well past a minute (full-page reading +
+        // up to a dozen cards). `URLSession.shared` caps a request at its
+        // config's 60 s `timeoutIntervalForRequest`, which would abort before
+        // the backend (maxDuration 300) answers — the repeated
+        // `providerUnavailable`. Use a session whose timeouts match the
+        // configured (long) one.
+        let sessionConfig = URLSessionConfiguration.default
+        sessionConfig.timeoutIntervalForRequest = configuration.timeout
+        sessionConfig.timeoutIntervalForResource = configuration.timeout
         return BackendCardProvider(
             configuration: configuration,
-            tokenProvider: { tokens.read() }
+            tokenProvider: { tokens.read() },
+            session: URLSession(configuration: sessionConfig)
         )
     }
 

@@ -196,7 +196,12 @@ export function loadConfig(): Config {
       // (second device test). Raised to 12 so a marked page's distinct points
       // each get a card. Now really "max cards per page"; env-overridable (§0.6).
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12),
-      timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),
+      // Faz 6/B3: a full-page vision read + up to 12 cards can run well past a
+      // minute. The 60 s cap was the whole timeout problem (repeated
+      // `providerUnavailable`). vercel.json maxDuration is raised to 300 (plan
+      // allows it); this aborts just under that so the backend returns a clean
+      // retryable error instead of Vercel hard-killing the function first.
+      timeoutMs: numeric("OPENAI_TIMEOUT_MS", 290_000),
     },
     gemini: {
       model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
