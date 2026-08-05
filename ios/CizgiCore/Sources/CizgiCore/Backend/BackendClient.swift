@@ -345,10 +345,13 @@ public struct BackendConfiguration: Sendable, Equatable {
     public var baseURL: URL
     public var timeout: TimeInterval
 
-    public init(baseURL: URL, timeout: TimeInterval = 90) {
+    public init(baseURL: URL, timeout: TimeInterval = 300) {
         self.baseURL = baseURL
-        // Generous: a page can take Document AI several seconds, and the first
-        // call of a session also pays for authentication.
+        // Generous by design (Faz 6/B3): the vision card call reads a full page
+        // and can emit up to a dozen cards, running well past a minute. The
+        // backend (vercel.json maxDuration = 300) allows this; the client must
+        // not abort first. Callers that only do the (faster) OCR path can pass a
+        // shorter value.
         self.timeout = timeout
     }
 }
