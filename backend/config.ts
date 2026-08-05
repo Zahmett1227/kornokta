@@ -170,12 +170,17 @@ export function loadConfig(): Config {
     },
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
-      // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4): reading highlighter/circles/handwriting
-      // off a full page, discriminating marked from unmarked, and enriching from
-      // it needs real deliberation. First device test showed the model
-      // transcribing the whole page and missing margin handwriting; default
-      // raised to "high". Still env-overridable (§0.6); measure cost/latency.
-      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "high"),
+      // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4). "high" was tried after the first
+      // device test but its hidden reasoning tokens pushed the call past the
+      // 60 s Vercel/OpenAI timeout (maxDuration in vercel.json) → the phone got
+      // a transient `providerUnavailable` and no cards. Back to "medium": the
+      // real handwriting-reading lever is `imageDetail: "high"` (below) and the
+      // mark-discrimination is in the prompt, neither of which blows the budget.
+      // Still env-overridable (§0.6).
+      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "medium"),
+      // Kept "high": lets the model tile the full page at resolution and read
+      // faint margin handwriting / thin highlighter strokes. Adds input tokens
+      // but far less latency than reasoning "high" did.
       imageDetail: optional("OPENAI_IMAGE_DETAIL", "high"),
       maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 4096),
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
