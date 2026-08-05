@@ -107,12 +107,10 @@ describe("loadConfig", () => {
     // "high" image detail for reading handwriting (config.ts note).
     expect(openai.reasoningEffort).toBe("low");
     expect(openai.imageDetail).toBe("high");
-    // Not §20.3's reference 700: that number covers only the visible card
-    // content. A real call confirmed the model's own hidden reasoning tokens
-    // are spent from the same budget — 700 truncated (status: "incomplete"),
-    // 4096 completed a real card comfortably (571 output tokens used).
-    expect(openai.maxOutputTokens).toBe(4096);
-    expect(openai.maxCardsPerKnowledgeUnit).toBe(4);
+    // Faz 6/B3: raised for the vision flow (config.ts notes) — 8192 output
+    // headroom for a densely-marked page, 12 cards per page (was 4/4096).
+    expect(openai.maxOutputTokens).toBe(8192);
+    expect(openai.maxCardsPerKnowledgeUnit).toBe(12);
   });
 
   it("lets the OpenAI model be swapped without a code change (§0.6, §27)", () => {

@@ -184,8 +184,18 @@ export function loadConfig(): Config {
       // faint margin handwriting / thin highlighter strokes. Adds input tokens
       // but little latency next to reasoning.
       imageDetail: optional("OPENAI_IMAGE_DETAIL", "high"),
-      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 4096),
-      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
+      // Faz 6/B3: raised 4096→8192 so a densely-marked full page's cards (up to
+      // maxCardsPerKnowledgeUnit below) are not truncated to a `status:
+      // "incomplete"` failure. A ceiling, not a target — at reasoning "low" the
+      // model emits only what the cards need.
+      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 8192),
+      // Faz 6/B3: this was 4 for the old "one reconciled passage → ≤4 cards"
+      // flow. In the vision flow one full page carries many distinct marks and
+      // handwritten notes; capping at 4 made the model spend its whole budget on
+      // the first, most basic printed facts and drop every handwritten insight
+      // (second device test). Raised to 12 so a marked page's distinct points
+      // each get a card. Now really "max cards per page"; env-overridable (§0.6).
+      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12),
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),
     },
     gemini: {
