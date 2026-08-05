@@ -167,12 +167,15 @@ function extractOutputText(body: ResponsesApiBody): string {
   throw new OpenAIError("Yanıtta üretilmiş metin bulunamadı.", undefined, false);
 }
 
-function buildUserInstruction(request: CardGenerationRequest): string {
+function buildUserInstruction(request: CardGenerationRequest, maxCards: number): string {
   const hint = request.hint?.trim();
   return [
     `requestId: ${request.requestId}`,
     "Ekteki fotoğraf, öğrencinin işaretlediği ders kitabı sayfasının tamamıdır. " +
       "Sistem yönergesindeki kurallara göre işaretli/vurgulanmış içeriği oku ve kartları üret.",
+    `Bu sayfadan en fazla ${maxCards} kart üretebilirsin. Sayfadaki farklı işaretli/el yazısı ` +
+      "noktalarının her birini kapsamaya çalış; el yazısı ve daire/yıldız ile işaretlenenleri önceliklendir. " +
+      "Az sayıda temel kartla yetinme — işaretlenen tüm farklı noktalara ulaş.",
     hint ? `Kullanıcı ipucu: ${hint}` : "Kullanıcı ipucu: (yok)",
   ].join("\n");
 }
@@ -214,7 +217,7 @@ export class OpenAICardGenerator {
         {
           role: "user",
           content: [
-            { type: "input_text", text: buildUserInstruction(request) },
+            { type: "input_text", text: buildUserInstruction(request, this.config.maxCardsPerKnowledgeUnit) },
             {
               type: "input_image",
               image_url: `data:${request.mimeType};base64,${Buffer.from(request.image).toString("base64")}`,

@@ -38,12 +38,18 @@ describe("prompt contracts (§15)", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("sayfanın tamamını transkribe ETME");
   });
 
-  it("card prompt (v2.2) excludes unmarked text and makes handwriting must-capture", () => {
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Önceliğin işaretli/vurgulanmış içeriktir");
+  it("card prompt (v2.3) excludes unmarked text and makes handwriting must-capture", () => {
     // No card from unmarked text, however basic.
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("VAZGEÇ");
     // Every legible handwritten note must become at least one card.
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("en az bir karta dönüşmeli");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("bir karta dönüşmeli");
+  });
+
+  it("card prompt (v2.3) covers the whole page and prioritises handwriting over basic facts", () => {
+    // Don't cluster on the top-of-page basics; reach the marks lower down.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("SAYFANIN TAMAMINI KAPSA");
+    // Basic well-known facts go last / may be skipped.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("EN SONA bırak");
   });
 
   it("card prompt (v2) allows enrichment but forbids fabrication when unsure (Faz 6 §4)", () => {
