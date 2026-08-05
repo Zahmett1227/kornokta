@@ -218,6 +218,12 @@ export class OpenAICardGenerator {
             {
               type: "input_image",
               image_url: `data:${request.mimeType};base64,${Buffer.from(request.image).toString("base64")}`,
+              // Faz 6/B3: without this the API tiles the page at low detail and
+              // faint margin handwriting / thin highlighter strokes are lost —
+              // exactly the marks this app must read (docs/FAZ6-PLAN.md §5.2,
+              // §10.1). "high" forces full-resolution tiling. Costs more input
+              // tokens; accepted for a single user (§0.6, env-overridable).
+              detail: this.config.imageDetail,
             },
           ],
         },

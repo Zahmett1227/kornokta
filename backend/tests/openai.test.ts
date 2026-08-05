@@ -13,6 +13,7 @@ import {
 const CONFIG: OpenAIConfig = {
   model: "gpt-5.6-sol",
   reasoningEffort: "low",
+  imageDetail: "high",
   maxOutputTokens: 700,
   maxCardsPerKnowledgeUnit: 4,
   timeoutMs: 1_000,
@@ -144,6 +145,8 @@ describe("OpenAICardGenerator", () => {
     const imagePart = calls[0]!.body.input[1].content[1];
     expect(imagePart.type).toBe("input_image");
     expect(imagePart.image_url).toBe(`data:image/jpeg;base64,${Buffer.from(REQUEST.image).toString("base64")}`);
+    // Faz 6/B3: high detail so faint handwriting/highlighter is legible.
+    expect(imagePart.detail).toBe("high");
   });
 
   it("works without a hint", async () => {

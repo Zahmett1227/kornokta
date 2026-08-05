@@ -33,9 +33,17 @@ describe("prompt contracts (§15)", () => {
     expect(TRANSCRIPTION_SYSTEM_PROMPT).toContain("uncertainSpans");
   });
 
-  it("card prompt (v2) prioritises the marked/highlighted content (Faz 6 §4)", () => {
+  it("card prompt (v2.2) finds marks first and confines readText to them (Faz 6 §4)", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("ÖNCE İŞARETLERİ BUL");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("sayfanın tamamını transkribe ETME");
+  });
+
+  it("card prompt (v2.2) excludes unmarked text and makes handwriting must-capture", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Önceliğin işaretli/vurgulanmış içeriktir");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("El yazısı notları öğrencinin niyet sinyalidir");
+    // No card from unmarked text, however basic.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("VAZGEÇ");
+    // Every legible handwritten note must become at least one card.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("en az bir karta dönüşmeli");
   });
 
   it("card prompt (v2) allows enrichment but forbids fabrication when unsure (Faz 6 §4)", () => {

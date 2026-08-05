@@ -103,8 +103,9 @@ describe("loadConfig", () => {
   it("defaults the OpenAI card-generation settings from §11.3", () => {
     const { openai } = loadConfig();
     expect(openai.model).toBe("gpt-5.6-sol");
-    // Faz 6/B3: raised low→medium for full-page mark reading (config.ts note).
-    expect(openai.reasoningEffort).toBe("medium");
+    // Faz 6/B3: "high" for full-page mark reading + handwriting (config.ts note).
+    expect(openai.reasoningEffort).toBe("high");
+    expect(openai.imageDetail).toBe("high");
     // Not §20.3's reference 700: that number covers only the visible card
     // content. A real call confirmed the model's own hidden reasoning tokens
     // are spent from the same budget — 700 truncated (status: "incomplete"),
