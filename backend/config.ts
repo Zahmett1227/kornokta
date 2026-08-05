@@ -163,7 +163,11 @@ export function loadConfig(): Config {
     },
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
-      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "low"),
+      // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4): reading highlighter/circles/handwriting
+      // off a full page and enriching from it needs more deliberation than the
+      // old "generate cards from clean text" call did. Default raised low→medium;
+      // still env-overridable (§0.6) and worth measuring against cost/latency.
+      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "medium"),
       maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 4096),
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),

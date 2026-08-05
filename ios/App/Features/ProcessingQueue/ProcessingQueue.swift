@@ -481,13 +481,21 @@ final class ProcessingQueue: ObservableObject {
     /// label. A failure leaves the region usable through its original page;
     /// it must not turn a successful card into a failed capture.
     private func cropPath(for page: CapturedPage, group: AnnotationGroup) -> String? {
+        // Faz 6 (docs/FAZ6-PLAN.md): the vision flow produces one synthetic
+        // full-page group (box ≈ 0,0,1,1). Cropping that just re-saves the whole
+        // page under a crop label — wasted disk. The original page already
+        // stands in for it, so skip the crop when the box covers the page.
+        let box = group.boundingBox
+        if box.width >= 0.9 && box.height >= 0.9 {
+            return nil
+        }
+
         guard
             let image = UIImage(contentsOfFile: imageStore.url(forRelativePath: page.originalImagePath).path),
             let cgImage = image.cgImage
         else { return nil }
 
         let padding = 0.015
-        let box = group.boundingBox
         let x = max(0, box.x - padding)
         let y = max(0, box.y - padding)
         let right = min(1, box.x + box.width + padding)

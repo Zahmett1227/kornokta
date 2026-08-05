@@ -25,6 +25,7 @@ struct RootView: View {
                 .tabItem { Label("Ayarlar", systemImage: "gearshape") }
                 .tag(AppNavigator.RootTab.settings)
         }
+        .tint(Cizgi.accent)
         .environmentObject(navigator)
         .task {
             // Pick up anything left unfinished by a previous launch (§24.1:
