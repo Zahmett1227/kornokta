@@ -12,6 +12,7 @@ const KEYS = [
   "MAX_USD_PER_RUN",
   "OPENAI_MODEL",
   "OPENAI_REASONING_EFFORT",
+  "OPENAI_IMAGE_DETAIL",
   "OPENAI_MAX_OUTPUT_TOKENS",
   "OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT",
   "OPENAI_TIMEOUT_MS",
@@ -163,6 +164,37 @@ describe(".env.example", () => {
     );
     for (const key of [...KEYS, ...CREDENTIAL_KEYS]) {
       expect(template, `${key} .env.example içinde yok`).toContain(key);
+    }
+  });
+
+  it("pins the OpenAI runtime values to the code defaults (no silent drift)", async () => {
+    // Codex (PR #22) caught this: the template pinned OPENAI_TIMEOUT_MS=60000
+    // while the code default had moved to 290000. Because the value is an env
+    // *override*, every setup seeded from this template — a local `.env`, the
+    // Vercel deployment — silently kept the old 60 s ceiling and the timeout
+    // fix never took effect. These are values a reader copies verbatim, so the
+    // template must equal loadConfig()'s default; lock them together so the
+    // next drift breaks here instead of in production.
+    const { readFile } = await import("node:fs/promises");
+    const { fileURLToPath } = await import("node:url");
+    const template = await readFile(
+      fileURLToPath(new URL("../.env.example", import.meta.url)),
+      "utf-8",
+    );
+    const { openai } = loadConfig();
+    const pinned: Record<string, string | number> = {
+      OPENAI_MODEL: openai.model,
+      OPENAI_REASONING_EFFORT: openai.reasoningEffort,
+      OPENAI_IMAGE_DETAIL: openai.imageDetail,
+      OPENAI_MAX_OUTPUT_TOKENS: openai.maxOutputTokens,
+      OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT: openai.maxCardsPerKnowledgeUnit,
+      OPENAI_TIMEOUT_MS: openai.timeoutMs,
+    };
+    const lines = template.split("\n");
+    for (const [key, value] of Object.entries(pinned)) {
+      const line = lines.find((l) => l.startsWith(`${key}=`));
+      expect(line, `${key} .env.example içinde yok`).toBeDefined();
+      expect(line, `${key} şablonda kod varsayılanından farklı`).toBe(`${key}=${value}`);
     }
   });
 
