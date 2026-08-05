@@ -67,6 +67,13 @@ export interface OpenAIConfig {
   /** Passed through to the Responses API verbatim; not validated here. */
   reasoningEffort: string;
   /**
+   * `input_image` detail: "low" | "high" | "auto". Faz 6/B3 needs "high" so the
+   * model tiles the full page at resolution and can actually read faint margin
+   * handwriting and thin highlighter strokes (docs/FAZ6-PLAN.md §5.2). Costs
+   * more input tokens; env-overridable (§0.6).
+   */
+  imageDetail: string;
+  /**
    * §20.3's reference number (700) is the visible-card budget; it does not
    * cover a reasoning-capable model's own hidden reasoning tokens, which are
    * spent from the same ceiling. Confirmed live: a real call failed with
@@ -164,10 +171,12 @@ export function loadConfig(): Config {
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
       // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4): reading highlighter/circles/handwriting
-      // off a full page and enriching from it needs more deliberation than the
-      // old "generate cards from clean text" call did. Default raised low→medium;
-      // still env-overridable (§0.6) and worth measuring against cost/latency.
-      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "medium"),
+      // off a full page, discriminating marked from unmarked, and enriching from
+      // it needs real deliberation. First device test showed the model
+      // transcribing the whole page and missing margin handwriting; default
+      // raised to "high". Still env-overridable (§0.6); measure cost/latency.
+      reasoningEffort: optional("OPENAI_REASONING_EFFORT", "high"),
+      imageDetail: optional("OPENAI_IMAGE_DETAIL", "high"),
       maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 4096),
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 4),
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 60_000),
