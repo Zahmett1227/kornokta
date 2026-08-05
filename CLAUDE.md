@@ -16,18 +16,25 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
 - **Uygulama planı (detaylı, dosya bazlı, aşamalı):** [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md)
 - **Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
   değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
-- **Durum (2026-08-05):** **B1 (backend) uygulandı** ve **B2'nin çekirdeği
-  (iOS `BackendCardProvider` + `CapturePipeline` vision akışı) uygulandı**;
-  hepsi `faz6-vision` dalında. Backend 425 + Python 513 + Swift **185** test
-  yeşil, `tsc` temiz. `CapturePipeline` artık tam sayfayı doğrudan
-  `/api/cards-vision`'a gönderiyor; yerel OCR/işaret-tespiti/onay ana akıştan
-  çıktı; kartlar `.active`. App hedefi (`ProcessingQueue`) dokunulmadan var
-  olan `.ready` yolundan kaydediyor. **Kalan (App hedefi, gerçek cihaz gerekir):**
-  `ConfirmationView`'ı çıkar, tam-sayfa crop'u atla, `needsReview` arayüzü,
-  `Models` göçü. Dosya-bazlı ayrıntı: `docs/FAZ6-PLAN.md`'nin iki "Uygulama
-  notu" bölümü. Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11 maddeleri Faz 6
-  ÖNCESİ (süperseded) mimariyi anlatır; tarihsel bağlam için duruyor, **güncel
-  yön yukarıdadır**.
+- **Durum (2026-08-06):** **Faz 6 esasen kod-tamam ve `main`'de** (PR #15–#23
+  merge edildi). Vision akışı uçtan uca: `CapturePipeline` tam sayfayı doğrudan
+  `/api/cards-vision`'a gönderiyor, kartlar onaysız `.active`; UI "sıcak-çalışma"
+  redesign'ı (`App/Theme/CizgiTheme.swift`); `ConfirmationView` ana akıştan
+  çıktı, tam-sayfa crop atlandı, `needsReview` bölümleri kaldırıldı. **B3
+  kalite/gecikme:** `imageDetail:"high"`, `reasoning:"low"`, kart limiti 12,
+  `maxOutputTokens` 8192, prompt v2.3. **Zaman aşımı kökten çözüldü** (PR #22):
+  `vercel.json maxDuration` 300, `OPENAI_TIMEOUT_MS` 290000, iOS timeout 300 +
+  uzun-timeout'lu `URLSession`. **Codex P1** (PR #23): `.env.example` tüm B3
+  değerlerinde ayrışmıştı, config varsayılanlarına hizalandı + bir test şablonu
+  varsayılanlara kilitledi. **B4:** FSRS bildirimleri (`ReviewNotificationManager`
+  + Settings) ve hata/retry kuyruğu (`ProcessingQueue.retry` + "Tekrar dene")
+  **zaten bağlı**. Backend **428** test yeşil. **Gerçek kalan (hepsi ya riskli-
+  düşük-değer ya da bloke):** (a) `Models` alan sadeleşmesi + SwiftData göçü —
+  §10.4 "mevcut kartlar korunmalı", cihazsız doğrulanamaz, kullanıcıya görünür
+  değeri yok; (b) gerçek maliyet USD rakamları — §0.6 gereği uydurulmaz, gerçek
+  fiyat yok; (c) **§11 kabul kriterleri = gerçek cihaz doğrulaması** (kullanıcı
+  retest + Vercel env kontrolü). Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
+  maddeleri Faz 6 ÖNCESİ (süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
 
 ## Proje ne
 
@@ -449,9 +456,10 @@ doğrulanabilir.
 4. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
    yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
    altında not edildi).
-5. Faz 4'ün küçük kalanları: bildirimler (`AppSettings.notificationHour`
-   var ama hiç `UNUserNotification` çağrısı yok), süre-bütçeli hızlı mod,
-   ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
+5. Faz 4'ün küçük kalanları: ~~bildirimler~~ (ARTIK BAĞLI —
+   `ios/App/ReviewNotificationManager.swift` + SettingsView, günlük tekrar
+   hatırlatması `UNCalendarNotificationTrigger` ile kuruluyor), süre-bütçeli
+   hızlı mod, ayrı bir "yeni kart limiti" ayarı (`docs/FAZ4-PLAN.md`).
 6. (Düşük öncelik) Codex'in PR #5'te bulduğu 8. bulgu ertelendi: yarım sayfa
    genişliğinden dar ama yine de gerçek sütun boşluğunu kesen ortalanmış bir
    ayraç/başlık, boşluğu hâlâ gizleyebilir (`documentAI.ts`/`ReadingOrder.swift`
