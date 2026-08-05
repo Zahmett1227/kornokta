@@ -48,21 +48,24 @@ struct ReviewView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if queue.isEmpty {
-                    ContentUnavailableView(
-                        "Bugünlük bitti",
-                        systemImage: "checkmark.circle",
-                        description: Text("Şu an tekrar bekleyen kart yok.")
-                    )
-                } else if let card = currentCard {
-                    cardBody(card)
-                } else {
-                    ContentUnavailableView(
-                        "Oturum tamamlandı",
-                        systemImage: "checkmark.circle.fill",
-                        description: Text("\(queue.count) kart tekrar edildi.")
-                    )
+            ZStack {
+                Cizgi.paper.ignoresSafeArea()
+                Group {
+                    if queue.isEmpty {
+                        emptyState(
+                            title: "Bugünlük bitti",
+                            icon: "checkmark.circle",
+                            message: "Şu an tekrar bekleyen kart yok."
+                        )
+                    } else if let card = currentCard {
+                        cardBody(card)
+                    } else {
+                        emptyState(
+                            title: "Oturum tamamlandı",
+                            icon: "checkmark.seal.fill",
+                            message: "\(queue.count) kart tekrar edildi."
+                        )
+                    }
                 }
             }
             .navigationTitle("Tekrar")
@@ -71,71 +74,132 @@ struct ReviewView: View {
                 ToolbarItem(placement: .principal) {
                     if !queue.isEmpty && currentIndex < queue.count {
                         Text("\(currentIndex + 1) / \(queue.count)")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Cizgi.muted)
                     }
                 }
             }
         }
+        .tint(Cizgi.accent)
         .onAppear(perform: startSessionIfNeeded)
     }
 
-    private func cardBody(_ card: Card) -> some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Text(card.front)
-                .font(.title2)
+    private func emptyState(title: String, icon: String, message: String) -> some View {
+        VStack(spacing: Cizgi.Space.md) {
+            Image(systemName: icon)
+                .font(.system(size: 52))
+                .foregroundStyle(Cizgi.accent)
+            Text(title)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(Cizgi.ink)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(Cizgi.muted)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+        }
+        .padding(Cizgi.Space.xl)
+    }
 
-            if isAnswerVisible {
-                Divider().padding(.horizontal, 48)
+    private func cardBody(_ card: Card) -> some View {
+        VStack(spacing: Cizgi.Space.lg) {
+            progressBar
 
-                Text(card.back)
-                    .font(.title3)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-
-                if let quote = card.sourceQuote {
-                    DisclosureGroup("Kaynağı göster") {
-                        Text(quote)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.horizontal)
-                }
+            ScrollView {
+                flashcard(card)
+                    .padding(.horizontal, Cizgi.Space.lg)
+                    .padding(.top, Cizgi.Space.sm)
             }
 
-            Spacer()
+            actionArea(card)
+                .padding(.horizontal, Cizgi.Space.lg)
+                .padding(.bottom, Cizgi.Space.md)
+        }
+        .padding(.top, Cizgi.Space.sm)
+    }
 
-            if isAnswerVisible {
-                gradeButtons(for: card)
-            } else {
-                Button("Cevabı göster") {
-                    isAnswerVisible = true
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.horizontal, 32)
+    private var progressBar: some View {
+        GeometryReader { geo in
+            let fraction = queue.isEmpty ? 0 : Double(currentIndex) / Double(queue.count)
+            ZStack(alignment: .leading) {
+                Capsule().fill(Cizgi.hairline)
+                Capsule().fill(Cizgi.highlighter)
+                    .frame(width: max(6, geo.size.width * fraction))
             }
         }
-        .padding(.vertical)
+        .frame(height: 5)
+        .padding(.horizontal, Cizgi.Space.lg)
+    }
+
+    private func flashcard(_ card: Card) -> some View {
+        CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
+            VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
+                CardTypeBadge(type: card.type)
+
+                Text(card.front)
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Cizgi.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if isAnswerVisible {
+                    Rectangle().fill(Cizgi.hairline).frame(height: 1)
+
+                    Text(card.back)
+                        .font(.title3)
+                        .foregroundStyle(Cizgi.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let explanation = card.explanation, !explanation.isEmpty {
+                        Text(explanation)
+                            .font(.callout)
+                            .foregroundStyle(Cizgi.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let quote = card.sourceQuote, !quote.isEmpty {
+                        DisclosureGroup("Kaynağı göster") {
+                            Text(quote)
+                                .font(.footnote)
+                                .foregroundStyle(Cizgi.muted)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .font(.subheadline)
+                        .tint(Cizgi.accent)
+                    }
+                }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
+    }
+
+    @ViewBuilder
+    private func actionArea(_ card: Card) -> some View {
+        if isAnswerVisible {
+            gradeButtons(for: card)
+        } else {
+            Button("Cevabı göster") {
+                withAnimation { isAnswerVisible = true }
+            }
+            .buttonStyle(CizgiPrimaryButtonStyle())
+        }
     }
 
     private func gradeButtons(for card: Card) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Cizgi.Space.sm) {
             ForEach(ReviewRating.allCases, id: \.self) { rating in
-                Button(rating.label) {
+                Button {
                     grade(card, rating)
+                } label: {
+                    Text(rating.label)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Cizgi.Space.md)
+                        .background(rating.tint)
+                        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal)
     }
 
     private func startSessionIfNeeded() {
@@ -185,8 +249,10 @@ struct ReviewView: View {
 
         try? context.save()
 
-        currentIndex += 1
-        isAnswerVisible = false
+        withAnimation {
+            currentIndex += 1
+            isAnswerVisible = false
+        }
         shownAt = .now
     }
 }

@@ -7,6 +7,10 @@ import CizgiCore
 /// The rule that shapes this screen: capture is independent of generation (P1).
 /// Nothing here waits on OCR or card generation, and finishing a scan never
 /// pushes the user into an editor — they go straight back to shooting.
+///
+/// Faz 6 (docs/FAZ6-PLAN.md): there is no confirmation step any more — the
+/// marked page goes straight to the vision endpoint and cards enter the active
+/// deck. The old "onay bekliyor" summary is gone.
 struct CaptureView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var navigator: AppNavigator
@@ -20,58 +24,31 @@ struct CaptureView: View {
     @State private var lastCapturedIds: [UUID] = []
 
     private var inFlight: [CapturedPage] {
-        pages.filter { !$0.processingState.isTerminal && $0.processingState != .confirmationRequired }
+        pages.filter { !$0.processingState.isTerminal }
     }
 
-    private var awaitingConfirmation: [CapturedPage] {
-        pages.filter { $0.processingState == .confirmationRequired }
+    private var readyCount: Int {
+        pages.filter { $0.processingState == .ready }.count
     }
 
     var body: some View {
         NavigationStack(path: $navigator.capturePath) {
-            VStack(spacing: 24) {
-                Spacer()
-
-                Image(systemName: "doc.viewfinder")
-                    .font(.system(size: 64))
-                    .foregroundStyle(.secondary)
-
-                Text("Kitapta işaretlediğin sayfayı çek")
-                    .font(.headline)
-                Text("Arka arkaya çekebilirsin; işleme arkada sürer.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-
-                #if os(iOS)
-                Button {
-                    isScanning = true
-                } label: {
-                    Label("Çek", systemImage: "camera.fill")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+            ScrollView {
+                VStack(spacing: Cizgi.Space.xl) {
+                    hero
+                    captureButton
+                    if !lastCapturedIds.isEmpty {
+                        Label("\(lastCapturedIds.count) sayfa kuyruğa alındı",
+                              systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Cizgi.success)
+                    }
+                    queueSummary
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .padding(.horizontal, 32)
-                #else
-                Text("Kamera yalnız iOS'ta kullanılabilir.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                #endif
-
-                if !lastCapturedIds.isEmpty {
-                    Label("\(lastCapturedIds.count) sayfa kuyruğa alındı",
-                          systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.green)
-                }
-
-                Spacer()
-
-                queueSummary
+                .padding(Cizgi.Space.lg)
+                .frame(maxWidth: .infinity)
             }
-            .padding()
+            .background(Cizgi.paper.ignoresSafeArea())
             .navigationTitle("Yakala")
             .homeButtonToolbar()
             .toolbar {
@@ -79,7 +56,7 @@ struct CaptureView: View {
                     NavigationLink {
                         QueueView()
                     } label: {
-                        Label("Kuyruk", systemImage: "list.bullet.rectangle")
+                        Label("Kuyruk", systemImage: "tray.full")
                     }
                 }
             }
@@ -105,26 +82,100 @@ struct CaptureView: View {
                 Text(errorMessage ?? "")
             }
         }
+        .tint(Cizgi.accent)
     }
+
+    // MARK: Hero
+
+    private var hero: some View {
+        VStack(spacing: Cizgi.Space.lg) {
+            // A stylised marked page: text lines with one amber highlighter sweep.
+            ZStack {
+                RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
+                    .fill(Cizgi.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
+                            .stroke(Cizgi.hairline, lineWidth: 1)
+                    )
+                VStack(alignment: .leading, spacing: 9) {
+                    ForEach(0..<5, id: \.self) { row in
+                        ZStack(alignment: .leading) {
+                            if row == 2 {
+                                Capsule().fill(Cizgi.accentSoft)
+                                    .frame(width: 150, height: 14)
+                            }
+                            Capsule().fill(Cizgi.hairline)
+                                .frame(width: row == 4 ? 90 : 170, height: 5)
+                        }
+                    }
+                }
+                .padding(Cizgi.Space.lg)
+            }
+            .frame(width: 210, height: 150)
+            .shadow(color: .black.opacity(0.07), radius: 12, x: 0, y: 6)
+            .rotationEffect(.degrees(-3))
+
+            VStack(spacing: Cizgi.Space.xs) {
+                Text("Kitapta işaretlediğin sayfayı çek")
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(Cizgi.ink)
+                    .multilineTextAlignment(.center)
+                Text("Fosforlu, altını çizdiğin ve not aldığın yerlerden\nonaysız, doğrudan kart üretilir.")
+                    .font(.subheadline)
+                    .foregroundStyle(Cizgi.muted)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(.top, Cizgi.Space.lg)
+    }
+
+    private var captureButton: some View {
+        Group {
+            #if os(iOS)
+            Button {
+                isScanning = true
+            } label: {
+                Label("İşaretli sayfayı çek", systemImage: "camera.fill")
+            }
+            .buttonStyle(CizgiPrimaryButtonStyle())
+            #else
+            Text("Kamera yalnız iOS'ta kullanılabilir.")
+                .font(.footnote)
+                .foregroundStyle(Cizgi.muted)
+            #endif
+        }
+    }
+
+    // MARK: Queue summary
 
     @ViewBuilder
     private var queueSummary: some View {
-        VStack(spacing: 12) {
-            if !inFlight.isEmpty {
-                Label("\(inFlight.count) sayfa işleniyor", systemImage: "clock.fill")
-                    .foregroundStyle(.blue)
-            }
-            if !awaitingConfirmation.isEmpty {
-                NavigationLink {
-                    QueueView()
-                } label: {
-                    Label("\(awaitingConfirmation.count) sayfa onay bekliyor",
-                          systemImage: "hand.raised.fill")
-                        .foregroundStyle(.orange)
+        if !inFlight.isEmpty || readyCount > 0 {
+            CardSurface {
+                VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                    Text("Durum")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Cizgi.ink)
+                    if !inFlight.isEmpty {
+                        Label("\(inFlight.count) sayfa işleniyor", systemImage: "clock.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(Cizgi.accent)
+                    }
+                    if readyCount > 0 {
+                        Label("\(readyCount) sayfadan kart üretildi", systemImage: "checkmark.seal.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(Cizgi.success)
+                    }
+                    NavigationLink {
+                        QueueView()
+                    } label: {
+                        Text("Kuyruğu aç")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Cizgi.accent)
+                    }
                 }
             }
         }
-        .font(.subheadline)
     }
 
     private func handleScanned(_ images: [Data]) {

@@ -4,6 +4,10 @@ import CizgiCore
 
 /// "Bilgilerim" (ANA-PLAN §6.6). No charts in the MVP — the section explicitly
 /// says complex graphics are not required.
+///
+/// Faz 6 (docs/FAZ6-PLAN.md): cards enter the active deck with no approval step,
+/// so the old "Onay bekliyor" section is gone. Any legacy `needsReview` card
+/// still appears in "Son eklenenler" and can be managed from its detail screen.
 struct LibraryView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
@@ -18,15 +22,8 @@ struct LibraryView: View {
         }
     }
 
-    private var suspended: [Card] { cards.filter { $0.status == .suspended } }
-    /// Cards the model or the server's §19 gate flagged (`requiresUserApproval`).
-    ///
-    /// These are persisted as soon as they are generated — the pipeline no
-    /// longer bounces the whole page back to re-selecting a region just
-    /// because one card needs a look (§12.2, ADR-004) — so this is the one
-    /// place that review actually happens. A card sitting here is not yet in
-    /// any review deck (`ReviewScheduler` only ever looks at `.active`).
-    private var needsReview: [Card] { cards.filter { $0.status == .needsReview } }
+    private var activeCount: Int { cards.filter { $0.status == .active }.count }
+    private var suspendedCount: Int { cards.filter { $0.status == .suspended }.count }
     private var mostForgotten: [Card] {
         cards.filter { $0.lapseCount > 0 }
             .sorted { $0.lapseCount > $1.lapseCount }
@@ -36,60 +33,88 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack(path: $navigator.libraryPath) {
-            List {
+            Group {
                 if cards.isEmpty {
-                    ContentUnavailableView(
-                        "Henüz bilgi yok",
-                        systemImage: "books.vertical",
-                        description: Text("Bir sayfa çekip pasaj seçtiğinde kartların burada birikir.")
-                    )
+                    emptyState
                 } else {
-                    Section("Özet") {
-                        LabeledContent("Toplam kart", value: "\(cards.count)")
-                        LabeledContent("Aktif", value: "\(cards.filter { $0.status == .active }.count)")
-                        LabeledContent("Askıya alınan", value: "\(suspended.count)")
-                    }
-
-                    if !needsReview.isEmpty {
-                        Section {
-                            ForEach(needsReview) { card in
-                                NavigationLink { CardDetailView(card: card) } label: {
-                                    CardRow(card: card)
-                                }
-                            }
-                            .onDelete { deleteCards(needsReview, at: $0) }
-                        } header: {
-                            Text("Onay bekliyor (\(needsReview.count))")
-                        } footer: {
-                            Text("Bu kartlar modelin veya sunucunun bir şeyi işaretlemesiyle üretildi; onaylamadan tekrar destesine girmez (§12.2, §19.2).")
-                        }
-                    }
-
-                    if !mostForgotten.isEmpty {
-                        Section("En çok unutulanlar") {
-                            ForEach(mostForgotten) { card in
-                                NavigationLink { CardDetailView(card: card) } label: {
-                                    CardRow(card: card)
-                                }
-                            }
-                            .onDelete { deleteCards(mostForgotten, at: $0) }
-                        }
-                    }
-
-                    Section("Son eklenenler") {
-                        ForEach(filtered) { card in
-                            NavigationLink { CardDetailView(card: card) } label: {
-                                CardRow(card: card)
-                            }
-                        }
-                        .onDelete { deleteCards(filtered, at: $0) }
-                    }
+                    list
                 }
             }
+            .background(Cizgi.paper.ignoresSafeArea())
             .navigationTitle("Bilgilerim")
             .searchable(text: $searchText, prompt: "Kartlarda ara")
             .homeButtonToolbar()
         }
+        .tint(Cizgi.accent)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: Cizgi.Space.md) {
+            Image(systemName: "books.vertical")
+                .font(.system(size: 52))
+                .foregroundStyle(Cizgi.accent)
+            Text("Henüz bilgi yok")
+                .font(.title3.weight(.bold))
+                .foregroundStyle(Cizgi.ink)
+            Text("Bir sayfa çektiğinde üretilen kartlar burada birikir.")
+                .font(.subheadline)
+                .foregroundStyle(Cizgi.muted)
+                .multilineTextAlignment(.center)
+        }
+        .padding(Cizgi.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var list: some View {
+        List {
+            Section {
+                HStack(spacing: Cizgi.Space.sm) {
+                    StatTile(value: "\(cards.count)", label: "Toplam")
+                    StatTile(value: "\(activeCount)", label: "Aktif")
+                    StatTile(value: "\(suspendedCount)", label: "Askıda")
+                }
+                .listRowInsets(EdgeInsets(top: Cizgi.Space.sm, leading: Cizgi.Space.lg,
+                                          bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+
+            if !mostForgotten.isEmpty {
+                Section {
+                    ForEach(mostForgotten) { card in
+                        row(card)
+                    }
+                    .onDelete { deleteCards(mostForgotten, at: $0) }
+                } header: {
+                    sectionHeader("En çok unutulanlar")
+                }
+            }
+
+            Section {
+                ForEach(filtered) { card in
+                    row(card)
+                }
+                .onDelete { deleteCards(filtered, at: $0) }
+            } header: {
+                sectionHeader("Son eklenenler")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+    }
+
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(Cizgi.ink)
+            .textCase(nil)
+    }
+
+    private func row(_ card: Card) -> some View {
+        NavigationLink { CardDetailView(card: card) } label: {
+            CardRow(card: card)
+        }
+        .listRowBackground(Cizgi.surface)
     }
 
     private func deleteCards(_ source: [Card], at offsets: IndexSet) {
@@ -103,34 +128,31 @@ struct LibraryView: View {
 struct CardRow: View {
     let card: Card
 
+    private var tags: [String] { Array((card.knowledgeUnit?.tags ?? []).prefix(2)) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
             Text(card.front)
-                .font(.subheadline)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Cizgi.ink)
                 .lineLimit(2)
-            HStack(spacing: 8) {
-                Text(card.type.rawValue)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
+            HStack(spacing: Cizgi.Space.sm) {
+                CardTypeBadge(type: card.type)
+                ForEach(tags, id: \.self) { TagChip($0) }
+                Spacer(minLength: 0)
                 if card.status == .suspended {
                     Label("Askıda", systemImage: "pause.circle")
                         .font(.caption2)
-                        .foregroundStyle(.gray)
-                }
-                if card.status == .needsReview {
-                    Label("Onay bekliyor", systemImage: "exclamationmark.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Cizgi.muted)
                 }
                 if card.lapseCount > 0 {
-                    Text("\(card.lapseCount) kez unutuldu")
+                    Label("\(card.lapseCount)", systemImage: "arrow.counterclockwise")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Cizgi.warning)
                 }
             }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -141,65 +163,53 @@ struct CardDetailView: View {
 
     var body: some View {
         List {
-            if card.status == .needsReview {
-                Section {
-                    if let concern = card.knowledgeUnit?.sourceConcern, !concern.isEmpty {
-                        Text(concern)
-                    }
-                    ForEach(card.riskFlags, id: \.self) { flag in
-                        Label(flag.rawValue, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
-                    }
-                } header: {
-                    Text("Neden onay istiyor")
-                } footer: {
-                    Text("Kaynağa bakıp doğruysa onayla; onaylamadan bu kart tekrar destesine girmez (§12.2, §19.2).")
-                }
-            }
-
-            Section("Soru") { Text(card.front) }
-            Section("Cevap") { Text(card.back) }
+            Section { Text(card.front).font(.body.weight(.medium)).foregroundStyle(Cizgi.ink) }
+                header: { sectionHeader("Soru") }
+            Section { Text(card.back).foregroundStyle(Cizgi.ink) }
+                header: { sectionHeader("Cevap") }
 
             if let explanation = card.explanation, !explanation.isEmpty {
-                Section("Açıklama") { Text(explanation) }
+                Section { Text(explanation).foregroundStyle(Cizgi.muted) }
+                    header: { sectionHeader("Açıklama") }
             }
 
-            // Every active card must trace back to its source (§24.4).
-            if let quote = card.sourceQuote {
-                Section("Kaynak") {
-                    Text(quote).font(.footnote).foregroundStyle(.secondary)
+            // Faz 6 cards have no per-card source quote; only show it when one
+            // exists (legacy cards) rather than an empty "Kaynak" section.
+            if let quote = card.sourceQuote, !quote.isEmpty {
+                Section {
+                    Text(quote).font(.footnote).foregroundStyle(Cizgi.muted)
                     if let subject = card.knowledgeUnit?.subject {
                         LabeledContent("Ders", value: subject)
                     }
-                }
+                } header: { sectionHeader("Kaynak") }
+            } else if let subject = card.knowledgeUnit?.subject {
+                Section { LabeledContent("Ders", value: subject) }
             }
 
-            if card.status != .needsReview && !card.riskFlags.isEmpty {
-                Section("İşaretler") {
-                    ForEach(card.riskFlags, id: \.self) { flag in
-                        Label(flag.rawValue, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.orange)
+            if !(card.knowledgeUnit?.tags ?? []).isEmpty {
+                Section {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Cizgi.Space.sm) {
+                            ForEach(card.knowledgeUnit?.tags ?? [], id: \.self) { TagChip($0) }
+                        }
                     }
-                }
+                } header: { sectionHeader("Etiketler") }
             }
 
-            Section("Tekrar") {
+            Section {
                 LabeledContent("Sonraki", value: card.dueDate.formatted(.dateTime.day().month().year()))
                 LabeledContent("Tekrar sayısı", value: "\(card.reviewCount)")
                 LabeledContent("Unutma", value: "\(card.lapseCount)")
-            }
+            } header: { sectionHeader("Tekrar") }
 
+            // Legacy safety: a card left as needsReview from before Faz 6 can
+            // still be activated. New cards never land here.
             if card.status == .needsReview {
                 Section {
-                    Button("Onayla") {
+                    Button("Etkinleştir") {
                         card.status = .active
                         card.updatedAt = .now
                         try? context.save()
-                    }
-                    Button("Sil", role: .destructive) {
-                        context.delete(card)
-                        try? context.save()
-                        dismiss()
                     }
                 }
             } else {
@@ -210,16 +220,26 @@ struct CardDetailView: View {
                         try? context.save()
                     }
                 }
-                Section {
-                    Button("Sil", role: .destructive) {
-                        context.delete(card)
-                        try? context.save()
-                        dismiss()
-                    }
+            }
+
+            Section {
+                Button("Sil", role: .destructive) {
+                    context.delete(card)
+                    try? context.save()
+                    dismiss()
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Cizgi.paper.ignoresSafeArea())
         .navigationTitle("Kart")
         .homeButtonToolbar()
+    }
+
+    private func sectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(Cizgi.ink)
+            .textCase(nil)
     }
 }

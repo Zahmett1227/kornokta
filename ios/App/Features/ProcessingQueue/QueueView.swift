@@ -27,8 +27,11 @@ struct QueueView: View {
 
             ForEach(pages) { page in
                 row(for: page)
+                    .listRowBackground(Cizgi.surface)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(Cizgi.paper.ignoresSafeArea())
         .navigationTitle("İşleme Kuyruğu")
         .homeButtonToolbar()
         .refreshable {
@@ -40,12 +43,11 @@ struct QueueView: View {
     private func row(for page: CapturedPage) -> some View {
         let state = page.processingState
 
+        // Faz 6 (docs/FAZ6-PLAN.md): pages never stop at `.confirmationRequired`
+        // any more, so every row opens the read-only page detail. `ConfirmationView`
+        // stays on disk for the rollback path but is no longer navigated to.
         NavigationLink {
-            if state == .confirmationRequired {
-                ConfirmationView(page: page)
-            } else {
-                PageDetailView(page: page)
-            }
+            PageDetailView(page: page)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: state.systemImage)
