@@ -103,6 +103,56 @@ export function imagePathFor(jobId: string): string {
   return `pages/${jobId}`;
 }
 
+const STALE_MESSAGE = "İşleyen sunucu yanıt vermeden sonlandı; tekrar denenebilir.";
+
+/**
+ * Re-reads a job whose state moved under this request and reports what it
+ * actually is now, rather than the snapshot that turned out to be stale.
+ */
+async function currentState(
+  jobId: string,
+  deps: JobsDependencies,
+  fallback: JobRow | undefined,
+): Promise<Response> {
+  try {
+    const [fresh] = await deps.store.find([jobId]);
+    if (fresh) return json(toJobView(fresh), fresh.status === "ready" ? 200 : 202);
+  } catch {
+    // Fall through: a failed re-read is no reason to fail a request whose work
+    // is demonstrably already in hand somewhere else.
+  }
+  return json(
+    fallback
+      ? toJobView(fallback)
+      : ({ jobId, status: "queued", attempts: 0 } satisfies JobView),
+    202,
+  );
+}
+
+/**
+ * Deletes a page upload only once it is certain nothing references it.
+ *
+ * The check is not paranoia: on an ambiguous failure a concurrent submission
+ * may have won and be relying on these exact bytes, and deleting them would
+ * turn its generation into a "görüntü bulunamadı" the user sees. A leaked
+ * object costs a few megabytes; a broken live job costs the page.
+ */
+async function deleteUnreferencedImage(
+  jobId: string,
+  imagePath: string,
+  deps: JobsDependencies,
+): Promise<void> {
+  try {
+    const [row] = await deps.store.find([jobId]);
+    // A row pointing at this object owns it, and its own terminal path deletes it.
+    if (row?.imagePath === imagePath) return;
+  } catch {
+    // Cannot tell who owns it — leave it rather than break a job that might.
+    return;
+  }
+  await deleteImageQuietly(imagePath, deps);
+}
+
 export async function handleJobsRequest(request: Request, deps: JobsDependencies): Promise<Response> {
   const auth = authorize(request.headers.get("authorization"), deps.deviceToken);
   if (!auth.ok) {
@@ -207,11 +257,42 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     return json(toJobView(existing), 200);
   }
 
+  // Everything below is conditional on the state read above still holding.
+  // Two submissions for one page really do overlap — `ProcessingQueue` allows a
+  // manual retry to race a pull-to-refresh for the same page — and an
+  // unconditional write here would let the later one reset a row the first
+  // one's worker had already claimed, producing two paid generations racing
+  // over one image and one result row (Codex, PR #25 P1).
   const imagePath = imagePathFor(jobId);
+  const enqueueRequest = { id: jobId, imagePath, mimeType, hint };
+  let uploaded = false;
+
   try {
+    // A stale `processing` row has to be retired before it can be re-armed, and
+    // that retirement is itself fenced to the attempt this request saw.
+    if (existing?.status === "processing") {
+      const retired = await deps.store.expire(jobId, existing.startedAt, STALE_MESSAGE);
+      if (!retired) return await currentState(jobId, deps, existing);
+    }
+
     await deps.store.putImage(imagePath, image, mimeType);
-    await deps.store.enqueue({ id: jobId, imagePath, mimeType, hint });
+    uploaded = true;
+
+    const armed = existing
+      ? await deps.store.requeue(enqueueRequest)
+      : await deps.store.insertQueued(enqueueRequest);
+
+    if (!armed) {
+      // Lost the race. The winner's row already points at this object — the
+      // bytes are identical, so its worker is fine — and reporting its state is
+      // exactly what this caller needs. Nothing to clean up, nothing to dispatch.
+      return await currentState(jobId, deps, existing);
+    }
   } catch (error) {
+    // An upload with no row referencing it can never be discovered again: no
+    // poll returns it, no reclaim sweep sees it. Clean it up rather than leave
+    // the page in the bucket indefinitely (§7.3; Codex, PR #25 P2).
+    if (uploaded) await deleteUnreferencedImage(jobId, imagePath, deps);
     return storeFailure(error, deps, jobId, "jobs.submit.enqueue_failed");
   }
 
@@ -291,18 +372,25 @@ function isStale(row: JobRow, deps: JobsDependencies): boolean {
 }
 
 async function reclaim(row: JobRow, deps: JobsDependencies): Promise<JobView> {
-  const message = "İşleyen sunucu yanıt vermeden sonlandı; tekrar denenebilir.";
   try {
-    const expired = await deps.store.expire(row.id, message);
-    if (row.imagePath) await deleteImageQuietly(row.imagePath, deps);
+    // Fenced to the attempt this poll observed. Without `startedAt` in the
+    // condition, a job re-armed and re-claimed between the read and this write
+    // would have its *new* attempt killed by a sweep aimed at the old one.
+    const expired = await deps.store.expire(row.id, row.startedAt, STALE_MESSAGE);
     if (!expired) {
-      // It finished between our read and our write. Re-read rather than report
-      // a stale snapshot as a failure the user would see for no reason.
+      // It finished, or moved on, between our read and our write. Re-read
+      // rather than report a stale snapshot as a failure the user would see for
+      // no reason — and touch nothing, because whatever is there now is not the
+      // attempt this sweep was about.
       const [fresh] = await deps.store.find([row.id]);
       return toJobView(fresh ?? row);
     }
+    // Only now is the object certainly the retired attempt's own. Deleting it
+    // before the fenced write succeeded could remove a replacement worker's
+    // freshly uploaded page (Codex, PR #25 P2).
+    if (row.imagePath) await deleteImageQuietly(row.imagePath, deps);
     deps.log?.({ jobId: row.id, event: "jobs.expired", attempts: row.attempts });
-    return { jobId: row.id, status: "failed", error: message, retryable: true, attempts: row.attempts };
+    return { jobId: row.id, status: "failed", error: STALE_MESSAGE, retryable: true, attempts: row.attempts };
   } catch {
     // Reporting the row as it stands is better than failing the whole poll: the
     // other jobs in this batch have nothing to do with this one.

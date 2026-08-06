@@ -137,9 +137,46 @@ yolu çağırdığını değiştirmekten ibaret — sunucuda yeniden dağıtım 
 etmeden çalışmaya devam eder, yalnız `/api/jobs` hangi değişkenin eksik olduğunu
 söyleyerek reddeder.
 
+## Merge sonrası düzeltilen üç yarış (Codex, PR #25)
+
+İlk uygulamada durum değişikliklerinin hepsi koşullu değildi ve Codex üç
+gerçek boşluk buldu. Üçü de PR #26'da kapatıldı; hepsi için, düzeltmeden önceki
+davranışa karşı düşen bir test var (mutasyonla doğrulandı).
+
+1. **P1 — `enqueue` koşulsuzdu.** Aynı sayfa için çakışan iki gönderim: ikisi
+   de satırı okuyup uygun bulur, sonra ikincisinin merge-upsert'i, birincinin
+   işçisi işi *aldıktan sonra* satırı `queued`a geri çeker. İkinci bir işçi de
+   onu alır — aynı sayfa için **iki ödemeli üretim** ve tek görüntü/sonuç
+   üzerinde yarış. Uç durum değil: `ProcessingQueue`, aynı sayfa için elle
+   "Tekrar dene" ile aşağı-çekmenin çakışmasına açıkça izin veriyor.
+   Düzeltme: `enqueue` ikiye ayrıldı — `insertQueued` (upsert değil, düz insert;
+   birincil anahtar çakışması `false` döner) ve `requeue`
+   (`?status=eq.failed&retryable=is.true` koşullu). Kaybeden hiçbir şey yazmaz,
+   sadece güncel durumu bildirir.
+2. **P2 — kurtarma denemeye kilitli değildi.** `expire` yalnız `status`'e
+   bakıyordu; bir yoklama eski satırı okurken iş yeniden kuyruğa alınıp taze
+   bir işçi tarafından alınmışsa, süpürme **yeni** denemeyi öldürüyordu. Ayrıca
+   görüntü, `expire` `false` dönse bile siliniyordu — yani yeni yüklenmiş
+   sayfayı silip yerine geçen işçiyi düşürüyordu. Düzeltme: `expire` artık
+   gözlenen `started_at`'e de kilitli (`started_at=eq.<encoded>`; zaman damgası
+   `+00:00` taşıdığı için URL kodlaması şart, yoksa filtre hiçbir şeyle
+   eşleşmez) ve görüntü yalnız fence'li yazma başarılıysa siliniyor.
+   Gidiş-dönüşün birebir eşleştiği gerçek veritabanında doğrulandı.
+3. **P2 — kuyruğa alma başarısız olursa görüntü sızıyordu.** `putImage`
+   başarılı, ardından PostgREST çağrısı başarısız: satır yok, dolayısıyla
+   hiçbir yoklama ve hiçbir kurtarma süpürmesi o yüklemeyi bir daha bulamaz.
+   Düzeltme: telafi silmesi — ama **yalnız nesnenin sahipsiz olduğu
+   doğrulandıktan sonra**. Belirsiz bir hatada yarışı kazanan başka bir
+   gönderim tam o baytlara güveniyor olabilir; sızan nesne birkaç megabayt,
+   kırılan canlı iş ise sayfanın kendisi.
+
+Ortak ders, artık `JobStoreLike`'ın başında yazılı: **her durum değişikliği,
+onu haklı çıkaran duruma koşullu olmak zorunda.** Buradaki koşulsuz tek bir
+yazma, bu dosyanın önlemek için var olduğu hatayı geri getiriyor.
+
 ## Doğrulama
 
-- Backend: **461 test yeşil** (30'u bu ADR'nin `tests/jobsEndpoint.test.ts`
+- Backend: **467 test yeşil** (36'sı bu ADR'nin `tests/jobsEndpoint.test.ts`
   dosyasından), `tsc --noEmit` temiz.
 - Gerçek Supabase projesine karşı doğrulanan: tablo ve kova yolları, `in.(uuid)`
   filtresi, RLS'in yazmayı gerçekten engellediği, atomik `claim`'in ikinci

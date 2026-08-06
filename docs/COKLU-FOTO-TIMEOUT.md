@@ -48,14 +48,14 @@ gerçek bir olasılık ve her ek fotoğraf bir zar atışı daha demek.
 
 ### 2.1 Parti artık paralel (`ProcessingQueue`)
 
-Sayfalar aynı anda en fazla `maxConcurrentPages = 3` olacak şekilde işleniyor
+Sayfalar aynı anda en fazla `maxConcurrentPages` (§3'ten sonra 6) olacak şekilde işleniyor
 ve bir slot boşalır boşalmaz sıradaki başlıyor (bariyer yok — 40 saniyede
 biten bir sayfa 4 dakika süren birinin arkasında beklemiyor). İş telefonda
 I/O-bağımlı, sunucuda ise her sayfa bağımsız bir serverless çağrısı olduğu
 için yatay ölçekleniyor; limit yalnızca sağlayıcı hız sınırlarına karşı
 nezaketten var.
 
-Etki: beş fotoğrafın duvar saati ~5×'ten ~2×'e iniyor. Telefonun ayakta
+Etki: beş fotoğrafın duvar saati ~5×'ten tek çağrı süresine iniyor. Telefonun ayakta
 kalması gereken süre kısaldıkça kesilme olasılığı düşüyor.
 
 Görev sınırını `CapturedPage` değil `UUID` geçiyor: model `Sendable` değil,
@@ -148,7 +148,7 @@ değişikliğinden ibaret (ADR-006 "Geri dönüş").
 
 Yapılan:
 
-- Backend **461 test yeşil** (30'u yeni `tests/jobsEndpoint.test.ts`),
+- Backend **467 test yeşil** (36'sı yeni `tests/jobsEndpoint.test.ts`),
   `tsc --noEmit` temiz.
 - Gerçek Supabase projesine karşı: tablo ve kova yollarının doğruluğu,
   `in.(uuid)` filtresi, RLS'in publishable anahtarla yazmayı gerçekten

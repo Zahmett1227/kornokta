@@ -79,23 +79,43 @@ export interface EnqueueRequest {
  * in-memory stand-in — the same role `CardGeneratorLike` plays for the
  * generator.
  */
+/**
+ * Every state change is conditional on the state that justified it.
+ *
+ * That is the whole concurrency story, and it is not optional: two invocations
+ * routinely decide the same job needs the same thing (the submit's own dispatch
+ * and a poll's rescue sweep; a manual "Tekrar dene" racing a pull-to-refresh —
+ * `ProcessingQueue` explicitly allows overlapping calls for one page). PostgREST
+ * folds a filter into the UPDATE's WHERE clause, so the loser of any race
+ * changes nothing and gets `false` back. No lock, no queue table.
+ *
+ * An unconditional write anywhere here reintroduces the failure this whole file
+ * exists to prevent: two workers on one job means two paid generations and a
+ * race over the shared image and result (Codex, PR #25 P1).
+ */
 export interface JobStoreLike {
   find(ids: string[]): Promise<JobRow[]>;
-  /** Upserts to `queued`, clearing any previous error and result. */
-  enqueue(request: EnqueueRequest): Promise<void>;
+  /** Creates a brand-new queued job. `false` when a row for this id already exists. */
+  insertQueued(request: EnqueueRequest): Promise<boolean>;
   /**
-   * `queued` → `processing`, conditional on the row still being `queued`.
+   * failed-and-retryable → `queued`, with fresh page bytes.
    *
-   * This is the whole concurrency story: two invocations may both decide a job
-   * needs running (the submit's own dispatch and a poll's rescue sweep), and
-   * exactly one of them gets `true` back because PostgREST turns the status
-   * filter into part of the UPDATE's WHERE clause. No lock, no queue table.
+   * Conditional on the row still being a retryable failure, so a submission
+   * that raced another one cannot reset a job a worker has already claimed.
    */
+  requeue(request: EnqueueRequest): Promise<boolean>;
+  /** `queued` → `processing`, conditional on the row still being `queued`. */
   claim(id: string, attempts: number): Promise<boolean>;
   complete(id: string, result: unknown): Promise<void>;
   fail(id: string, error: string, retryable: boolean): Promise<void>;
-  /** `processing` → failed-and-retryable, conditional on it still being `processing`. */
-  expire(id: string, error: string): Promise<boolean>;
+  /**
+   * `processing` → failed-and-retryable, fenced to one exact attempt.
+   *
+   * `startedAt` is part of the condition, not just `status`: between reading a
+   * stale row and writing this, the job can be re-armed and claimed afresh, and
+   * a status-only condition would then kill the *new* attempt (Codex, PR #25 P2).
+   */
+  expire(id: string, startedAt: string | null, error: string): Promise<boolean>;
   putImage(path: string, bytes: Uint8Array, mimeType: string): Promise<void>;
   getImage(path: string): Promise<Uint8Array>;
   deleteImage(path: string): Promise<void>;
@@ -270,28 +290,47 @@ export class SupabaseJobStore implements JobStoreLike {
     return SupabaseJobStore.rows(payload).map(toJobRow);
   }
 
-  async enqueue(request: EnqueueRequest): Promise<void> {
-    await this.callJson(
-      this.restBase,
-      "POST",
-      { Prefer: "resolution=merge-duplicates,return=minimal" },
-      [
-        {
-          id: request.id,
-          status: "queued",
-          image_path: request.imagePath,
-          mime_type: request.mimeType,
-          hint: request.hint ?? null,
-          // Cleared, not left behind: a resubmitted page must not show the
-          // phone the error from the attempt before it.
-          result: null,
-          error: null,
-          retryable: null,
-          started_at: null,
-          finished_at: null,
-        },
-      ],
+  /** The queued-state columns both entry points write, in one place. */
+  private static queuedFields(request: EnqueueRequest): Record<string, unknown> {
+    return {
+      status: "queued",
+      image_path: request.imagePath,
+      mime_type: request.mimeType,
+      hint: request.hint ?? null,
+      // Cleared, not left behind: a resubmitted page must not show the phone
+      // the error from the attempt before it.
+      result: null,
+      error: null,
+      retryable: null,
+      started_at: null,
+      finished_at: null,
+    };
+  }
+
+  async insertQueued(request: EnqueueRequest): Promise<boolean> {
+    try {
+      // A plain insert, deliberately *not* an upsert: the primary key is what
+      // makes a concurrent second submission lose rather than overwrite a row
+      // that may already have been claimed.
+      await this.callJson(this.restBase, "POST", { Prefer: "return=minimal" }, [
+        { id: request.id, ...SupabaseJobStore.queuedFields(request) },
+      ]);
+      return true;
+    } catch (error) {
+      // 409 is the primary-key conflict — the expected way to lose, not a fault.
+      if (error instanceof SupabaseError && error.status === 409) return false;
+      throw error;
+    }
+  }
+
+  async requeue(request: EnqueueRequest): Promise<boolean> {
+    const payload = await this.callJson(
+      `${this.restBase}?id=eq.${request.id}&status=eq.failed&retryable=is.true`,
+      "PATCH",
+      { Prefer: "return=representation" },
+      SupabaseJobStore.queuedFields(request),
     );
+    return SupabaseJobStore.rows(payload).length > 0;
   }
 
   async claim(id: string, attempts: number): Promise<boolean> {
@@ -335,9 +374,15 @@ export class SupabaseJobStore implements JobStoreLike {
     );
   }
 
-  async expire(id: string, error: string): Promise<boolean> {
+  async expire(id: string, startedAt: string | null, error: string): Promise<boolean> {
+    // Encoded, not interpolated raw: a Postgres timestamp carries `+00:00`, and
+    // a bare `+` in a query string means a space — the filter would match
+    // nothing and every reclaim would silently become a no-op.
+    const attemptFilter = startedAt
+      ? `&started_at=eq.${encodeURIComponent(startedAt)}`
+      : "&started_at=is.null";
     const payload = await this.callJson(
-      `${this.restBase}?id=eq.${id}&status=eq.processing`,
+      `${this.restBase}?id=eq.${id}&status=eq.processing${attemptFilter}`,
       "PATCH",
       { Prefer: "return=representation" },
       {
