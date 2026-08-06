@@ -24,6 +24,8 @@ struct ReviewView: View {
     @State private var shownAt = Date()
     /// The one grade that can be taken back. Only ever the last one.
     @State private var lastGrade: GradeSnapshot?
+    /// Non-nil while the edit sheet is up, for the card being corrected.
+    @State private var editingCard: Card?
     @State private var ledger = DailyNewCardLedger()
     @State private var secondsPerCard = ReviewPace.fallbackSecondsPerCard
 
@@ -76,7 +78,7 @@ struct ReviewView: View {
                             // The card was deleted from Bilgilerim mid-session.
                             // Skipping is the only sensible move; it must not
                             // strand the session on a blank screen.
-                            Color.clear.onAppear { skipMissingCard() }
+                            Color.clear.onAppear { skipCurrentCard() }
                         }
                     } else if session != nil {
                         completionScreen
@@ -95,7 +97,7 @@ struct ReviewView: View {
                             .foregroundStyle(Cizgi.muted)
                     }
                 }
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
                     if lastGrade != nil {
                         Button {
                             undoLastGrade()
@@ -104,11 +106,35 @@ struct ReviewView: View {
                         }
                         .tint(Cizgi.accent)
                     }
+                    // §6.5 asks for "Kartı düzenle/askıya al" from the review
+                    // screen, and this is where a bad card is actually noticed —
+                    // having to remember it and find it in Bilgilerim afterwards
+                    // is how a wrong card survives.
+                    if let card = currentCard {
+                        Menu {
+                            Button {
+                                editingCard = card
+                            } label: {
+                                Label("Kartı düzenle", systemImage: "pencil")
+                            }
+                            Button {
+                                suspend(card)
+                            } label: {
+                                Label("Askıya al", systemImage: "pause.circle")
+                            }
+                        } label: {
+                            Label("Kart işlemleri", systemImage: "ellipsis.circle")
+                        }
+                        .tint(Cizgi.accent)
+                    }
                 }
             }
         }
         .tint(Cizgi.accent)
         .onAppear(perform: refreshMeasurements)
+        .sheet(item: $editingCard) { card in
+            CardEditorView(card: card)
+        }
     }
 
     // MARK: Start
@@ -254,12 +280,15 @@ struct ReviewView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    if let quote = card.sourceQuote, !quote.isEmpty {
+                    // §5.5. The old gate was `card.sourceQuote`, which the Faz 6
+                    // contract never fills — so on every card the app now makes,
+                    // "Kaynağı göster" was unreachable. Resolved from the page
+                    // the card actually came from instead.
+                    let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
+                    if !source.isEmpty {
                         DisclosureGroup("Kaynağı göster") {
-                            Text(quote)
-                                .font(.footnote)
-                                .foregroundStyle(Cizgi.muted)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            CardSourceView(material: source, imageStore: environment.imageStore)
+                                .padding(.top, Cizgi.Space.sm)
                         }
                         .font(.subheadline)
                         .tint(Cizgi.accent)
@@ -340,14 +369,27 @@ struct ReviewView: View {
         shownAt = .now
     }
 
-    /// A card deleted from Bilgilerim while this session was open.
-    private func skipMissingCard() {
+    /// Moves past the current card without grading it: it was deleted from
+    /// Bilgilerim while this session was open, or just suspended.
+    ///
+    /// `lastGrade` is cleared because the undo it describes no longer makes
+    /// sense once the queue has moved on for a reason that was not a grade.
+    private func skipCurrentCard() {
         guard var working = session else { return }
         working.advance()
         session = working
         lastGrade = nil
         isAnswerVisible = false
         shownAt = .now
+    }
+
+    /// A suspended card is no longer active, so leaving it on screen would ask
+    /// the user to grade something they have just taken out of rotation.
+    private func suspend(_ card: Card) {
+        card.status = .suspended
+        card.updatedAt = .now
+        try? context.save()
+        skipCurrentCard()
     }
 
     // MARK: Grading

@@ -157,9 +157,18 @@ struct CardRow: View {
 }
 
 struct CardDetailView: View {
+    @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     let card: Card
+
+    @State private var isEditing = false
+
+    /// Resolved once per render, and by the same helper the review screen uses,
+    /// so a card cannot show one provenance here and another there.
+    private var source: CardSourceMaterial {
+        CardSourceView.material(for: card, imageStore: environment.imageStore)
+    }
 
     var body: some View {
         List {
@@ -173,17 +182,14 @@ struct CardDetailView: View {
                     header: { sectionHeader("Açıklama") }
             }
 
-            // Faz 6 cards have no per-card source quote; only show it when one
-            // exists (legacy cards) rather than an empty "Kaynak" section.
-            if let quote = card.sourceQuote, !quote.isEmpty {
+            // §5.5. Previously gated on `card.sourceQuote`, which the Faz 6
+            // contract never fills, so this section was invisible on every card
+            // the app now makes — while the page photograph it should have been
+            // showing sat on disk one relationship hop away.
+            if !source.isEmpty {
                 Section {
-                    Text(quote).font(.footnote).foregroundStyle(Cizgi.muted)
-                    if let subject = card.knowledgeUnit?.subject {
-                        LabeledContent("Ders", value: subject)
-                    }
+                    CardSourceView(material: source, imageStore: environment.imageStore)
                 } header: { sectionHeader("Kaynak") }
-            } else if let subject = card.knowledgeUnit?.subject {
-                Section { LabeledContent("Ders", value: subject) }
             }
 
             if !(card.knowledgeUnit?.tags ?? []).isEmpty {
@@ -234,6 +240,16 @@ struct CardDetailView: View {
         .background(Cizgi.paper.ignoresSafeArea())
         .navigationTitle("Kart")
         .homeButtonToolbar()
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button { isEditing = true } label: {
+                    Label("Düzenle", systemImage: "pencil")
+                }
+            }
+        }
+        .sheet(isPresented: $isEditing) {
+            CardEditorView(card: card)
+        }
     }
 
     private func sectionHeader(_ text: String) -> some View {

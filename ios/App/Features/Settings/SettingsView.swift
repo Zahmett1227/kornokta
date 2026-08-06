@@ -89,6 +89,15 @@ struct SettingsView: View {
                         get: { environment.settings.keepOriginalPage },
                         set: { environment.settings.keepOriginalPage = $0; environment.settings.save() }
                     ))
+                    // Worth spelling out now that the photo is the *only* trace a
+                    // Faz 6 card has: there is no crop and no per-card alıntı, so
+                    // turning this off leaves cards you cannot check against
+                    // anything (§5.5).
+                    Text("Kapatırsan kartların \"Kaynağı göster\" bölümünde "
+                         + "sayfa fotoğrafı olmaz — kartı kaynağıyla "
+                         + "karşılaştıramazsın.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
                     Button("Yedeği hazırla") { prepareExport() }
                     if let exportURL {
                         ShareLink(item: exportURL) {

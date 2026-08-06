@@ -88,6 +88,26 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   SwiftData yüzünden Linux'ta derlenmiyor). `ReviewView.swift` yalnız `swiftc -parse`
   ile doğrulandı — tip denetimi hâlâ bir Mac gerektiriyor.
 
+- **2026-08-06 — kart düzenleme ve "Kaynağı göster" bağlandı.** İkisi de
+  verilmiş ama tutulmamış sözlerdi. (a) Faz 6 onay adımını "yanlış kart sonradan
+  Bilgilerim'de düzeltilir" gerekçesiyle kaldırmıştı (ADR-005, FAZ6-PLAN §9) ama
+  düzeltme hiç yazılmamıştı — tek çare kartı silmekti. Artık `CardEditorView`
+  var, hem Bilgilerim'den hem **tekrar ekranından** (kötü kart orada fark edilir)
+  açılıyor; §6.5'in istediği "askıya al" da aynı menüde ve askıya alınan kart
+  oturumdan çıkarılıyor. Düzenleme FSRS geçmişine **dokunmuyor** — gerekçe
+  `CardEditorView.save`'de. (b) "Kaynağı göster" `card.sourceQuote`'a kapılıydı
+  ve vision akışı onu her kartta boş bırakıyor, yani uygulamanın ürettiği hiçbir
+  kartta görünmüyordu — oysa sayfa fotoğrafı diskte ve ilişki zinciri
+  (`Card → KnowledgeUnit → TextRegion → CapturedPage`) sağlamdı. Artık
+  `CardSourceView` sayfayı, modelin okuduğu metni, dersi ve çekim tarihini
+  gösteriyor; "Orijinal sayfayı sakla" kapalıysa bunu **söylüyor** (Ayarlar'a da
+  uyarı eklendi). §5.5'in istediği kırpıntı ve kitap/sayfa bilgisi bu akışta
+  gerçekten yok, o yüzden uydurulmadı. Kurallar `Models/CardEditing.swift`'te
+  (modelin "okuduğu metin" aslında kendi yedek metniyse ya da sorunun kendisiyse
+  kaynak sayılmıyor) — **14 yeni test, gerçek `swift test` ile geçti** (toplam 42).
+  **Not:** iki yeni App dosyası var; `cd ios && xcodegen generate` çalıştırmadan
+  Xcode onları hedefe almaz.
+
 Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
   maddeleri Faz 6 ÖNCESİ (süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
 
