@@ -128,15 +128,21 @@ final class AppEnvironment: ObservableObject {
         guard let configuration = resolvedBackendConfiguration(settings: settings, tokens: tokens) else {
             return MockCardProvider()
         }
-        // The vision card call can run well past a minute (full-page reading +
-        // up to a dozen cards). `URLSession.shared` caps a request at its
-        // config's 60 s `timeoutIntervalForRequest`, which would abort before
-        // the backend (maxDuration 300) answers — the repeated
-        // `providerUnavailable`. Use a session whose timeouts match the
-        // configured (long) one.
+        // Under ADR-006 every card call is short — a page upload or a small
+        // poll — so these are upper bounds rather than the norm they were when
+        // the phone had to hold one connection open for the whole generation.
+        // Kept generous anyway: `URLSession.shared` would cap a request at its
+        // config's 60 s, which the retained synchronous `/api/cards-vision`
+        // path still needs to exceed.
         let sessionConfig = URLSessionConfiguration.default
         sessionConfig.timeoutIntervalForRequest = configuration.timeout
         sessionConfig.timeoutIntervalForResource = configuration.timeout
+        // A page batch runs for minutes, and a phone moving between Wi-Fi and
+        // cellular in that window would otherwise fail the request instantly
+        // and burn one of its five retry attempts on a blip that resolved
+        // itself a second later. Waiting is bounded by the resource timeout
+        // above, so this cannot hang past the ceiling the backend already has.
+        sessionConfig.waitsForConnectivity = true
         return BackendCardProvider(
             configuration: configuration,
             tokenProvider: { tokens.read() },

@@ -343,16 +343,23 @@ public protocol BackendCalling: Sendable {
 
 public struct BackendConfiguration: Sendable, Equatable {
     public var baseURL: URL
+    /// Ceiling for one HTTP request.
     public var timeout: TimeInterval
+    /// How long `BackendCardProvider` keeps collecting one job's answer.
+    public var jobDeadline: TimeInterval
 
-    public init(baseURL: URL, timeout: TimeInterval = 300) {
+    public init(baseURL: URL, timeout: TimeInterval = 300, jobDeadline: TimeInterval = 420) {
         self.baseURL = baseURL
-        // Generous by design (Faz 6/B3): the vision card call reads a full page
-        // and can emit up to a dozen cards, running well past a minute. The
-        // backend (vercel.json maxDuration = 300) allows this; the client must
-        // not abort first. Callers that only do the (faster) OCR path can pass a
-        // shorter value.
+        // An upper bound, not a target. Under ADR-006 every card call is either
+        // a page upload or a small poll, both of which answer in seconds; this
+        // stays generous so the retained synchronous `/api/cards-vision` and OCR
+        // paths (which really can run for minutes) are not cut off by it.
         self.timeout = timeout
+        // Seven minutes: comfortably past the backend's own 300 s ceiling, so a
+        // job that is going to finish normally does finish inside one call.
+        // Passing it is not a lost page — the job keeps running on the server
+        // and the next attempt collects it (docs/ADR-006 §4).
+        self.jobDeadline = jobDeadline
     }
 }
 

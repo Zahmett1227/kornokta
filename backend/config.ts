@@ -107,11 +107,37 @@ export interface GeminiConfig {
   timeoutMs: number;
 }
 
+/**
+ * Asynchronous job queue (docs/ADR-006). Optional: leave `SUPABASE_URL` unset
+ * and `/api/ocr` and `/api/cards-vision` carry on exactly as before — only
+ * `/api/jobs` refuses, and it says which variable is missing. That is why `url`
+ * is `optional` here rather than `required`: a missing value must not make
+ * `loadConfig()` throw for endpoints that have nothing to do with it.
+ *
+ * The service-role key is deliberately absent, like every other credential in
+ * this file (§0.7); it is read at the composition root.
+ */
+export interface SupabaseConfig {
+  /** Project URL, e.g. `https://abcd.supabase.co`. Empty means "no job queue". Not a secret. */
+  url: string;
+  /** Private Storage bucket holding page bytes for the lifetime of a job. */
+  bucket: string;
+  timeoutMs: number;
+  /**
+   * A job left `processing` longer than this is presumed dead. Must sit *above*
+   * the hosting platform's function ceiling (`vercel.json` maxDuration = 300 s),
+   * or a job that is merely slow gets reclaimed out from under a worker that was
+   * still going to answer.
+   */
+  staleAfterMs: number;
+}
+
 export interface Config {
   documentAI: DocumentAIConfig;
   openai: OpenAIConfig;
   gemini: GeminiConfig;
   cost: CostConfig;
+  supabase: SupabaseConfig;
 }
 
 class ConfigError extends Error {}
@@ -216,6 +242,15 @@ export function loadConfig(): Config {
       geminiUsdPerMillionInputTokens: numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0),
       geminiUsdPerMillionOutputTokens: numeric("GEMINI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
       maxUsdPerCardGeneration: numeric("MAX_USD_PER_CARD_GENERATION", 0),
+    },
+    supabase: {
+      url: optional("SUPABASE_URL", ""),
+      bucket: optional("SUPABASE_BUCKET", "page-uploads"),
+      timeoutMs: numeric("SUPABASE_TIMEOUT_MS", 30_000),
+      // 5.5 minutes: just past `vercel.json`'s 300 s ceiling, so a worker that
+      // was killed at the ceiling is reclaimed promptly while one that is simply
+      // slow is left alone.
+      staleAfterMs: numeric("SUPABASE_JOB_STALE_AFTER_MS", 330_000),
     },
   };
 }

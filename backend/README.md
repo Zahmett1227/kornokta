@@ -128,6 +128,41 @@ curl -X POST http://127.0.0.1:8787/api/ocr \
 Cevaplar her zaman `retryable` alanı taşır: telefon geçici bir arızayı kuyruğa
 alıp tekrar denemeli, kalıcı olanı denememeli (§17).
 
+## Asenkron iş kuyruğu — `/api/jobs` (docs/ADR-006)
+
+Telefonun kullandığı ana yol. `/api/cards-vision` telefondan, modelin sürdüğü
+1–5 dakika boyunca tek bir bağlantıyı açık tutmasını istiyordu; hiçbir telefon
+bunu güvenilir biçimde yapamıyor (ekran kilitleniyor → iOS uygulamayı askıya
+alıyor → yükleme zaman aşımıyla ölüyor). Burada bekleme telefondan çıkıyor:
+
+```
+POST /api/jobs   → sayfa Storage'a yazılır, satır 'queued', 202 döner (saniyeler)
+                   üretim yanıttan SONRA, waitUntil altında devam eder
+GET  /api/jobs?ids=<uuid>[,<uuid>…]
+                 → { "jobs": [ { jobId, status, result?, error?, retryable? } ] }
+```
+
+`status`: `queued` | `processing` | `ready` | `failed`. `result`, biten bir işte
+`/api/cards-vision`'ın gövdesinin aynısıdır — telefon aynı çözücüyü kullanır.
+
+`jobId` **UUID olmak zorunda** (Postgres birincil anahtarı) ve telefonun sayfa
+kimliğidir; aynı sayfa ikinci kez gönderilirse yeni bir iş açılmaz, biten iş
+varsa sonucu doğrudan döner. İşi tekrar başlatan bir cron yok — Hobby planında
+cron günde bir kez — onun yerine telefonun zaten yaptığı yoklamalar hem
+kuyrukta unutulmuş bir işi başlatıyor hem de işleyeni ölmüş bir işi geri
+alıyor.
+
+Gereken ortam değişkenleri (`.env.example`'daki Supabase bloğu):
+`SUPABASE_URL` ve `SUPABASE_SERVICE_ROLE_KEY`. İkincisi RLS'i tamamen atlar —
+depoya girmez, yalnız yerel `.env` ve Vercel proje ayarları. `SUPABASE_URL`
+boşsa diğer uçlar hiç etkilenmez, yalnız `/api/jobs` hangi değişkenin eksik
+olduğunu söyleyerek reddeder.
+
+Şema tek bir migration'da: `jobs` tablosu + `page-uploads` özel kovası, ikisinde
+de RLS açık ve **policy yok** (yani yalnız servis anahtarı geçer). Sayfa
+baytları iş bitince siliniyor — §7.3'ten verilen bilinçli tavizin sınırı,
+ADR-006'da yazılı.
+
 ## Yapı
 
 | Dosya | İş |

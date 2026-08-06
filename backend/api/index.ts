@@ -9,13 +9,16 @@
  */
 
 import { GoogleAuth } from "google-auth-library";
+import { waitUntil } from "@vercel/functions";
 
 import { loadConfig } from "../config.js";
 import { DocumentAIRecognizer, googleAuthTokenSource } from "../providers/documentAI.js";
 import { googleAuthOptions } from "../providers/googleAuth.js";
 import { OpenAICardGenerator } from "../providers/openai.js";
+import { SupabaseJobStore } from "../providers/supabaseJobs.js";
 import { handleOcrRequest, type Dependencies } from "./_ocr.js";
 import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
+import { handleJobsRequest, type JobsDependencies } from "./_jobs.js";
 
 /**
  * Built once per process, not per request: constructing `GoogleAuth` reads the
@@ -70,10 +73,78 @@ export function buildCardsDependencies(): CardsDependencies {
   return cachedCards;
 }
 
+/**
+ * Continues work after the response has been sent.
+ *
+ * Without `waitUntil` the platform is free to freeze the instance the moment the
+ * reply leaves, and a background generation would simply stop mid-call — the job
+ * row would sit `processing` until the staleness sweep reclaimed it, which is a
+ * working system that never actually produces a card. With it, the instance
+ * stays alive until the promise settles, bounded by the same `maxDuration` the
+ * synchronous endpoint already lives under.
+ *
+ * The rejection handler is not decoration: an unhandled rejection here would
+ * take down the whole instance, including any *other* job sharing it under
+ * fluid compute. `runJob` writes its own terminal row before it can reject, so
+ * there is nothing left to report by the time this runs.
+ */
+function runInBackground(work: () => Promise<void>): void {
+  const promise = work().catch((error: unknown) => {
+    console.log(
+      JSON.stringify({
+        event: "jobs.background_crashed",
+        message: error instanceof Error ? error.message : "Bilinmeyen hata.",
+      }),
+    );
+  });
+  try {
+    waitUntil(promise);
+  } catch {
+    // Outside a Vercel request context — `npm run serve`, a script, a test.
+    // The promise still runs to completion there; nothing needs to be told to
+    // stay awake because nothing is about to be frozen.
+  }
+}
+
+/** Built once per process; needs both `OPENAI_API_KEY` and the Supabase service-role key. */
+let cachedJobs: JobsDependencies | null = null;
+
+export function buildJobsDependencies(): JobsDependencies {
+  if (cachedJobs) return cachedJobs;
+
+  const config = loadConfig();
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Eksik ortam değişkeni: OPENAI_API_KEY. backend/.env.example dosyasına bak.");
+  }
+  if (!config.supabase.url) {
+    throw new Error("Eksik ortam değişkeni: SUPABASE_URL. backend/.env.example dosyasına bak.");
+  }
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    throw new Error(
+      "Eksik ortam değişkeni: SUPABASE_SERVICE_ROLE_KEY. backend/.env.example dosyasına bak.",
+    );
+  }
+
+  cachedJobs = {
+    store: new SupabaseJobStore(config.supabase, serviceRoleKey),
+    generator: new OpenAICardGenerator(config.openai, apiKey, config.cost),
+    openai: config.openai,
+    cost: config.cost,
+    supabase: config.supabase,
+    deviceToken: process.env.DEVICE_TOKEN,
+    runInBackground,
+    log: (entry) => console.log(JSON.stringify(entry)),
+  };
+  return cachedJobs;
+}
+
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
   cached = null;
   cachedCards = null;
+  cachedJobs = null;
 }
 
 /**
@@ -150,6 +221,22 @@ export async function handler(request: Request): Promise<Response> {
       );
     }
     return handleCardsRequest(request, dependencies);
+  }
+
+  // Faz 6 / ADR-006: the asynchronous door. `/api/cards-vision` above stays
+  // exactly as it was — this is a second route, not a replacement, so falling
+  // back is a client-side switch and needs no redeploy.
+  if (url.pathname === "/api/jobs" || url.pathname === "/jobs") {
+    let dependencies: JobsDependencies;
+    try {
+      dependencies = buildJobsDependencies();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: (error as Error).message, retryable: false }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleJobsRequest(request, dependencies);
   }
 
   return new Response(JSON.stringify({ error: "Bulunamadı.", retryable: false }), {
