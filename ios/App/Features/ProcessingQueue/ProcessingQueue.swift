@@ -29,6 +29,28 @@ final class ProcessingQueue: ObservableObject {
     /// rounds).
     private var inFlightPageCounts: [UUID: Int] = [:]
 
+    /// How many pages may be at the provider at once.
+    ///
+    /// Running a multi-page batch strictly one after another made the *batch*
+    /// the problem rather than any single call: the Faz 6 vision call takes one
+    /// to five minutes, so five pages in a row asked the phone to stay awake and
+    /// connected for the better part of a quarter of an hour. That is what the
+    /// user saw as "çoklu fotoğrafta zaman aşımı".
+    ///
+    /// Under ADR-006 a slot costs almost nothing locally: a page spends its time
+    /// asleep between small polls, not holding a connection open, and the
+    /// generation itself happens server-side where each page is an independent
+    /// invocation. So this is set by what is polite to the provider's rate
+    /// limits rather than by anything the phone contends over — high enough that
+    /// an ordinary batch is submitted in one wave instead of being drip-fed.
+    private static let maxConcurrentPages = 6
+
+    /// Held while any page is in flight — see `beginProcessingActivity`.
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    /// The pending "come back and retry the pages that failed transiently" pass.
+    private var retryDrainTask: Task<Void, Never>?
+
     @Published private(set) var isRunning = false
 
     init(container: ModelContainer, imageStore: ImageStore, pipeline: CapturePipeline) {
@@ -99,6 +121,12 @@ final class ProcessingQueue: ObservableObject {
         )
         guard let pages = try? context.fetch(descriptor) else { return }
 
+        // Collected first, then run: `process` awaits, and this actor is free to
+        // run other queued work at every suspension point. Deciding what is
+        // eligible up front — while nothing is in flight — keeps that decision
+        // reading a consistent snapshot of the store.
+        var pendingIDs: [UUID] = []
+
         for page in pages {
             // A deletion always wins over resuming work, without a network
             // call, on every launch (PR #12 review, Codex P1 — second
@@ -126,7 +154,95 @@ final class ProcessingQueue: ObservableObject {
                 continue
             }
             guard shouldProcess(page) else { continue }
-            await process(page)
+            pendingIDs.append(page.id)
+        }
+
+        await processConcurrently(pendingIDs)
+        scheduleRetryDrain()
+    }
+
+    /// Runs the given pages with at most `maxConcurrentPages` in flight,
+    /// starting the next one the moment any slot frees rather than waiting for
+    /// the whole batch — a page that answers in 40 s must not be held behind one
+    /// that takes four minutes.
+    ///
+    /// Ids rather than models cross the task boundary: `CapturedPage` is a
+    /// SwiftData model and not `Sendable`, and re-fetching on the main context
+    /// inside each child also means a page the user deleted while the batch was
+    /// running is simply not found instead of resurfacing as a faulted object.
+    private func processConcurrently(_ pendingIDs: [UUID]) async {
+        guard !pendingIDs.isEmpty else { return }
+
+        await withTaskGroup(of: UUID.self) { group in
+            var nextIndex = 0
+
+            while nextIndex < Self.maxConcurrentPages && nextIndex < pendingIDs.count {
+                let id = pendingIDs[nextIndex]
+                nextIndex += 1
+                group.addTask { @MainActor in
+                    await self.process(pageID: id)
+                    return id
+                }
+            }
+
+            while await group.next() != nil {
+                guard nextIndex < pendingIDs.count else { continue }
+                let id = pendingIDs[nextIndex]
+                nextIndex += 1
+                group.addTask { @MainActor in
+                    await self.process(pageID: id)
+                    return id
+                }
+            }
+        }
+    }
+
+    private func process(pageID: UUID) async {
+        let context = container.mainContext
+        var descriptor = FetchDescriptor<CapturedPage>(
+            predicate: #Predicate { $0.id == pageID }
+        )
+        descriptor.fetchLimit = 1
+        // Gone means deleted while the batch was in flight — nothing to do, and
+        // nothing to report: the user asked for exactly that.
+        guard let page = try? context.fetch(descriptor).first else { return }
+        guard !page.pendingDeletion else { return }
+        await process(page)
+    }
+
+    /// A page that fails transiently is given a `nextAttemptAt`, but until now
+    /// nothing ever honoured it: the queue only ran again when the user reopened
+    /// the app or pulled to refresh. In a multi-page batch that meant one
+    /// dropped connection left those cards unmade until the user happened to
+    /// look. One follow-up pass is scheduled at the earliest due time; the
+    /// existing attempt ceiling (`RetryPolicy.maxAttempts`) is what terminates
+    /// the chain, since an exhausted page becomes `.permanentFailure` and
+    /// `shouldProcess` stops selecting it.
+    private func scheduleRetryDrain() {
+        retryDrainTask?.cancel()
+        retryDrainTask = nil
+
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<CapturedPage>()
+        guard let pages = try? context.fetch(descriptor) else { return }
+
+        let due = pages
+            .filter { $0.processingState == .temporaryFailure && !$0.pendingDeletion }
+            .filter { retryPolicy.shouldRetry(attempt: $0.retryCount) }
+            .compactMap(\.nextAttemptAt)
+            .min()
+        guard let due else { return }
+
+        // At least a second even when the deadline has already passed, so a
+        // page that keeps failing instantly cannot spin this into a tight loop.
+        let delay = max(1, due.timeIntervalSinceNow)
+        retryDrainTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            // Dropped before the pass runs, so the `scheduleRetryDrain` at the
+            // end of it cannot cancel the task it is itself running inside.
+            self.retryDrainTask = nil
+            await self.processPending()
         }
     }
 
@@ -210,6 +326,7 @@ final class ProcessingQueue: ObservableObject {
         // this actor is free to run a queued delete tap (or a second,
         // overlapping `process` call for the same page) in between.
         inFlightPageCounts[pageID, default: 0] += 1
+        beginProcessingActivity()
         defer {
             let remaining = (inFlightPageCounts[pageID] ?? 1) - 1
             if remaining > 0 {
@@ -228,6 +345,7 @@ final class ProcessingQueue: ObservableObject {
                     performDelete(page)
                 }
             }
+            endProcessingActivityIfIdle()
         }
 
         let outcome = await effectivePipeline.run(
@@ -241,6 +359,43 @@ final class ProcessingQueue: ObservableObject {
         )
 
         apply(outcome, to: page, context: context)
+    }
+
+    /// Keeps the phone from throwing the run away underneath itself.
+    ///
+    /// Two separate causes of the "çoklu fotoğrafta timeout" report, one line
+    /// each. `isIdleTimerDisabled`: the screen auto-locks after 30 s by default,
+    /// and once it does iOS suspends the app and tears down the upload — a batch
+    /// that needs minutes of network time is otherwise guaranteed to hit it.
+    /// `beginBackgroundTask`: the user switching away suspends the app at once;
+    /// an assertion buys the roughly 30 s iOS grants, enough for a call that was
+    /// about to answer to land instead of being lost.
+    ///
+    /// Neither survives a *long* backgrounding — that needs a background
+    /// `URLSession`, or moving the wait off the phone entirely (see the notes in
+    /// docs/FAZ6-PLAN.md). These two remove the failure that actually happens in
+    /// practice: the user starts a batch and puts the phone down.
+    private func beginProcessingActivity() {
+        UIApplication.shared.isIdleTimerDisabled = true
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "cizgi.page-processing") {
+            // iOS is about to reclaim the assertion. Release it rather than let
+            // the app be killed for holding one past its expiry; the pages still
+            // in flight fail as transient and are retried from the durable queue.
+            Task { @MainActor in self.releaseProcessingActivity() }
+        }
+    }
+
+    private func endProcessingActivityIfIdle() {
+        guard inFlightPageCounts.isEmpty else { return }
+        releaseProcessingActivity()
+    }
+
+    private func releaseProcessingActivity() {
+        UIApplication.shared.isIdleTimerDisabled = false
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
     }
 
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {

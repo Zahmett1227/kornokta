@@ -180,4 +180,95 @@ final class BackendCardProviderTests: XCTestCase {
         let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
         XCTAssertEqual(knowledge.canonicalClaim, "Ön yüz")
     }
+
+    // MARK: Job state (docs/ADR-006)
+
+    private func view(
+        status: String,
+        result: RemoteCardsSuccess? = nil,
+        error: String? = nil,
+        retryable: Bool? = nil
+    ) -> RemoteJobView {
+        RemoteJobView(jobId: "job-1", status: status, result: result, error: error, retryable: retryable)
+    }
+
+    private func readySuccess() -> RemoteCardsSuccess {
+        success(cards: [card()], verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")])
+    }
+
+    /// An id the server has never heard of is simply absent from the poll's
+    /// array. That absence is what tells the provider to upload the page — it
+    /// is the normal first step of every capture, not an error.
+    func testAbsentJobIsSubmitted() {
+        XCTAssertEqual(BackendCardProvider.action(for: nil), .submit)
+    }
+
+    func testQueuedAndProcessingJobsAreWaitedFor() {
+        XCTAssertEqual(BackendCardProvider.action(for: view(status: "queued")), .wait)
+        XCTAssertEqual(BackendCardProvider.action(for: view(status: "processing")), .wait)
+    }
+
+    func testReadyJobUsesItsResult() {
+        XCTAssertEqual(
+            BackendCardProvider.action(for: view(status: "ready", result: readySuccess())),
+            .useResult
+        )
+    }
+
+    /// Waiting forever for a row that says it is finished but carries nothing
+    /// would look exactly like a hung page. Better to say so.
+    func testReadyJobWithoutAResultFailsRatherThanWaiting() {
+        XCTAssertEqual(
+            BackendCardProvider.action(for: view(status: "ready")),
+            .failPermanently("Biten işte sonuç yok.")
+        )
+    }
+
+    /// The server already decides what is worth retrying (§17); repeating that
+    /// judgement here is how the two would drift.
+    ///
+    /// A transient failure must stay *distinguishable* from a permanent one
+    /// rather than collapsing into one "failed": `generate()` re-uploads the
+    /// page for the first and gives up on the second. Reporting a retryable
+    /// failure as an answer instead would deadlock the page — every later
+    /// attempt would poll, find the same old failure, and fail again without
+    /// ever sending the photo.
+    func testFailedJobFollowsTheServersRetryableVerdict() {
+        XCTAssertEqual(
+            BackendCardProvider.action(for: view(status: "failed", error: "OpenAI 503", retryable: true)),
+            .failTransiently("OpenAI 503")
+        )
+        XCTAssertEqual(
+            BackendCardProvider.action(for: view(status: "failed", error: "şema hatası", retryable: false)),
+            .failPermanently("şema hatası")
+        )
+    }
+
+    /// A missing `retryable` is read as "do not retry". The server always sends
+    /// one, so this only bites on a malformed row — and quietly re-uploading a
+    /// page forever is the worse of the two ways to be wrong.
+    func testFailedJobWithoutAVerdictIsNotRetried() {
+        guard case .failPermanently = BackendCardProvider.action(for: view(status: "failed")) else {
+            return XCTFail("Kararsız bir hata tekrar denenmemeli")
+        }
+    }
+
+    /// An older build must not turn a status the server added later into a
+    /// permanently failed page — transient means the queue tries again, and by
+    /// then the app may well have been updated.
+    func testUnknownStatusIsTreatedAsTransient() {
+        guard case .failTransiently = BackendCardProvider.action(for: view(status: "paused")) else {
+            return XCTFail("Bilinmeyen durum geçici hata olmalı")
+        }
+    }
+
+    /// Short while a page is likely to finish, longer afterwards, so a slow one
+    /// does not cost dozens of pointless round trips.
+    func testPollIntervalBacksOff() {
+        XCTAssertEqual(BackendCardProvider.pollInterval(afterWaiting: 0), 3)
+        XCTAssertEqual(BackendCardProvider.pollInterval(afterWaiting: 29), 3)
+        XCTAssertEqual(BackendCardProvider.pollInterval(afterWaiting: 30), 5)
+        XCTAssertEqual(BackendCardProvider.pollInterval(afterWaiting: 119), 5)
+        XCTAssertEqual(BackendCardProvider.pollInterval(afterWaiting: 120), 10)
+    }
 }

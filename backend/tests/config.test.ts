@@ -24,10 +24,19 @@ const KEYS = [
   "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
   "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
   "MAX_USD_PER_CARD_GENERATION",
+  "SUPABASE_URL",
+  "SUPABASE_BUCKET",
+  "SUPABASE_TIMEOUT_MS",
+  "SUPABASE_JOB_STALE_AFTER_MS",
 ];
 
 /** Read directly at the composition root, never through `loadConfig()` (§0.7). */
-const CREDENTIAL_KEYS = ["GOOGLE_APPLICATION_CREDENTIALS", "OPENAI_API_KEY", "GEMINI_API_KEY"];
+const CREDENTIAL_KEYS = [
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+];
 
 let saved: Record<string, string | undefined> = {};
 
@@ -137,6 +146,32 @@ describe("loadConfig", () => {
     expect(cost.geminiUsdPerMillionInputTokens).toBe(0);
     expect(cost.geminiUsdPerMillionOutputTokens).toBe(0);
     expect(cost.maxUsdPerCardGeneration).toBe(0);
+  });
+
+  it("leaves the job queue off until SUPABASE_URL is set (docs/ADR-006)", () => {
+    // Optional on purpose: with no URL, `/api/ocr` and `/api/cards-vision` must
+    // keep working exactly as before and only `/api/jobs` refuse. A `required()`
+    // here would make `loadConfig()` throw for endpoints that have nothing to
+    // do with the queue.
+    expect(loadConfig().supabase.url).toBe("");
+    process.env.SUPABASE_URL = "https://abcd.supabase.co";
+    expect(loadConfig().supabase.url).toBe("https://abcd.supabase.co");
+  });
+
+  it("holds a job open longer than the platform's own function ceiling", () => {
+    // `vercel.json` allows 300 s. Reclaiming below that would kill a worker
+    // that was merely slow and was still going to answer.
+    expect(loadConfig().supabase.staleAfterMs).toBeGreaterThan(300_000);
+    expect(loadConfig().supabase.bucket).toBe("page-uploads");
+  });
+
+  it("never reads SUPABASE_SERVICE_ROLE_KEY into config", () => {
+    // Same rule as every other credential (§0.7). This one matters most: it
+    // bypasses row-level security entirely.
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "gizli-service-role";
+    const serialized = JSON.stringify(loadConfig());
+    expect(serialized).not.toContain("gizli");
+    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
 
   it("never reads OPENAI_API_KEY or GEMINI_API_KEY into config", () => {

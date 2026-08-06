@@ -33,7 +33,36 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   §10.4 "mevcut kartlar korunmalı", cihazsız doğrulanamaz, kullanıcıya görünür
   değeri yok; (b) gerçek maliyet USD rakamları — §0.6 gereği uydurulmaz, gerçek
   fiyat yok; (c) **§11 kabul kriterleri = gerçek cihaz doğrulaması** (kullanıcı
-  retest + Vercel env kontrolü). Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
+  retest + Vercel env kontrolü).
+- **2026-08-06 — çoklu fotoğrafta zaman aşımı:** PR #22'nin tavan yükseltmesi
+  tek sayfayı kurtardı ama parti hâlâ patlıyordu. Kök neden sunucu tavanı değil,
+  telefonun 5–15 dakikalık **seri** bir partiyi ayakta tutamamasıydı (ekran
+  varsayılan 30 s'de kilitleniyor → iOS uygulamayı askıya alıyor → arka plan
+  oturumu olmayan `URLSession` kopuyor → `NSURLErrorTimedOut`). `ProcessingQueue`
+  artık sayfaları 3'lü paralel işliyor, işlem sürerken ekran kilidini ve bir arka
+  plan assertion'ını tutuyor, geçici hataları `nextAttemptAt`'e uyarak
+  kendiliğinden tekrar deniyor; `waitsForConnectivity` açıldı. Teşhis:
+  [`docs/COKLU-FOTO-TIMEOUT.md`](docs/COKLU-FOTO-TIMEOUT.md).
+- **2026-08-06 — ADR-006: bekleme telefondan çıktı (Supabase iş kuyruğu).**
+  Yukarıdakiler hatayı azaltıyor ama garanti etmiyordu: telefon hâlâ uzun bir
+  isteği bekliyordu. Kart üretimi artık asenkron — `POST /api/jobs` sayfayı
+  Supabase Storage'a yazıp saniyeler içinde 202 dönüyor, üretim `waitUntil`
+  altında yanıttan sonra sürüyor, `GET /api/jobs?ids=` sonucu topluyor.
+  **İş kimliği = sayfa kimliği**, yani uygulama beklerken öldürülse bile bir
+  sonraki açılış biten işi bulup alıyor (ikinci üretim ücreti yok). Cron yok —
+  Hobby'de günde bir kez — onun yerine telefonun yoklamaları hem unutulmuş bir
+  işi başlatıyor hem de işleyeni ölmüş bir işi geri alıyor; atomik `claim`
+  (PostgREST `?status=eq.queued`) çifte üretimi engelliyor, gerçek veritabanında
+  doğrulandı. Telefon Supabase'i hiç görmüyor: RLS açık + policy yok, yalnız
+  Vercel'in `service_role` anahtarı geçiyor. `/api/cards-vision` dokunulmadan
+  duruyor (geri dönüş istemci tarafında bir yol değişikliği).
+  Karar/gerekçe/§7.3 tavizi: [`docs/ADR-006-supabase-is-kuyrugu.md`](docs/ADR-006-supabase-is-kuyrugu.md).
+  Backend **461** test yeşil, `tsc --noEmit` temiz; CizgiCore'a 9 test eklendi
+  ama **Swift bu ortamda derlenmedi** — bir Mac'te `swift test` +
+  `xcodebuild -scheme Cizgi … build` gerekiyor. Vercel'de iki yeni env
+  değişkeni şart: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
   maddeleri Faz 6 ÖNCESİ (süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
 
 ## Proje ne
