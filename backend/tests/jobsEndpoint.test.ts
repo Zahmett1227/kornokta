@@ -487,6 +487,41 @@ describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
     expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
   });
 
+  it("yarışı kaybeden gönderim, kazanan çoktan bitmişse kendi yüklemesini toplar", async () => {
+    // Kaybedenin "kazanan zaten bu nesneyi işaret ediyor" varsayımı yalnız
+    // kazanan HÂLÂ çalışıyorsa doğru. Kazanan bitmişse sonlanma yolu nesneyi
+    // çoktan silmiştir ve buradaki yükleme, hiçbir satırın işaret etmediği taze
+    // bir nesne bırakır — bir daha asla bulunamaz (Codex, PR #26).
+    const store = stubStore();
+    const d = deps({ store: store.store });
+    afterReadingState(store, () => {
+      store.rows.set(JOB_ID, row({ status: "ready", imagePath: null, result: { ok: true } }));
+    });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(200);
+    expect(store.images.size).toBe(0);
+  });
+
+  it("eskimiş işin yeniden gönderiminde yükleme düşerse eski nesneyi bırakmaz", async () => {
+    // `expire` başarılı olduğu anda satırın `image_path`'i boşalıyor ama nesne
+    // hâlâ kovada. Yükleme bundan sonra düşerse, "yalnız yükledimse temizle"
+    // kuralı o eski nesneyi sahipsiz bırakırdı (Codex, PR #26).
+    const staleStartedAt = new Date(NOW - STALE_AFTER_MS - 1).toISOString();
+    const store = stubStore([row({ status: "processing", startedAt: staleStartedAt })]);
+    store.images.set(imagePathFor(JOB_ID), new Uint8Array([1, 2, 3]));
+    store.store.putImage = async () => {
+      throw new SupabaseError("Supabase 503", 503, true);
+    };
+    const d = deps({ store: store.store });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(503);
+    expect(store.images.size).toBe(0);
+  });
+
   it("kuyruğa alma başarısız olursa yüklenen görüntüyü bırakmaz", async () => {
     // Satırı olmayan bir yükleme bir daha asla bulunamaz: hiçbir yoklama onu
     // döndürmez, hiçbir kurtarma süpürmesi görmez.

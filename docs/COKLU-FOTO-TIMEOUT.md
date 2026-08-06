@@ -148,7 +148,7 @@ değişikliğinden ibaret (ADR-006 "Geri dönüş").
 
 Yapılan:
 
-- Backend **467 test yeşil** (36'sı yeni `tests/jobsEndpoint.test.ts`),
+- Backend **469 test yeşil** (38'i yeni `tests/jobsEndpoint.test.ts`),
   `tsc --noEmit` temiz.
 - Gerçek Supabase projesine karşı: tablo ve kova yollarının doğruluğu,
   `in.(uuid)` filtresi, RLS'in publishable anahtarla yazmayı gerçekten

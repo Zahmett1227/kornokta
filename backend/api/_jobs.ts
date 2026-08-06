@@ -265,7 +265,13 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   // over one image and one result row (Codex, PR #25 P1).
   const imagePath = imagePathFor(jobId);
   const enqueueRequest = { id: jobId, imagePath, mimeType, hint };
-  let uploaded = false;
+  // Set the moment this request could leave bytes at `imagePath` that no row
+  // points at — which happens two ways, not one: a successful `expire` nulls
+  // `image_path` while the old object is still in the bucket, and a successful
+  // `putImage` writes bytes before any row claims them. An object nothing
+  // references can never be found again: no poll returns it, no reclaim sweep
+  // sees it (§7.3; Codex, PR #25 and #26).
+  let mayHaveOrphanedObject = false;
 
   try {
     // A stale `processing` row has to be retired before it can be re-armed, and
@@ -273,26 +279,27 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     if (existing?.status === "processing") {
       const retired = await deps.store.expire(jobId, existing.startedAt, STALE_MESSAGE);
       if (!retired) return await currentState(jobId, deps, existing);
+      mayHaveOrphanedObject = true;
     }
 
     await deps.store.putImage(imagePath, image, mimeType);
-    uploaded = true;
+    mayHaveOrphanedObject = true;
 
     const armed = existing
       ? await deps.store.requeue(enqueueRequest)
       : await deps.store.insertQueued(enqueueRequest);
 
     if (!armed) {
-      // Lost the race. The winner's row already points at this object — the
-      // bytes are identical, so its worker is fine — and reporting its state is
-      // exactly what this caller needs. Nothing to clean up, nothing to dispatch.
+      // Lost the race, and this path leaks unless it cleans up. The winner owns
+      // the object only while its row still points at it; if it had already
+      // *finished*, its terminal path deleted the object and the upload above
+      // put a fresh one back that nothing will ever reference (Codex, PR #26).
+      // The ownership check below distinguishes the two.
+      await deleteUnreferencedImage(jobId, imagePath, deps);
       return await currentState(jobId, deps, existing);
     }
   } catch (error) {
-    // An upload with no row referencing it can never be discovered again: no
-    // poll returns it, no reclaim sweep sees it. Clean it up rather than leave
-    // the page in the bucket indefinitely (§7.3; Codex, PR #25 P2).
-    if (uploaded) await deleteUnreferencedImage(jobId, imagePath, deps);
+    if (mayHaveOrphanedObject) await deleteUnreferencedImage(jobId, imagePath, deps);
     return storeFailure(error, deps, jobId, "jobs.submit.enqueue_failed");
   }
 

@@ -57,10 +57,12 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   Vercel'in `service_role` anahtarı geçiyor. `/api/cards-vision` dokunulmadan
   duruyor (geri dönüş istemci tarafında bir yol değişikliği).
   Karar/gerekçe/§7.3 tavizi: [`docs/ADR-006-supabase-is-kuyrugu.md`](docs/ADR-006-supabase-is-kuyrugu.md).
-  Backend **467** test yeşil, `tsc --noEmit` temiz; merge sonrası Codex'in
+  Backend **469** test yeşil, `tsc --noEmit` temiz; merge sonrası Codex'in
   bulduğu üç yarış (koşulsuz `enqueue` → çifte ödemeli üretim; kurtarmanın
   denemeye kilitli olmaması; kuyruğa alma düşerse sızan görüntü) PR #26'da
-  kapatıldı — kural artık `JobStoreLike`'ın başında yazılı: **her durum
+  kapatıldı; Codex aynı PR'ı da inceleyip nesne temizliğinde iki delik
+  daha buldu (kaybeden gönderimin kendi yüklemesi; `expire` sonrası düşen
+  yükleme), onlar da kapatıldı — kural artık `JobStoreLike`'ın başında yazılı: **her durum
   değişikliği onu haklı çıkaran duruma koşullu olmak zorunda**; CizgiCore'a 9 test eklendi
   ama **Swift bu ortamda derlenmedi** — bir Mac'te `swift test` +
   `xcodebuild -scheme Cizgi … build` gerekiyor. Vercel'de iki yeni env

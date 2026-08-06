@@ -174,9 +174,26 @@ Ortak ders, artık `JobStoreLike`'ın başında yazılı: **her durum değişikl
 onu haklı çıkaran duruma koşullu olmak zorunda.** Buradaki koşulsuz tek bir
 yazma, bu dosyanın önlemek için var olduğu hatayı geri getiriyor.
 
+Codex bu düzeltmeleri de inceleyip nesne temizliğinde iki delik daha buldu;
+ikisi de aynı PR'da kapatıldı:
+
+4. **Yarışı kaybeden gönderim kendi yüklemesini bırakabiliyordu.** "Kazanan
+   zaten bu nesneyi işaret ediyor" varsayımı yalnız kazanan *hâlâ çalışıyorsa*
+   doğru. Kazanan bitmişse sonlanma yolu nesneyi çoktan silmiş olur ve
+   kaybedenin yüklemesi hiçbir satırın işaret etmediği taze bir nesne bırakır.
+   Kaybeden yol da artık sahiplik-farkında temizliği çalıştırıyor.
+5. **Eskimiş bir işin yeniden gönderiminde yükleme düşerse eski nesne
+   sahipsiz kalıyordu.** `expire` başarılı olduğu anda satırın `image_path`'i
+   boşalıyor ama nesne hâlâ kovada; "yalnız yükledimse temizle" kuralı o aralığı
+   kaçırıyordu. Bayrak artık `expire` başarısından itibaren de kalkıyor.
+
+Sonuç olarak sızıntı penceresi tek bir yere indi ve o da §7.3 bölümünde
+"kalan açık" olarak zaten yazılı: işçi, satırı yazdıktan sonra ama nesneyi
+silmeden önce ölürse.
+
 ## Doğrulama
 
-- Backend: **467 test yeşil** (36'sı bu ADR'nin `tests/jobsEndpoint.test.ts`
+- Backend: **469 test yeşil** (38'i bu ADR'nin `tests/jobsEndpoint.test.ts`
   dosyasından), `tsc --noEmit` temiz.
 - Gerçek Supabase projesine karşı doğrulanan: tablo ve kova yolları, `in.(uuid)`
   filtresi, RLS'in yazmayı gerçekten engellediği, atomik `claim`'in ikinci
