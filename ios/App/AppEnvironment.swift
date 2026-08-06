@@ -219,6 +219,34 @@ struct AppSettings: Codable, Equatable {
     }
 }
 
+/// Persistence for the daily new-card tally (§6.7's "günlük yeni kart").
+///
+/// Separate from `AppSettings` on purpose: that is what the user chose, this is
+/// what has happened. Mixing them would put a counter that changes several times
+/// a minute into the same blob as preferences, and make "reset my settings" also
+/// reset today's allowance.
+///
+/// Kept in `UserDefaults` rather than SwiftData because it is a single small
+/// value read on every review screen appearance, and because the review screen
+/// must keep working offline and without a store fetch (§24.5). The type itself
+/// lives in CizgiCore, where its day-boundary logic is unit-tested.
+extension DailyNewCardLedger {
+    static let storageKey = "cizgi.newCardLedger.v1"
+
+    static func load() -> DailyNewCardLedger {
+        guard
+            let data = UserDefaults.standard.data(forKey: storageKey),
+            let decoded = try? JSONDecoder().decode(DailyNewCardLedger.self, from: data)
+        else { return DailyNewCardLedger() }
+        return decoded
+    }
+
+    func save() {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+}
+
 /// Used on platforms without Vision so the app still builds and the failure is
 /// explicit rather than a silent empty result.
 struct UnavailableRecognizer: TextRecognizing {
