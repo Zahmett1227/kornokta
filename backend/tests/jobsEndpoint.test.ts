@@ -63,24 +63,45 @@ function stubStore(seed: JobRow[] = []) {
       calls.push(`find:${ids.join("+")}`);
       return ids.map((id) => rows.get(id)).filter((row): row is JobRow => row !== undefined);
     },
-    async enqueue(request: EnqueueRequest) {
-      calls.push(`enqueue:${request.id}`);
-      const previous = rows.get(request.id);
+    async insertQueued(request: EnqueueRequest) {
+      calls.push(`insertQueued:${request.id}`);
+      // The primary key is what makes a racing second submission lose instead
+      // of overwriting a row that may already be claimed.
+      if (rows.has(request.id)) return false;
       rows.set(request.id, {
         id: request.id,
         status: "queued",
         imagePath: request.imagePath,
         mimeType: request.mimeType,
         hint: request.hint ?? null,
-        attempts: previous?.attempts ?? 0,
+        attempts: 0,
         result: null,
         error: null,
         retryable: null,
-        createdAt: previous?.createdAt ?? new Date(NOW).toISOString(),
+        createdAt: new Date(NOW).toISOString(),
         updatedAt: new Date(NOW).toISOString(),
         startedAt: null,
         finishedAt: null,
       });
+      return true;
+    },
+    async requeue(request: EnqueueRequest) {
+      calls.push(`requeue:${request.id}`);
+      const row = rows.get(request.id);
+      if (!row || row.status !== "failed" || row.retryable !== true) return false;
+      rows.set(request.id, {
+        ...row,
+        status: "queued",
+        imagePath: request.imagePath,
+        mimeType: request.mimeType,
+        hint: request.hint ?? null,
+        result: null,
+        error: null,
+        retryable: null,
+        startedAt: null,
+        finishedAt: null,
+      });
+      return true;
     },
     async claim(id, attempts) {
       calls.push(`claim:${id}`);
@@ -99,10 +120,14 @@ function stubStore(seed: JobRow[] = []) {
       const row = rows.get(id);
       if (row) rows.set(id, { ...row, status: "failed", error, retryable, imagePath: null });
     },
-    async expire(id, error) {
+    async expire(id, startedAt, error) {
       calls.push(`expire:${id}`);
       const row = rows.get(id);
       if (!row || row.status !== "processing") return false;
+      // Fenced to one exact attempt, exactly as the `started_at=eq.` filter
+      // does server-side — a stub that ignored it would let a sweep aimed at a
+      // dead attempt silently kill a live one and the tests would never notice.
+      if (row.startedAt !== startedAt) return false;
       rows.set(id, { ...row, status: "failed", error, retryable: true, imagePath: null });
       return true;
     },
@@ -388,6 +413,147 @@ describe("POST /api/jobs — yeniden gönderim", () => {
   });
 });
 
+describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
+  /**
+   * Yarışı deterministik kuruyor: bu gönderim durumu okuduktan SONRA, ama
+   * yazmadan önce, diğer gönderim satırı oluşturup işi almış oluyor. Ayırt
+   * edici nokta bu — kaybedenin bütün kontrolleri, artık geçerli olmayan bir
+   * okumaya dayanarak geçti.
+   *
+   * `Promise.all` ile iki isteği aynı anda başlatmak bunu kurmuyor: stub'daki
+   * `runInBackground` işi `settled()`'a kadar geciktirdiği için iki gönderim de
+   * işçilerden önce bitiyor ve çakışma hiç oluşmuyor.
+   */
+  function afterReadingState(store: ReturnType<typeof stubStore>, then: () => void) {
+    const original = store.store.find.bind(store.store);
+    let first = true;
+    store.store.find = async (ids) => {
+      const result = await original(ids);
+      if (first) {
+        first = false;
+        then();
+      }
+      return result;
+    };
+  }
+
+  it("okuması eskimiş bir gönderim, alınmış işi kuyruğa geri çekmez", async () => {
+    // Gerçek bir senaryo, uç durum değil: `ProcessingQueue` aynı sayfa için elle
+    // "Tekrar dene" ile aşağı-çekmenin çakışmasına açıkça izin veriyor.
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+    afterReadingState(store, () => {
+      store.rows.set(JOB_ID, row({ status: "processing", startedAt: new Date(NOW).toISOString() }));
+    });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    // Koşulsuz bir upsert satırı 'queued'a çekerdi, ikinci bir işçi de onu
+    // alırdı: aynı sayfa için iki ödemeli üretim.
+    expect(store.rows.get(JOB_ID)?.status).toBe("processing");
+    expect(generator.seen).toHaveLength(0);
+    expect(response.status).toBe(202);
+  });
+
+  it("okuması eskimiş bir yeniden gönderim de alınmış işi geri çekmez", async () => {
+    // Aynı yarışın ikinci kapısı: tekrar denenebilir bir hata görüp yeniden
+    // kuyruğa almaya karar veren gönderim.
+    const store = stubStore([row({ status: "failed", retryable: true, imagePath: null })]);
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+    afterReadingState(store, () => {
+      store.rows.set(JOB_ID, row({ status: "processing", startedAt: new Date(NOW).toISOString() }));
+    });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)?.status).toBe("processing");
+    expect(generator.seen).toHaveLength(0);
+    expect(response.status).toBe(202);
+  });
+
+  it("yarışı kaybeden gönderim kazananın görüntüsünü silmez", async () => {
+    const store = stubStore([row({ status: "processing", startedAt: new Date(NOW).toISOString() })]);
+    store.images.set(imagePathFor(JOB_ID), new Uint8Array([1, 2, 3]));
+    const d = deps({ store: store.store });
+
+    // Süresi dolmamış bir iş: gönderim hiçbir şeye dokunmadan durumu bildirmeli.
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(202);
+    expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
+  });
+
+  it("yarışı kaybeden gönderim, kazanan çoktan bitmişse kendi yüklemesini toplar", async () => {
+    // Kaybedenin "kazanan zaten bu nesneyi işaret ediyor" varsayımı yalnız
+    // kazanan HÂLÂ çalışıyorsa doğru. Kazanan bitmişse sonlanma yolu nesneyi
+    // çoktan silmiştir ve buradaki yükleme, hiçbir satırın işaret etmediği taze
+    // bir nesne bırakır — bir daha asla bulunamaz (Codex, PR #26).
+    const store = stubStore();
+    const d = deps({ store: store.store });
+    afterReadingState(store, () => {
+      store.rows.set(JOB_ID, row({ status: "ready", imagePath: null, result: { ok: true } }));
+    });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(200);
+    expect(store.images.size).toBe(0);
+  });
+
+  it("eskimiş işin yeniden gönderiminde yükleme düşerse eski nesneyi bırakmaz", async () => {
+    // `expire` başarılı olduğu anda satırın `image_path`'i boşalıyor ama nesne
+    // hâlâ kovada. Yükleme bundan sonra düşerse, "yalnız yükledimse temizle"
+    // kuralı o eski nesneyi sahipsiz bırakırdı (Codex, PR #26).
+    const staleStartedAt = new Date(NOW - STALE_AFTER_MS - 1).toISOString();
+    const store = stubStore([row({ status: "processing", startedAt: staleStartedAt })]);
+    store.images.set(imagePathFor(JOB_ID), new Uint8Array([1, 2, 3]));
+    store.store.putImage = async () => {
+      throw new SupabaseError("Supabase 503", 503, true);
+    };
+    const d = deps({ store: store.store });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(503);
+    expect(store.images.size).toBe(0);
+  });
+
+  it("kuyruğa alma başarısız olursa yüklenen görüntüyü bırakmaz", async () => {
+    // Satırı olmayan bir yükleme bir daha asla bulunamaz: hiçbir yoklama onu
+    // döndürmez, hiçbir kurtarma süpürmesi görmez.
+    const store = stubStore();
+    store.store.insertQueued = async () => {
+      throw new SupabaseError("Supabase 503", 503, true);
+    };
+    const d = deps({ store: store.store });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(response.status).toBe(503);
+    expect(store.images.size).toBe(0);
+  });
+
+  it("sahibi olan bir görüntüyü telafi silmesiyle kaldırmaz", async () => {
+    // Belirsiz bir hatada, yarışı kazanan başka bir gönderim tam bu baytlara
+    // güveniyor olabilir. Sızan nesne birkaç megabayt; kırılan canlı iş sayfa.
+    const store = stubStore();
+    store.store.insertQueued = async () => {
+      // Kazanan, biz düşmeden hemen önce satırı yazmış gibi.
+      store.rows.set(JOB_ID, row({ status: "processing", startedAt: new Date(NOW).toISOString() }));
+      throw new SupabaseError("Supabase 503", 503, true);
+    };
+    const d = deps({ store: store.store });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+
+    expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
+  });
+});
+
 describe("POST /api/jobs — doğrulama", () => {
   it("token olmadan 401 verir", async () => {
     const response = await handleJobsRequest(post(VALID_BODY, null), deps());
@@ -472,6 +638,36 @@ describe("GET /api/jobs", () => {
     const body = (await response.json()) as { jobs: JobView[] };
     expect(body.jobs[0]).toMatchObject({ status: "failed", retryable: true });
     expect(store.images.size).toBe(0);
+  });
+
+  it("kurtarma, aradan yeniden başlatılmış bir denemeyi öldürmez", async () => {
+    // Yoklama eski, takılı denemeyi okurken iş yeniden kuyruğa alınıp taze bir
+    // işçi tarafından alınmış olabilir. Yalnız `status`'e bakan bir koşul, eski
+    // denemeye nişan alan süpürmenin YENİ denemeyi öldürmesine izin verirdi.
+    const staleStartedAt = new Date(NOW - STALE_AFTER_MS - 1).toISOString();
+    const store = stubStore([row({ status: "processing", startedAt: staleStartedAt })]);
+    store.images.set(imagePathFor(JOB_ID), new Uint8Array([1, 2, 3]));
+
+    const d = deps({ store: store.store });
+    const original = store.store.find.bind(store.store);
+    let firstRead = true;
+    store.store.find = async (ids) => {
+      const result = await original(ids);
+      if (firstRead) {
+        firstRead = false;
+        // Okuduktan hemen sonra: yeni bir işçi işi devraldı.
+        store.rows.set(JOB_ID, row({ status: "processing", startedAt: new Date(NOW).toISOString() }));
+      }
+      return result;
+    };
+
+    const response = await handleJobsRequest(get(JOB_ID), d);
+
+    const body = (await response.json()) as { jobs: JobView[] };
+    expect(body.jobs[0]).toMatchObject({ status: "processing" });
+    expect(store.rows.get(JOB_ID)?.status).toBe("processing");
+    // Ve yeni denemenin görüntüsü duruyor.
+    expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
   });
 
   it("henüz süresi dolmamış bir işi geri almaz", async () => {
