@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "requestId", "readText", "cards", "usage"],
   "properties": {
-    "schemaVersion": { "type": "string", "const": "2.0" },
+    "schemaVersion": { "type": "string", "enum": ["2.0", "2.1"] },
     "requestId": { "type": "string", "minLength": 1 },
     "readText": {
       "type": "string",
@@ -21,7 +21,7 @@
         "required": ["id", "type", "front", "back", "explanation", "difficulty", "tags", "lowConfidence"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "type": { "type": "string", "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap"] },
+          "type": { "type": "string", "enum": ["direct_recall", "cloze", "mechanism", "distinction", "exception_trap", "multiple_choice"] },
           "front": { "type": "string", "minLength": 1 },
           "back": { "type": "string", "minLength": 1 },
           "explanation": { "type": "string" },
@@ -30,6 +30,28 @@
           "lowConfidence": {
             "type": "boolean",
             "description": "§6: modelin kendi 'emin değilim' sinyali (ör. okunamayan el yazısı/değer). Onay tetiklemez; kartın içinde de belirtilebilir."
+          },
+          "options": {
+            "description": "§13.3: beş şıklı (TUS tipi) kartın şıkları; başka her kart tipinde null. Her yanlış şıkkın neden yanlış olduğu kendi `why` alanındadır — §13.3 bunu ayrı alanlarda ister. Şema v2.1'de eklendi; v2.0 kartlarında yoktur, o yüzden kanonik şemada zorunlu değildir (model tarafına giden katı sürümde zorunludur, bkz. buildModelResponseSchema).",
+            "type": ["array", "null"],
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "correct", "why"],
+              "properties": {
+                "text": { "type": "string", "minLength": 1 },
+                "correct": { "type": "boolean" },
+                "why": { "type": "string", "description": "Yanlış şıkta: neden yanlış (tek cümle). Doğru şıkta boş." }
+              }
+            }
+          },
+          "correctOption": {
+            "description": "§13.3: doğru şıkkın `options` içindeki indeksi. `correct: true` ile uyuşmaması, kartın şüpheli olduğunun en ucuz sinyalidir — kapı bunu kullanır.",
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 4
           }
         }
       }

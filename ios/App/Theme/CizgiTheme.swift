@@ -206,6 +206,7 @@ extension CardType {
         case .mechanism: return "Mekanizma"
         case .distinction: return "Ayırt etme"
         case .exceptionTrap: return "İstisna"
+        case .multipleChoice: return "Beş şık"
         }
     }
 
@@ -216,6 +217,7 @@ extension CardType {
         case .mechanism: return "gearshape.2"
         case .distinction: return "arrow.left.and.right"
         case .exceptionTrap: return "exclamationmark.triangle"
+        case .multipleChoice: return "list.bullet.circle"
         }
     }
 }

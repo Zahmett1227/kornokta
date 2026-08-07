@@ -160,6 +160,7 @@ public struct CapturePipeline: Sendable {
     private let selector: any MarkerSelecting
     private let generator: any CardGenerating
     private let maxCards: Int
+    private let multipleChoiceMode: MultipleChoiceMode?
     /// Cloud OCR seam, retained for the rollback path. The vision flow does not
     /// use it (the card endpoint reads the page itself).
     private let backend: (any BackendCalling)?
@@ -169,12 +170,14 @@ public struct CapturePipeline: Sendable {
         selector: any MarkerSelecting = ManualSelectionOnly(),
         generator: any CardGenerating = MockCardProvider(),
         maxCards: Int = 4,
+        multipleChoiceMode: MultipleChoiceMode? = nil,
         backend: (any BackendCalling)? = nil
     ) {
         self.recognizer = recognizer
         self.selector = selector
         self.generator = generator
         self.maxCards = maxCards
+        self.multipleChoiceMode = multipleChoiceMode
         self.backend = backend
     }
 
@@ -185,6 +188,7 @@ public struct CapturePipeline: Sendable {
             selector: selector,
             generator: generator,
             maxCards: maxCards,
+            multipleChoiceMode: multipleChoiceMode,
             backend: backend
         )
     }
@@ -196,6 +200,7 @@ public struct CapturePipeline: Sendable {
             selector: selector,
             generator: generator,
             maxCards: maxCards,
+            multipleChoiceMode: multipleChoiceMode,
             backend: backend
         )
     }
@@ -208,6 +213,7 @@ public struct CapturePipeline: Sendable {
             selector: selector,
             generator: generator,
             maxCards: maxCards,
+            multipleChoiceMode: multipleChoiceMode,
             backend: backend
         )
     }
@@ -222,6 +228,21 @@ public struct CapturePipeline: Sendable {
             selector: selector,
             generator: generator,
             maxCards: max(1, maxCards),
+            multipleChoiceMode: multipleChoiceMode,
+            backend: backend
+        )
+    }
+
+    /// Ayarlar's five-option setting (§13.3), carried the same way `maxCards`
+    /// is — the pipeline is rebuilt rather than mutated so a request already in
+    /// flight keeps the settings it started with.
+    public func withMultipleChoiceMode(_ mode: MultipleChoiceMode?) -> CapturePipeline {
+        CapturePipeline(
+            recognizer: recognizer,
+            selector: selector,
+            generator: generator,
+            maxCards: maxCards,
+            multipleChoiceMode: mode,
             backend: backend
         )
     }
@@ -265,7 +286,8 @@ public struct CapturePipeline: Sendable {
                     subject: subject,
                     maxCards: maxCards,
                     imageData: upload.data,
-                    mimeType: upload.mimeType
+                    mimeType: upload.mimeType,
+                    multipleChoiceMode: multipleChoiceMode
                 )
             )
         } catch let error as CardGenerationError {

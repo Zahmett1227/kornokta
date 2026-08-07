@@ -54,7 +54,7 @@ function deps(overrides: Partial<CardsDependencies> = {}): CardsDependencies & {
   const logged: Record<string, unknown>[] = [];
   return {
     generator: stubGenerator(validOutput()).generator,
-    openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700 },
+    openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700, multipleChoiceMode: "mixed" },
     cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
     deviceToken: TOKEN,
     log: (entry) => logged.push(entry),
@@ -191,7 +191,7 @@ describe("POST /api/cards-vision", () => {
         post(VALID_BODY),
         deps({
           generator,
-          openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 1_000_000 },
+          openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 1_000_000, multipleChoiceMode: "mixed" },
           cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 5, maxUsdPerCardGeneration: 0.5 },
         }),
       );
@@ -258,10 +258,68 @@ describe("POST /api/cards-vision", () => {
       const { generator } = stubGenerator(output);
       const response = await handleCardsRequest(
         post(VALID_BODY),
-        deps({ generator, openai: { maxCardsPerKnowledgeUnit: 1, maxOutputTokens: 700 } }),
+        deps({ generator, openai: { maxCardsPerKnowledgeUnit: 1, maxOutputTokens: 700, multipleChoiceMode: "mixed" } }),
       );
       const body = (await response.json()) as { gate: { droppedForLimit: string[] } };
       expect(body.gate.droppedForLimit).toEqual(["card_2"]);
+    });
+  });
+
+  describe("five-option cards (§13.3)", () => {
+    function mcOutput(overrides: Partial<LlmOutput["cards"][number]> = {}): LlmOutput {
+      const base = validOutput();
+      return validOutput({
+        schemaVersion: "2.1",
+        cards: [
+          {
+            ...base.cards[0]!,
+            type: "multiple_choice",
+            back: "Hipokalemi",
+            options: [
+              { text: "Hipokalemi", correct: true, why: "" },
+              { text: "Hiperkalemi", correct: false, why: "Sivri T dalgası yapar." },
+              { text: "Hiponatremi", correct: false, why: "Sodyum tablosu farklı." },
+              { text: "Hipokalsemi", correct: false, why: "Tetani ön planda." },
+              { text: "Hipomagnezemi", correct: false, why: "Eşlik eder, tablo bu değil." },
+            ],
+            correctOption: 0,
+            ...overrides,
+          },
+        ],
+      });
+    }
+
+    it("passes a sound five-option card through to the client", async () => {
+      const { generator } = stubGenerator(mcOutput());
+      const response = await handleCardsRequest(post(VALID_BODY), deps({ generator }));
+      const body = (await response.json()) as { output: LlmOutput; gate: { verdicts: Array<{ decision: string }> } };
+      expect(body.output.cards[0]!.type).toBe("multiple_choice");
+      expect(body.output.cards[0]!.options).toHaveLength(5);
+      expect(body.gate.verdicts[0]!.decision).toBe("auto_accept");
+    });
+
+    /// The card must survive its broken options — it was paid for and its
+    /// front/back are fine.
+    it("downgrades a broken five-option card instead of losing it", async () => {
+      const { generator } = stubGenerator(mcOutput({ correctOption: 2 }));
+      const response = await handleCardsRequest(post(VALID_BODY), deps({ generator }));
+      const body = (await response.json()) as { output: LlmOutput; gate: { verdicts: Array<{ decision: string }> } };
+      expect(body.output.cards[0]!.type).toBe("direct_recall");
+      expect(body.output.cards[0]!.options).toBeNull();
+      expect(body.output.cards[0]!.front).toBe(validOutput().cards[0]!.front);
+      expect(body.gate.verdicts[0]!.decision).toBe("auto_accept");
+    });
+
+    it("logs how many cards were adjusted, never their option text", async () => {
+      const secret = "gizli kalması gereken distraktör";
+      const output = mcOutput();
+      output.cards[0]!.options![1] = { text: secret, correct: true, why: "" };
+      const { generator } = stubGenerator(output);
+      const d = deps({ generator });
+      await handleCardsRequest(post(VALID_BODY), d);
+      const serialized = JSON.stringify(d.logged);
+      expect(serialized).not.toContain(secret);
+      expect(serialized).toContain("multipleChoiceNotes");
     });
   });
 
@@ -305,7 +363,7 @@ describe("POST /api/cards-vision — kart sınırı (§6.7)", () => {
     const generator = stubGenerator(validOutput());
     await handleCardsRequest(
       post({ ...VALID_BODY, maxCards: 99 }),
-      deps({ generator: generator.generator, openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700 } }),
+      deps({ generator: generator.generator, openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700, multipleChoiceMode: "mixed" } }),
     );
     expect(generator.seen[0]?.maxCards).toBe(4);
   });

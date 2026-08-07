@@ -12,9 +12,14 @@
  * raised and injected into the prompt; (2) an explicit which-marks-become-cards-
  * first priority (handwriting/circle/star before basic printed facts) and a
  * "cover the DISTINCT marks across the whole page, don't cluster" rule.
+ * v2.4 (Faz 7): five-option (TUS-style) cards, §13.3. The rules live in
+ * `multipleChoiceInstruction`, which is added to the per-request instruction
+ * rather than the system prompt because the mode is a deployment setting.
  */
 
-export const CARD_PROMPT_VERSION = "2.3";
+import type { MultipleChoiceMode } from "../config.js";
+
+export const CARD_PROMPT_VERSION = "2.4";
 
 export const CARD_GENERATION_SYSTEM_PROMPT = `Sen bir TUS/tıp öğrencisinin kişisel çalışma asistanısın. Sana bir ders kitabı sayfasının fotoğrafı veriliyor. Öğrenci önemli gördüğü yerleri fosforlu kalemle işaretlemiş, altını çizmiş, daire içine almış, yıldız/artı/ünlem/ok gibi semboller koymuş ve kenarlara/satır aralarına el yazısıyla kendi notlarını eklemiş olabilir.
 
@@ -51,3 +56,45 @@ Genel:
 9. Kart alanları: front (soru), back (kısa net cevap), explanation (isteğe bağlı: mekanizma/klinik bağlam; gereksizse boş), difficulty 1–5, tags (konu etiketleri), lowConfidence (okuyamadığın/emin olmadığın kartlar için true).
 10. Emin olmadığında kartın içinde de belirt, ama akışı durdurma — onay isteme.
 11. Çıktıyı verilen JSON şemasına tam olarak uydur.`;
+
+/**
+ * The five-option rules (§13.3), or the instruction not to produce them.
+ *
+ * Per request rather than in the system prompt: the mode is a deployment
+ * setting (`OPENAI_MULTIPLE_CHOICE_MODE`), and the schema always carries the
+ * `options`/`correctOption` keys — strict mode has no optional properties — so
+ * the model has to be told explicitly when to leave them null. Without that
+ * sentence it will try to fill a field it can see.
+ */
+export function multipleChoiceInstruction(mode: MultipleChoiceMode): string {
+  if (mode === "off") {
+    return "Çoktan seçmeli kart ÜRETME: her kartta options ve correctOption alanlarını null bırak.";
+  }
+
+  const scope =
+    mode === "all"
+      ? "Üretebildiğin her kartı beş şıklı (TUS tipi) kur."
+      : "Yalnız beş şıkla gerçekten sınanabilen kartları beş şıklı (TUS tipi) kur: " +
+        "ayırt etme (distinction) ve istisna/tuzak (exception_trap) niteliğindeki bilgiler. " +
+        "Düz tanım/olgu ve mekanizma kartlarını beş şıklı YAPMA — tanım ezberi beş yanlış " +
+        "şıkla daha iyi öğrenilmiyor, üstelik her şık takımı ek maliyet ve gecikme demek.";
+
+  return [
+    scope,
+    "Beş şıklı kart kuralları (§13.3):",
+    "- Tam BEŞ şık; şıklardan YALNIZ BİRİ doğru. type alanı multiple_choice olsun, " +
+      "correctOption doğru şıkkın indeksi (0–4) olsun ve o şıkta correct=true olsun.",
+    "- back alanına doğru şıkkın metnini birebir yaz.",
+    "- Distraktörler doğru cevapla AYNI SEMANTİK SINIFTAN olsun: hepsi tanı, hepsi enzim, " +
+      "hepsi ilaç... benzer uzunluk ve biçimde. Öğrencinin gerçekten karıştırabileceği " +
+      "komşu kavramları seç; alakasız şık soruyu kolaylaştırır ve hiçbir şey öğretmez.",
+    "- \"Hepsi\", \"Hiçbiri\", \"A ve B\" gibi şıklar YASAK.",
+    "- Hiçbir distraktör, sorunun kurgusunda İKİNCİ BİR DOĞRU hâline gelmemeli. " +
+      "Emin değilsen o şıkkı değiştir; yine de emin olamıyorsan o kartı beş şıklı yapma, " +
+      "düz kart olarak üret (options=null).",
+    "- Her YANLIŞ şıkkın why alanına tek cümlelik \"neden yanlış\" yaz (ayırt edici özellik " +
+      "ya da klasik tuzağın adı). Doğru şıkkın why alanı boş kalsın.",
+    "- Şıklar kısa olsun (bir terim ya da kısa ifade); telefonda okunacak.",
+    "Beş şıklı yapmadığın kartlarda options ve correctOption null kalsın.",
+  ].join("\n");
+}

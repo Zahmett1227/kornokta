@@ -84,6 +84,7 @@ public struct BackendCardProvider: CardGenerating {
                 mimeType: mimeType,
                 hint: hint,
                 maxCards: request.maxCards,
+                multipleChoiceMode: request.multipleChoiceMode,
                 token: token
             )
         case .useResult, .wait, .failPermanently:
@@ -208,6 +209,7 @@ public struct BackendCardProvider: CardGenerating {
         mimeType: String,
         hint: String?,
         maxCards: Int,
+        multipleChoiceMode: MultipleChoiceMode?,
         token: String
     ) async throws -> RemoteJobView? {
         var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent("api/jobs"))
@@ -225,7 +227,8 @@ public struct BackendCardProvider: CardGenerating {
                 // setting on the request since Faz 3 and this method never wrote
                 // it to the wire, so the server always used its own ceiling and
                 // the Ayarlar control did nothing.
-                maxCards: maxCards
+                maxCards: maxCards,
+                multipleChoiceMode: multipleChoiceMode?.rawValue
             )
         )
 
@@ -305,6 +308,26 @@ public struct BackendCardProvider: CardGenerating {
     /// Internal rather than private: this is the one piece of `generate()`
     /// worth testing directly (no HTTP mocking in this package, same as
     /// `BackendClient` — see `BackendCardProviderTests.swift`).
+    /// Turns a wire card's options into the model's own type, or `nil`.
+    ///
+    /// Re-validated on arrival even though the server's gate already checked
+    /// them (§13.3 rule 4): the phone is not entitled to assume a well-formed
+    /// response, and a card whose options do not hold up simply shows as a
+    /// plain card rather than as a question that cannot be answered.
+    static func options(of card: RemoteCard) -> [CardOption]? {
+        guard card.type == .multipleChoice, let remote = card.options else { return nil }
+        let options = remote.map {
+            CardOption(text: $0.text, isCorrect: $0.correct, why: $0.why.isEmpty ? nil : $0.why)
+        }
+        guard case .valid = MultipleChoice.validate(options) else { return nil }
+        // The server states the answer twice on purpose; if the two disagree,
+        // neither can be trusted (backend `multipleChoice.ts`).
+        guard let correctOption = card.correctOption,
+              MultipleChoice.correctIndex(options) == correctOption
+        else { return nil }
+        return options
+    }
+
     static func map(_ decoded: RemoteCardsSuccess, elapsedMs: Int) throws -> GeneratedKnowledge {
         // Built with `reduce`, not `Dictionary(uniqueKeysWithValues:)`: card
         // ids come from a model response, and a duplicate must not crash the
@@ -329,7 +352,9 @@ public struct BackendCardProvider: CardGenerating {
                 // was removed in Faz 6). Left empty rather than faking one.
                 sourceQuote: "",
                 riskFlags: [],
-                requiresUserApproval: false
+                requiresUserApproval: false,
+                options: Self.options(of: card),
+                lowConfidence: card.lowConfidence
             )
         }
 
@@ -386,6 +411,9 @@ public struct BackendCardProvider: CardGenerating {
         /// The server clamps this to its own ceiling, so it can only ask for
         /// fewer cards than the deployment allows.
         let maxCards: Int
+        /// Same rule as `maxCards`: the deployment's own mode is the ceiling
+        /// (§21.3, §13.3). Omitted when the user has not chosen one.
+        let multipleChoiceMode: String?
     }
 
     private struct FailureBody: Decodable {
@@ -439,6 +467,17 @@ struct RemoteCard: Decodable {
     let tags: [String]
     /// The model's own "I am unsure" signal (§6). Recorded but does not gate.
     let lowConfidence: Bool
+    /// Schema v2.1 (§13.3). Absent on a v2.0 response and `null` on every card
+    /// that is not five-option, so both decode to `nil` without a special case.
+    let options: [RemoteCardOption]?
+    let correctOption: Int?
+}
+
+struct RemoteCardOption: Decodable {
+    let text: String
+    let correct: Bool
+    /// Why this option is wrong; empty on the correct one.
+    let why: String
 }
 
 struct RemoteUsage: Decodable {

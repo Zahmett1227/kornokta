@@ -41,6 +41,18 @@ struct SettingsView: View {
                         ),
                         in: 1...12
                     )
+
+                    Picker("Beş şıklı kart", selection: Binding(
+                        get: { environment.settings.multipleChoiceMode },
+                        set: { environment.settings.multipleChoiceMode = $0; environment.settings.save() }
+                    )) {
+                        ForEach(MultipleChoiceMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    Text(environment.settings.multipleChoiceMode.detail)
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
                 } header: {
                     Text("Yakalama")
                 } footer: {
@@ -48,7 +60,9 @@ struct SettingsView: View {
                     // never put in the request and the server always used its own
                     // ceiling. Fewer cards also means a faster, cheaper call.
                     Text("İşaretli bir sayfadan en fazla kaç kart üretilsin. "
-                         + "Az kart daha hızlı ve daha ucuz üretilir.")
+                         + "Az kart daha hızlı ve daha ucuz üretilir. Beş şıklı "
+                         + "kartlarda TUS tipi soru ve şıklar üretilir; sunucu "
+                         + "kendi ayarını tavan kabul eder.")
                 }
 
                 Section {
@@ -334,7 +348,11 @@ struct SettingsView: View {
                                 difficultyAfter: log.difficultyAfter,
                                 deviceTimeZone: log.deviceTimeZone
                             )
-                        }
+                        },
+                    // §13.3: without these a restored five-option card would be
+                    // a question with nothing to choose from.
+                    options: card.options,
+                    lowConfidence: card.lowConfidence
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -412,7 +430,9 @@ struct SettingsView: View {
             sourceQuote: record.sourceQuote,
             status: CardStatus(rawValue: record.status) ?? .active,
             createdAt: record.createdAt == .distantPast ? .now : record.createdAt,
-            dueDate: record.dueDate
+            dueDate: record.dueDate,
+            options: record.options,
+            lowConfidence: record.lowConfidence
         )
         // Scheduling state is assigned after init, which resets it to zero.
         card.stability = record.stability

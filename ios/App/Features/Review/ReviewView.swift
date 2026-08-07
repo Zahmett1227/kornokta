@@ -21,6 +21,10 @@ struct ReviewView: View {
     /// an estimate *before* the first card, not after it.
     @State private var session: ReviewSession?
     @State private var isAnswerVisible = false
+    /// Which option the user tapped on a five-option card, as an index into the
+    /// card's canonical option list. `nil` before they answer — and also after
+    /// an undo, where the answer is on screen but nobody picked anything.
+    @State private var selectedOption: Int?
     @State private var shownAt = Date()
     /// The one grade that can be taken back. Only ever the last one.
     @State private var lastGrade: GradeSnapshot?
@@ -266,20 +270,37 @@ struct ReviewView: View {
     private func flashcard(_ card: Card) -> some View {
         CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
             VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
-                CardTypeBadge(type: card.type)
+                HStack(spacing: Cizgi.Space.sm) {
+                    CardTypeBadge(type: card.type)
+                    // Flagged, not blocked (§13.3 rule 6): the card is being
+                    // reviewed like any other, but the user is told it was not
+                    // fully vouched for before they trust the answer.
+                    if card.lowConfidence {
+                        TagChip("Gözden geçir", systemImage: "exclamationmark.triangle.fill")
+                    }
+                }
 
                 Text(card.front)
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(Cizgi.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
+                if let options = card.options {
+                    optionList(card, options: options)
+                }
+
                 if isAnswerVisible {
                     Rectangle().fill(Cizgi.hairline).frame(height: 1)
 
-                    Text(card.back)
-                        .font(.title3)
-                        .foregroundStyle(Cizgi.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // On a five-option card the answer is already marked in the
+                    // list above; repeating it as a line of text would just push
+                    // the reasons off screen.
+                    if card.options == nil {
+                        Text(card.back)
+                            .font(.title3)
+                            .foregroundStyle(Cizgi.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     if let explanation = card.explanation, !explanation.isEmpty {
                         Text(explanation)
@@ -310,7 +331,28 @@ struct ReviewView: View {
     @ViewBuilder
     private func actionArea(_ card: Card) -> some View {
         if isAnswerVisible {
-            gradeButtons(for: card)
+            // Picking a wrong option *is* "Unuttum". Offering the four grades
+            // there would let the user mark a card they demonstrably could not
+            // answer as "İyi", and FSRS would believe it — a lie written into
+            // the card's history for weeks (§18.2).
+            if let picked = selectedOption, let options = card.options {
+                if options[picked].isCorrect {
+                    gradeButtons(for: card, ratings: [.hard, .good, .easy])
+                } else {
+                    Button("Devam") { grade(card, .again) }
+                        .buttonStyle(CizgiPrimaryButtonStyle())
+                }
+            } else {
+                gradeButtons(for: card, ratings: ReviewRating.allCases)
+            }
+        } else if card.options != nil {
+            // The options are the button: a "Cevabı göster" here would let the
+            // user see the answer before committing to one, which is the whole
+            // point of asking.
+            Text("Bir şık seç")
+                .font(.footnote)
+                .foregroundStyle(Cizgi.muted)
+                .frame(maxWidth: .infinity)
         } else {
             Button("Cevabı göster") {
                 withAnimation { isAnswerVisible = true }
@@ -319,9 +361,83 @@ struct ReviewView: View {
         }
     }
 
-    private func gradeButtons(for card: Card) -> some View {
+    /// The five options, in an order that is stable for this sitting but not
+    /// for ever (`MultipleChoice.presentationOrder`).
+    @ViewBuilder
+    private func optionList(_ card: Card, options: [CardOption]) -> some View {
+        let order = MultipleChoice.presentationOrder(
+            cardId: card.id,
+            reviewCount: card.reviewCount,
+            count: options.count
+        )
+        VStack(spacing: Cizgi.Space.sm) {
+            ForEach(order, id: \.self) { index in
+                optionRow(card, options: options, index: index)
+            }
+        }
+    }
+
+    private func optionRow(_ card: Card, options: [CardOption], index: Int) -> some View {
+        let option = options[index]
+        let picked = selectedOption == index
+        let revealed = isAnswerVisible
+        // Colour never carries the meaning on its own (§29): every revealed row
+        // also gets an icon, and the wrong pick gets its reason in words.
+        let tint: Color = revealed ? (option.isCorrect ? Cizgi.success : (picked ? Cizgi.danger : Cizgi.muted)) : Cizgi.ink
+        let icon: String? = revealed
+            ? (option.isCorrect ? "checkmark.circle.fill" : (picked ? "xmark.circle.fill" : nil))
+            : nil
+
+        return Button {
+            guard !isAnswerVisible else { return }
+            withAnimation {
+                selectedOption = index
+                isAnswerVisible = true
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
+                    if let icon {
+                        Image(systemName: icon).foregroundStyle(tint)
+                    }
+                    Text(option.text)
+                        .font(.body)
+                        .foregroundStyle(tint)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                // §13.3's own requirement, and the part that teaches: knowing
+                // *why* the option you picked was wrong.
+                if revealed, !option.isCorrect, let why = option.why, !why.isEmpty {
+                    Text(why)
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(Cizgi.Space.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Cizgi.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
+                    .stroke(revealed && (option.isCorrect || picked) ? tint : Cizgi.hairline,
+                            lineWidth: revealed && (option.isCorrect || picked) ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isAnswerVisible)
+        .accessibilityLabel(
+            revealed
+                ? "\(option.text), \(option.isCorrect ? "doğru cevap" : (picked ? "senin seçimin, yanlış" : "yanlış"))"
+                : option.text
+        )
+    }
+
+    private func gradeButtons(for card: Card, ratings: [ReviewRating]) -> some View {
         HStack(spacing: Cizgi.Space.sm) {
-            ForEach(ReviewRating.allCases, id: \.self) { rating in
+            ForEach(ratings, id: \.self) { rating in
                 Button {
                     grade(card, rating)
                 } label: {
@@ -384,6 +500,7 @@ struct ReviewView: View {
         )
         session = ReviewSession(queue: queue)
         isAnswerVisible = false
+        selectedOption = nil
         lastGrade = nil
         shownAt = .now
     }
@@ -399,6 +516,7 @@ struct ReviewView: View {
         session = working
         lastGrade = nil
         isAnswerVisible = false
+        selectedOption = nil
         shownAt = .now
     }
 
@@ -426,10 +544,31 @@ struct ReviewView: View {
         let updatedAt: Date
         /// Whether this grade spent one of today's new-card allowances.
         let countedAsNew: Bool
+        /// Which option was picked, on a five-option card.
+        ///
+        /// Undo used to drop this, and the screen then looked like a card whose
+        /// answer was showing with nothing picked — which offers all four
+        /// grades. A card just answered *wrong* could then be graded "Kolay",
+        /// quietly breaking the wrong-option-is-always-`again` rule this screen
+        /// exists to enforce (Codex, PR #29).
+        let selectedOption: Int?
+        /// The card's option list as it stood when the grade was given.
+        ///
+        /// An index means nothing on its own: the user can leave for Bilgilerim
+        /// mid-session, reword the options, move the tick or remove them
+        /// entirely, and come back. Replaying the old index against a new list
+        /// would mark an option nobody chose — and, if it now happens to be the
+        /// correct one, hand back the grades a wrong answer is not allowed
+        /// (Codex, PR #29, second round).
+        let optionsFingerprint: String?
     }
 
     private func grade(_ card: Card, _ rating: ReviewRating) {
         guard var working = session else { return }
+
+        // Read before the screen resets it, so undo can put the answer back
+        // exactly as it stood.
+        let pickedOption = selectedOption
 
         let state = SchedulingState(
             stability: card.stability,
@@ -516,11 +655,16 @@ struct ReviewView: View {
                 lapseCount: snapshotFields.lapseCount,
                 lastReviewedAt: snapshotFields.lastReviewedAt,
                 updatedAt: snapshotFields.updatedAt,
-                countedAsNew: wasNew
+                countedAsNew: wasNew,
+                selectedOption: pickedOption,
+                optionsFingerprint: card.optionsRaw
             )
         }
 
-        withAnimation { isAnswerVisible = false }
+        withAnimation {
+            isAnswerVisible = false
+            selectedOption = nil
+        }
         shownAt = .now
     }
 
@@ -575,9 +719,24 @@ struct ReviewView: View {
         working.rewind(snapshot.step)
         session = working
         lastGrade = nil
-        // The answer was on screen when they graded; putting it back hidden
-        // would make them recall a card they have just seen the answer to.
-        isAnswerVisible = true
+        if snapshot.optionsFingerprint == card.optionsRaw {
+            // The answer was on screen when they graded; putting it back hidden
+            // would make them recall a card they have just seen the answer to.
+            isAnswerVisible = true
+            // Restored, not cleared: the grade buttons on a five-option card
+            // depend on what was picked, and dropping it would hand back all
+            // four.
+            selectedOption = snapshot.selectedOption
+        } else {
+            // The options changed under the session, so there is no honest way
+            // to show the old answer: the stored index points into a list that
+            // no longer exists. The card is presented unanswered — which for a
+            // five-option card means picking again, and for a plain one means
+            // "Cevabı göster". The scheduling state is still rolled back; only
+            // the display cannot be reconstructed.
+            isAnswerVisible = false
+            selectedOption = nil
+        }
         shownAt = .now
     }
 }

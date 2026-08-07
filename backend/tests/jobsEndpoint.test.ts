@@ -75,6 +75,7 @@ function stubStore(seed: JobRow[] = []) {
         mimeType: request.mimeType,
         hint: request.hint ?? null,
         maxCards: request.maxCards ?? null,
+        mcMode: request.mcMode ?? null,
         attempts: 0,
         result: null,
         error: null,
@@ -180,7 +181,7 @@ function deps(
   return {
     store: stubStore().store,
     generator: stubGenerator(validOutput()).generator,
-    openai: { maxCardsPerKnowledgeUnit: 12, maxOutputTokens: 8192 },
+    openai: { maxCardsPerKnowledgeUnit: 12, maxOutputTokens: 8192, multipleChoiceMode: "mixed" },
     cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
     supabase: { staleAfterMs: STALE_AFTER_MS },
     deviceToken: TOKEN,
@@ -224,6 +225,7 @@ function row(overrides: Partial<JobRow> = {}): JobRow {
     mimeType: "image/jpeg",
     hint: null,
     maxCards: null,
+    mcMode: null,
     attempts: 0,
     result: null,
     error: null,
@@ -600,6 +602,54 @@ describe("POST /api/jobs — kart sınırı (§6.7)", () => {
     for (const bad of [0, -3, 2.5, "üç"]) {
       const response = await handleJobsRequest(post({ ...VALID_BODY, maxCards: bad }), deps());
       expect(response.status, `maxCards=${bad}`).toBe(400);
+    }
+  });
+});
+
+describe("POST /api/jobs — beş şıklı kart modu (§13.3)", () => {
+  it("kullanıcının modunu işe yazar ve işçi onu kullanır", async () => {
+    // `maxCards` ile aynı sebep: işçi, ayarı taşıyan istek bittikten çok sonra
+    // çalışıyor, ayarı satırdan başka hiçbir yerden okuyamaz.
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    await handleJobsRequest(post({ ...VALID_BODY, multipleChoiceMode: "off" }), d);
+    expect(store.rows.get(JOB_ID)?.mcMode).toBe("off");
+
+    await d.settled();
+    expect(generator.seen[0]?.multipleChoiceMode).toBe("off");
+  });
+
+  it("istemci dağıtımın modunu yükseltemez", async () => {
+    // off < mixed < all. Dağıtım "mixed" ise istemci "all" isteyemez: her şık
+    // takımı ek çıktı token'ı, yani başkasının maliyet kararı (§21.3).
+    const generator = stubGenerator(validOutput());
+    const d = deps({ generator: generator.generator });
+
+    await handleJobsRequest(post({ ...VALID_BODY, multipleChoiceMode: "all" }), d);
+    await d.settled();
+
+    expect(generator.seen[0]?.multipleChoiceMode).toBe("mixed");
+  });
+
+  it("mod verilmezse dağıtımın varsayılanı kullanılır", async () => {
+    const generator = stubGenerator(validOutput());
+    const d = deps({ generator: generator.generator });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(generator.seen[0]?.multipleChoiceMode).toBeUndefined();
+  });
+
+  it("bilinmeyen bir modu sessizce yutmaz", async () => {
+    for (const bad of ["hepsi", "", 3, true]) {
+      const response = await handleJobsRequest(
+        post({ ...VALID_BODY, multipleChoiceMode: bad }),
+        deps(),
+      );
+      expect(response.status, `mod=${String(bad)}`).toBe(400);
     }
   });
 });

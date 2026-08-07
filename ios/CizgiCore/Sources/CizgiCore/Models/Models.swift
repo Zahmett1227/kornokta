@@ -259,6 +259,27 @@ public final class Card {
     public var createdAt: Date
     public var updatedAt: Date
 
+    /// Five-option cards (ANA-PLAN §13.3), schema v2.1.
+    ///
+    /// Optional, so SwiftData migrates existing cards with nothing to do —
+    /// §10.4's "mevcut kartlar korunmalı" is satisfied by the shape rather than
+    /// by a migration step. Stored as JSON instead of a related model because
+    /// nothing ever queries an option outside its own card; a second entity
+    /// would only add a cascade rule and a backup shape.
+    public var optionsRaw: String?
+    /// Index of the correct option within `options`. `nil` on a plain card.
+    public var correctOptionIndex: Int?
+
+    /// The card is in the deck, but something about it deserves a second look
+    /// (§13.3 rule 6, docs/FAZ7-PLAN-coktan-secmeli.md §9).
+    ///
+    /// Faz 6 removed the approval gate, and §13.3 asks for one on suspicious
+    /// questions. The compromise is this flag: the card is active and reviewable,
+    /// and Bilgilerim lists it under "Gözden geçir" instead of a blocking queue.
+    /// Defaulted rather than optional so existing cards migrate with nothing to
+    /// decide.
+    public var lowConfidence: Bool = false
+
     // Scheduling state. Faz 1 uses a placeholder scheduler; FSRS replaces the
     // algorithm in Faz 4 (§18) without changing these fields.
     public var dueDate: Date
@@ -288,6 +309,27 @@ public final class Card {
         set { riskFlagsRaw = newValue.map(\.rawValue) }
     }
 
+    /// The card's options, or `nil` if it is not a sound five-option card.
+    ///
+    /// The getter validates rather than trusting storage: a half-written or
+    /// hand-edited option list makes the card read as a plain one instead of
+    /// rendering a question nobody can answer.
+    public var options: [CardOption]? {
+        get {
+            guard type == .multipleChoice, let options = MultipleChoice.decode(optionsRaw) else { return nil }
+            return options
+        }
+        set {
+            guard let newValue, case .valid = MultipleChoice.validate(newValue) else {
+                optionsRaw = nil
+                correctOptionIndex = nil
+                return
+            }
+            optionsRaw = MultipleChoice.encode(newValue)
+            correctOptionIndex = MultipleChoice.correctIndex(newValue)
+        }
+    }
+
     public init(
         id: UUID = UUID(),
         type: CardType,
@@ -298,7 +340,9 @@ public final class Card {
         riskFlags: [RiskFlag] = [],
         status: CardStatus = .draft,
         createdAt: Date = .now,
-        dueDate: Date = .now
+        dueDate: Date = .now,
+        options: [CardOption]? = nil,
+        lowConfidence: Bool = false
     ) {
         self.id = id
         self.typeRaw = type.rawValue
@@ -316,6 +360,11 @@ public final class Card {
         self.reviewCount = 0
         self.lapseCount = 0
         self.reviews = []
+        self.lowConfidence = lowConfidence
+        if let options, case .valid = MultipleChoice.validate(options) {
+            self.optionsRaw = MultipleChoice.encode(options)
+            self.correctOptionIndex = MultipleChoice.correctIndex(options)
+        }
     }
 }
 

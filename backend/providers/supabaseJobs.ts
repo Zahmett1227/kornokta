@@ -19,6 +19,8 @@
  */
 
 /** The credential is deliberately absent: it is read at the composition root and passed in (§0.7). */
+import type { MultipleChoiceMode } from "../config.js";
+
 export interface SupabaseConfig {
   /** Project URL, e.g. `https://abcd.supabase.co`. Not a secret. */
   url: string;
@@ -58,6 +60,8 @@ export interface JobRow {
   hint: string | null;
   /** The user's per-page card ceiling for this job; null means the deployment default. */
   maxCards: number | null;
+  /** The user's five-option setting (§13.3); null means the deployment default. */
+  mcMode: MultipleChoiceMode | null;
   attempts: number;
   /** `{ output, gate, cardPromptVersion }` — exactly what `/api/cards-vision` returns. */
   result: unknown | null;
@@ -75,6 +79,7 @@ export interface EnqueueRequest {
   mimeType: string;
   hint?: string;
   maxCards?: number;
+  mcMode?: MultipleChoiceMode;
 }
 
 /**
@@ -174,6 +179,7 @@ interface JobRowJson {
   mime_type: string;
   hint: string | null;
   max_cards: number | null;
+  mc_mode: MultipleChoiceMode | null;
   attempts: number;
   result: unknown | null;
   error: string | null;
@@ -192,6 +198,7 @@ export function toJobRow(row: JobRowJson): JobRow {
     mimeType: row.mime_type,
     hint: row.hint,
     maxCards: row.max_cards,
+    mcMode: row.mc_mode,
     attempts: row.attempts,
     result: row.result,
     error: row.error,
@@ -303,6 +310,7 @@ export class SupabaseJobStore implements JobStoreLike {
       mime_type: request.mimeType,
       hint: request.hint ?? null,
       max_cards: request.maxCards ?? null,
+      mc_mode: request.mcMode ?? null,
       // Cleared, not left behind: a resubmitted page must not show the phone
       // the error from the attempt before it.
       result: null,

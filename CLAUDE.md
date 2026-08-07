@@ -550,10 +550,10 @@ tema/yardımcılar; XcodeGen çalıştırılmadan Xcode onları hedefe almaz).
 
 ### Aday sonraki özellikler
 
-- **Beş şıklı (TUS tipi) kart — planı yazıldı, uygulanmadı:**
-  [`docs/FAZ7-PLAN-coktan-secmeli.md`](docs/FAZ7-PLAN-coktan-secmeli.md).
-  A1+A2 (model/doğrulama + backend sözleşmesi) bu ortamda tamamen
-  doğrulanabilir; A3–A5 Mac gerektirir, asıl iş A6 (distraktör kalitesi).
+- **Beş şıklı (TUS tipi) kart — A1–A5 uygulandı, `claude/multiple-choice`
+  dalında:** [`docs/FAZ7-PLAN-coktan-secmeli.md`](docs/FAZ7-PLAN-coktan-secmeli.md).
+  Kalan: **A6 (distraktör kalitesi, yalnız gerçek sayfalarla)** ve Mac
+  derlemesi + cihaz doğrulaması.
 
 Aşağıdakiler öneri, taahhüt değil; sırayı kullanıcı seçer.
 

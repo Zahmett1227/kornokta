@@ -183,6 +183,17 @@ struct AppSettings: Codable, Equatable {
     /// wiring it up would have silently capped every page at two cards and
     /// undone B3's deliberate raise to 12.
     var maxCardsPerPage: Int = 12
+    /// Five-option cards (§13.3). Stored as the wire value so the setting and
+    /// the request body cannot drift apart.
+    var multipleChoiceModeRaw: String = MultipleChoiceMode.mixed.rawValue
+
+    /// An unknown stored value reads as the default rather than crashing: the
+    /// string comes from this device's own defaults, but a downgrade or a
+    /// hand-edited plist should not take the app with it.
+    var multipleChoiceMode: MultipleChoiceMode {
+        get { MultipleChoiceMode(rawValue: multipleChoiceModeRaw) ?? .mixed }
+        set { multipleChoiceModeRaw = newValue.rawValue }
+    }
     var sourceFaithfulOnly: Bool = true
     var notificationHour: Int = 20
     var notificationsEnabled: Bool = false
@@ -194,6 +205,7 @@ struct AppSettings: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
+        case multipleChoiceModeRaw
         case notificationHour, notificationsEnabled, dailyNewCardLimit
         case quickSessionMinutes, keepOriginalPage
     }
@@ -208,6 +220,8 @@ struct AppSettings: Codable, Equatable {
         defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
         maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
         maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 12
+        multipleChoiceModeRaw = try values.decodeIfPresent(String.self, forKey: .multipleChoiceModeRaw)
+            ?? MultipleChoiceMode.mixed.rawValue
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
         notificationHour = try values.decodeIfPresent(Int.self, forKey: .notificationHour) ?? 20
         notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false

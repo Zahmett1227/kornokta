@@ -19,10 +19,10 @@
  * and OpenAI's own error string, which describe the *call*, not the content.
  */
 
-import { CARD_GENERATION_SYSTEM_PROMPT } from "../prompts/cardGeneration.js";
+import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
-import type { CostConfig, OpenAIConfig } from "../config.js";
+import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 
 export class OpenAIError extends Error {
   constructor(
@@ -92,6 +92,11 @@ export interface CardGenerationRequest {
    */
   maxCards?: number;
   /**
+   * Per-request five-option mode (§13.3), already clamped to the deployment's
+   * ceiling by the endpoint. Absent means "use the configured mode".
+   */
+  multipleChoiceMode?: MultipleChoiceMode;
+  /**
    * Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun".
    * There is no pre-reconciled transcription any more: the model reads the
    * marked content off the image itself (v2 prompt).
@@ -151,6 +156,22 @@ export function buildModelResponseSchema(maxCardsPerKnowledgeUnit: number): Reco
   delete clone.$schema;
   delete clone.$id;
   (clone.properties.cards as { maxItems?: number }).maxItems = maxCardsPerKnowledgeUnit;
+
+  // Structured Outputs strict mode has no optional properties: every key in
+  // `properties` must also be in `required`, and "absent" is expressed as a
+  // nullable type instead. `options`/`correctOption` are optional in the
+  // canonical §14 schema (a v2.0 payload predates them and is still valid), so
+  // they have to be promoted here — otherwise OpenAI rejects the schema for a
+  // `required` array that does not list every key in `properties`.
+  const card = (clone.properties.cards as {
+    items: { required: string[]; properties: Record<string, unknown> };
+  }).items;
+  for (const key of Object.keys(card.properties)) {
+    if (!card.required.includes(key)) card.required.push(key);
+  }
+  // The model has nothing to choose here: what it produces is v2.1.
+  clone.properties.schemaVersion = { type: "string", const: "2.1" };
+
   return clone as Record<string, unknown>;
 }
 
@@ -173,7 +194,11 @@ function extractOutputText(body: ResponsesApiBody): string {
   throw new OpenAIError("Yanıtta üretilmiş metin bulunamadı.", undefined, false);
 }
 
-function buildUserInstruction(request: CardGenerationRequest, maxCards: number): string {
+export function buildUserInstruction(
+  request: CardGenerationRequest,
+  maxCards: number,
+  multipleChoiceMode: MultipleChoiceMode,
+): string {
   const hint = request.hint?.trim();
   return [
     `requestId: ${request.requestId}`,
@@ -182,8 +207,24 @@ function buildUserInstruction(request: CardGenerationRequest, maxCards: number):
     `Bu sayfadan en fazla ${maxCards} kart üretebilirsin. Sayfadaki farklı işaretli/el yazısı ` +
       "noktalarının her birini kapsamaya çalış; el yazısı ve daire/yıldız ile işaretlenenleri önceliklendir. " +
       "Az sayıda temel kartla yetinme — işaretlenen tüm farklı noktalara ulaş.",
+    multipleChoiceInstruction(multipleChoiceMode),
     hint ? `Kullanıcı ipucu: ${hint}` : "Kullanıcı ipucu: (yok)",
   ].join("\n");
+}
+
+/**
+ * The stricter of two modes on the `off < mixed < all` scale.
+ *
+ * The job row carries the mode chosen at submit time, and the worker may run
+ * minutes later — on a deployment whose ceiling has since been lowered. Without
+ * this, an old row would still talk the new deployment into producing
+ * five-option cards it is no longer configured for. `maxCards` has always been
+ * re-clamped here for the same reason; this closes the gap for the mode
+ * (Codex, PR #29).
+ */
+export function stricterMode(a: MultipleChoiceMode, b: MultipleChoiceMode): MultipleChoiceMode {
+  const rank = (mode: MultipleChoiceMode) => MULTIPLE_CHOICE_MODES.indexOf(mode);
+  return rank(a) <= rank(b) ? a : b;
 }
 
 /** Estimated USD from real usage figures and the configured per-token price (§20.3). */
@@ -230,7 +271,18 @@ export class OpenAICardGenerator {
         {
           role: "user",
           content: [
-            { type: "input_text", text: buildUserInstruction(request, maxCards) },
+            {
+              type: "input_text",
+              text: buildUserInstruction(
+                request,
+                maxCards,
+                // Clamped again here, not just at submit: see `stricterMode`.
+                stricterMode(
+                  request.multipleChoiceMode ?? this.config.multipleChoiceMode,
+                  this.config.multipleChoiceMode,
+                ),
+              ),
+            },
             {
               type: "input_image",
               image_url: `data:${request.mimeType};base64,${Buffer.from(request.image).toString("base64")}`,

@@ -46,8 +46,41 @@ describe("validateLlmOutput", () => {
 
   it("rejects an unknown card type", () => {
     const broken = validOutput();
+    // Was "multiple_choice" until schema v2.1 made that a real type (§13.3).
     // @ts-expect-error deliberately invalid for the test
+    broken.cards[0]!.type = "true_false";
+    expect(validateLlmOutput(broken).valid).toBe(false);
+  });
+
+  it("accepts a five-option multiple-choice card (v2.1)", () => {
+    const output = validOutput();
+    output.schemaVersion = "2.1";
+    output.cards[0]!.type = "multiple_choice";
+    output.cards[0]!.options = [
+      { text: "Hipokalemi", correct: true, why: "" },
+      { text: "Hiperkalemi", correct: false, why: "EKG'de sivri T dalgası yapar." },
+      { text: "Hiponatremi", correct: false, why: "Sodyum tablosu farklıdır." },
+      { text: "Hipokalsemi", correct: false, why: "Tetani ön plandadır." },
+      { text: "Hipomagnezemi", correct: false, why: "Eşlik eder ama tablo bu değildir." },
+    ];
+    output.cards[0]!.correctOption = 0;
+    expect(validateLlmOutput(output)).toEqual({ valid: true, errors: [] });
+  });
+
+  it("rejects a multiple-choice card with the wrong number of options", () => {
+    const broken = validOutput();
     broken.cards[0]!.type = "multiple_choice";
+    broken.cards[0]!.options = [
+      { text: "A", correct: true, why: "" },
+      { text: "B", correct: false, why: "yanlış" },
+    ];
+    broken.cards[0]!.correctOption = 0;
+    expect(validateLlmOutput(broken).valid).toBe(false);
+  });
+
+  it("rejects an out-of-range correctOption", () => {
+    const broken = validOutput();
+    broken.cards[0]!.correctOption = 5;
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 
