@@ -58,6 +58,11 @@ public enum CardType: String, Codable, Sendable, CaseIterable {
     case mechanism
     case distinction
     case exceptionTrap = "exception_trap"
+    /// Five options, exactly one correct (ANA-PLAN §13.3). Schema v2.1.
+    ///
+    /// Cards of every other type stay exactly as they were; this one carries
+    /// `Card.optionsRaw`/`correctOptionIndex` alongside the usual front/back.
+    case multipleChoice = "multiple_choice"
 }
 
 public enum CardStatus: String, Codable, Sendable {

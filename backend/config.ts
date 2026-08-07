@@ -90,8 +90,24 @@ export interface OpenAIConfig {
    * units and cards of one request, so the two readings are the same cap.
    */
   maxCardsPerKnowledgeUnit: number;
+  /**
+   * Whether the model may produce five-option (TUS-style) cards (§13.3).
+   *
+   * - `off`   — never; what every deployment did before schema v2.1.
+   * - `mixed` — only where five options genuinely test something: distinction
+   *   and exception/trap material. A definition does not get better by being
+   *   dressed as a question with four wrong answers, and each set of options
+   *   costs output tokens, which is the dominant part of the latency.
+   * - `all`   — every card the model can put options on.
+   *
+   * A deployment decision, not a hardcoded one (§0.6).
+   */
+  multipleChoiceMode: MultipleChoiceMode;
   timeoutMs: number;
 }
+
+export const MULTIPLE_CHOICE_MODES = ["off", "mixed", "all"] as const;
+export type MultipleChoiceMode = (typeof MULTIPLE_CHOICE_MODES)[number];
 
 export interface GeminiConfig {
   /** Handwriting second-opinion model (§11.1); only called for uncertain spans (§10.4). */
@@ -155,6 +171,23 @@ function required(name: string): string {
 function optional(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
   return value ? value : fallback;
+}
+
+/**
+ * A setting that may only be one of a fixed set of words.
+ *
+ * Fails loudly on anything else rather than falling back to the default: a
+ * typo in `OPENAI_MULTIPLE_CHOICE_MODE` would otherwise look like the feature
+ * silently not working, which is the same class of bug as the "sayfa başına
+ * kart" setting that did nothing for two phases.
+ */
+function oneOf<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  if (!(allowed as readonly string[]).includes(raw)) {
+    throw new ConfigError(`${name} şunlardan biri olmalı: ${allowed.join(", ")} — alınan: ${raw}`);
+  }
+  return raw as T;
 }
 
 function numeric(name: string, fallback: number): number {
@@ -222,6 +255,9 @@ export function loadConfig(): Config {
       // (second device test). Raised to 12 so a marked page's distinct points
       // each get a card. Now really "max cards per page"; env-overridable (§0.6).
       maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12),
+      // Faz 7 (§13.3): five-option cards. "mixed" by default — see the field's
+      // own comment for why not "all".
+      multipleChoiceMode: oneOf("OPENAI_MULTIPLE_CHOICE_MODE", MULTIPLE_CHOICE_MODES, "mixed"),
       // Faz 6/B3: a full-page vision read + up to 12 cards can run well past a
       // minute. The 60 s cap was the whole timeout problem (repeated
       // `providerUnavailable`). vercel.json maxDuration is raised to 300 (plan

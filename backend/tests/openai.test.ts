@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { OpenAIConfig } from "../config.js";
 import { CARD_GENERATION_SYSTEM_PROMPT } from "../prompts/cardGeneration.js";
+import { LLM_OUTPUT_SCHEMA } from "../schemas/validateLlmOutput.js";
 import {
   OpenAICardGenerator,
   OpenAIError,
@@ -16,6 +17,7 @@ const CONFIG: OpenAIConfig = {
   imageDetail: "high",
   maxOutputTokens: 700,
   maxCardsPerKnowledgeUnit: 4,
+  multipleChoiceMode: "mixed",
   timeoutMs: 1_000,
 };
 
@@ -114,6 +116,35 @@ describe("buildModelResponseSchema", () => {
     }
 
     expect(() => assertNoBareConstOrEnum(buildModelResponseSchema(4), "$")).not.toThrow();
+  });
+
+  it("lists every card property in `required` — strict mode has no optional keys", () => {
+    // `options`/`correctOption` are optional in the canonical §14 schema so a
+    // v2.0 payload still validates, but OpenAI rejects a strict schema whose
+    // `required` does not name every key in `properties`.
+    const schema = buildModelResponseSchema(4) as {
+      properties: { cards: { items: { required: string[]; properties: Record<string, unknown> } } };
+    };
+    const card = schema.properties.cards.items;
+    expect([...card.required].sort()).toEqual(Object.keys(card.properties).sort());
+    expect(card.required).toContain("options");
+    expect(card.required).toContain("correctOption");
+  });
+
+  it("pins the model's schemaVersion to 2.1", () => {
+    const schema = buildModelResponseSchema(4) as {
+      properties: { schemaVersion: { const?: string; type?: string } };
+    };
+    expect(schema.properties.schemaVersion.const).toBe("2.1");
+    expect(schema.properties.schemaVersion.type).toBe("string");
+  });
+
+  it("leaves the canonical schema alone (options stay optional there)", () => {
+    buildModelResponseSchema(4);
+    const canonical = LLM_OUTPUT_SCHEMA as unknown as {
+      properties: { cards: { items: { required: string[] } } };
+    };
+    expect(canonical.properties.cards.items.required).not.toContain("options");
   });
 });
 

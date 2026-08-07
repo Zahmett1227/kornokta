@@ -25,6 +25,7 @@ import {
   type CardGenerationResult,
 } from "../providers/openai.js";
 import { runCardGate, type CardDecision, type CardGateReport, type CardVerdict } from "../providers/cardGate.js";
+import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 
 export interface CardsRequestBody {
@@ -197,7 +198,12 @@ export async function handleCardsRequest(
       maxCards,
     });
 
-    const gate = runCardGate(output, {
+    // §13.3's structural check runs before the health gate, so the gate — and
+    // the client — see the cards exactly as they will be stored: a broken
+    // five-option card comes out of it as a sound plain card.
+    const checked = sanitizeMultipleChoice(output.cards);
+    const sanitized = { ...output, cards: checked.cards };
+    const gate = runCardGate(sanitized, {
       maxCardsPerKnowledgeUnit: maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
 
@@ -208,8 +214,10 @@ export async function handleCardsRequest(
       jobId,
       event: "cards.ok",
       bytes: image.length,
-      cardCount: output.cards.length,
+      cardCount: sanitized.cards.length,
       decisions: summarizeDecisions(gate.verdicts),
+      // Counts only, never option text (§7.3).
+      multipleChoiceNotes: checked.notes.length,
       inputTokens: rawUsage.inputTokens,
       outputTokens: rawUsage.outputTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
@@ -217,7 +225,10 @@ export async function handleCardsRequest(
       elapsedMs: Date.now() - started,
     });
 
-    return json({ jobId, output, gate, cardPromptVersion: CARD_PROMPT_VERSION } satisfies CardsSuccess, 200);
+    return json(
+      { jobId, output: sanitized, gate, cardPromptVersion: CARD_PROMPT_VERSION } satisfies CardsSuccess,
+      200,
+    );
   } catch (error) {
     const openAIError = error instanceof OpenAIError ? error : null;
 

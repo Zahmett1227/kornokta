@@ -19,10 +19,10 @@
  * and OpenAI's own error string, which describe the *call*, not the content.
  */
 
-import { CARD_GENERATION_SYSTEM_PROMPT } from "../prompts/cardGeneration.js";
+import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
-import type { CostConfig, OpenAIConfig } from "../config.js";
+import type { CostConfig, MultipleChoiceMode, OpenAIConfig } from "../config.js";
 
 export class OpenAIError extends Error {
   constructor(
@@ -151,6 +151,22 @@ export function buildModelResponseSchema(maxCardsPerKnowledgeUnit: number): Reco
   delete clone.$schema;
   delete clone.$id;
   (clone.properties.cards as { maxItems?: number }).maxItems = maxCardsPerKnowledgeUnit;
+
+  // Structured Outputs strict mode has no optional properties: every key in
+  // `properties` must also be in `required`, and "absent" is expressed as a
+  // nullable type instead. `options`/`correctOption` are optional in the
+  // canonical §14 schema (a v2.0 payload predates them and is still valid), so
+  // they have to be promoted here — otherwise OpenAI rejects the schema for a
+  // `required` array that does not list every key in `properties`.
+  const card = (clone.properties.cards as {
+    items: { required: string[]; properties: Record<string, unknown> };
+  }).items;
+  for (const key of Object.keys(card.properties)) {
+    if (!card.required.includes(key)) card.required.push(key);
+  }
+  // The model has nothing to choose here: what it produces is v2.1.
+  clone.properties.schemaVersion = { type: "string", const: "2.1" };
+
   return clone as Record<string, unknown>;
 }
 
@@ -173,7 +189,11 @@ function extractOutputText(body: ResponsesApiBody): string {
   throw new OpenAIError("Yanıtta üretilmiş metin bulunamadı.", undefined, false);
 }
 
-function buildUserInstruction(request: CardGenerationRequest, maxCards: number): string {
+export function buildUserInstruction(
+  request: CardGenerationRequest,
+  maxCards: number,
+  multipleChoiceMode: MultipleChoiceMode,
+): string {
   const hint = request.hint?.trim();
   return [
     `requestId: ${request.requestId}`,
@@ -182,6 +202,7 @@ function buildUserInstruction(request: CardGenerationRequest, maxCards: number):
     `Bu sayfadan en fazla ${maxCards} kart üretebilirsin. Sayfadaki farklı işaretli/el yazısı ` +
       "noktalarının her birini kapsamaya çalış; el yazısı ve daire/yıldız ile işaretlenenleri önceliklendir. " +
       "Az sayıda temel kartla yetinme — işaretlenen tüm farklı noktalara ulaş.",
+    multipleChoiceInstruction(multipleChoiceMode),
     hint ? `Kullanıcı ipucu: ${hint}` : "Kullanıcı ipucu: (yok)",
   ].join("\n");
 }
@@ -230,7 +251,10 @@ export class OpenAICardGenerator {
         {
           role: "user",
           content: [
-            { type: "input_text", text: buildUserInstruction(request, maxCards) },
+            {
+              type: "input_text",
+              text: buildUserInstruction(request, maxCards, this.config.multipleChoiceMode),
+            },
             {
               type: "input_image",
               image_url: `data:${request.mimeType};base64,${Buffer.from(request.image).toString("base64")}`,

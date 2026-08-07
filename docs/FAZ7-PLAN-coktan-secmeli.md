@@ -1,6 +1,6 @@
 # Faz 7 — Beş şıklı (TUS tipi) kart
 
-**Durum:** plan · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
+**Durum:** A1 + A2 uygulandı (2026-08-07); A3–A6 açık · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
 seçmeli kurallar), §4.2 (ilk sürümde varsayılan **değil**), §4.3 (sonraki sürüm
 adayı), §13.2 (üretim kuralları), §18 (FSRS).
 
@@ -240,6 +240,11 @@ yasak sayılan türden bir belirsizlik).
   yaptığının aynısı. *Not:* üçüncü bir ayar gelirse sütun başına bir migration
   yerine tek bir `client_options jsonb` sütununa geçmek daha temiz olur; iki
   ayar için henüz gerekmiyor.
+  **A2'de bilerek yapılmadı:** sütunu şimdi eklemek, Ayarlar'da karşılığı
+  olmayan bir alan demekti — bu projenin bir kez düştüğü tuzağın aynısı
+  (`maxCardsPerPassage` iki faz boyunca hiçbir şey yapmadı). Mod şu an yalnız
+  sunucu config'inden (`OPENAI_MULTIPLE_CHOICE_MODE`) geliyor; istemci override'ı
+  Ayarlar arayüzüyle **birlikte** A5'te gelecek.
 
 ## 8. Maliyet ve gecikme
 
@@ -284,8 +289,8 @@ Kullanıcı bunun yerine gerçek bir onay adımı isterse §6'daki akış
 
 | Adım | Kapsam | Nerede test edilir |
 |---|---|---|
-| **A1** | `MultipleChoice` modeli, doğrulama, sunum sırası; `CardType` altı değere çıkar (beş dosyalık anti-drift zinciri) | **Bu ortamda gerçekten** — Foundation-only, izole pakette `swift test` + `python -m pytest evals` |
-| **A2** | Şema v2.1, `llmOutputTypes.ts`, prompt v2.4, `cardGate` kuralları, config anahtarı, `/api/jobs` `mc_mode` sütunu | **Bu ortamda gerçekten** — `npm test` |
+| **A1** | `MultipleChoice` modeli, doğrulama, sunum sırası; `CardType` altı değere çıkar (anti-drift zinciri) | ✅ **Koşuldu** — izole pakette 115 test yeşil (15'i yeni), mutasyonla doğrulandı; şema/TS/Swift kart tipleri elle karşılaştırılıp eşit çıktı (`pytest` bu ortamda kurulu değil, CI koşacak) |
+| **A2** | Şema v2.1, `llmOutputTypes.ts`, prompt v2.4, kalite kapısı, config anahtarı | ✅ **Koşuldu** — backend 500 test yeşil (18'i yeni), `tsc` temiz. **`mc_mode` sütunu A5'e ertelendi** — aşağıya bak |
 | **A3** | `BackendCardProvider` çözümlemesi + `GeneratedCard`'a şıklar; `ProcessingQueue.persist` kartı şıklarıyla yazar | `swift test` (CizgiCore, Mac) |
 | **A4** | Tekrar ekranı: şık seçimi, doğru/yanlış gösterimi, FSRS eşlemesi | **Mac derlemesi + gerçek cihaz** |
 | **A5** | Editör, kart detayı, yedek v3, Ayarlar'daki mod, "Gözden geçir" bölümü | Mac + cihaz |

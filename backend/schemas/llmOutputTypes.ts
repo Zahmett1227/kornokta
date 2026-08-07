@@ -44,6 +44,8 @@ export const CARD_TYPES = [
   "mechanism",
   "distinction",
   "exception_trap",
+  /** §13.3 — five options, exactly one correct. Schema v2.1. */
+  "multiple_choice",
 ] as const;
 
 export type CardType = (typeof CARD_TYPES)[number];
@@ -61,6 +63,21 @@ export interface UncertainSpan {
   requiresUserConfirmation: boolean;
 }
 
+/**
+ * One of a multiple-choice card's five options (§13.3).
+ *
+ * `why` is a field of its own because §13.3 requires the model to say why each
+ * distractor is wrong *separately* — folding those sentences into one
+ * `explanation` blob would leave nothing able to say which reason belongs to
+ * which option.
+ */
+export interface CardOption {
+  text: string;
+  correct: boolean;
+  /** Why this option is wrong (one sentence). Empty on the correct option. */
+  why: string;
+}
+
 export interface Card {
   id: string;
   type: CardType;
@@ -72,6 +89,16 @@ export interface Card {
   tags: string[];
   /** The model's own "I am unsure" signal (§6). Does not trigger approval. */
   lowConfidence: boolean;
+  /**
+   * Five options for a `multiple_choice` card, `null` otherwise (schema v2.1).
+   *
+   * Optional in the canonical §14 schema so a v2.0 payload stays valid; the
+   * model-facing variant makes it required-and-nullable, because Structured
+   * Outputs strict mode has no notion of an optional property.
+   */
+  options?: CardOption[] | null;
+  /** Index of the correct option. See `options`. */
+  correctOption?: number | null;
 }
 
 export interface Usage {
@@ -83,7 +110,7 @@ export interface Usage {
 }
 
 export interface LlmOutput {
-  schemaVersion: "2.0";
+  schemaVersion: "2.0" | "2.1";
   requestId: string;
   /** The raw text the model read off the marked content — audit only (§6.3). */
   readText: string;

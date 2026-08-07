@@ -28,6 +28,7 @@ import type { CostConfig, OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
 import { runCardGate } from "../providers/cardGate.js";
+import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
 import { parseMaxCards, type CardGeneratorLike } from "./_cards.js";
 
@@ -455,20 +456,27 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       // that carried the setting has gone.
       maxCards: row.maxCards ?? undefined,
     });
-    const gate = runCardGate(output, {
+    // §13.3's structural check, before the health gate: a card whose options
+    // are broken is downgraded to a plain one rather than lost, so what the
+    // gate sees is already the card as it will be stored.
+    const checked = sanitizeMultipleChoice(output.cards);
+    const output_ = { ...output, cards: checked.cards };
+    const gate = runCardGate(output_, {
       maxCardsPerKnowledgeUnit: row.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
 
     // Stored in the shape `/api/cards-vision` returns, so the phone's decoder is
     // the same one and this table never becomes a second definition of the card
     // contract.
-    await deps.store.complete(jobId, { jobId, output, gate, cardPromptVersion: CARD_PROMPT_VERSION });
+    await deps.store.complete(jobId, { jobId, output: output_, gate, cardPromptVersion: CARD_PROMPT_VERSION });
     await deleteImageQuietly(row.imagePath, deps);
 
     deps.log?.({
       jobId,
       event: "jobs.ready",
-      cardCount: output.cards.length,
+      cardCount: output_.cards.length,
+      // Counts only, never option text (§7.3).
+      multipleChoiceNotes: checked.notes.length,
       inputTokens: rawUsage.inputTokens,
       outputTokens: rawUsage.outputTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
