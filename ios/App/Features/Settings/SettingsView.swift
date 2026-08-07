@@ -27,7 +27,7 @@ struct SettingsView: View {
             Form {
                 backendSection
 
-                Section("Yakalama") {
+                Section {
                     TextField("Varsayılan ders", text: Binding(
                         get: { environment.settings.defaultSubject },
                         set: { environment.settings.defaultSubject = $0; environment.settings.save() }
@@ -41,6 +41,8 @@ struct SettingsView: View {
                         ),
                         in: 1...12
                     )
+                } header: {
+                    Text("Yakalama")
                 } footer: {
                     // Until now this control did nothing at all: the value was
                     // never put in the request and the server always used its own
