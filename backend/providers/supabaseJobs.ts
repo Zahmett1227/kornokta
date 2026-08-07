@@ -56,6 +56,8 @@ export interface JobRow {
   imagePath: string | null;
   mimeType: string;
   hint: string | null;
+  /** The user's per-page card ceiling for this job; null means the deployment default. */
+  maxCards: number | null;
   attempts: number;
   /** `{ output, gate, cardPromptVersion }` — exactly what `/api/cards-vision` returns. */
   result: unknown | null;
@@ -72,6 +74,7 @@ export interface EnqueueRequest {
   imagePath: string;
   mimeType: string;
   hint?: string;
+  maxCards?: number;
 }
 
 /**
@@ -170,6 +173,7 @@ interface JobRowJson {
   image_path: string | null;
   mime_type: string;
   hint: string | null;
+  max_cards: number | null;
   attempts: number;
   result: unknown | null;
   error: string | null;
@@ -187,6 +191,7 @@ export function toJobRow(row: JobRowJson): JobRow {
     imagePath: row.image_path,
     mimeType: row.mime_type,
     hint: row.hint,
+    maxCards: row.max_cards,
     attempts: row.attempts,
     result: row.result,
     error: row.error,
@@ -297,6 +302,7 @@ export class SupabaseJobStore implements JobStoreLike {
       image_path: request.imagePath,
       mime_type: request.mimeType,
       hint: request.hint ?? null,
+      max_cards: request.maxCards ?? null,
       // Cleared, not left behind: a resubmitted page must not show the phone
       // the error from the attempt before it.
       result: null,

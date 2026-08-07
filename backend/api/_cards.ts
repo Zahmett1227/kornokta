@@ -35,6 +35,24 @@ export interface CardsRequestBody {
   mimeType?: unknown;
   /** Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun". */
   hint?: unknown;
+  /** The user's "sayfa başına kart" setting (§6.7). Clamped to the deployment's own ceiling. */
+  maxCards?: unknown;
+}
+
+/**
+ * Reads a client-supplied card ceiling.
+ *
+ * `undefined` for an absent value (use the configured default) and `null` for a
+ * malformed one, which the caller reports rather than silently ignoring — a
+ * setting that is quietly dropped is exactly how this one came to do nothing at
+ * all for two phases.
+ */
+export function parseMaxCards(value: unknown, ceiling: number): number | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return null;
+  // Only ever downwards: the config value is a cost ceiling and a client must
+  // not be able to raise it (§21.3).
+  return Math.min(value, ceiling);
 }
 
 export interface CardsSuccess {
@@ -148,6 +166,11 @@ export async function handleCardsRequest(
   }
   const hint = typeof body.hint === "string" ? body.hint.trim() : undefined;
 
+  const maxCards = parseMaxCards(body.maxCards, deps.openai.maxCardsPerKnowledgeUnit);
+  if (maxCards === null) {
+    return fail("maxCards 1 veya daha büyük bir tam sayı olmalı.", 400, false);
+  }
+
   // §21.3: refuse before spending, using the only bound knowable before the
   // call — the output-token ceiling. Input-token cost depends on the image
   // and prompt and is not estimated here; it is still recorded for real
@@ -171,9 +194,12 @@ export async function handleCardsRequest(
       image,
       mimeType,
       hint,
+      maxCards,
     });
 
-    const gate = runCardGate(output, { maxCardsPerKnowledgeUnit: deps.openai.maxCardsPerKnowledgeUnit });
+    const gate = runCardGate(output, {
+      maxCardsPerKnowledgeUnit: maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
+    });
 
     // Metrics only. No card text, no transcription (§7.3) — counts and a
     // decision breakdown are what make "why was I asked to confirm?"

@@ -74,6 +74,34 @@ final class ProcessingQueue: ObservableObject {
         pipeline = pipeline.withGenerator(generator)
     }
 
+    /// A page already in the store that looks like the image about to be
+    /// captured, if there is one.
+    ///
+    /// Nothing acts on this automatically: the capture screen asks. The
+    /// threshold is a first calibration and a page can legitimately be re-shot
+    /// (a blurry first attempt, better light), so refusing would be the app
+    /// overruling the user on a guess.
+    func likelyDuplicate(of imageData: Data) -> (page: CapturedPage, distance: Int)? {
+        guard let hash = PageImageHasher.hash(imageData) else { return nil }
+
+        let context = container.mainContext
+        let descriptor = FetchDescriptor<CapturedPage>()
+        guard let pages = try? context.fetch(descriptor) else { return nil }
+
+        let candidates: [(id: UUID, hash: PerceptualHash)] = pages.compactMap { page in
+            guard
+                !page.pendingDeletion,
+                let stored = page.perceptualHash,
+                let parsed = PerceptualHash(stringValue: stored)
+            else { return nil }
+            return (page.id, parsed)
+        }
+        guard let match = PerceptualHasher.nearestDuplicate(to: hash, among: candidates),
+              let page = pages.first(where: { $0.id == match.id })
+        else { return nil }
+        return (page, match.distance)
+    }
+
     /// Registers a freshly captured image. Returns once the bytes are on disk —
     /// §24.1 forbids telling the user a capture succeeded before that.
     @discardableResult
@@ -83,6 +111,10 @@ final class ProcessingQueue: ObservableObject {
         let relativePath = try imageStore.store(imageData, id: id)
 
         let page = CapturedPage(id: id, originalImagePath: relativePath)
+        // Recorded even when nothing is asked about it right now: the field is
+        // what lets a *later* capture recognise this page, and a page stored
+        // without one is invisible to every future check.
+        page.perceptualHash = PageImageHasher.hash(imageData)?.stringValue
         if let subject, !subject.isEmpty {
             page.source = try existingOrNewSource(named: subject, in: context)
         }
@@ -313,10 +345,10 @@ final class ProcessingQueue: ObservableObject {
         let pageID = page.id
 
         // Read the ceiling per run rather than caching it at init, so changing
-        // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
+        // "Sayfa başına kart" in Ayarlar takes effect on the next page instead
         // of the next launch (§6.7). UserDefaults is the single stored copy of
         // the setting, so this cannot drift from what the screen shows.
-        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPassage)
+        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPage)
 
         page.processingState = .localOCR
         try? context.save()

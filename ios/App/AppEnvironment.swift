@@ -172,7 +172,17 @@ struct AppSettings: Codable, Equatable {
     /// the Keychain (§7.3).
     var backendURL: String = ""
     var defaultSubject: String = ""
+    /// Legacy. Kept so an existing install still decodes, but no longer read:
+    /// see `maxCardsPerPage`.
     var maxCardsPerPassage: Int = 2
+    /// Cards the model may produce from one marked page (§6.7).
+    ///
+    /// A new key rather than a new meaning for `maxCardsPerPassage`. That one
+    /// was written for the pre-Faz-6 "one passage → ≤4 cards" flow and was never
+    /// actually sent to the server, so every install has a stored 2 in it —
+    /// wiring it up would have silently capped every page at two cards and
+    /// undone B3's deliberate raise to 12.
+    var maxCardsPerPage: Int = 12
     var sourceFaithfulOnly: Bool = true
     var notificationHour: Int = 20
     var notificationsEnabled: Bool = false
@@ -183,7 +193,7 @@ struct AppSettings: Codable, Equatable {
     static let storageKey = "cizgi.settings.v1"
 
     private enum CodingKeys: String, CodingKey {
-        case backendURL, defaultSubject, maxCardsPerPassage, sourceFaithfulOnly
+        case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
         case notificationHour, notificationsEnabled, dailyNewCardLimit
         case quickSessionMinutes, keepOriginalPage
     }
@@ -197,6 +207,7 @@ struct AppSettings: Codable, Equatable {
         backendURL = try values.decodeIfPresent(String.self, forKey: .backendURL) ?? ""
         defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
         maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
+        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 12
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
         notificationHour = try values.decodeIfPresent(Int.self, forKey: .notificationHour) ?? 20
         notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false

@@ -293,3 +293,25 @@ describe("POST /api/cards-vision", () => {
     });
   });
 });
+
+describe("POST /api/cards-vision — kart sınırı (§6.7)", () => {
+  it("kullanıcının sınırını modele taşır", async () => {
+    const generator = stubGenerator(validOutput());
+    await handleCardsRequest(post({ ...VALID_BODY, maxCards: 3 }), deps({ generator: generator.generator }));
+    expect(generator.seen[0]?.maxCards).toBe(3);
+  });
+
+  it("sunucunun tavanının üstüne çıkamaz", async () => {
+    const generator = stubGenerator(validOutput());
+    await handleCardsRequest(
+      post({ ...VALID_BODY, maxCards: 99 }),
+      deps({ generator: generator.generator, openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700 } }),
+    );
+    expect(generator.seen[0]?.maxCards).toBe(4);
+  });
+
+  it("bozuk bir sınır için 400 verir", async () => {
+    const response = await handleCardsRequest(post({ ...VALID_BODY, maxCards: 0 }), deps());
+    expect(response.status).toBe(400);
+  });
+});

@@ -108,6 +108,45 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   **Not:** iki yeni App dosyası var; `cd ios && xcodegen generate` çalıştırmadan
   Xcode onları hedefe almaz.
 
+- **2026-08-06 — kalan altı "yarım kalmış söz" kapatıldı.** Hepsi kodun bir şey
+  vaat edip tutmadığı yerlerdi:
+  1. **Yedek geri yüklenebiliyor.** `BackupExporter`'ın yalnız `encode`'u vardı;
+     artık `decode` + `BackupRestorer` var ve Ayarlar'da "Yedekten geri yükle".
+     Biçim v2: etiketler, `createdAt`, `canonicalClaim` ve **tüm `ReviewLog`
+     geçmişi** de yedeğe girdi (FSRS ağırlık optimizasyonunun ihtiyacı olan veri
+     cihazdan hiç çıkmıyordu). v1 dosyalar hâlâ okunuyor. Geri yükleme
+     **yalnızca ekler** — mevcut kart olduğu gibi bırakılır, gerekçe
+     `BackupRestorer.plan`'da.
+  2. **Yinelenen sayfa tespiti.** `perceptualHash` alanı hiç yazılmıyordu; artık
+     her çekimde dHash hesaplanıyor (`PerceptualHash`/`PerceptualHasher`,
+     Foundation-only ve test edilir; görüntüden gri örnek çıkarma
+     `PageImageHasher`'da). Aynı sayfa ikinci kez çekilirse Yakala ekranı
+     **soruyor**, reddetmiyor — eşik ilk kalibrasyon ve sayfayı bilerek yeniden
+     çekmek normal.
+  3. **Bildirim artık yalan söylemiyor.** Tek tekrarlı tetikleyici yerine, önümüzdeki
+     7 gün için **kart olan günlere** tarihli tek seferlik bildirimler kuruluyor,
+     her biri gerçek sayıyı taşıyor (`ReviewReminderPlanner`); rozet "şu an
+     bekleyen" sayısı; bildirime dokununca **Tekrar** sekmesi açılıyor (eskiden
+     Yakala açılıyordu).
+  4. **Maliyet görünür.** `ModelRun` yazılıp hiç okunmuyordu; Ayarlar'da
+     "Kullanım" bölümü çağrı ve token sayılarını gösteriyor. USD yalnız sunucuda
+     fiyat ayarlıysa gösteriliyor — §0.6 uydurma fiyatı yasaklıyor ve "0,00 USD"
+     bedava gibi okunurdu.
+  5. **Ayarlar doğru mimariyi raporluyor.** "Faz 3 / Google Document AI" diyordu;
+     Faz 6 hiç OCR yapmıyor.
+  6. **"Sayfa başına kart" ayarı gerçekten çalışıyor.** `maxCards` istek
+     gövdesine hiç yazılmıyordu. Artık uçtan uca bağlı; sunucu **kendi tavanına
+     kırpıyor**, yani istemci daha az isteyebilir, fazlasını değil (§21.3).
+     Yeni bir ayar anahtarı (`maxCardsPerPage`, varsayılan 12) — eskisini
+     bağlamak, kayıtlı 2 değeri yüzünden B3'ün 12'ye çıkarma kararını sessizce
+     geri alırdı. Supabase'e `max_cards` sütunu eklendi (migration repoda).
+
+  Backend **476** test yeşil, `tsc --noEmit` temiz; CizgiCore'da **63 test gerçek
+  `swift test` ile geçti**. SwiftUI dosyaları yalnız `swiftc -parse` ile
+  denetlendi. **Not:** `ios/App` altında iki yeni dosya
+  (`CardEditorView`/`CardSourceView` ile birlikte dört); `cd ios && xcodegen generate`
+  şart.
+
 Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
   maddeleri Faz 6 ÖNCESİ (süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
 
