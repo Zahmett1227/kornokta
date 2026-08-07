@@ -376,7 +376,16 @@ struct SettingsView: View {
             for record in plan.toInsert {
                 insert(record, into: context)
             }
-            try context.save()
+            do {
+                try context.save()
+            } catch {
+                // A failed save leaves every inserted object sitting in the
+                // context, where an unrelated later save would flush half a
+                // restore into the store. Rolling back is the only way to make
+                // "the restore failed" mean nothing was written.
+                context.rollback()
+                throw error
+            }
 
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."

@@ -78,7 +78,15 @@ struct ReviewView: View {
                             // The card was deleted from Bilgilerim mid-session.
                             // Skipping is the only sensible move; it must not
                             // strand the session on a blank screen.
-                            Color.clear.onAppear { skipCurrentCard() }
+                            //
+                            // Keyed on the position so that a *run* of deleted
+                            // cards is skipped one by one: without a changing
+                            // identity SwiftUI reuses this view and `onAppear`
+                            // never fires again, leaving the session parked on
+                            // the second missing card for ever.
+                            Color.clear
+                                .onAppear { skipCurrentCard() }
+                                .id(session.completed)
                         }
                     } else if session != nil {
                         completionScreen
