@@ -487,11 +487,11 @@ final class ProcessingQueue: ObservableObject {
             page.processingState = retryPolicy.shouldRetry(attempt: page.retryCount)
                 ? .temporaryFailure
                 : .permanentFailure
-            page.lastError = outcome.failure.map(String.init(describing:))
+            page.lastError = outcome.failure?.message
 
         case .permanentFailure:
             page.processingState = .permanentFailure
-            page.lastError = outcome.failure.map(String.init(describing:))
+            page.lastError = outcome.failure?.message
 
         default:
             page.processingState = outcome.finalState

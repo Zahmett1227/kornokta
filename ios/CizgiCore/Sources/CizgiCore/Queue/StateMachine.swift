@@ -112,13 +112,45 @@ public enum FailureKind: Sendable, Equatable {
     case invalidResponse
     case configuration
     case budgetExceeded
+    /// The model read the page and found nothing to build a card from.
+    ///
+    /// Not the same as a broken response, and it stopped being a rare case the
+    /// moment photos could come from the library: a picture that is not a book
+    /// page at all lands here. It used to be reported as `invalidResponse`,
+    /// which reads as "the server is broken" when the honest answer is "there
+    /// was nothing marked on this one".
+    case noContent
 
     public var isTransient: Bool {
         switch self {
         case .network, .rateLimited, .providerUnavailable:
             return true
-        case .invalidResponse, .configuration, .budgetExceeded:
+        case .invalidResponse, .configuration, .budgetExceeded, .noContent:
             return false
+        }
+    }
+
+    /// What the queue shows the user.
+    ///
+    /// The queue used to print `String(describing:)` of this enum, so a real
+    /// person read "invalidResponse" in a Turkish interface and could not tell
+    /// whether to retry, re-shoot, or check the settings.
+    public var message: String {
+        switch self {
+        case .network:
+            return "İnternet bağlantısı kurulamadı. Ağ gelince kendiliğinden yeniden denenecek."
+        case .rateLimited:
+            return "Sağlayıcı çok fazla istek aldı. Biraz sonra yeniden denenecek."
+        case .providerUnavailable:
+            return "Sağlayıcıya ulaşılamadı. Yeniden denenecek."
+        case .invalidResponse:
+            return "Sunucudan beklenmeyen bir yanıt geldi. \"Tekrar dene\" ile yeniden denenebilir."
+        case .configuration:
+            return "Backend adresi veya cihaz anahtarı eksik. Ayarlar'dan tamamla."
+        case .budgetExceeded:
+            return "Maliyet üst sınırına ulaşıldı."
+        case .noContent:
+            return "Bu fotoğrafta işaretlenmiş bir şey bulunamadı. Fosforlu/altı çizili bir sayfa olduğundan emin ol."
         }
     }
 

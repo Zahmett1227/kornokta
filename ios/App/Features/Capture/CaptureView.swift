@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import CizgiCore
+#if os(iOS)
+import PhotosUI
+#endif
 
 /// The capture tab (ANA-PLAN §6.2).
 ///
@@ -28,6 +31,12 @@ struct CaptureView: View {
     /// Which of `pendingImages` duplicate something. Computed once, so the
     /// "yalnız yenilerini ekle" path skips exactly what the question described.
     @State private var pendingDuplicates: Set<Int> = []
+    #if os(iOS)
+    @StateObject private var importer = PhotoLibraryImporter()
+    @State private var pickedItems: [PhotosPickerItem] = []
+    /// How many picked photos could not be read, from the last import.
+    @State private var importFailedCount = 0
+    #endif
 
     private var duplicateCount: Int { pendingDuplicates.count }
 
@@ -45,12 +54,23 @@ struct CaptureView: View {
                 VStack(spacing: Cizgi.Space.xl) {
                     hero
                     captureButton
+                    importButton
                     if !lastCapturedIds.isEmpty {
                         Label("\(lastCapturedIds.count) sayfa kuyruğa alındı",
                               systemImage: "checkmark.circle.fill")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Cizgi.success)
                     }
+                    #if os(iOS)
+                    if importFailedCount > 0 {
+                        // Named, never swallowed: the user chose these photos
+                        // and has to know which of them did not make it.
+                        Label("\(importFailedCount) fotoğraf okunamadı ve atlandı",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.footnote)
+                            .foregroundStyle(Cizgi.danger)
+                    }
+                    #endif
                     queueSummary
                 }
                 .padding(Cizgi.Space.lg)
@@ -73,6 +93,9 @@ struct CaptureView: View {
                 DocumentScanner(
                     onFinish: { pages in
                         isScanning = false
+                        // Belongs to the previous import; leaving it up would
+                        // pin an old warning to a fresh capture.
+                        importFailedCount = 0
                         handleScanned(pages)
                     },
                     onCancel: { isScanning = false },
@@ -173,6 +196,45 @@ struct CaptureView: View {
         }
     }
 
+    /// Secondary on purpose: the main flow is still opening the book and
+    /// shooting. This is for the pages already sitting in the camera roll.
+    @ViewBuilder
+    private var importButton: some View {
+        #if os(iOS)
+        if importer.isLoading {
+            // An iCloud-backed photo is downloaded during `loadTransferable`,
+            // which can take seconds. Without this the app looks frozen.
+            HStack(spacing: Cizgi.Space.sm) {
+                ProgressView()
+                Text("\(importer.loadedCount)/\(importer.totalCount) fotoğraf hazırlanıyor…")
+                    .font(.subheadline)
+                    .foregroundStyle(Cizgi.muted)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Cizgi.Space.md)
+        } else {
+            PhotosPicker(
+                selection: $pickedItems,
+                maxSelectionCount: PhotoLibraryImporter.selectionLimit,
+                matching: .images,
+                photoLibrary: .shared()
+            ) {
+                Label("Galeriden ekle", systemImage: "photo.on.rectangle")
+            }
+            .buttonStyle(CizgiSecondaryButtonStyle())
+            .onChange(of: pickedItems) { _, items in
+                guard !items.isEmpty else { return }
+                // Cleared before the work starts, so a cancelled or repeated
+                // pick cannot re-run the same items.
+                pickedItems = []
+                Task { await handlePicked(items) }
+            }
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
     // MARK: Queue summary
 
     @ViewBuilder
@@ -204,6 +266,22 @@ struct CaptureView: View {
             }
         }
     }
+
+    #if os(iOS)
+    /// Picked photos join the camera's path at exactly the point a scan does,
+    /// so the duplicate question, the queue and the retry loop apply to them
+    /// unchanged — deliberately, and it is what keeps this feature small.
+    @MainActor
+    private func handlePicked(_ items: [PhotosPickerItem]) async {
+        let result = await importer.load(items)
+        importFailedCount = result.failedCount
+        guard !result.images.isEmpty else {
+            if result.failedCount > 0 { lastCapturedIds = [] }
+            return
+        }
+        handleScanned(result.images)
+    }
+    #endif
 
     private func handleScanned(_ images: [Data]) {
         // A page you have already captured is easy to shoot twice — a blurry
