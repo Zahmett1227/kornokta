@@ -143,11 +143,19 @@ public struct FSRSScheduler: ReviewScheduling {
     static func nextStabilityFailure(
         _ difficulty: Double, _ stability: Double, _ r: Double, _ w: [Double]
     ) -> Double {
-        let value = w[11]
+        let longTerm = w[11]
             * pow(difficulty, -w[12])
             * (pow(stability + 1, w[13]) - 1)
             * exp((1 - r) * w[14])
-        return max(value, minStability)
+        // The official algorithm's second term, missing here until now
+        // (verified against open-spaced-repetition/py-fsrs
+        // `_next_forget_stability` — the same source §18.1's weights came
+        // from). Without it a very overdue, low-difficulty card could come out
+        // of "Unuttum" with *more* stability than it went in with, i.e. a
+        // longer interval for a card the user just failed. The clamp only ever
+        // lowers the result, so scheduling can only move earlier.
+        let shortTerm = stability / exp(w[17] * w[18])
+        return max(min(longTerm, shortTerm), minStability)
     }
 
     static func nextStabilityShortTerm(_ stability: Double, _ g: Int, _ w: [Double]) -> Double {

@@ -85,6 +85,21 @@ public struct BackendCardProvider: CardGenerating {
                 hint: hint,
                 maxCards: request.maxCards,
                 multipleChoiceMode: request.multipleChoiceMode,
+                force: request.forceResubmit,
+                token: token
+            )
+        case .failPermanently where request.forceResubmit:
+            // The user asked again for a page the server had given up on. The
+            // row only moves if `force` travels with the upload — `/api/jobs`
+            // will not re-arm a non-retryable failure on its own.
+            view = try await submit(
+                jobId: request.jobId,
+                imageData: imageData,
+                mimeType: mimeType,
+                hint: hint,
+                maxCards: request.maxCards,
+                multipleChoiceMode: request.multipleChoiceMode,
+                force: true,
                 token: token
             )
         case .useResult, .wait, .failPermanently:
@@ -210,6 +225,7 @@ public struct BackendCardProvider: CardGenerating {
         hint: String?,
         maxCards: Int,
         multipleChoiceMode: MultipleChoiceMode?,
+        force: Bool,
         token: String
     ) async throws -> RemoteJobView? {
         var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent("api/jobs"))
@@ -228,7 +244,10 @@ public struct BackendCardProvider: CardGenerating {
                 // it to the wire, so the server always used its own ceiling and
                 // the Ayarlar control did nothing.
                 maxCards: maxCards,
-                multipleChoiceMode: multipleChoiceMode?.rawValue
+                multipleChoiceMode: multipleChoiceMode?.rawValue,
+                // Omitted rather than sent as `false`: an ordinary submission
+                // should look exactly as it always did on the wire.
+                force: force ? true : nil
             )
         )
 
@@ -343,8 +362,11 @@ public struct BackendCardProvider: CardGenerating {
             // delete in Bilgilerim is the honest fallback.
             let decision = verdicts[card.id] ?? "auto_accept"
             guard decision != "reject" else { return nil }
+            // A type this build does not know about. Dropping the one card
+            // keeps the rest of the page rather than failing all of it.
+            guard let type = card.type else { return nil }
             return GeneratedCard(
-                type: card.type,
+                type: type,
                 front: card.front,
                 back: card.back,
                 explanation: card.explanation.isEmpty ? nil : card.explanation,
@@ -414,6 +436,9 @@ public struct BackendCardProvider: CardGenerating {
         /// Same rule as `maxCards`: the deployment's own mode is the ceiling
         /// (§21.3, §13.3). Omitted when the user has not chosen one.
         let multipleChoiceMode: String?
+        /// Present only on a user-initiated retry (§17): asks the server to
+        /// re-arm even a failure it had marked permanent.
+        let force: Bool?
     }
 
     private struct FailureBody: Decodable {
@@ -459,7 +484,15 @@ struct RemoteCardsOutput: Decodable {
 
 struct RemoteCard: Decodable {
     let id: String
-    let type: CardType
+    /// `nil` for a card type this build has not heard of.
+    ///
+    /// Decoded leniently for the same reason `status` and `decision` are: a
+    /// strict enum turned one unrecognized value into a decode failure for the
+    /// *whole* response, so a server-side addition would cost an older client
+    /// every card on the page — and, since a decode failure is reported as
+    /// `schemaInvalid`, it would do so permanently. An unknown card is dropped
+    /// and its siblings are kept (`map` filters them out).
+    let type: CardType?
     let front: String
     let back: String
     let explanation: String
@@ -471,6 +504,30 @@ struct RemoteCard: Decodable {
     /// that is not five-option, so both decode to `nil` without a special case.
     let options: [RemoteCardOption]?
     let correctOption: Int?
+}
+
+/// In an extension rather than the type body so the memberwise initialiser
+/// survives — the tests build these by hand.
+extension RemoteCard {
+    private enum CodingKeys: String, CodingKey {
+        case id, type, front, back, explanation, difficulty, tags, lowConfidence, options, correctOption
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try values.decode(String.self, forKey: .id),
+            type: CardType(rawValue: try values.decode(String.self, forKey: .type)),
+            front: try values.decode(String.self, forKey: .front),
+            back: try values.decode(String.self, forKey: .back),
+            explanation: try values.decode(String.self, forKey: .explanation),
+            difficulty: try values.decode(Int.self, forKey: .difficulty),
+            tags: try values.decode([String].self, forKey: .tags),
+            lowConfidence: try values.decode(Bool.self, forKey: .lowConfidence),
+            options: try values.decodeIfPresent([RemoteCardOption].self, forKey: .options),
+            correctOption: try values.decodeIfPresent(Int.self, forKey: .correctOption)
+        )
+    }
 }
 
 struct RemoteCardOption: Decodable {

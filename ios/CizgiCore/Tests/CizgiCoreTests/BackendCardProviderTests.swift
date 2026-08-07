@@ -177,6 +177,37 @@ final class BackendCardProviderTests: XCTestCase {
         XCTAssertFalse(knowledge.cards[0].requiresUserApproval)
     }
 
+    /// The same "an older client must not choke on a newer server" rule
+    /// `status` and `decision` already follow. A strict enum here failed the
+    /// *whole* response, and a decode failure is reported as `schemaInvalid` —
+    /// permanent — so one new card type would have cost every card on the page,
+    /// for good.
+    func testAnUnknownCardTypeDropsThatCardRatherThanTheWholePage() throws {
+        let json = """
+        {
+          "output": {
+            "requestId": "job-1",
+            "readText": "Sayfa metni",
+            "cards": [
+              {"id": "card_1", "type": "direct_recall", "front": "Ön", "back": "Arka",
+               "explanation": "", "difficulty": 2, "tags": [], "lowConfidence": false},
+              {"id": "card_2", "type": "yeni_tip_2027", "front": "Ön", "back": "Arka",
+               "explanation": "", "difficulty": 2, "tags": [], "lowConfidence": false}
+            ],
+            "usage": {"provider": "openai", "model": "m", "inputTokens": 1,
+                      "outputTokens": 1, "estimatedCostUSD": 0}
+          },
+          "gate": {"verdicts": [], "warnings": []},
+          "cardPromptVersion": "v2.3"
+        }
+        """
+        let decoded = try JSONDecoder().decode(RemoteCardsSuccess.self, from: Data(json.utf8))
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 10)
+
+        XCTAssertEqual(knowledge.cards.count, 1)
+        XCTAssertEqual(knowledge.cards[0].type, .directRecall)
+    }
+
     func testEveryCardRejectedIsTreatedAsSourceInsufficient() {
         let decoded = success(
             cards: [card()],

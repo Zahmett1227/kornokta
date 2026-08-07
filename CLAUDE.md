@@ -138,10 +138,10 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod tamam, ama **Faz 6'da ana akıştan çıktı** (kod geri dönüş için diskte, çağrılmıyor). Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı kararıyla atlanmıştı — `docs/FAZ2-PLAN.md`. |
-| Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Kalan: gerçek maliyet rakamları (§7). |
+| Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Gerçek maliyet rakamları girildi (2026-08-07, aşağıya bak). |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 (`evals/fsrs/` Python referansı + Swift portu), `ReviewScheduling` seam'i üzerinden bağlı. Bildirimler, günlük yeni kart limiti ve süre bütçeli hızlı oturum 2026-08-06/07'de **gerçek anlamlarına kavuştu** (PR #27). Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | ✅ Kod tamam; **kullanıcı 2026-08-07'de kabul listesini kendi iPhone'unda koştu ve sorun çıkmadı.** Süreçte bulunan hatalar (`docs/FAZ5-DURUM.md`) daha önce düzeltilmişti. |
-| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"), gerçek maliyet USD rakamları. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"). Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
 | Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
 | Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
 
@@ -349,9 +349,62 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
       local yollar için).
 
-**Test durumu (2026-08-07):**
-- Backend (`backend/`): **508 test yeşil**, `tsc --noEmit` temiz — bu ortamda
-  gerçekten koşuldu.
+**Test durumu (2026-08-07, akşam — `fix/review-round-1` dalı):**
+- Backend (`backend/`): **527 test yeşil**, `tsc --noEmit` temiz — kullanıcının
+  Mac'inde gerçekten koşuldu.
+- Python (`evals/`): **518 test yeşil**, aynı Mac'te koşuldu.
+- Swift (`ios/CizgiCore/`): **tam paket bir Mac'te koşuldu: 305/305 yeşil.**
+  (Önceki tek kırmızı — `BackupExporterTests`'in bayat `formatVersion: 1`
+  beklentisi — düzeltildi; test artık `BackupExporter.formatVersion`'a bağlı.)
+- App hedefi: `xcodegen generate` + `xcodebuild build` (iOS Simulator,
+  imzasız) aynı Mac'te **başarılı**; `swift build` artık **uyarısız**.
+- CI: yeni `.github/workflows/ios.yml` macOS runner'da `swift test` + App
+  build koşuyor — Swift'in CI kapısı olmaması bu dalda kapandı.
+
+**Bu dalda kapatılan inceleme bulguları (2026-08-07 akşam turu).** Codex'in
+listesi + bağımsız iki incelemenin bulguları; ayrıntılı gerekçeler kod
+yorumlarında.
+
+*Veri bütünlüğü / yarışlar:*
+- iOS: çakışan iki koşunun kart setini **iki kez** kalıcılaştırması (`apply`'ın
+  `.ready` dalına `hasPersistedGroup` süzgeci, `process(pageID:)`'te
+  `shouldProcess` yeniden kontrolü, `retry`'de in-flight koruması).
+- iOS: iptalin geç gelen sonuçla ezilmesi (`apply` başında `.cancelled` guard'ı).
+- Backend: `complete`/`fail` artık `started_at` fence'li — ADR-006 kuralının son
+  iki istisnası kapandı. `claim` kazandığı satırı döner; worker o satırın
+  parametreleriyle üretir, fence'i kaybederse ne sonuç yazar ne paylaşılan
+  nesne yolunu siler.
+
+*Kalıcı kilitler (jobId = sayfa kimliği olduğu için hepsi "sayfa bir daha
+üretilemez" demekti):*
+- Storage `getImage` 404'ü, OpenAI `incomplete` ve gövde-içi `failed` artık
+  retryable.
+- **`force` bayrağı:** kullanıcının "Tekrar dene"si kalıcı hatayı da yeniden
+  kuruyor (`POST /api/jobs` `force: true` → `requeue(includePermanent)`).
+  Otomatik retry'ler bunu **kullanmaz**. Bu olmadan yanlış API anahtarıyla
+  üretilen sayfalar, anahtar düzeltildikten sonra bile sonsuza dek kilitliydi.
+- Vision uçları artık PDF/TIFF'i kapıda çeviriyor (`VISION_MIME_TYPES`);
+  önceden OpenAI'den 400 dönüp kalıcı hataya çevriliyordu.
+- iOS: bilinmeyen kart tipi artık yalnız o kartı düşürüyor, tüm yanıtı değil.
+
+*FSRS (§18.1 — resmi algoritmaya sadakat):* `nextStabilityFailure`/
+`_next_stability_failure` resmi `min(long_term, S / e^(w17·w18))` clamp'ini
+**taşımıyordu**; open-spaced-repetition/py-fsrs `_next_forget_stability` ile
+karşılaştırılarak doğrulandı ve iki dilde birden eklendi,
+`evals/shared/fsrs-cases.json` yeniden üretildi. Etkisi: çok gecikmiş,
+kararlılığı düşük bir kart "Unuttum" sonrası **daha uzun** aralık alabiliyordu.
+
+*Diğer:* `numeric()` artık negatif/sıfır değerleri reddediyor
+(`SUPABASE_JOB_STALE_AFTER_MS=0` her canlı işçiyi anında bayat sayıyordu);
+elle retry sonrası `scheduleRetryDrain` çağrılıyor; parti sürerken çekilen
+sayfalar için `rerunRequested` (önce bir sonraki açılışa kadar bekliyorlardı);
+QueueView'da kart taşıyan sayfanın silinmesi artık onay istiyor; `ImageStore`
+Swift 6 `Sendable` uyarısı kapatıldı; README/PRIVACY güncel akışa çekildi.
+
+**Bilerek yapılmayan:** sunucu tarafında `attempts` üst sınırı. Telefonun
+`RetryPolicy.maxAttempts` = 5'i otomatik denemeleri zaten sınırlıyor ve çağrı
+başına maliyet tavanı artık gerçek; sunucuya sabit bir tavan koymak yeni
+eklenen `force` kaçışını da kapatırdı.
 - Python (`evals/`): **517 test yeşil** — bu ortamda gerçekten koşuldu
   (`pip install pytest jsonschema numpy pillow opencv-python-headless` sonrası).
 - Swift (`ios/CizgiCore/`): tam paket **Linux'ta derlenmiyor** (CoreGraphics,
@@ -375,6 +428,14 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
 Supabase tarafında `jobs` tablosu + `page-uploads` özel kovası var; ikisinde de
 RLS açık ve **policy yok** (yalnız `service_role` geçer). Proje kimliği ve
 anahtar yalnız Vercel env'inde durur, repoda değil.
+
+**Maliyet rakamları (2026-08-07):** `OPENAI_USD_PER_MILLION_INPUT_TOKENS=5`,
+`OPENAI_USD_PER_MILLION_OUTPUT_TOKENS=30` (OpenAI'nin pricing sayfasından,
+`gpt-5.6-sol`, Standard/short-context satırı — istekte `service_tier`
+gönderilmiyor ve tek sayfa fotoğrafı long-context eşiğinin çok altında, bu
+yüzden diğer sütunlar geçerli değil) ve `MAX_USD_PER_CARD_GENERATION=0.30`
+kullanıcı tarafından Vercel'e girildi ve redeploy edildi — Ayarlar → Kullanım
+artık gerçek USD gösteriyor. §0.6'nın "kalan iş" listesindeki bu madde kapandı.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
@@ -536,9 +597,14 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 
 ### 2. Küçük ve gerçek kalanlar
 
-1. **Gerçek maliyet rakamları.** `OPENAI_USD_PER_MILLION_*` hâlâ 0. Ayarlar →
-   Kullanım bunu gösterdiği için doldurmanın görünür değeri var; §0.6 gereği
-   rakam **sağlayıcının kendi fiyatlandırma sayfasından** gelmeli, uydurulmaz.
+1. **Biten işlerin `result` satırının saklama süresi (senin kararın).** Codex'in
+   PR #30'da bulduğu §7.3 açığı: üretilen kart metinleri + `readText`
+   Supabase'de **süresiz** duruyor, temizleyen yol yok. Sızıntı değil (RLS
+   açık, policy yok) ama tutulmamış bir söz. İki seçenek ve ödünçleri
+   `docs/PRIVACY.md`'nin "Açık kalan" bölümünde yazılı — zamana bağlı temizlik
+   ikinci üretim ücreti doğurabilir, ack ucu sözleşmeye uç ekler. Karar verilene
+   kadar gizlilik belgesi gerçeği söylüyor; elle temizlik:
+   `delete from public.jobs where status = 'ready';`
 2. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
    başarılı çağrılar kaydediliyor (`docs/FAZ3-PLAN.md`, F3-8).
 3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
@@ -546,12 +612,12 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 
 ### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
 
-4. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
+3. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
    ayraç/başlık boşluğu (`MAX_COLUMN_ITEM_WIDTH`). Faz 6 ana akışı OCR yapmadığı
    için pratikte ölü kod.
-5. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
+4. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
    için hâlâ tüm kelimeyi kıyaslıyor (ADR-003 "Açık kalan").
-6. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
+5. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
    tek sentetik grup ürettiği için tetiklenmiyor, ama kod duruyor.
 
 ### Aday sonraki özellikler

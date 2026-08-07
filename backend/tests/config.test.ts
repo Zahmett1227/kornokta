@@ -94,6 +94,33 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(/DOCUMENTAI_TIMEOUT_MS/);
   });
 
+  it("refuses a zero or negative staleness window instead of reclaiming live workers", () => {
+    // The worst of the non-positive typos: at 0 every `processing` row looks
+    // dead the instant it is claimed, so each poll hands the page to a second
+    // paid generation racing the first.
+    for (const bad of ["0", "-1"]) {
+      process.env.SUPABASE_JOB_STALE_AFTER_MS = bad;
+      expect(() => loadConfig(), bad).toThrow(/SUPABASE_JOB_STALE_AFTER_MS/);
+    }
+  });
+
+  it("refuses a non-positive timeout or token ceiling", () => {
+    process.env.OPENAI_TIMEOUT_MS = "0";
+    expect(() => loadConfig()).toThrow(/OPENAI_TIMEOUT_MS/);
+    delete process.env.OPENAI_TIMEOUT_MS;
+
+    process.env.OPENAI_MAX_OUTPUT_TOKENS = "0";
+    expect(() => loadConfig()).toThrow(/OPENAI_MAX_OUTPUT_TOKENS/);
+  });
+
+  it("still allows 0 for the cost ceilings, where it documents 'disabled'", () => {
+    process.env.MAX_USD_PER_CARD_GENERATION = "0";
+    expect(loadConfig().cost.maxUsdPerCardGeneration).toBe(0);
+    // Negative is still a typo, not a setting.
+    process.env.MAX_USD_PER_CARD_GENERATION = "-1";
+    expect(() => loadConfig()).toThrow(/MAX_USD_PER_CARD_GENERATION/);
+  });
+
   it("carries the §10.2 price reference as a changeable default", () => {
     expect(loadConfig().cost.usdPer1000Pages).toBe(1.5);
     process.env.DOCUMENTAI_USD_PER_1000_PAGES = "2.25";

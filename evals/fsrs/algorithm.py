@@ -114,13 +114,20 @@ def _next_stability_success(difficulty: float, stability: float, r: float, ratin
 
 
 def _next_stability_failure(difficulty: float, stability: float, r: float, w: list[float]) -> float:
-    value = (
+    long_term = (
         w[11]
         * (difficulty ** -w[12])
         * (((stability + 1) ** w[13]) - 1)
         * math.exp((1 - r) * w[14])
     )
-    return max(value, MIN_STABILITY)
+    # The official algorithm's second term, missing here until now (verified
+    # against open-spaced-repetition/py-fsrs `_next_forget_stability`, the same
+    # source §18.1's weights came from). Without it a very overdue,
+    # low-difficulty card could leave a lapse with *more* stability than it had,
+    # i.e. a longer interval for a card the user just failed. The clamp only
+    # ever lowers the result, so scheduling can only move earlier.
+    short_term = stability / math.exp(w[17] * w[18])
+    return max(min(long_term, short_term), MIN_STABILITY)
 
 
 def _next_stability_short_term(stability: float, rating: int, w: list[float]) -> float:

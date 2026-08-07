@@ -106,16 +106,42 @@ export interface JobStoreLike {
   /** Creates a brand-new queued job. `false` when a row for this id already exists. */
   insertQueued(request: EnqueueRequest): Promise<boolean>;
   /**
-   * failed-and-retryable → `queued`, with fresh page bytes.
+   * failed → `queued`, with fresh page bytes.
    *
-   * Conditional on the row still being a retryable failure, so a submission
-   * that raced another one cannot reset a job a worker has already claimed.
+   * Conditional on the row still being a failure, so a submission that raced
+   * another one cannot reset a job a worker has already claimed.
+   *
+   * `includePermanent` drops only the `retryable=is.true` half of that
+   * condition, never the `status=eq.failed` half. It exists for one caller: the
+   * user pressing "Tekrar dene" on a page the server gave up on. Automatic
+   * retries must not use it — a permanent failure is by definition one that
+   * repeating alone will not fix — but a *person* asking again usually knows
+   * something the server does not (a corrected API key, most of all), and
+   * without this the page was unrecoverable: the job id is the page id, so the
+   * only escape was deleting the capture and re-shooting it.
    */
-  requeue(request: EnqueueRequest): Promise<boolean>;
-  /** `queued` → `processing`, conditional on the row still being `queued`. */
-  claim(id: string, attempts: number): Promise<boolean>;
-  complete(id: string, result: unknown): Promise<void>;
-  fail(id: string, error: string, retryable: boolean): Promise<void>;
+  requeue(request: EnqueueRequest, options?: { includePermanent?: boolean }): Promise<boolean>;
+  /**
+   * `queued` → `processing`, conditional on the row still being `queued`.
+   *
+   * Returns the row as claimed rather than a bare boolean, for two reasons that
+   * are both fences: the worker must generate from the parameters of the
+   * attempt it actually won (a re-armed row may carry a different
+   * hint/maxCards/mcMode than the snapshot the dispatcher read), and the
+   * returned `startedAt` is the token `complete`/`fail` need to prove they are
+   * still that attempt.
+   */
+  claim(id: string, attempts: number): Promise<JobRow | null>;
+  /**
+   * `processing` → `ready`, fenced to the attempt that claimed it — the same
+   * `started_at` condition `expire` uses, for the same reason: between claiming
+   * and finishing, the job can be expired, re-armed and claimed afresh, and an
+   * id-only write would let the retired worker overwrite the live attempt.
+   * `false` means the fence lost and nothing was written.
+   */
+  complete(id: string, startedAt: string | null, result: unknown): Promise<boolean>;
+  /** Same fence as `complete`, for the same race. */
+  fail(id: string, startedAt: string | null, error: string, retryable: boolean): Promise<boolean>;
   /**
    * `processing` → failed-and-retryable, fenced to one exact attempt.
    *
@@ -337,9 +363,13 @@ export class SupabaseJobStore implements JobStoreLike {
     }
   }
 
-  async requeue(request: EnqueueRequest): Promise<boolean> {
+  async requeue(
+    request: EnqueueRequest,
+    options: { includePermanent?: boolean } = {},
+  ): Promise<boolean> {
+    const retryableFilter = options.includePermanent ? "" : "&retryable=is.true";
     const payload = await this.callJson(
-      `${this.restBase}?id=eq.${request.id}&status=eq.failed&retryable=is.true`,
+      `${this.restBase}?id=eq.${request.id}&status=eq.failed${retryableFilter}`,
       "PATCH",
       { Prefer: "return=representation" },
       SupabaseJobStore.queuedFields(request),
@@ -347,21 +377,29 @@ export class SupabaseJobStore implements JobStoreLike {
     return SupabaseJobStore.rows(payload).length > 0;
   }
 
-  async claim(id: string, attempts: number): Promise<boolean> {
+  async claim(id: string, attempts: number): Promise<JobRow | null> {
     const payload = await this.callJson(
       `${this.restBase}?id=eq.${id}&status=eq.queued`,
       "PATCH",
       { Prefer: "return=representation" },
       { status: "processing", started_at: new Date().toISOString(), attempts },
     );
-    return SupabaseJobStore.rows(payload).length > 0;
+    const [row] = SupabaseJobStore.rows(payload).map(toJobRow);
+    return row ?? null;
   }
 
-  async complete(id: string, result: unknown): Promise<void> {
-    await this.callJson(
-      `${this.restBase}?id=eq.${id}`,
+  /** Same `started_at` encoding rule as `expire` — see the comment there. */
+  private static startedAtFilter(startedAt: string | null): string {
+    return startedAt
+      ? `&started_at=eq.${encodeURIComponent(startedAt)}`
+      : "&started_at=is.null";
+  }
+
+  async complete(id: string, startedAt: string | null, result: unknown): Promise<boolean> {
+    const payload = await this.callJson(
+      `${this.restBase}?id=eq.${id}&status=eq.processing${SupabaseJobStore.startedAtFilter(startedAt)}`,
       "PATCH",
-      { Prefer: "return=minimal" },
+      { Prefer: "return=representation" },
       {
         status: "ready",
         result,
@@ -371,13 +409,14 @@ export class SupabaseJobStore implements JobStoreLike {
         finished_at: new Date().toISOString(),
       },
     );
+    return SupabaseJobStore.rows(payload).length > 0;
   }
 
-  async fail(id: string, error: string, retryable: boolean): Promise<void> {
-    await this.callJson(
-      `${this.restBase}?id=eq.${id}`,
+  async fail(id: string, startedAt: string | null, error: string, retryable: boolean): Promise<boolean> {
+    const payload = await this.callJson(
+      `${this.restBase}?id=eq.${id}&status=eq.processing${SupabaseJobStore.startedAtFilter(startedAt)}`,
       "PATCH",
-      { Prefer: "return=minimal" },
+      { Prefer: "return=representation" },
       {
         status: "failed",
         error,
@@ -386,6 +425,7 @@ export class SupabaseJobStore implements JobStoreLike {
         finished_at: new Date().toISOString(),
       },
     );
+    return SupabaseJobStore.rows(payload).length > 0;
   }
 
   async expire(id: string, startedAt: string | null, error: string): Promise<boolean> {
@@ -422,7 +462,24 @@ export class SupabaseJobStore implements JobStoreLike {
   }
 
   async getImage(path: string): Promise<Uint8Array> {
-    return this.call(`${this.storageBase}/${path}`, "GET", {});
+    try {
+      return await this.call(`${this.storageBase}/${path}`, "GET", {});
+    } catch (error) {
+      // A 404 here is not "our bug" the way it is on the REST endpoints: the
+      // object path is deterministic (`pages/<jobId>`), so a concurrent
+      // expire/submit cycle can legitimately have deleted these bytes between
+      // this worker's claim and this read. Non-retryable would lock the page
+      // forever (`requeue` demands `retryable=is.true` and the job id never
+      // changes); retryable lets the phone's next submit upload a fresh copy.
+      if (error instanceof SupabaseError && error.status === 404) {
+        throw new SupabaseError(
+          "Sayfa görüntüsü bulunamadı; eşzamanlı bir temizlik silmiş olabilir. Yeniden gönderim yeni bir kopya yükler.",
+          404,
+          true,
+        );
+      }
+      throw error;
+    }
   }
 
   async deleteImage(path: string): Promise<void> {

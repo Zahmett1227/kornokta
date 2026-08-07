@@ -23,14 +23,19 @@
  */
 
 import { authorize } from "./_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
+import { MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
 import { runCardGate } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
-import { parseMaxCards, parseMultipleChoiceMode, type CardGeneratorLike } from "./_cards.js";
+import {
+  VISION_MIME_TYPES,
+  parseMaxCards,
+  parseMultipleChoiceMode,
+  type CardGeneratorLike,
+} from "./_cards.js";
 
 /** How many jobs one poll may ask about. A batch is a handful of pages, never a hundred. */
 export const MAX_POLL_IDS = 50;
@@ -177,6 +182,12 @@ interface SubmitBody {
   maxCards?: unknown;
   /** The user's "beş şıklı kart" setting (§13.3); clamped to the deployment's own mode. */
   multipleChoiceMode?: unknown;
+  /**
+   * The user pressed "Tekrar dene" on a page this server had given up on. Only
+   * ever set by a deliberate human action, never by the queue's automatic
+   * retries — see `JobStoreLike.requeue` for why that distinction is the point.
+   */
+  force?: unknown;
 }
 
 async function submit(request: Request, deps: JobsDependencies): Promise<Response> {
@@ -193,9 +204,9 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   }
 
   const mimeType = typeof body.mimeType === "string" ? body.mimeType.trim() : "";
-  if (!ACCEPTED_MIME_TYPES.has(mimeType)) {
+  if (!VISION_MIME_TYPES.has(mimeType)) {
     return fail(
-      `Desteklenmeyen tür: ${mimeType || "(boş)"}. Kabul edilenler: ${[...ACCEPTED_MIME_TYPES].join(", ")}.`,
+      `Desteklenmeyen tür: ${mimeType || "(boş)"}. Kabul edilenler: ${[...VISION_MIME_TYPES].join(", ")}.`,
       415,
       false,
     );
@@ -229,6 +240,11 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   if (mcMode === null) {
     return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
   }
+
+  if (body.force !== undefined && typeof body.force !== "boolean") {
+    return fail("force true/false olmalı.", 400, false);
+  }
+  const force = body.force === true;
 
   // §21.3: refuse before spending, on the only bound knowable before the call.
   // Checked at submit rather than in the worker so the phone learns about it in
@@ -266,8 +282,10 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     return json(toJobView(existing), 202);
   }
   // A failure the phone cannot fix by trying again is reported as it stands
-  // rather than silently re-armed into another identical failure.
-  if (existing?.status === "failed" && existing.retryable === false) {
+  // rather than silently re-armed into another identical failure — unless the
+  // user asked for exactly that, which is the one thing that can carry
+  // information this row does not have (a corrected key, most of all).
+  if (existing?.status === "failed" && existing.retryable === false && !force) {
     return json(toJobView(existing), 200);
   }
 
@@ -300,7 +318,7 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     mayHaveOrphanedObject = true;
 
     const armed = existing
-      ? await deps.store.requeue(enqueueRequest)
+      ? await deps.store.requeue(enqueueRequest, { includePermanent: force })
       : await deps.store.insertQueued(enqueueRequest);
 
     if (!armed) {
@@ -432,39 +450,46 @@ async function reclaim(row: JobRow, deps: JobsDependencies): Promise<JobView> {
  */
 export async function runJob(jobId: string, deps: JobsDependencies): Promise<void> {
   const started = deps.now?.() ?? Date.now();
-  let row: JobRow | undefined;
+  let job: JobRow;
 
   try {
-    [row] = await deps.store.find([jobId]);
+    const [row] = await deps.store.find([jobId]);
     if (!row || row.status !== "queued") return;
 
     // Exactly one caller wins this, so the submit's dispatch and a poll's
     // rescue can both fire without racing for the same paid generation.
+    //
+    // Everything below reads the row `claim` returned, not the snapshot above:
+    // between the read and the claim the job can be failed and re-armed with
+    // different parameters, and the claim is what decides which attempt this
+    // worker actually owns — including the `startedAt` that fences its own
+    // terminal write.
     const claimed = await deps.store.claim(jobId, row.attempts + 1);
     if (!claimed) return;
+    job = claimed;
   } catch (error) {
     deps.log?.({ jobId, event: "jobs.claim_failed", message: describe(error) });
     return;
   }
 
-  if (!row.imagePath) {
-    await finishFailed(jobId, "İş kaydında görüntü yolu yok.", false, deps, started, undefined);
+  if (!job.imagePath) {
+    await finishFailed(jobId, job.startedAt, "İş kaydında görüntü yolu yok.", false, deps, started, undefined);
     return;
   }
 
   try {
-    const image = await deps.store.getImage(row.imagePath);
+    const image = await deps.store.getImage(job.imagePath);
     const { output, rawUsage } = await deps.generator.generateCards({
       requestId: jobId,
       image,
-      mimeType: row.mimeType,
-      hint: row.hint ?? undefined,
+      mimeType: job.mimeType,
+      hint: job.hint ?? undefined,
       // Recorded at submit time, because the worker runs long after the request
       // that carried the setting has gone.
-      maxCards: row.maxCards ?? undefined,
+      maxCards: job.maxCards ?? undefined,
       // Recorded at submit time for the same reason `maxCards` is: the setting
       // that chose this is long gone by the time the worker runs.
-      multipleChoiceMode: row.mcMode ?? undefined,
+      multipleChoiceMode: job.mcMode ?? undefined,
     });
     // §13.3's structural check, before the health gate: a card whose options
     // are broken is downgraded to a plain one rather than lost, so what the
@@ -472,14 +497,26 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
     const checked = sanitizeMultipleChoice(output.cards);
     const output_ = { ...output, cards: checked.cards };
     const gate = runCardGate(output_, {
-      maxCardsPerKnowledgeUnit: row.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
+      maxCardsPerKnowledgeUnit: job.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
 
     // Stored in the shape `/api/cards-vision` returns, so the phone's decoder is
     // the same one and this table never becomes a second definition of the card
     // contract.
-    await deps.store.complete(jobId, { jobId, output: output_, gate, cardPromptVersion: CARD_PROMPT_VERSION });
-    await deleteImageQuietly(row.imagePath, deps);
+    const completed = await deps.store.complete(jobId, job.startedAt, {
+      jobId,
+      output: output_,
+      gate,
+      cardPromptVersion: CARD_PROMPT_VERSION,
+    });
+    if (!completed) {
+      // The fence lost: this attempt was expired and the row — and the bytes at
+      // the shared object path — now belong to a newer one. Touch nothing;
+      // deleting the path here would strand the live attempt without its image.
+      deps.log?.({ jobId, event: "jobs.result_dropped", attempts: job.attempts });
+      return;
+    }
+    await deleteImageQuietly(job.imagePath, deps);
 
     deps.log?.({
       jobId,
@@ -491,32 +528,36 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       outputTokens: rawUsage.outputTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
       cardPromptVersion: CARD_PROMPT_VERSION,
-      attempts: row.attempts + 1,
+      attempts: job.attempts,
       elapsedMs: (deps.now?.() ?? Date.now()) - started,
     });
   } catch (error) {
     const openAIError = error instanceof OpenAIError ? error : null;
     const supabaseError = error instanceof SupabaseError ? error : null;
     const retryable = openAIError?.transient ?? supabaseError?.transient ?? true;
-    await finishFailed(jobId, describe(error), retryable, deps, started, row.imagePath);
+    await finishFailed(jobId, job.startedAt, describe(error), retryable, deps, started, job.imagePath);
   }
 }
 
 async function finishFailed(
   jobId: string,
+  startedAt: string | null,
   message: string,
   retryable: boolean,
   deps: JobsDependencies,
   started: number,
   imagePath: string | undefined,
 ): Promise<void> {
+  let wrote = false;
   try {
-    await deps.store.fail(jobId, message, retryable);
+    wrote = await deps.store.fail(jobId, startedAt, message, retryable);
   } catch {
     // Nothing left to do: the row stays `processing` and the staleness sweep in
     // `poll` will reclaim it. That path exists precisely for this.
   }
-  if (imagePath) await deleteImageQuietly(imagePath, deps);
+  // Only the attempt that actually wrote the failure owns the object; a lost
+  // fence means a newer attempt may be relying on fresh bytes at this same path.
+  if (wrote && imagePath) await deleteImageQuietly(imagePath, deps);
   deps.log?.({
     jobId,
     event: "jobs.failed",

@@ -131,6 +131,17 @@ public struct CardGenerationRequest: Sendable {
     /// The server treats its own config as the ceiling: this can ask for less
     /// (never for more), the same rule `maxCards` follows (§21.3).
     public let multipleChoiceMode: MultipleChoiceMode?
+    /// The user pressed "Tekrar dene", as opposed to the queue retrying by
+    /// itself.
+    ///
+    /// Only a person can carry information the server's own verdict does not
+    /// have — a corrected backend key being the case that matters. Without this
+    /// a page the server marked permanently failed had no way back at all: the
+    /// job id is the page id, so every later attempt polled the same dead row
+    /// (`/api/jobs` refuses to re-arm one on its own, deliberately). Automatic
+    /// retries leave this false, because repeating alone is exactly what a
+    /// permanent failure already told us will not work.
+    public let forceResubmit: Bool
 
     public init(
         jobId: String,
@@ -144,7 +155,8 @@ public struct CardGenerationRequest: Sendable {
         isHandwritten: Bool = false,
         annotationGroups: [AnnotationGroup] = [],
         hint: String? = nil,
-        multipleChoiceMode: MultipleChoiceMode? = nil
+        multipleChoiceMode: MultipleChoiceMode? = nil,
+        forceResubmit: Bool = false
     ) {
         self.jobId = jobId
         self.passage = passage
@@ -158,6 +170,7 @@ public struct CardGenerationRequest: Sendable {
         self.annotationGroups = annotationGroups
         self.hint = hint
         self.multipleChoiceMode = multipleChoiceMode
+        self.forceResubmit = forceResubmit
     }
 }
 

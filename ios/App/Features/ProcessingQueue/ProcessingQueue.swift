@@ -53,6 +53,16 @@ final class ProcessingQueue: ObservableObject {
 
     @Published private(set) var isRunning = false
 
+    /// Someone asked for a pass while one was already running.
+    ///
+    /// The eligible set is chosen once, before anything is in flight, so pages
+    /// captured *during* a batch are invisible to it — and a batch on the job
+    /// queue runs for minutes. Dropping the request on the floor left those
+    /// pages sitting at "Bekliyor" until the next launch or pull-to-refresh,
+    /// because the follow-up pass `processPending` schedules only ever looks at
+    /// pages that failed transiently.
+    private var rerunRequested = false
+
     init(container: ModelContainer, imageStore: ImageStore, pipeline: CapturePipeline) {
         self.container = container
         self.imageStore = imageStore
@@ -128,11 +138,27 @@ final class ProcessingQueue: ObservableObject {
 
     /// Processes every page that is not finished. Safe to call repeatedly; a
     /// page already at `.ready` is skipped.
+    ///
+    /// A call that arrives while a pass is running is remembered rather than
+    /// dropped, and the running pass loops once more when it finishes — that is
+    /// how a page captured mid-batch gets picked up without waiting for the
+    /// next launch. `shouldProcess` is what makes the extra lap cheap: a page
+    /// the first lap already finished is not selected again.
     func processPending() async {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            rerunRequested = true
+            return
+        }
         isRunning = true
         defer { isRunning = false }
 
+        repeat {
+            rerunRequested = false
+            await runOnePass()
+        } while rerunRequested
+    }
+
+    private func runOnePass() async {
         reconcilePendingImageDeletions()
 
         let context = container.mainContext
@@ -227,6 +253,11 @@ final class ProcessingQueue: ObservableObject {
         // nothing to report: the user asked for exactly that.
         guard let page = try? context.fetch(descriptor).first else { return }
         guard !page.pendingDeletion else { return }
+        // Re-asked at start time, not only at selection time: this call may
+        // have waited behind a full batch, and in that window the user can
+        // cancel the page or a manual "Tekrar dene" can run it to `.ready`
+        // first. Starting a second run then meant a duplicate generation.
+        guard shouldProcess(page) else { return }
         await process(page)
     }
 
@@ -326,7 +357,8 @@ final class ProcessingQueue: ObservableObject {
     private func process(
         _ page: CapturedPage,
         lineSelection: [String]?,
-        selectionResult: MarkerSelectionResult?
+        selectionResult: MarkerSelectionResult?,
+        forceResubmit: Bool = false
     ) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
@@ -379,7 +411,8 @@ final class ProcessingQueue: ObservableObject {
             snapshot: decodedSnapshot(for: page),
             selectionOverride: lineSelection,
             selectionResultOverride: selectionResult,
-            completedGroupIds: completedGroupIds(for: page)
+            completedGroupIds: completedGroupIds(for: page),
+            forceResubmit: forceResubmit
         )
 
         apply(outcome, to: page, context: context)
@@ -423,6 +456,15 @@ final class ProcessingQueue: ObservableObject {
     }
 
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {
+        // The user's explicit stop wins over a result arriving late. `cancel`
+        // is guarded by `canTransition` and "cancelled never moves again"
+        // (StateMachine.swift), but this write path used to ignore both: a page
+        // cancelled while its run was in flight would be resurrected as
+        // `.ready`, cards and all. Wasted work in that rare race — same
+        // trade-off `pendingDeletion` makes in `process` — but the state the
+        // user chose stays chosen.
+        guard page.processingState != .cancelled else { return }
+
         // Keep the local OCR even when a later step failed (§21.2).
         if let recognized = outcome.recognized, page.regions.isEmpty {
             page.documentQualityScore = recognized.lines
@@ -448,11 +490,19 @@ final class ProcessingQueue: ObservableObject {
 
         switch outcome.finalState {
         case .ready:
+            // Filtered exactly like the non-ready branch above. Two runs for
+            // one page genuinely overlap (a manual "Tekrar dene" racing a
+            // pull-to-refresh — the comment in `process` documents it), both
+            // poll the same job id, and both arrive here with the same server
+            // result; without the filter the second one persisted a complete
+            // duplicate set of regions, cards and ModelRuns (§17: re-processing
+            // must not produce a second set of cards).
             if !outcome.generatedGroups.isEmpty {
-                for generated in outcome.generatedGroups {
+                for generated in outcome.generatedGroups where !hasPersistedGroup(generated.group, on: page) {
                     persist(generated: generated, outcome: outcome, page: page, context: context)
                 }
-            } else if let knowledge = outcome.knowledge, let group = outcome.annotationGroups.first {
+            } else if let knowledge = outcome.knowledge, let group = outcome.annotationGroups.first,
+                      !hasPersistedGroup(group, on: page) {
                 persist(
                     generated: GeneratedAnnotationGroup(group: group, knowledge: knowledge),
                     outcome: outcome,
@@ -749,12 +799,27 @@ final class ProcessingQueue: ObservableObject {
         }
     }
 
+    /// The user pressing "Tekrar dene" — not the queue retrying by itself.
+    ///
+    /// That distinction is what `forceResubmit` carries: only a person can know
+    /// something the server's own "do not retry this" verdict does not, and
+    /// without it a page the server gave up on stayed stuck no matter how many
+    /// times this was tapped (§17; `CardGenerationRequest.forceResubmit`).
     func retry(_ page: CapturedPage) async {
         guard page.processingState == .temporaryFailure || page.processingState == .permanentFailure else { return }
+        // A run already in flight for this page will finish and write its own
+        // outcome; resetting the state under it and starting a second run only
+        // sets up the duplicate-generation race `process`'s comment describes.
+        guard (inFlightPageCounts[page.id] ?? 0) == 0 else { return }
         page.retryCount = 0
         page.nextAttemptAt = nil
         page.processingState = .captured
         try? container.mainContext.save()
-        await process(page)
+        await process(page, lineSelection: nil, selectionResult: nil, forceResubmit: true)
+        // A manual retry that fails transiently sets `nextAttemptAt` like any
+        // other run, but nothing was honouring it: `scheduleRetryDrain` only ran
+        // at the end of `processPending`, so "kendiliğinden yeniden denenecek"
+        // meant "when you next open the app".
+        scheduleRetryDrain()
     }
 }

@@ -260,7 +260,28 @@ describe("OpenAICardGenerator", () => {
       usage: { input_tokens: 500, output_tokens: 700 },
     });
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
-    await expect(generator.generateCards(REQUEST)).rejects.toThrow(/max_output_tokens/);
+    const error = await generator.generateCards(REQUEST).catch((caught) => caught as OpenAIError);
+    expect(error).toBeInstanceOf(OpenAIError);
+    expect((error as OpenAIError).message).toMatch(/max_output_tokens/);
+    // Transient: token spend is stochastic (reasoning tokens vary run to run),
+    // and with jobId = page id a permanent classification would lock the page
+    // out of /api/jobs forever.
+    expect((error as OpenAIError).transient).toBe(true);
+  });
+
+  it("surfaces a 2xx body whose status is 'failed' with the provider's own message, as retryable", async () => {
+    const { transport } = stubTransport(200, {
+      status: "failed",
+      error: { message: "The model produced invalid output." },
+      usage: { input_tokens: 500, output_tokens: 0 },
+    });
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    const error = await generator.generateCards(REQUEST).catch((caught) => caught as OpenAIError);
+    expect(error).toBeInstanceOf(OpenAIError);
+    // Without the status check this fell through to extractOutputText and the
+    // provider's actual reason was replaced by a generic "no text" error.
+    expect((error as OpenAIError).message).toMatch(/invalid output/);
+    expect((error as OpenAIError).transient).toBe(true);
   });
 
   it("throws on output_text that is not valid JSON", async () => {

@@ -15,6 +15,14 @@ struct QueueView: View {
     @Query(sort: \CapturedPage.captureDate, order: .reverse)
     private var pages: [CapturedPage]
 
+    /// The page a destructive swipe is waiting on confirmation for.
+    ///
+    /// Only pages that already produced cards get here: deleting one takes the
+    /// cards *and* their whole FSRS review history with it (`performDelete`
+    /// cascades), which is a very different act from dropping a page that is
+    /// still queued — and both were the same single swipe.
+    @State private var pagePendingDeletion: CapturedPage?
+
     var body: some View {
         List {
             if pages.isEmpty {
@@ -36,6 +44,36 @@ struct QueueView: View {
         .homeButtonToolbar()
         .refreshable {
             await environment.queue.processPending()
+        }
+        .confirmationDialog(
+            "Bu sayfayı sil?",
+            isPresented: Binding(
+                get: { pagePendingDeletion != nil },
+                set: { if !$0 { pagePendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Sayfayı ve kartlarını sil", role: .destructive) {
+                if let page = pagePendingDeletion {
+                    environment.queue.delete(page)
+                }
+                pagePendingDeletion = nil
+            }
+            Button("Vazgeç", role: .cancel) { pagePendingDeletion = nil }
+        } message: {
+            Text(
+                "Bu sayfadan üretilen \(cardCount(of: pagePendingDeletion)) kart ve "
+                    + "tekrar geçmişi de silinir. Geri alınamaz."
+            )
+        }
+    }
+
+    /// Cards reachable from this page, through the same relationship chain
+    /// `ProcessingQueue.performDelete` cascades down.
+    private func cardCount(of page: CapturedPage?) -> Int {
+        guard let page else { return 0 }
+        return page.regions.reduce(0) { total, region in
+            total + region.knowledgeUnits.reduce(0) { $0 + $1.cards.count }
         }
     }
 
@@ -82,7 +120,14 @@ struct QueueView: View {
         }
         .swipeActions {
             Button("Sil", role: .destructive) {
-                environment.queue.delete(page)
+                // A page with no cards yet has nothing to lose but itself, so
+                // it still goes on one swipe; one that produced cards asks
+                // first, because the cascade takes the review history too.
+                if cardCount(of: page) > 0 {
+                    pagePendingDeletion = page
+                } else {
+                    environment.queue.delete(page)
+                }
             }
             if state != .cancelled {
                 Button("İptal") {

@@ -50,6 +50,12 @@ CASES: list[tuple[str, tuple[float, float] | None, int, float]] = [
     ("boundary_exactly_one_day", (5.0, 5.0), 3, 1.0),
     # --- reviewed later than scheduled (overdue) ---
     ("overdue_good", (5.0, 5.0), 3, 20.0),
+    # --- the lapse clamp's regime: an already-lapsed card left for months ---
+    # Pinned because this is the only regime where `_next_stability_failure`'s
+    # `min(long_term, S / e^(w17*w18))` term changes the answer. Without it this
+    # case leaves "Unuttum" with *more* stability (0.0558) than it went in with
+    # (0.05) — a longer interval for a card the user just failed.
+    ("lapsed_card_left_for_months", (0.05, 3.0), 1, 100.0),
 ]
 
 
