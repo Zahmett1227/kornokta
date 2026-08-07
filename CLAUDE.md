@@ -145,8 +145,8 @@ yorumları **İngilizce**.
 | Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
 | Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
 
-**Dal durumu:** `main` güncel uç (`09c629d`, PR #29 squash merge). Çalışma
-dalları merge sonrası bırakılıyor; yeni iş `main`'in ucundan yeni bir dalla
+**Dal durumu:** `main` güncel uç (`2c52d4c`, PR #30 squash merge). Çalışma
+dalları merge sonrası siliniyor; yeni iş `main`'in ucundan yeni bir dalla
 başlar.
 
 **Tarihsel kayıt — Faz 5/annotation-grounding döneminde bulunan ve düzeltilen
@@ -349,7 +349,7 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
       local yollar için).
 
-**Test durumu (2026-08-07, akşam — `fix/review-round-1` dalı):**
+**Test durumu (2026-08-07, akşam — PR #30 `main`'e merge edildi):**
 - Backend (`backend/`): **527 test yeşil**, `tsc --noEmit` temiz — kullanıcının
   Mac'inde gerçekten koşuldu.
 - Python (`evals/`): **518 test yeşil**, aynı Mac'te koşuldu.
@@ -361,7 +361,7 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
 - CI: yeni `.github/workflows/ios.yml` macOS runner'da `swift test` + App
   build koşuyor — Swift'in CI kapısı olmaması bu dalda kapandı.
 
-**Bu dalda kapatılan inceleme bulguları (2026-08-07 akşam turu).** Codex'in
+**PR #30'da kapatılan inceleme bulguları (2026-08-07 akşam turu).** Codex'in
 listesi + bağımsız iki incelemenin bulguları; ayrıntılı gerekçeler kod
 yorumlarında.
 
