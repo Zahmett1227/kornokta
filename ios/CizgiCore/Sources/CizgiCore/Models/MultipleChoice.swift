@@ -21,6 +21,34 @@ public struct CardOption: Codable, Equatable, Sendable {
     }
 }
 
+/// How much of a page may become five-option cards (§13.3).
+///
+/// Mirrors the backend's `MULTIPLE_CHOICE_MODES`; the raw values are the wire
+/// format, so they are the same three words on both sides.
+public enum MultipleChoiceMode: String, Codable, CaseIterable, Sendable {
+    case off
+    case mixed
+    case all
+
+    public var label: String {
+        switch self {
+        case .off: return "Kapalı"
+        case .mixed: return "Karışık"
+        case .all: return "Hepsi"
+        }
+    }
+
+    /// What the option costs, said plainly — every set of five options is extra
+    /// output tokens, and output tokens are what the latency is made of.
+    public var detail: String {
+        switch self {
+        case .off: return "Beş şıklı kart üretilmez."
+        case .mixed: return "Yalnız ayırt etme/istisna kartları beş şıklı olur."
+        case .all: return "Üretilebilen her kart beş şıklı olur; daha yavaş ve daha pahalı."
+        }
+    }
+}
+
 public enum MultipleChoiceValidation: Equatable, Sendable {
     case valid
     case wrongOptionCount(Int)
@@ -132,6 +160,17 @@ public enum MultipleChoice {
         return folded
             .split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
             .joined(separator: " ")
+    }
+
+    /// What a card's type becomes once its options are (or are no longer) sound.
+    ///
+    /// Editing is the one place a card can change kind: removing broken options
+    /// has to leave a usable plain card rather than a `multipleChoice` card with
+    /// nothing to choose from, and adding a sound set has to make the review
+    /// screen actually ask the question.
+    public static func resolvedType(current: CardType, options: [CardOption]?) -> CardType {
+        if let options, case .valid = validate(options) { return .multipleChoice }
+        return current == .multipleChoice ? .directRecall : current
     }
 
     /// Index of the correct option, or `nil` if the list is not sound.

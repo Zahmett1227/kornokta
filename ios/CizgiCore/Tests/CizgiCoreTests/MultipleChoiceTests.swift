@@ -88,6 +88,29 @@ final class MultipleChoiceValidationTests: XCTestCase {
     }
 }
 
+final class MultipleChoiceTypeTests: XCTestCase {
+    private let sound = (0..<5).map { CardOption(text: "Şık \($0)", isCorrect: $0 == 0, why: nil) }
+
+    func testSoundOptionsMakeItAMultipleChoiceCard() {
+        XCTAssertEqual(MultipleChoice.resolvedType(current: .directRecall, options: sound), .multipleChoice)
+    }
+
+    /// Removing the options in the editor must leave a usable plain card, not a
+    /// five-option card with nothing to choose from.
+    func testRemovingOptionsFallsBackToAPlainCard() {
+        XCTAssertEqual(MultipleChoice.resolvedType(current: .multipleChoice, options: nil), .directRecall)
+        XCTAssertEqual(
+            MultipleChoice.resolvedType(current: .multipleChoice, options: Array(sound.prefix(2))),
+            .directRecall
+        )
+    }
+
+    func testOtherTypesAreLeftAlone() {
+        XCTAssertEqual(MultipleChoice.resolvedType(current: .cloze, options: nil), .cloze)
+        XCTAssertEqual(MultipleChoice.resolvedType(current: .mechanism, options: []), .mechanism)
+    }
+}
+
 final class MultipleChoiceStorageTests: XCTestCase {
     private let sound = [
         CardOption(text: "Hipokalemi", isCorrect: true, why: nil),

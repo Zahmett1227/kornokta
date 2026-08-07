@@ -24,13 +24,13 @@
 
 import { authorize } from "./_auth.js";
 import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
-import type { CostConfig, OpenAIConfig } from "../config.js";
+import { MULTIPLE_CHOICE_MODES, type CostConfig, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
 import { runCardGate } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
-import { parseMaxCards, type CardGeneratorLike } from "./_cards.js";
+import { parseMaxCards, parseMultipleChoiceMode, type CardGeneratorLike } from "./_cards.js";
 
 /** How many jobs one poll may ask about. A batch is a handful of pages, never a hundred. */
 export const MAX_POLL_IDS = 50;
@@ -45,7 +45,7 @@ const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 export interface JobsDependencies {
   store: JobStoreLike;
   generator: CardGeneratorLike;
-  openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens">;
+  openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens" | "multipleChoiceMode">;
   cost: Pick<
     CostConfig,
     "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens" | "maxUsdPerCardGeneration"
@@ -175,6 +175,8 @@ interface SubmitBody {
   mimeType?: unknown;
   hint?: unknown;
   maxCards?: unknown;
+  /** The user's "beş şıklı kart" setting (§13.3); clamped to the deployment's own mode. */
+  multipleChoiceMode?: unknown;
 }
 
 async function submit(request: Request, deps: JobsDependencies): Promise<Response> {
@@ -221,6 +223,11 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   const maxCards = parseMaxCards(body.maxCards, deps.openai.maxCardsPerKnowledgeUnit);
   if (maxCards === null) {
     return fail("maxCards 1 veya daha büyük bir tam sayı olmalı.", 400, false);
+  }
+
+  const mcMode = parseMultipleChoiceMode(body.multipleChoiceMode, deps.openai.multipleChoiceMode);
+  if (mcMode === null) {
+    return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
   }
 
   // §21.3: refuse before spending, on the only bound knowable before the call.
@@ -271,7 +278,7 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   // one's worker had already claimed, producing two paid generations racing
   // over one image and one result row (Codex, PR #25 P1).
   const imagePath = imagePathFor(jobId);
-  const enqueueRequest = { id: jobId, imagePath, mimeType, hint, maxCards };
+  const enqueueRequest = { id: jobId, imagePath, mimeType, hint, maxCards, mcMode };
   // Set the moment this request could leave bytes at `imagePath` that no row
   // points at — which happens two ways, not one: a successful `expire` nulls
   // `image_path` while the old object is still in the bucket, and a successful
@@ -455,6 +462,9 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       // Recorded at submit time, because the worker runs long after the request
       // that carried the setting has gone.
       maxCards: row.maxCards ?? undefined,
+      // Recorded at submit time for the same reason `maxCards` is: the setting
+      // that chose this is long gone by the time the worker runs.
+      multipleChoiceMode: row.mcMode ?? undefined,
     });
     // §13.3's structural check, before the health gate: a card whose options
     // are broken is downgraded to a plain one rather than lost, so what the

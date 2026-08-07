@@ -332,11 +332,15 @@ final class ProcessingQueue: ObservableObject {
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
         let pageID = page.id
 
-        // Read the ceiling per run rather than caching it at init, so changing
-        // "Sayfa başına kart" in Ayarlar takes effect on the next page instead
-        // of the next launch (§6.7). UserDefaults is the single stored copy of
-        // the setting, so this cannot drift from what the screen shows.
-        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPage)
+        // Read the settings per run rather than caching them at init, so
+        // changing "Sayfa başına kart" or "Beş şıklı kart" in Ayarlar takes
+        // effect on the next page instead of the next launch (§6.7).
+        // UserDefaults is the single stored copy, so this cannot drift from
+        // what the screen shows.
+        let settings = AppSettings.load()
+        let effectivePipeline = pipeline
+            .withMaxCards(settings.maxCardsPerPage)
+            .withMultipleChoiceMode(settings.multipleChoiceMode)
 
         page.processingState = .localOCR
         try? context.save()
@@ -572,7 +576,9 @@ final class ProcessingQueue: ObservableObject {
                 riskFlags: generated.riskFlags,
                 // Faz 1 cards come from the mock, so they start as drafts the
                 // user activates — nothing auto-enters the deck (§19.1).
-                status: generated.requiresUserApproval ? .needsReview : .active
+                status: generated.requiresUserApproval ? .needsReview : .active,
+                options: generated.options,
+                lowConfidence: generated.lowConfidence
             )
             card.knowledgeUnit = unit
             context.insert(card)

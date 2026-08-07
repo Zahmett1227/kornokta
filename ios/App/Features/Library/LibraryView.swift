@@ -24,6 +24,16 @@ struct LibraryView: View {
 
     private var activeCount: Int { cards.filter { $0.status == .active }.count }
     private var suspendedCount: Int { cards.filter { $0.status == .suspended }.count }
+    /// Cards the server could not fully vouch for (§13.3 rule 6).
+    ///
+    /// Faz 6 removed the approval gate and §13.3 wants one on a suspicious
+    /// question. This is the compromise the plan settled on: the card is active
+    /// and reviewable, and it is *listed* here rather than held back — flagging
+    /// instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
+    private var needsSecondLook: [Card] {
+        cards.filter { $0.lowConfidence && $0.status != .suspended }
+    }
+
     private var mostForgotten: [Card] {
         cards.filter { $0.lapseCount > 0 }
             .sorted { $0.lapseCount > $1.lapseCount }
@@ -77,6 +87,23 @@ struct LibraryView: View {
                                           bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            }
+
+            if !needsSecondLook.isEmpty {
+                Section {
+                    ForEach(needsSecondLook) { card in
+                        row(card)
+                    }
+                    .onDelete { deleteCards(needsSecondLook, at: $0) }
+                } header: {
+                    sectionHeader("Gözden geçir")
+                } footer: {
+                    Text("Model ya da sunucu bu kartlarda emin olamadı — okunamayan "
+                         + "bir el yazısı, ya da birbirini kapsayan şıklar. Kart "
+                         + "desteye girdi; doğruluğunu bir kez kontrol et.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
             }
 
             if !mostForgotten.isEmpty {
@@ -190,6 +217,27 @@ struct CardDetailView: View {
                 Section {
                     CardSourceView(material: source, imageStore: environment.imageStore)
                 } header: { sectionHeader("Kaynak") }
+            }
+
+            // §13.3: the answer key is part of the card, so it is readable
+            // outside the review screen too.
+            if let options = card.options {
+                Section {
+                    ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                        HStack(alignment: .top, spacing: Cizgi.Space.sm) {
+                            Image(systemName: option.isCorrect ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(option.isCorrect ? Cizgi.success : Cizgi.muted)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(option.text).foregroundStyle(Cizgi.ink)
+                                if !option.isCorrect, let why = option.why, !why.isEmpty {
+                                    Text(why).font(.footnote).foregroundStyle(Cizgi.muted)
+                                }
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(option.text), \(option.isCorrect ? "doğru" : "yanlış")")
+                    }
+                } header: { sectionHeader("Şıklar") }
             }
 
             if !(card.knowledgeUnit?.tags ?? []).isEmpty {

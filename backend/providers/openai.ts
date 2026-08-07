@@ -92,6 +92,11 @@ export interface CardGenerationRequest {
    */
   maxCards?: number;
   /**
+   * Per-request five-option mode (§13.3), already clamped to the deployment's
+   * ceiling by the endpoint. Absent means "use the configured mode".
+   */
+  multipleChoiceMode?: MultipleChoiceMode;
+  /**
    * Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun".
    * There is no pre-reconciled transcription any more: the model reads the
    * marked content off the image itself (v2 prompt).
@@ -253,7 +258,11 @@ export class OpenAICardGenerator {
           content: [
             {
               type: "input_text",
-              text: buildUserInstruction(request, maxCards, this.config.multipleChoiceMode),
+              text: buildUserInstruction(
+                request,
+                maxCards,
+                request.multipleChoiceMode ?? this.config.multipleChoiceMode,
+              ),
             },
             {
               type: "input_image",

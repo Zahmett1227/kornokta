@@ -16,7 +16,7 @@
 
 import { authorize } from "./_auth.js";
 import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
-import type { CostConfig, OpenAIConfig } from "../config.js";
+import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import {
   OpenAIError,
@@ -38,6 +38,8 @@ export interface CardsRequestBody {
   hint?: unknown;
   /** The user's "sayfa başına kart" setting (§6.7). Clamped to the deployment's own ceiling. */
   maxCards?: unknown;
+  /** The user's "beş şıklı kart" setting (§13.3). Clamped the same way. */
+  multipleChoiceMode?: unknown;
 }
 
 /**
@@ -54,6 +56,29 @@ export function parseMaxCards(value: unknown, ceiling: number): number | undefin
   // Only ever downwards: the config value is a cost ceiling and a client must
   // not be able to raise it (§21.3).
   return Math.min(value, ceiling);
+}
+
+/**
+ * Reads a client-supplied five-option mode (§13.3).
+ *
+ * Clamped on the `off < mixed < all` scale for the same reason `maxCards` is
+ * clamped: what the deployment is configured for is a spending decision, and a
+ * client may ask for less of it but never for more (§21.3).
+ *
+ * `null` for a value that is not one of the three words, which the caller
+ * reports — a setting quietly dropped is how "sayfa başına kart" managed to do
+ * nothing for two phases.
+ */
+export function parseMultipleChoiceMode(
+  value: unknown,
+  ceiling: MultipleChoiceMode,
+): MultipleChoiceMode | undefined | null {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  const index = (MULTIPLE_CHOICE_MODES as readonly string[]).indexOf(value);
+  if (index < 0) return null;
+  const ceilingIndex = MULTIPLE_CHOICE_MODES.indexOf(ceiling);
+  return MULTIPLE_CHOICE_MODES[Math.min(index, ceilingIndex)]!;
 }
 
 export interface CardsSuccess {
@@ -87,7 +112,7 @@ export interface CardGeneratorLike {
 
 export interface CardsDependencies {
   generator: CardGeneratorLike;
-  openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens">;
+  openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens" | "multipleChoiceMode">;
   cost: Pick<CostConfig, "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens" | "maxUsdPerCardGeneration">;
   deviceToken: string | undefined;
   /** Content never reaches this — only ids, counts and durations (§7.3). */
@@ -172,6 +197,14 @@ export async function handleCardsRequest(
     return fail("maxCards 1 veya daha büyük bir tam sayı olmalı.", 400, false);
   }
 
+  const multipleChoiceMode = parseMultipleChoiceMode(
+    body.multipleChoiceMode,
+    deps.openai.multipleChoiceMode,
+  );
+  if (multipleChoiceMode === null) {
+    return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
+  }
+
   // §21.3: refuse before spending, using the only bound knowable before the
   // call — the output-token ceiling. Input-token cost depends on the image
   // and prompt and is not estimated here; it is still recorded for real
@@ -196,6 +229,7 @@ export async function handleCardsRequest(
       mimeType,
       hint,
       maxCards,
+      multipleChoiceMode,
     });
 
     // §13.3's structural check runs before the health gate, so the gate — and

@@ -54,7 +54,7 @@ function deps(overrides: Partial<CardsDependencies> = {}): CardsDependencies & {
   const logged: Record<string, unknown>[] = [];
   return {
     generator: stubGenerator(validOutput()).generator,
-    openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700 },
+    openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700, multipleChoiceMode: "mixed" },
     cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
     deviceToken: TOKEN,
     log: (entry) => logged.push(entry),
@@ -191,7 +191,7 @@ describe("POST /api/cards-vision", () => {
         post(VALID_BODY),
         deps({
           generator,
-          openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 1_000_000 },
+          openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 1_000_000, multipleChoiceMode: "mixed" },
           cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 5, maxUsdPerCardGeneration: 0.5 },
         }),
       );
@@ -258,7 +258,7 @@ describe("POST /api/cards-vision", () => {
       const { generator } = stubGenerator(output);
       const response = await handleCardsRequest(
         post(VALID_BODY),
-        deps({ generator, openai: { maxCardsPerKnowledgeUnit: 1, maxOutputTokens: 700 } }),
+        deps({ generator, openai: { maxCardsPerKnowledgeUnit: 1, maxOutputTokens: 700, multipleChoiceMode: "mixed" } }),
       );
       const body = (await response.json()) as { gate: { droppedForLimit: string[] } };
       expect(body.gate.droppedForLimit).toEqual(["card_2"]);
@@ -363,7 +363,7 @@ describe("POST /api/cards-vision — kart sınırı (§6.7)", () => {
     const generator = stubGenerator(validOutput());
     await handleCardsRequest(
       post({ ...VALID_BODY, maxCards: 99 }),
-      deps({ generator: generator.generator, openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700 } }),
+      deps({ generator: generator.generator, openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700, multipleChoiceMode: "mixed" } }),
     );
     expect(generator.seen[0]?.maxCards).toBe(4);
   });

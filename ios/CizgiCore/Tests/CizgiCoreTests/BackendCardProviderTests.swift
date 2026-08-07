@@ -14,20 +14,33 @@ import XCTest
 final class BackendCardProviderTests: XCTestCase {
     private func card(
         id: String = "card_1",
+        type: CardType = .directRecall,
         explanation: String = "",
         tags: [String] = ["Farmakoloji"],
-        lowConfidence: Bool = false
+        lowConfidence: Bool = false,
+        options: [RemoteCardOption]? = nil,
+        correctOption: Int? = nil
     ) -> RemoteCard {
         RemoteCard(
             id: id,
-            type: .directRecall,
+            type: type,
             front: "Ön yüz",
             back: "Arka yüz",
             explanation: explanation,
             difficulty: 2,
             tags: tags,
-            lowConfidence: lowConfidence
+            lowConfidence: lowConfidence,
+            options: options,
+            correctOption: correctOption
         )
+    }
+
+    /// Five sound options, correct one first.
+    private func remoteOptions(correctAt: Int = 0, texts: [String]? = nil) -> [RemoteCardOption] {
+        let labels = texts ?? ["Hipokalemi", "Hiperkalemi", "Hiponatremi", "Hipokalsemi", "Hipomagnezemi"]
+        return labels.enumerated().map { index, text in
+            RemoteCardOption(text: text, correct: index == correctAt, why: index == correctAt ? "" : "yanlış çünkü …")
+        }
     }
 
     private func usage() -> RemoteUsage {
@@ -45,6 +58,81 @@ final class BackendCardProviderTests: XCTestCase {
             gate: RemoteCardGateReport(verdicts: verdicts, warnings: warnings),
             cardPromptVersion: "2.0"
         )
+    }
+
+    // MARK: Five-option cards (§13.3)
+
+    func testSoundOptionsSurviveTheMapping() throws {
+        let decoded = success(
+            cards: [card(type: .multipleChoice, options: remoteOptions(correctAt: 2), correctOption: 2)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+
+        XCTAssertEqual(knowledge.cards[0].options?.count, 5)
+        XCTAssertEqual(knowledge.cards[0].options?[2].isCorrect, true)
+        XCTAssertEqual(knowledge.cards[0].options?[1].why, "yanlış çünkü …")
+    }
+
+    /// The server states the answer twice (`correct` and `correctOption`) so
+    /// that a disagreement is visible. If the two disagree here, neither can be
+    /// trusted and the card falls back to a plain one rather than asking a
+    /// question with the wrong key.
+    func testDisagreeingAnswerKeyDropsTheOptions() throws {
+        let decoded = success(
+            cards: [card(type: .multipleChoice, options: remoteOptions(correctAt: 0), correctOption: 3)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+
+        XCTAssertNil(knowledge.cards[0].options)
+        // The card itself is kept: its front and back are fine.
+        XCTAssertEqual(knowledge.cards.count, 1)
+    }
+
+    func testMalformedOptionsAreIgnoredRatherThanShownHalfBuilt() throws {
+        let short = Array(remoteOptions().prefix(3))
+        let decoded = success(
+            cards: [card(type: .multipleChoice, options: short, correctOption: 0)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+    }
+
+    /// A v2.0 response, or any plain card: no options, no special case.
+    func testPlainCardHasNoOptions() throws {
+        let decoded = success(
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+    }
+
+    /// Options on a card that did not claim to be five-option are not promoted:
+    /// the type is what the server committed to.
+    func testOptionsOnAPlainTypeAreIgnored() throws {
+        let decoded = success(
+            cards: [card(options: remoteOptions(), correctOption: 0)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+    }
+
+    /// Decoded since Faz 6 and dropped on the floor ever since. It is what
+    /// Bilgilerim's "Gözden geçir" list and the review badge read, i.e. the
+    /// whole of §13.3 rule 6 as Faz 6 answers it.
+    func testLowConfidenceReachesTheCard() throws {
+        let decoded = success(
+            cards: [card(lowConfidence: true)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        XCTAssertTrue(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].lowConfidence)
+
+        let confident = success(
+            cards: [card(lowConfidence: false)],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        XCTAssertFalse(try BackendCardProvider.map(confident, elapsedMs: 100).cards[0].lowConfidence)
     }
 
     func testAutoAcceptedCardIsKeptAndActive() throws {

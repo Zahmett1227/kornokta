@@ -1,6 +1,6 @@
 # Faz 7 — Beş şıklı (TUS tipi) kart
 
-**Durum:** A1 + A2 uygulandı (2026-08-07); A3–A6 açık · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
+**Durum:** A1–A5 uygulandı (2026-08-07); **A6 (distraktör kalitesi) ve gerçek cihaz doğrulaması açık** · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
 seçmeli kurallar), §4.2 (ilk sürümde varsayılan **değil**), §4.3 (sonraki sürüm
 adayı), §13.2 (üretim kuralları), §18 (FSRS).
 
@@ -242,11 +242,9 @@ yasak sayılan türden bir belirsizlik).
   yaptığının aynısı. *Not:* üçüncü bir ayar gelirse sütun başına bir migration
   yerine tek bir `client_options jsonb` sütununa geçmek daha temiz olur; iki
   ayar için henüz gerekmiyor.
-  **A2'de bilerek yapılmadı:** sütunu şimdi eklemek, Ayarlar'da karşılığı
-  olmayan bir alan demekti — bu projenin bir kez düştüğü tuzağın aynısı
-  (`maxCardsPerPassage` iki faz boyunca hiçbir şey yapmadı). Mod şu an yalnız
-  sunucu config'inden (`OPENAI_MULTIPLE_CHOICE_MODE`) geliyor; istemci override'ı
-  Ayarlar arayüzüyle **birlikte** A5'te gelecek.
+  **A5'te birlikte geldi:** sütun (`20260807000000_add_mc_mode_to_jobs.sql`),
+  istek alanı, Ayarlar'daki seçici ve `CapturePipeline` taşıması aynı adımda —
+  ayar ile onu okuyan yol hiçbir noktada ayrı yaşamadı.
 
 ## 8. Maliyet ve gecikme
 
@@ -271,12 +269,14 @@ ekranı her kartı yavaşlatıyordu ve kullanıcı hata riskini kabul etti. Öte
 §13.3'ün endişesi gerçek: **iki doğrulu bir soru sessizce ezberlenirse yanlış
 öğrenilir** — bu, yanlış yazılmış düz bir karttan daha sinsi.
 
-**Önerilen çözüm — bloklamak yerine işaretlemek:**
+**Uygulandı (A5) — bloklamak yerine işaretlemek:**
 
 1. Kapının şüpheli bulduğu (§4) kart yine `.active` girer, ama `lowConfidence`
-   taşır.
-2. Tekrar ekranında bu kartlarda küçük bir **"şüpheli şıklar"** rozeti ve
-   düzenlemeye tek dokunuş.
+   taşır. **Not:** bu bayrak Faz 6'dan beri sunucudan geliyor ve telefonda
+   okunmadan atılıyordu; A5'te `GeneratedCard` → `Card` → yedek zincirine
+   bağlandı, yani §13.3'ün 6. maddesinin bir karşılığı ilk kez var.
+2. Tekrar ekranında bu kartlarda **"Gözden geçir"** rozeti; kartı düzenlemek
+   zaten aynı ekrandaki menüde.
 3. **Bilgilerim'de "Gözden geçir" bölümü:** `lowConfidence` kartlar tek listede.
    (Faz 6'da kaldırılan "Onay bekliyor" bölümünün *bloklamayan* hâli.)
 4. `all` modu açıksa ve kapı bir sayfada çok sayıda şüpheli üretirse, bu
@@ -293,10 +293,10 @@ Kullanıcı bunun yerine gerçek bir onay adımı isterse §6'daki akış
 |---|---|---|
 | **A1** | `MultipleChoice` modeli, doğrulama, sunum sırası; `CardType` altı değere çıkar (anti-drift zinciri) | ✅ **Koşuldu** — izole pakette 115 test yeşil (15'i yeni), mutasyonla doğrulandı; şema/TS/Swift kart tipleri elle karşılaştırılıp eşit çıktı (`pytest` bu ortamda kurulu değil, CI koşacak) |
 | **A2** | Şema v2.1, `llmOutputTypes.ts`, prompt v2.4, kalite kapısı, config anahtarı | ✅ **Koşuldu** — backend 500 test yeşil (18'i yeni), `tsc` temiz. **`mc_mode` sütunu A5'e ertelendi** — aşağıya bak |
-| **A3** | `BackendCardProvider` çözümlemesi + `GeneratedCard`'a şıklar; `ProcessingQueue.persist` kartı şıklarıyla yazar | `swift test` (CizgiCore, Mac) |
-| **A4** | Tekrar ekranı: şık seçimi, doğru/yanlış gösterimi, FSRS eşlemesi | **Mac derlemesi + gerçek cihaz** |
-| **A5** | Editör, kart detayı, yedek v3, Ayarlar'daki mod, "Gözden geçir" bölümü | Mac + cihaz |
-| **A6** | Gerçek sayfalarla prompt/distraktör kalite döngüsü | Yalnız gerçek kullanım |
+| **A3** | `BackendCardProvider` çözümlemesi + `GeneratedCard`/`Card` alanları; `ProcessingQueue.persist` kartı şıklarıyla yazar | ✅ Yazıldı; 5 yeni `BackendCardProviderTests` **Mac'te koşacak** |
+| **A4** | Tekrar ekranı: şık seçimi, doğru/yanlış gösterimi, `why` metinleri, FSRS eşlemesi | ✅ Yazıldı — **Mac derlemesi + cihaz bekliyor** |
+| **A5** | Editör, kart detayı, yedek v3, Ayarlar'daki mod + uçtan uca ayar taşıma (`jobs.mc_mode`) | ✅ Yazıldı; backend tarafı 504 test yeşil |
+| **A6** | Gerçek sayfalarla prompt/distraktör kalite döngüsü | ⬜ Yalnız gerçek kullanım |
 
 A1+A2 tek başına anlamlı ve tamamen bu ortamda doğrulanabilir; A3–A5 bir Mac
 gerektirir. **Asıl iş A6** — tıpkı B3'te olduğu gibi, kodun bittiği yerde
