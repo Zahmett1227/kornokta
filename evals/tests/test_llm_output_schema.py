@@ -51,8 +51,44 @@ class TestLlmOutputSchema:
 
     def test_unknown_card_type_rejected(self):
         payload = sample_payload()
-        payload["cards"][0]["type"] = "multiple_choice"
+        # Was "multiple_choice" until schema v2.1 made that a real type (§13.3).
+        payload["cards"][0]["type"] = "true_false"
         assert errors_for(payload)
+
+    def test_five_option_card_valid(self):
+        """§13.3: five options, exactly one correct, a reason on each wrong one."""
+        payload = sample_payload()
+        payload["schemaVersion"] = "2.1"
+        payload["cards"][0]["type"] = "multiple_choice"
+        payload["cards"][0]["options"] = [
+            {"text": "Sivri T dalgası", "correct": True, "why": ""},
+            {"text": "U dalgası", "correct": False, "why": "Hipokalemide görülür."},
+            {"text": "Delta dalgası", "correct": False, "why": "WPW bulgusudur."},
+            {"text": "Osborn dalgası", "correct": False, "why": "Hipotermide görülür."},
+            {"text": "Epsilon dalgası", "correct": False, "why": "ARVD bulgusudur."},
+        ]
+        payload["cards"][0]["correctOption"] = 0
+        assert errors_for(payload) == []
+
+    def test_wrong_option_count_rejected(self):
+        payload = sample_payload()
+        payload["cards"][0]["type"] = "multiple_choice"
+        payload["cards"][0]["options"] = [
+            {"text": "A", "correct": True, "why": ""},
+            {"text": "B", "correct": False, "why": "yanlış"},
+        ]
+        payload["cards"][0]["correctOption"] = 0
+        assert errors_for(payload)
+
+    def test_correct_option_out_of_range_rejected(self):
+        payload = sample_payload()
+        payload["cards"][0]["correctOption"] = 5
+        assert errors_for(payload)
+
+    def test_plain_card_may_omit_the_option_fields(self):
+        """A v2.0 payload predates them and must stay valid (kanonik şemada
+        isteğe bağlı; modele giden katı sürümde zorunlu)."""
+        assert errors_for(sample_payload()) == []
 
     def test_difficulty_out_of_range_rejected(self):
         payload = sample_payload()
