@@ -67,6 +67,20 @@ final class MultipleChoiceValidationTests: XCTestCase {
         )
     }
 
+    /// The device and the server must call the same pairs duplicates. This one
+    /// diverged: punctuation was a separator here and not there, so a card the
+    /// server accepted arrived and silently lost its options (Codex, PR #29).
+    func testPunctuationStillTellsOptionsApart() {
+        XCTAssertEqual(
+            MultipleChoice.validate(options(texts: ["HER2+", "HER2", "C", "D", "E"])),
+            .valid
+        )
+        XCTAssertEqual(
+            MultipleChoice.validate(options(texts: ["A-B", "A B", "C", "D", "E"])),
+            .valid
+        )
+    }
+
     func testGenuinelyDifferentOptionsAreNotCalledDuplicates() {
         XCTAssertEqual(
             MultipleChoice.validate(

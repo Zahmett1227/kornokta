@@ -544,10 +544,22 @@ struct ReviewView: View {
         let updatedAt: Date
         /// Whether this grade spent one of today's new-card allowances.
         let countedAsNew: Bool
+        /// Which option was picked, on a five-option card.
+        ///
+        /// Undo used to drop this, and the screen then looked like a card whose
+        /// answer was showing with nothing picked — which offers all four
+        /// grades. A card just answered *wrong* could then be graded "Kolay",
+        /// quietly breaking the wrong-option-is-always-`again` rule this screen
+        /// exists to enforce (Codex, PR #29).
+        let selectedOption: Int?
     }
 
     private func grade(_ card: Card, _ rating: ReviewRating) {
         guard var working = session else { return }
+
+        // Read before the screen resets it, so undo can put the answer back
+        // exactly as it stood.
+        let pickedOption = selectedOption
 
         let state = SchedulingState(
             stability: card.stability,
@@ -634,7 +646,8 @@ struct ReviewView: View {
                 lapseCount: snapshotFields.lapseCount,
                 lastReviewedAt: snapshotFields.lastReviewedAt,
                 updatedAt: snapshotFields.updatedAt,
-                countedAsNew: wasNew
+                countedAsNew: wasNew,
+                selectedOption: pickedOption
             )
         }
 
@@ -699,10 +712,9 @@ struct ReviewView: View {
         // The answer was on screen when they graded; putting it back hidden
         // would make them recall a card they have just seen the answer to.
         isAnswerVisible = true
-        // Which option they had picked is not recorded anywhere, and inventing
-        // one would put a mark next to an answer they may not have chosen. The
-        // correct option is still marked; only "senin seçimin" is absent.
-        selectedOption = nil
+        // Restored, not cleared: the grade buttons on a five-option card depend
+        // on what was picked, and dropping it would hand back all four.
+        selectedOption = snapshot.selectedOption
         shownAt = .now
     }
 }

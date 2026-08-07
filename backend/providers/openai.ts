@@ -22,7 +22,7 @@
 import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
-import type { CostConfig, MultipleChoiceMode, OpenAIConfig } from "../config.js";
+import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 
 export class OpenAIError extends Error {
   constructor(
@@ -212,6 +212,21 @@ export function buildUserInstruction(
   ].join("\n");
 }
 
+/**
+ * The stricter of two modes on the `off < mixed < all` scale.
+ *
+ * The job row carries the mode chosen at submit time, and the worker may run
+ * minutes later — on a deployment whose ceiling has since been lowered. Without
+ * this, an old row would still talk the new deployment into producing
+ * five-option cards it is no longer configured for. `maxCards` has always been
+ * re-clamped here for the same reason; this closes the gap for the mode
+ * (Codex, PR #29).
+ */
+export function stricterMode(a: MultipleChoiceMode, b: MultipleChoiceMode): MultipleChoiceMode {
+  const rank = (mode: MultipleChoiceMode) => MULTIPLE_CHOICE_MODES.indexOf(mode);
+  return rank(a) <= rank(b) ? a : b;
+}
+
 /** Estimated USD from real usage figures and the configured per-token price (§20.3). */
 export function estimateOpenAICostUSD(
   inputTokens: number,
@@ -261,7 +276,11 @@ export class OpenAICardGenerator {
               text: buildUserInstruction(
                 request,
                 maxCards,
-                request.multipleChoiceMode ?? this.config.multipleChoiceMode,
+                // Clamped again here, not just at submit: see `stricterMode`.
+                stricterMode(
+                  request.multipleChoiceMode ?? this.config.multipleChoiceMode,
+                  this.config.multipleChoiceMode,
+                ),
               ),
             },
             {

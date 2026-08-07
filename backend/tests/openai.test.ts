@@ -8,6 +8,7 @@ import {
   OpenAIError,
   buildModelResponseSchema,
   estimateOpenAICostUSD,
+  stricterMode,
   type Transport,
 } from "../providers/openai.js";
 
@@ -145,6 +146,19 @@ describe("buildModelResponseSchema", () => {
       properties: { cards: { items: { required: string[] } } };
     };
     expect(canonical.properties.cards.items.required).not.toContain("options");
+  });
+});
+
+describe("stricterMode", () => {
+  /// Codex, PR #29: the job row carries the mode chosen at submit time and the
+  /// worker may run on a deployment whose ceiling has since been lowered. An
+  /// old row must not talk the new deployment into producing more.
+  it("keeps the lower of the two on the off < mixed < all scale", () => {
+    expect(stricterMode("all", "off")).toBe("off");
+    expect(stricterMode("off", "all")).toBe("off");
+    expect(stricterMode("all", "mixed")).toBe("mixed");
+    expect(stricterMode("mixed", "all")).toBe("mixed");
+    expect(stricterMode("mixed", "mixed")).toBe("mixed");
   });
 });
 

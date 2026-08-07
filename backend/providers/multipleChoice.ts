@@ -21,7 +21,7 @@
  * were malformed would be the expensive way to enforce a cosmetic rule.
  */
 
-import { collapseWhitespace, foldDiacritics, nfc, turkishLower } from "./turkish.js";
+import { foldDiacritics, normalizeForCompare, turkishLower, collapseWhitespace, nfc } from "./turkish.js";
 import type { Card, CardOption } from "../schemas/llmOutputTypes.js";
 
 export const OPTION_COUNT = 5;
@@ -53,6 +53,20 @@ export interface MultipleChoiceReport {
  */
 export function optionKey(text: string): string {
   return collapseWhitespace(foldDiacritics(turkishLower(nfc(text))));
+}
+
+/**
+ * Key for "does `back` already say what the correct option says?".
+ *
+ * Case and spacing only — **no diacritic folding**, unlike `optionKey`. The two
+ * questions are genuinely different: two distractors that differ only by a
+ * missing `ş` are the same option to a reader, but a `back` that says "sok"
+ * where the answer key says "Şok" is a *different word* and has to be
+ * rewritten. Folding here made the rewrite skip exactly the cases it exists
+ * for (Codex, PR #29).
+ */
+export function answerKey(text: string): string {
+  return normalizeForCompare(text);
 }
 
 function isUsableOption(option: CardOption | undefined): option is CardOption {
@@ -193,7 +207,7 @@ function reviewCard(card: Card, notes: MultipleChoiceNote[]): Card {
   // screen (search, Bilgilerim, the backup) reads `back`. If it disagrees with
   // the answer key, the card teaches one thing and tests another.
   const correctText = options[correctIndex]!.text.trim();
-  if (optionKey(reviewed.back) !== optionKey(correctText)) {
+  if (answerKey(reviewed.back) !== answerKey(correctText)) {
     reviewed = { ...reviewed, back: correctText };
     notes.push({
       cardId: card.id,

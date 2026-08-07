@@ -568,7 +568,10 @@ final class ProcessingQueue: ObservableObject {
 
         for generated in knowledge.cards {
             let card = Card(
-                type: generated.type,
+                // Not `generated.type` directly: if the options did not survive
+                // validation, storing the card as `multipleChoice` would leave a
+                // five-option card with nothing to choose from (Codex, PR #29).
+                type: MultipleChoice.resolvedType(current: generated.type, options: generated.options),
                 front: generated.front,
                 back: generated.back,
                 explanation: generated.explanation,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { optionKey, sanitizeMultipleChoice } from "../providers/multipleChoice.js";
+import { answerKey, optionKey, sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import type { Card, CardOption } from "../schemas/llmOutputTypes.js";
 
 function options(texts: string[], correctAt = 0): CardOption[] {
@@ -106,6 +106,16 @@ describe("sanitizeMultipleChoice", () => {
     expect(report.notes).toEqual([]);
   });
 
+  /// Codex, PR #29: `optionKey` folds diacritics, so "Şok" and "sok" compared
+  /// equal and the rewrite was skipped — leaving a card whose stored answer is
+  /// a different Turkish word from its own answer key.
+  it("rewrites a back that differs by a Turkish letter", () => {
+    const list = options(["Şok", "Sepsis", "Kanama", "Emboli", "Tamponad"]);
+    const report = sanitizeMultipleChoice([mcCard({ options: list, back: "sok" })]);
+    expect(report.cards[0]!.back).toBe("Şok");
+    expect(report.notes[0]!.action).toBe("back_rewritten");
+  });
+
   it("strips options from a card that did not claim to be multiple choice", () => {
     const report = sanitizeMultipleChoice([mcCard({ type: "direct_recall" })]);
     expect(report.cards[0]!.options).toBeNull();
@@ -145,6 +155,16 @@ describe("sanitizeMultipleChoice", () => {
     const report = sanitizeMultipleChoice([legacy]);
     expect(report.cards[0]).toEqual(legacy);
     expect(report.notes).toEqual([]);
+  });
+});
+
+describe("answerKey", () => {
+  /// The other half of the same decision: case and spacing are noise, a
+  /// missing Turkish letter is a different word.
+  it("ignores case and spacing but not diacritics", () => {
+    expect(answerKey("Hipokalemi")).toBe(answerKey("  hipokalemi "));
+    expect(answerKey("Şok")).not.toBe(answerKey("sok"));
+    expect(answerKey("Sağ ventrikül")).not.toBe(answerKey("sag ventrikul"));
   });
 });
 

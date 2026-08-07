@@ -141,6 +141,13 @@ public enum MultipleChoice {
     /// It is *not* the critical-token engine (`evals/ocr_eval/critical_tokens.py`
     /// and its TS twin). Nothing medical is decided here — the question is only
     /// "did the model write the same distractor twice?"
+    ///
+    /// **Must stay identical to `optionKey` in `backend/providers/multipleChoice.ts`.**
+    /// It briefly was not: this side also split on punctuation, so `HER2+` and
+    /// `HER2` were duplicates here and distinct there — a card the server had
+    /// passed arrived and lost its options, ending up a five-option card with
+    /// nothing to choose from (Codex, PR #29). Punctuation is now kept on both
+    /// sides, because `A-B` and `A B` can genuinely be different answers.
     static func comparisonKey(_ text: String) -> String {
         var folded = ""
         folded.reserveCapacity(text.count)
@@ -156,9 +163,10 @@ public enum MultipleChoice {
             default: folded.append(contentsOf: character.lowercased())
             }
         }
-        // Spacing and punctuation differences are not different options.
+        // Whitespace only — see the note above on staying identical to the
+        // server's `optionKey`.
         return folded
-            .split(whereSeparator: { $0.isWhitespace || $0.isPunctuation })
+            .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
     }
 

@@ -35,7 +35,20 @@ struct CardEditorView: View {
     }
 
     private var validation: CardEditValidation {
-        CardEditor.validate(front: front, back: back, explanation: explanation)
+        CardEditor.validate(front: front, back: effectiveBack, explanation: explanation)
+    }
+
+    /// On a five-option card the answer key **is** the ticked option, so `back`
+    /// is derived from it rather than edited separately.
+    ///
+    /// Without this, moving the tick to another option left `back` on the old
+    /// answer: the review screen marked the new option correct while Bilgilerim,
+    /// search and every backup still carried the old one (Codex, PR #29). The
+    /// server holds the same invariant (`back_rewritten` in `multipleChoice.ts`);
+    /// the editor was the one place it could be broken.
+    private var effectiveBack: String {
+        guard let editedOptions, case .valid = MultipleChoice.validate(editedOptions) else { return back }
+        return editedOptions.first(where: \.isCorrect)?.text ?? back
     }
 
     private var editedOptions: [CardOption]? {
@@ -74,11 +87,23 @@ struct CardEditorView: View {
                     header("Soru")
                 }
 
-                Section {
-                    TextEditor(text: $back)
-                        .frame(minHeight: 100)
-                } header: {
-                    header("Cevap")
+                if options.isEmpty {
+                    Section {
+                        TextEditor(text: $back)
+                            .frame(minHeight: 100)
+                    } header: {
+                        header("Cevap")
+                    }
+                } else {
+                    Section {
+                        Text(effectiveBack.isEmpty ? "—" : effectiveBack)
+                            .foregroundStyle(Cizgi.ink)
+                    } header: {
+                        header("Cevap")
+                    } footer: {
+                        Text("Beş şıklı kartta cevap, işaretlediğin doğru şıktır; "
+                             + "ayrıca yazılmaz. Şıkları kaldırırsan yeniden düzenlenebilir.")
+                    }
                 }
 
                 Section {
@@ -196,6 +221,8 @@ struct CardEditorView: View {
             return
         }
         card.front = edit.front
+        // `edit.back` is already `effectiveBack`, i.e. the ticked option on a
+        // five-option card — the answer and the answer key cannot drift apart.
         card.back = edit.back
         card.explanation = edit.explanation
         if optionsChanged {
