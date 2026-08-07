@@ -74,6 +74,7 @@ function stubStore(seed: JobRow[] = []) {
         imagePath: request.imagePath,
         mimeType: request.mimeType,
         hint: request.hint ?? null,
+        maxCards: request.maxCards ?? null,
         attempts: 0,
         result: null,
         error: null,
@@ -95,6 +96,7 @@ function stubStore(seed: JobRow[] = []) {
         imagePath: request.imagePath,
         mimeType: request.mimeType,
         hint: request.hint ?? null,
+        maxCards: request.maxCards ?? null,
         result: null,
         error: null,
         retryable: null,
@@ -221,6 +223,7 @@ function row(overrides: Partial<JobRow> = {}): JobRow {
     imagePath: imagePathFor(JOB_ID),
     mimeType: "image/jpeg",
     hint: null,
+    maxCards: null,
     attempts: 0,
     result: null,
     error: null,
@@ -551,6 +554,53 @@ describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
     await handleJobsRequest(post(VALID_BODY), d);
 
     expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
+  });
+});
+
+describe("POST /api/jobs — kart sınırı (§6.7)", () => {
+  it("kullanıcının sınırını işe yazar ve işçi onu kullanır", async () => {
+    // Yazılmak zorunda: işçi, ayarı taşıyan istek çoktan bittikten sonra
+    // çalışıyor ve ayarı başka hiçbir yerden okuyamaz.
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    await handleJobsRequest(post({ ...VALID_BODY, maxCards: 5 }), d);
+    expect(store.rows.get(JOB_ID)?.maxCards).toBe(5);
+
+    await d.settled();
+    expect(generator.seen[0]?.maxCards).toBe(5);
+  });
+
+  it("istemci sunucunun tavanını yükseltemez", async () => {
+    // Config değeri bir maliyet tavanı; istemci onu aşağı çekebilir, yukarı değil (§21.3).
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    await handleJobsRequest(post({ ...VALID_BODY, maxCards: 999 }), d);
+    await d.settled();
+
+    expect(generator.seen[0]?.maxCards).toBe(12);
+  });
+
+  it("sınır verilmezse dağıtımın varsayılanı kullanılır", async () => {
+    const generator = stubGenerator(validOutput());
+    const d = deps({ generator: generator.generator });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(generator.seen[0]?.maxCards).toBeUndefined();
+  });
+
+  it("bozuk bir sınırı sessizce yutmaz", async () => {
+    // Sessizce düşürülen bir ayar, bu ayarın iki faz boyunca hiçbir şey
+    // yapmamasının tam olarak sebebiydi.
+    for (const bad of [0, -3, 2.5, "üç"]) {
+      const response = await handleJobsRequest(post({ ...VALID_BODY, maxCards: bad }), deps());
+      expect(response.status, `maxCards=${bad}`).toBe(400);
+    }
   });
 });
 

@@ -83,6 +83,7 @@ public struct BackendCardProvider: CardGenerating {
                 imageData: imageData,
                 mimeType: mimeType,
                 hint: hint,
+                maxCards: request.maxCards,
                 token: token
             )
         case .useResult, .wait, .failPermanently:
@@ -206,6 +207,7 @@ public struct BackendCardProvider: CardGenerating {
         imageData: Data,
         mimeType: String,
         hint: String?,
+        maxCards: Int,
         token: String
     ) async throws -> RemoteJobView? {
         var urlRequest = URLRequest(url: configuration.baseURL.appendingPathComponent("api/jobs"))
@@ -218,7 +220,12 @@ public struct BackendCardProvider: CardGenerating {
                 jobId: jobId,
                 mimeType: mimeType,
                 imageBase64: imageData.base64EncodedString(),
-                hint: hint
+                hint: hint,
+                // Sent at last. `CapturePipeline` has been putting the user's
+                // setting on the request since Faz 3 and this method never wrote
+                // it to the wire, so the server always used its own ceiling and
+                // the Ayarlar control did nothing.
+                maxCards: maxCards
             )
         )
 
@@ -376,6 +383,9 @@ public struct BackendCardProvider: CardGenerating {
         let mimeType: String
         let imageBase64: String
         let hint: String?
+        /// The server clamps this to its own ceiling, so it can only ask for
+        /// fewer cards than the deployment allows.
+        let maxCards: Int
     }
 
     private struct FailureBody: Decodable {

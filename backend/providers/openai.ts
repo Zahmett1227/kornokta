@@ -86,6 +86,12 @@ export interface CardGenerationRequest {
   image: Uint8Array;
   mimeType: string;
   /**
+   * Per-request ceiling on cards, from the user's own setting (§6.7). Absent
+   * means "use the configured default" — the config value stays the upper
+   * bound, so this can only ever ask for fewer.
+   */
+  maxCards?: number;
+  /**
    * Optional free-text steer from the user (§5.1), e.g. "sadece sol sütun".
    * There is no pre-reconciled transcription any more: the model reads the
    * marked content off the image itself (v2 prompt).
@@ -205,6 +211,13 @@ export class OpenAICardGenerator {
   ) {}
 
   async generateCards(request: CardGenerationRequest): Promise<CardGenerationResult> {
+    // The request may ask for fewer than the deployment allows, never more:
+    // the config value is a cost ceiling, and a client is not trusted to raise
+    // someone else's spending limit (§0.6, §21.3).
+    const maxCards = Math.min(
+      request.maxCards ?? this.config.maxCardsPerKnowledgeUnit,
+      this.config.maxCardsPerKnowledgeUnit,
+    );
     const body = {
       model: this.config.model,
       reasoning: { effort: this.config.reasoningEffort },
@@ -217,7 +230,7 @@ export class OpenAICardGenerator {
         {
           role: "user",
           content: [
-            { type: "input_text", text: buildUserInstruction(request, this.config.maxCardsPerKnowledgeUnit) },
+            { type: "input_text", text: buildUserInstruction(request, maxCards) },
             {
               type: "input_image",
               image_url: `data:${request.mimeType};base64,${Buffer.from(request.image).toString("base64")}`,
@@ -235,7 +248,7 @@ export class OpenAICardGenerator {
         format: {
           type: "json_schema",
           name: "cizgi_llm_output",
-          schema: buildModelResponseSchema(this.config.maxCardsPerKnowledgeUnit),
+          schema: buildModelResponseSchema(maxCards),
           strict: true,
         },
       },

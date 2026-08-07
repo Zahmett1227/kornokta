@@ -172,7 +172,17 @@ struct AppSettings: Codable, Equatable {
     /// the Keychain (§7.3).
     var backendURL: String = ""
     var defaultSubject: String = ""
+    /// Legacy. Kept so an existing install still decodes, but no longer read:
+    /// see `maxCardsPerPage`.
     var maxCardsPerPassage: Int = 2
+    /// Cards the model may produce from one marked page (§6.7).
+    ///
+    /// A new key rather than a new meaning for `maxCardsPerPassage`. That one
+    /// was written for the pre-Faz-6 "one passage → ≤4 cards" flow and was never
+    /// actually sent to the server, so every install has a stored 2 in it —
+    /// wiring it up would have silently capped every page at two cards and
+    /// undone B3's deliberate raise to 12.
+    var maxCardsPerPage: Int = 12
     var sourceFaithfulOnly: Bool = true
     var notificationHour: Int = 20
     var notificationsEnabled: Bool = false
@@ -183,7 +193,7 @@ struct AppSettings: Codable, Equatable {
     static let storageKey = "cizgi.settings.v1"
 
     private enum CodingKeys: String, CodingKey {
-        case backendURL, defaultSubject, maxCardsPerPassage, sourceFaithfulOnly
+        case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
         case notificationHour, notificationsEnabled, dailyNewCardLimit
         case quickSessionMinutes, keepOriginalPage
     }
@@ -197,6 +207,7 @@ struct AppSettings: Codable, Equatable {
         backendURL = try values.decodeIfPresent(String.self, forKey: .backendURL) ?? ""
         defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
         maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
+        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 12
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
         notificationHour = try values.decodeIfPresent(Int.self, forKey: .notificationHour) ?? 20
         notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false
@@ -210,6 +221,34 @@ struct AppSettings: Codable, Equatable {
             let data = UserDefaults.standard.data(forKey: storageKey),
             let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
         else { return AppSettings() }
+        return decoded
+    }
+
+    func save() {
+        guard let data = try? JSONEncoder().encode(self) else { return }
+        UserDefaults.standard.set(data, forKey: Self.storageKey)
+    }
+}
+
+/// Persistence for the daily new-card tally (§6.7's "günlük yeni kart").
+///
+/// Separate from `AppSettings` on purpose: that is what the user chose, this is
+/// what has happened. Mixing them would put a counter that changes several times
+/// a minute into the same blob as preferences, and make "reset my settings" also
+/// reset today's allowance.
+///
+/// Kept in `UserDefaults` rather than SwiftData because it is a single small
+/// value read on every review screen appearance, and because the review screen
+/// must keep working offline and without a store fetch (§24.5). The type itself
+/// lives in CizgiCore, where its day-boundary logic is unit-tested.
+extension DailyNewCardLedger {
+    static let storageKey = "cizgi.newCardLedger.v1"
+
+    static func load() -> DailyNewCardLedger {
+        guard
+            let data = UserDefaults.standard.data(forKey: storageKey),
+            let decoded = try? JSONDecoder().decode(DailyNewCardLedger.self, from: data)
+        else { return DailyNewCardLedger() }
         return decoded
     }
 

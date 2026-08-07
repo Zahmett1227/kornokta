@@ -1,13 +1,16 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import CizgiCore
 
 /// Settings (ANA-PLAN §6.7). Faz 1 exposes the options that already do
 /// something; cost limits and export arrive with the backend in Faz 3/5.
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.modelContext) private var context
     @Query private var cards: [Card]
     @Query private var pages: [CapturedPage]
+    @Query private var modelRuns: [ModelRun]
 
     @State private var deviceToken = ""
     @State private var tokenSaved = false
@@ -15,26 +18,37 @@ struct SettingsView: View {
     @State private var notificationError: String?
     @State private var exportURL: URL?
     @State private var exportError: String?
+    @State private var isImportingBackup = false
+    @State private var restoreSummary: String?
+    @State private var restoreError: String?
 
     var body: some View {
         NavigationStack {
             Form {
                 backendSection
 
-                Section("Yakalama") {
+                Section {
                     TextField("Varsayılan ders", text: Binding(
                         get: { environment.settings.defaultSubject },
                         set: { environment.settings.defaultSubject = $0; environment.settings.save() }
                     ))
 
                     Stepper(
-                        "Pasaj başına kart: \(environment.settings.maxCardsPerPassage)",
+                        "Sayfa başına kart: \(environment.settings.maxCardsPerPage)",
                         value: Binding(
-                            get: { environment.settings.maxCardsPerPassage },
-                            set: { environment.settings.maxCardsPerPassage = $0; environment.settings.save() }
+                            get: { environment.settings.maxCardsPerPage },
+                            set: { environment.settings.maxCardsPerPage = $0; environment.settings.save() }
                         ),
-                        in: 1...4
+                        in: 1...12
                     )
+                } header: {
+                    Text("Yakalama")
+                } footer: {
+                    // Until now this control did nothing at all: the value was
+                    // never put in the request and the server always used its own
+                    // ceiling. Fewer cards also means a faster, cheaper call.
+                    Text("İşaretli bir sayfadan en fazla kaç kart üretilsin. "
+                         + "Az kart daha hızlı ve daha ucuz üretilir.")
                 }
 
                 Section {
@@ -71,6 +85,14 @@ struct SettingsView: View {
                         get: { environment.settings.quickSessionMinutes },
                         set: { environment.settings.quickSessionMinutes = $0; environment.settings.save() }
                     ), in: 1...30)
+                    // Both numbers used to be quieter than they looked: the new-card
+                    // limit reset every time the review screen was reopened, and the
+                    // quick session was not a choice but the ceiling on every session.
+                    Text("Yeni kart sınırı gün boyunca geçerlidir. Hızlı oturum, "
+                         + "Tekrar ekranındaki ayrı bir seçenektir — normal oturum "
+                         + "bugün bekleyen tüm kartları gösterir.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
                     if let notificationError { Text(notificationError).font(.footnote).foregroundStyle(.red) }
                 }
 
@@ -81,6 +103,15 @@ struct SettingsView: View {
                         get: { environment.settings.keepOriginalPage },
                         set: { environment.settings.keepOriginalPage = $0; environment.settings.save() }
                     ))
+                    // Worth spelling out now that the photo is the *only* trace a
+                    // Faz 6 card has: there is no crop and no per-card alıntı, so
+                    // turning this off leaves cards you cannot check against
+                    // anything (§5.5).
+                    Text("Kapatırsan kartların \"Kaynağı göster\" bölümünde "
+                         + "sayfa fotoğrafı olmaz — kartı kaynağıyla "
+                         + "karşılaştıramazsın.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
                     Button("Yedeği hazırla") { prepareExport() }
                     if let exportURL {
                         ShareLink(item: exportURL) {
@@ -88,23 +119,53 @@ struct SettingsView: View {
                         }
                     }
                     if let exportError { Text(exportError).font(.footnote).foregroundStyle(.red) }
+
+                    Button("Yedekten geri yükle") { isImportingBackup = true }
+                    if let restoreSummary {
+                        Text(restoreSummary).font(.footnote).foregroundStyle(Cizgi.success)
+                    }
+                    if let restoreError {
+                        Text(restoreError).font(.footnote).foregroundStyle(Cizgi.danger)
+                    }
+                    Text("Geri yükleme yalnızca ekler: bu cihazda zaten olan bir kart "
+                         + "olduğu gibi bırakılır. Yedekte fotoğraflar yok.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
                 }
 
+                usageSection
+
                 Section {
-                    LabeledContent("Aşama", value: environment.isBackendConfigured ? "Faz 3 — yapay zeka kart üretimi" : "Faz 2 — bulut OCR")
-                    LabeledContent("Metin tanıma", value: environment.isBackendConfigured ? "Google Document AI" : "Yalnız cihaz (Türkçe okumaz)")
-                    LabeledContent("Kart üretimi", value: environment.isBackendConfigured ? "Gerçek (backend)" : "Sahte sağlayıcı")
+                    LabeledContent(
+                        "Akış",
+                        value: environment.isBackendConfigured
+                            ? "Vision — işaretli sayfadan doğrudan kart"
+                            : "Ayarlanmadı"
+                    )
+                    LabeledContent(
+                        "Kart üretimi",
+                        value: environment.isBackendConfigured ? "Gerçek (backend)" : "Sahte sağlayıcı"
+                    )
                     LabeledContent("Tekrar algoritması", value: environment.scheduler is FSRSScheduler ? "FSRS-6" : "Geçici (bundled ağırlıklar okunamadı)")
                 } header: {
                     Text("Durum")
                 } footer: {
+                    // Was still describing the Faz 2/3 architecture — "Google
+                    // Document AI", "Faz 3" — two phases after the vision flow
+                    // stopped doing any OCR at all (docs/ADR-005).
                     Text(
                         environment.isBackendConfigured
-                            ? "Kartlar backend üzerinden gerçek bir modelden üretiliyor; kaynağı belirsiz olanlar onaya düşer. Tekrar etmek her zaman çevrimdışı çalışır."
-                            : "Kart üretimi hâlâ sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır."
+                            ? "İşaretli sayfa doğrudan vision modeline gidiyor; ayrı bir OCR adımı yok ve kartlar onaysız desteye giriyor. Tekrar etmek her zaman çevrimdışı çalışır."
+                            : "Backend ayarlanmadan kart üretimi sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır."
                     )
                 }
             }
+            .fileImporter(
+                isPresented: $isImportingBackup,
+                allowedContentTypes: [.json],
+                allowsMultipleSelection: false,
+                onCompletion: restore
+            )
             .navigationTitle("Ayarlar")
             .homeButtonToolbar()
             .onAppear {
@@ -112,6 +173,37 @@ struct SettingsView: View {
                 // token back into an on-screen field would put it somewhere a
                 // screenshot or a shoulder can reach (§7.3).
                 deviceToken = ""
+            }
+        }
+    }
+
+    /// What the provider calls have actually cost (§16.8, §20.3).
+    ///
+    /// `ModelRun` has been written on every successful generation since Faz 3
+    /// and read by nothing, so the accounting the spec asks for existed only in
+    /// the database. Token counts are real; the money figure is not shown at all
+    /// unless a price has been configured, because §0.6 forbids inventing one
+    /// and "0,00 USD" would read as free rather than as unpriced.
+    @ViewBuilder
+    private var usageSection: some View {
+        if !modelRuns.isEmpty {
+            let inputTokens = modelRuns.reduce(0) { $0 + $1.inputTokens }
+            let outputTokens = modelRuns.reduce(0) { $0 + $1.outputTokens }
+            let cost = modelRuns.reduce(0) { $0 + $1.estimatedCostUSD }
+            Section {
+                LabeledContent("Model çağrısı", value: "\(modelRuns.count)")
+                LabeledContent("Girdi token", value: inputTokens.formatted())
+                LabeledContent("Çıktı token", value: outputTokens.formatted())
+                if cost > 0 {
+                    LabeledContent("Tahmini maliyet", value: String(format: "%.2f USD", cost))
+                }
+            } header: {
+                Text("Kullanım")
+            } footer: {
+                Text(cost > 0
+                     ? "Sunucudaki fiyat ayarlarından hesaplanır."
+                     : "Maliyet için sunucuda OPENAI_USD_PER_MILLION_* değerleri "
+                       + "ayarlanmalı; uydurma bir fiyat gösterilmiyor.")
             }
         }
     }
@@ -194,9 +286,12 @@ struct SettingsView: View {
     private func updateNotification() {
         Task {
             do {
-                try await ReviewNotificationManager.update(
+                try await ReviewNotificationManager.reschedule(
                     enabled: environment.settings.notificationsEnabled,
-                    hour: environment.settings.notificationHour
+                    hour: environment.settings.notificationHour,
+                    // Suspended cards are excluded for the same reason the
+                    // review screen excludes them.
+                    dueDates: cards.filter { $0.status == .active }.map(\.dueDate)
                 )
                 notificationError = nil
             } catch {
@@ -215,7 +310,31 @@ struct SettingsView: View {
                     explanation: card.explanation, sourceQuote: card.sourceQuote,
                     subject: card.knowledgeUnit?.subject, status: card.status.rawValue,
                     dueDate: card.dueDate, stability: card.stability, difficulty: card.difficulty,
-                    reviewCount: card.reviewCount, lapseCount: card.lapseCount
+                    reviewCount: card.reviewCount, lapseCount: card.lapseCount,
+                    createdAt: card.createdAt, updatedAt: card.updatedAt,
+                    lastReviewedAt: card.lastReviewedAt,
+                    tags: card.knowledgeUnit?.tags ?? [],
+                    canonicalClaim: card.knowledgeUnit?.canonicalClaim,
+                    // The review history is the point of version 2: it is the
+                    // only record of how this memory behaved, and the input FSRS
+                    // weight optimisation needs (docs/FAZ4-PLAN.md). Until now it
+                    // could never leave the device.
+                    reviews: card.reviews
+                        .sorted { $0.reviewedAt < $1.reviewedAt }
+                        .map { log in
+                            BackupExporter.ReviewRecord(
+                                reviewedAt: log.reviewedAt,
+                                rating: log.rating.rawValue,
+                                responseTimeMs: log.responseTimeMs,
+                                scheduledDays: log.scheduledDays,
+                                elapsedDays: log.elapsedDays,
+                                stabilityBefore: log.stabilityBefore,
+                                stabilityAfter: log.stabilityAfter,
+                                difficultyBefore: log.difficultyBefore,
+                                difficultyAfter: log.difficultyAfter,
+                                deviceTimeZone: log.deviceTimeZone
+                            )
+                        }
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -226,6 +345,110 @@ struct SettingsView: View {
         } catch {
             exportURL = nil
             exportError = "Yedek hazırlanamadı: \(error.localizedDescription)"
+        }
+    }
+
+    /// Reads a backup and inserts the cards this device does not already have.
+    ///
+    /// Additive, never destructive — `BackupRestorer.plan` decides that, and the
+    /// reasoning is with it. Restoring is also the one place the app takes a
+    /// file it did not write, so the decode is allowed to fail loudly rather
+    /// than half-succeed.
+    private func restore(from result: Result<[URL], Error>) {
+        restoreSummary = nil
+        restoreError = nil
+        do {
+            guard let url = try result.get().first else { return }
+            // A file from the Files app lives outside the sandbox until asked
+            // for; without this the read fails with a permission error that
+            // looks like a corrupt backup.
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+            let backup = try BackupExporter.decode(try Data(contentsOf: url))
+            let plan = BackupRestorer.plan(
+                records: backup.cards,
+                existingIds: Set(cards.map(\.id))
+            )
+            guard !plan.isEmpty else {
+                restoreSummary = "Yedekteki \(backup.cards.count) kartın hepsi zaten burada."
+                return
+            }
+
+            for record in plan.toInsert {
+                insert(record, into: context)
+            }
+            do {
+                try context.save()
+            } catch {
+                // A failed save leaves every inserted object sitting in the
+                // context, where an unrelated later save would flush half a
+                // restore into the store. Rolling back is the only way to make
+                // "the restore failed" mean nothing was written.
+                context.rollback()
+                throw error
+            }
+
+            restoreSummary = plan.skipped.isEmpty
+                ? "\(plan.toInsert.count) kart geri yüklendi."
+                : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."
+        } catch {
+            restoreError = (error as? LocalizedError)?.errorDescription
+                ?? "Yedek okunamadı: \(error.localizedDescription)"
+        }
+    }
+
+    /// A restored card gets its own `KnowledgeUnit` to carry the subject, tags
+    /// and read text — there is no page to attach it to, because images are
+    /// deliberately not in the backup (§24.6). "Kaynağı göster" will therefore
+    /// show the text but no photograph, which is the honest result.
+    private func insert(_ record: BackupExporter.CardRecord, into context: ModelContext) {
+        let card = Card(
+            id: record.id,
+            type: CardType(rawValue: record.type) ?? .directRecall,
+            front: record.front,
+            back: record.back,
+            explanation: record.explanation,
+            sourceQuote: record.sourceQuote,
+            status: CardStatus(rawValue: record.status) ?? .active,
+            createdAt: record.createdAt == .distantPast ? .now : record.createdAt,
+            dueDate: record.dueDate
+        )
+        // Scheduling state is assigned after init, which resets it to zero.
+        card.stability = record.stability
+        card.difficulty = record.difficulty
+        card.reviewCount = record.reviewCount
+        card.lapseCount = record.lapseCount
+        card.lastReviewedAt = record.lastReviewedAt
+        card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
+
+        if record.subject != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
+            let unit = KnowledgeUnit(
+                canonicalClaim: record.canonicalClaim ?? record.front,
+                subject: record.subject,
+                tags: record.tags,
+                createdAt: card.createdAt
+            )
+            context.insert(unit)
+            card.knowledgeUnit = unit
+        }
+        context.insert(card)
+
+        for review in record.reviews {
+            let log = ReviewLog(
+                reviewedAt: review.reviewedAt,
+                rating: ReviewRating(rawValue: review.rating) ?? .good,
+                responseTimeMs: review.responseTimeMs,
+                scheduledDays: review.scheduledDays,
+                elapsedDays: review.elapsedDays,
+                stabilityBefore: review.stabilityBefore,
+                stabilityAfter: review.stabilityAfter,
+                difficultyBefore: review.difficultyBefore,
+                difficultyAfter: review.difficultyAfter,
+                deviceTimeZone: review.deviceTimeZone
+            )
+            log.card = card
+            context.insert(log)
         }
     }
 }

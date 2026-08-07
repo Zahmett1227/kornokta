@@ -74,6 +74,22 @@ final class ProcessingQueue: ObservableObject {
         pipeline = pipeline.withGenerator(generator)
     }
 
+    /// Hashes of every page already in the store, for the capture screen's
+    /// duplicate check.
+    ///
+    /// Returns the raw hashes rather than answering "is this a duplicate?" per
+    /// image: the batch has to be compared against itself as well as against the
+    /// store, and that decision belongs in one tested place
+    /// (`PerceptualHasher.duplicateIndices`).
+    func storedPageHashes() -> [PerceptualHash] {
+        let context = container.mainContext
+        guard let pages = try? context.fetch(FetchDescriptor<CapturedPage>()) else { return [] }
+        return pages.compactMap { page in
+            guard !page.pendingDeletion, let stored = page.perceptualHash else { return nil }
+            return PerceptualHash(stringValue: stored)
+        }
+    }
+
     /// Registers a freshly captured image. Returns once the bytes are on disk —
     /// §24.1 forbids telling the user a capture succeeded before that.
     @discardableResult
@@ -83,6 +99,10 @@ final class ProcessingQueue: ObservableObject {
         let relativePath = try imageStore.store(imageData, id: id)
 
         let page = CapturedPage(id: id, originalImagePath: relativePath)
+        // Recorded even when nothing is asked about it right now: the field is
+        // what lets a *later* capture recognise this page, and a page stored
+        // without one is invisible to every future check.
+        page.perceptualHash = PageImageHasher.hash(imageData)?.stringValue
         if let subject, !subject.isEmpty {
             page.source = try existingOrNewSource(named: subject, in: context)
         }
@@ -313,10 +333,10 @@ final class ProcessingQueue: ObservableObject {
         let pageID = page.id
 
         // Read the ceiling per run rather than caching it at init, so changing
-        // "Pasaj başına kart" in Ayarlar takes effect on the next page instead
+        // "Sayfa başına kart" in Ayarlar takes effect on the next page instead
         // of the next launch (§6.7). UserDefaults is the single stored copy of
         // the setting, so this cannot drift from what the screen shows.
-        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPassage)
+        let effectivePipeline = pipeline.withMaxCards(AppSettings.load().maxCardsPerPage)
 
         page.processingState = .localOCR
         try? context.save()

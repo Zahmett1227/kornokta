@@ -29,7 +29,7 @@ import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
 import { runCardGate } from "../providers/cardGate.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
-import type { CardGeneratorLike } from "./_cards.js";
+import { parseMaxCards, type CardGeneratorLike } from "./_cards.js";
 
 /** How many jobs one poll may ask about. A batch is a handful of pages, never a hundred. */
 export const MAX_POLL_IDS = 50;
@@ -173,6 +173,7 @@ interface SubmitBody {
   imageBase64?: unknown;
   mimeType?: unknown;
   hint?: unknown;
+  maxCards?: unknown;
 }
 
 async function submit(request: Request, deps: JobsDependencies): Promise<Response> {
@@ -215,6 +216,11 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     return fail("hint bir metin (string) olmalı.", 400, false);
   }
   const hint = typeof body.hint === "string" ? body.hint.trim() : undefined;
+
+  const maxCards = parseMaxCards(body.maxCards, deps.openai.maxCardsPerKnowledgeUnit);
+  if (maxCards === null) {
+    return fail("maxCards 1 veya daha büyük bir tam sayı olmalı.", 400, false);
+  }
 
   // §21.3: refuse before spending, on the only bound knowable before the call.
   // Checked at submit rather than in the worker so the phone learns about it in
@@ -264,7 +270,7 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   // one's worker had already claimed, producing two paid generations racing
   // over one image and one result row (Codex, PR #25 P1).
   const imagePath = imagePathFor(jobId);
-  const enqueueRequest = { id: jobId, imagePath, mimeType, hint };
+  const enqueueRequest = { id: jobId, imagePath, mimeType, hint, maxCards };
   // Set the moment this request could leave bytes at `imagePath` that no row
   // points at — which happens two ways, not one: a successful `expire` nulls
   // `image_path` while the old object is still in the bucket, and a successful
@@ -445,8 +451,13 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       image,
       mimeType: row.mimeType,
       hint: row.hint ?? undefined,
+      // Recorded at submit time, because the worker runs long after the request
+      // that carried the setting has gone.
+      maxCards: row.maxCards ?? undefined,
     });
-    const gate = runCardGate(output, { maxCardsPerKnowledgeUnit: deps.openai.maxCardsPerKnowledgeUnit });
+    const gate = runCardGate(output, {
+      maxCardsPerKnowledgeUnit: row.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
+    });
 
     // Stored in the shape `/api/cards-vision` returns, so the phone's decoder is
     // the same one and this table never becomes a second definition of the card

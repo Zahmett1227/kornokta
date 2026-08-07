@@ -22,6 +22,14 @@ struct CaptureView: View {
     @State private var isScanning = false
     @State private var errorMessage: String?
     @State private var lastCapturedIds: [UUID] = []
+    /// Held while the duplicate question is on screen — nothing is written to
+    /// disk until the user answers it.
+    @State private var pendingImages: [Data] = []
+    /// Which of `pendingImages` duplicate something. Computed once, so the
+    /// "yalnız yenilerini ekle" path skips exactly what the question described.
+    @State private var pendingDuplicates: Set<Int> = []
+
+    private var duplicateCount: Int { pendingDuplicates.count }
 
     private var inFlight: [CapturedPage] {
         pages.filter { !$0.processingState.isTerminal }
@@ -80,6 +88,25 @@ struct CaptureView: View {
                 Button("Tamam") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .confirmationDialog(
+                duplicateCount == pendingImages.count
+                    ? "Bu sayfayı daha önce çekmişsin."
+                    : "\(duplicateCount) sayfayı daha önce çekmişsin.",
+                isPresented: Binding(
+                    get: { duplicateCount > 0 },
+                    set: { if !$0 { clearPending() } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if duplicateCount < pendingImages.count {
+                    Button("Yalnız yenilerini ekle") { storeSkippingDuplicates() }
+                }
+                Button("Yine de ekle") { storeAllPending() }
+                Button("Vazgeç", role: .cancel) { clearPending() }
+            } message: {
+                Text("Tekrar eklersen aynı sayfadan ikinci bir kart takımı üretilir "
+                     + "ve üretim ücreti yeniden ödenir.")
             }
         }
         .tint(Cizgi.accent)
@@ -179,6 +206,53 @@ struct CaptureView: View {
     }
 
     private func handleScanned(_ images: [Data]) {
+        // A page you have already captured is easy to shoot twice — a blurry
+        // first attempt, or simply losing your place in the book — and until now
+        // nothing noticed, so it produced a duplicate set of cards and a second
+        // charge from the provider. Asked, never enforced: the similarity
+        // threshold is a first calibration, and re-shooting a page on purpose is
+        // a perfectly normal thing to do.
+        //
+        // The batch is compared against itself as well as against the store: one
+        // scan can hand back the same page twice, and neither copy is in the
+        // store yet (Codex, PR #27).
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: images.map { PageImageHasher.hash($0) },
+            storedHashes: environment.queue.storedPageHashes()
+        )
+        guard duplicates.isEmpty else {
+            pendingImages = images
+            pendingDuplicates = duplicates
+            return
+        }
+        store(images)
+    }
+
+    /// Keeps only the images the question did not flag.
+    private func storeSkippingDuplicates() {
+        let fresh = pendingImages.enumerated()
+            .filter { !pendingDuplicates.contains($0.offset) }
+            .map(\.element)
+        clearPending()
+        guard !fresh.isEmpty else {
+            lastCapturedIds = []
+            return
+        }
+        store(fresh)
+    }
+
+    private func storeAllPending() {
+        let images = pendingImages
+        clearPending()
+        store(images)
+    }
+
+    private func clearPending() {
+        pendingImages = []
+        pendingDuplicates = []
+    }
+
+    private func store(_ images: [Data]) {
         var ids: [UUID] = []
         do {
             for data in images {
