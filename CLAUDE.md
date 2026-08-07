@@ -597,9 +597,17 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 
 ### 2. Küçük ve gerçek kalanlar
 
-1. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
+1. **Biten işlerin `result` satırının saklama süresi (senin kararın).** Codex'in
+   PR #30'da bulduğu §7.3 açığı: üretilen kart metinleri + `readText`
+   Supabase'de **süresiz** duruyor, temizleyen yol yok. Sızıntı değil (RLS
+   açık, policy yok) ama tutulmamış bir söz. İki seçenek ve ödünçleri
+   `docs/PRIVACY.md`'nin "Açık kalan" bölümünde yazılı — zamana bağlı temizlik
+   ikinci üretim ücreti doğurabilir, ack ucu sözleşmeye uç ekler. Karar verilene
+   kadar gizlilik belgesi gerçeği söylüyor; elle temizlik:
+   `delete from public.jobs where status = 'ready';`
+2. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
    başarılı çağrılar kaydediliyor (`docs/FAZ3-PLAN.md`, F3-8).
-2. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
+3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
    anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı".
 
 ### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş

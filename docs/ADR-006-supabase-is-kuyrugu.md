@@ -249,3 +249,16 @@ Ayrıca vision uçları artık PDF/TIFF'i **kapıda** çeviriyor (`VISION_MIME_T
 Document AI'ın listesinin bir alt kümesi): OpenAI ikisini de kabul etmiyor,
 dolayısıyla eskiden kapıdan geçip sağlayıcıdan 400 alıyor ve yukarıdaki kalıcı
 kilide dönüşüyorlardı.
+
+8. **Biten işlerin `result` satırı hiç silinmiyor (açık, kapatılmadı).** Codex
+   PR #30 incelemesinde buldu. §7.3'ün görüntü tarafı eksiksiz uygulanmış
+   durumda, ama `complete`'in `jobs.result`'a yazdığı kart metinleri +
+   `readText` için temizleyen bir yol yok: `ready` bir işe gelen yeniden
+   gönderim satırı olduğu gibi döndürür (ikinci üretim ücreti ödenmesin diye,
+   bilerek), `requeue` yalnız `failed` satırları temizler ve bu ADR gereği cron
+   yok. Yani metin süresiz kalıyor. Sızıntı değil (RLS açık, policy yok) ama
+   tutulmamış bir söz. **Kapatılmadı** çünkü iki makul çözümün ikisi de sahibin
+   kararını gerektiren bir ödünç taşıyor — zamana bağlı temizlik telefon o
+   pencerede açılmazsa **ikinci üretim ücreti** doğurabilir, ack ucu ise
+   sözleşmeye yeni bir uç ekler. Saklama süresi bu arada `docs/PRIVACY.md`'de
+   olduğu gibi yazıldı; elle temizlik her zaman mümkün.
