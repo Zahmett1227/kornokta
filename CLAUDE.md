@@ -349,9 +349,28 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
       local yollar için).
 
-**Test durumu (2026-08-07):**
-- Backend (`backend/`): **508 test yeşil**, `tsc --noEmit` temiz — bu ortamda
-  gerçekten koşuldu.
+**Test durumu (2026-08-07, akşam — `fix/review-round-1` dalı):**
+- Backend (`backend/`): **517 test yeşil**, `tsc --noEmit` temiz — kullanıcının
+  Mac'inde gerçekten koşuldu. (+9: iş kuyruğu fence testleri +
+  `supabaseJobs.test.ts`.)
+- Swift (`ios/CizgiCore/`): **tam paket bir Mac'te koşuldu: 304/304 yeşil.**
+  (Önceki tek kırmızı — `BackupExporterTests`'in bayat `formatVersion: 1`
+  beklentisi — düzeltildi; test artık `BackupExporter.formatVersion`'a bağlı.)
+- App hedefi: `xcodegen generate` + `xcodebuild build` (iOS Simulator,
+  imzasız) aynı Mac'te **başarılı**.
+- CI: yeni `.github/workflows/ios.yml` macOS runner'da `swift test` + App
+  build koşuyor — Swift'in CI kapısı olmaması bu dalda kapandı.
+
+**Bu dalda kapatılan inceleme bulguları (2026-08-07 akşam turu):** iOS'ta
+çakışan iki koşunun kart setini iki kez kalıcılaştırması (`apply`'ın `.ready`
+dalına `hasPersistedGroup` süzgeci + `process(pageID:)`'te `shouldProcess`
+yeniden kontrolü + `retry`'de in-flight koruması), iptalin geç gelen sonuçla
+ezilmesi (`apply` başında `.cancelled` guard'ı); backend'de `complete`/`fail`'in
+`started_at` fence'i (ADR-006 kuralının son iki istisnası — `claim` artık
+kazandığı satırı döner, worker o satırın parametreleriyle üretir), Storage
+`getImage` 404'ünün ve OpenAI `incomplete`/gövde-içi `failed` durumlarının
+retryable sayılması (jobId = sayfa kimliği kalıcı kilidini açar); README durum
+tablosu ve PRIVACY sağlayıcı tablosu güncel akışa çekildi.
 - Python (`evals/`): **517 test yeşil** — bu ortamda gerçekten koşuldu
   (`pip install pytest jsonschema numpy pillow opencv-python-headless` sonrası).
 - Swift (`ios/CizgiCore/`): tam paket **Linux'ta derlenmiyor** (CoreGraphics,

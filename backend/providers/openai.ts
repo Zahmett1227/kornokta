@@ -321,6 +321,19 @@ export class OpenAICardGenerator {
 
     const parsedBody = response.body as ResponsesApiBody;
 
+    // The Responses API can answer 2xx with a body that still reports failure.
+    // Without this check the flow falls through to `extractOutputText`, the
+    // provider's own message is lost, and the caller sees a generic "no text"
+    // error instead of the actual cause. Transient: a provider-side generation
+    // failure says nothing about whether the *next* call would fail too.
+    if (parsedBody.status === "failed") {
+      throw new OpenAIError(
+        `Sağlayıcı üretimi başarısız bildirdi: ${parsedBody.error?.message ?? "ayrıntı yok"}`,
+        undefined,
+        true,
+      );
+    }
+
     // Checked before parsing: an "incomplete" response's output_text is a
     // truncated JSON fragment, and parsing it would fail with a message that
     // does not say why. Confirmed live: a reasoning-capable model can spend
@@ -329,6 +342,13 @@ export class OpenAICardGenerator {
     // visible answer can still truncate the response (§20.3's cost cap
     // versus the model's actual token accounting is a real tension, not a
     // bug in this parsing step — see docs/FAZ3-PLAN.md).
+    //
+    // Transient, not permanent: how many tokens a run spends is stochastic
+    // (reasoning tokens vary call to call), so the same page can comfortably
+    // fit on a retry. With the job id fixed to the page id, a permanent
+    // classification would lock that page out of `/api/jobs` forever — the
+    // attempt ceiling on the phone is what stops an endless loop, not this
+    // flag.
     if (parsedBody.status === "incomplete") {
       const reason = parsedBody.incomplete_details?.reason ?? "bilinmeyen";
       throw new OpenAIError(
@@ -338,7 +358,7 @@ export class OpenAICardGenerator {
               "(reasoning token'ları da bu bütçeden düşülüyor)."
             : ""),
         undefined,
-        false,
+        true,
       );
     }
 

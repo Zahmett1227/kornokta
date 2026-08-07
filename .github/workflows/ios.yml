@@ -1,0 +1,37 @@
+name: ios
+
+# The Swift package only compiles on a Mac (SwiftData, CoreGraphics), which is
+# why the backend/evals workflows never ran it — and how a failing
+# BackupExporterTests sat red on `main` with every other check green. This job
+# is that missing gate: the package tests, then the App target itself, which
+# `swift test` never touches (its type errors historically surfaced only in the
+# user's own Xcode builds — CLAUDE.md "Test durumu").
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: CizgiCore tests
+        run: swift test --package-path ios/CizgiCore
+      # The project file is generated, not committed (ios/project.yml explains
+      # why), so the build recreates it exactly the way a fresh Mac would.
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+      - name: Build App target
+        run: |
+          cd ios
+          xcodebuild build -project Cizgi.xcodeproj -scheme Cizgi \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

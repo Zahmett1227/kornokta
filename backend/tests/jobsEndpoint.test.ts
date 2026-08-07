@@ -109,19 +109,26 @@ function stubStore(seed: JobRow[] = []) {
     async claim(id, attempts) {
       calls.push(`claim:${id}`);
       const row = rows.get(id);
-      if (!row || row.status !== "queued") return false;
-      rows.set(id, { ...row, status: "processing", attempts, startedAt: new Date(NOW).toISOString() });
-      return true;
+      if (!row || row.status !== "queued") return null;
+      const claimed = { ...row, status: "processing" as const, attempts, startedAt: new Date(NOW).toISOString() };
+      rows.set(id, claimed);
+      return claimed;
     },
-    async complete(id, result) {
+    async complete(id, startedAt, result) {
       calls.push(`complete:${id}`);
       const row = rows.get(id);
-      if (row) rows.set(id, { ...row, status: "ready", result, error: null, retryable: null, imagePath: null });
+      // Fenced exactly as the real store fences it: only the attempt whose
+      // claim wrote this `started_at` may finish the row.
+      if (!row || row.status !== "processing" || row.startedAt !== startedAt) return false;
+      rows.set(id, { ...row, status: "ready", result, error: null, retryable: null, imagePath: null });
+      return true;
     },
-    async fail(id, error, retryable) {
+    async fail(id, startedAt, error, retryable) {
       calls.push(`fail:${id}`);
       const row = rows.get(id);
-      if (row) rows.set(id, { ...row, status: "failed", error, retryable, imagePath: null });
+      if (!row || row.status !== "processing" || row.startedAt !== startedAt) return false;
+      rows.set(id, { ...row, status: "failed", error, retryable, imagePath: null });
+      return true;
     },
     async expire(id, startedAt, error) {
       calls.push(`expire:${id}`);
@@ -141,7 +148,9 @@ function stubStore(seed: JobRow[] = []) {
     async getImage(path) {
       calls.push(`getImage:${path}`);
       const bytes = images.get(path);
-      if (!bytes) throw new SupabaseError("Supabase 404: yok", 404, false);
+      // Transient, mirroring the real store: a missing object is almost always
+      // a concurrent cleanup's doing, and non-retryable would lock the page.
+      if (!bytes) throw new SupabaseError("Supabase 404: yok", 404, true);
       return bytes;
     },
     async deleteImage(path) {
@@ -555,6 +564,60 @@ describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
 
     await handleJobsRequest(post(VALID_BODY), d);
 
+    expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
+  });
+
+  it("bayat işçinin geç gelen sonucu, yeniden kurulan denemeyi ezmez", async () => {
+    // Üretim sürerken deneme bayatlar: bir yoklama onu emekli eder, yeni bir
+    // gönderim işi yeniden kurar. Emekli işçinin cevabı ancak kendi
+    // `started_at`'i hâlâ satırdaysa yazılabilir — değilse hem sonuç düşer hem
+    // de yeni denemenin taze baytlarına dokunulmaz.
+    const store = stubStore();
+    const generator: CardGeneratorLike = {
+      async generateCards() {
+        const current = store.rows.get(JOB_ID);
+        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat");
+        await store.store.putImage(imagePathFor(JOB_ID), new Uint8Array([9]), "image/jpeg");
+        await store.store.requeue({ id: JOB_ID, imagePath: imagePathFor(JOB_ID), mimeType: "image/jpeg" });
+        return {
+          output: validOutput(),
+          rawUsage: { inputTokens: 1, outputTokens: 1 },
+        } satisfies CardGenerationResult;
+      },
+    };
+    const d = deps({ store: store.store, generator });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    const fresh = store.rows.get(JOB_ID);
+    expect(fresh?.status).toBe("queued");
+    expect(fresh?.result).toBeNull();
+    // The loser must not delete the path either: the bytes belong to the
+    // re-armed attempt now.
+    expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
+    expect(d.logged.some((entry) => entry.event === "jobs.result_dropped")).toBe(true);
+  });
+
+  it("bayat işçinin geç gelen hatası da yeniden kurulan denemeyi ezmez", async () => {
+    const store = stubStore();
+    const generator: CardGeneratorLike = {
+      async generateCards() {
+        const current = store.rows.get(JOB_ID);
+        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat");
+        await store.store.putImage(imagePathFor(JOB_ID), new Uint8Array([9]), "image/jpeg");
+        await store.store.requeue({ id: JOB_ID, imagePath: imagePathFor(JOB_ID), mimeType: "image/jpeg" });
+        throw new OpenAIError("model bu koşuda patladı", undefined, false);
+      },
+    };
+    const d = deps({ store: store.store, generator });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    const fresh = store.rows.get(JOB_ID);
+    expect(fresh?.status).toBe("queued");
+    expect(fresh?.error).toBeNull();
     expect(store.images.has(imagePathFor(JOB_ID))).toBe(true);
   });
 });

@@ -227,6 +227,11 @@ final class ProcessingQueue: ObservableObject {
         // nothing to report: the user asked for exactly that.
         guard let page = try? context.fetch(descriptor).first else { return }
         guard !page.pendingDeletion else { return }
+        // Re-asked at start time, not only at selection time: this call may
+        // have waited behind a full batch, and in that window the user can
+        // cancel the page or a manual "Tekrar dene" can run it to `.ready`
+        // first. Starting a second run then meant a duplicate generation.
+        guard shouldProcess(page) else { return }
         await process(page)
     }
 
@@ -423,6 +428,15 @@ final class ProcessingQueue: ObservableObject {
     }
 
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {
+        // The user's explicit stop wins over a result arriving late. `cancel`
+        // is guarded by `canTransition` and "cancelled never moves again"
+        // (StateMachine.swift), but this write path used to ignore both: a page
+        // cancelled while its run was in flight would be resurrected as
+        // `.ready`, cards and all. Wasted work in that rare race — same
+        // trade-off `pendingDeletion` makes in `process` — but the state the
+        // user chose stays chosen.
+        guard page.processingState != .cancelled else { return }
+
         // Keep the local OCR even when a later step failed (§21.2).
         if let recognized = outcome.recognized, page.regions.isEmpty {
             page.documentQualityScore = recognized.lines
@@ -448,11 +462,19 @@ final class ProcessingQueue: ObservableObject {
 
         switch outcome.finalState {
         case .ready:
+            // Filtered exactly like the non-ready branch above. Two runs for
+            // one page genuinely overlap (a manual "Tekrar dene" racing a
+            // pull-to-refresh — the comment in `process` documents it), both
+            // poll the same job id, and both arrive here with the same server
+            // result; without the filter the second one persisted a complete
+            // duplicate set of regions, cards and ModelRuns (§17: re-processing
+            // must not produce a second set of cards).
             if !outcome.generatedGroups.isEmpty {
-                for generated in outcome.generatedGroups {
+                for generated in outcome.generatedGroups where !hasPersistedGroup(generated.group, on: page) {
                     persist(generated: generated, outcome: outcome, page: page, context: context)
                 }
-            } else if let knowledge = outcome.knowledge, let group = outcome.annotationGroups.first {
+            } else if let knowledge = outcome.knowledge, let group = outcome.annotationGroups.first,
+                      !hasPersistedGroup(group, on: page) {
                 persist(
                     generated: GeneratedAnnotationGroup(group: group, knowledge: knowledge),
                     outcome: outcome,
@@ -751,6 +773,10 @@ final class ProcessingQueue: ObservableObject {
 
     func retry(_ page: CapturedPage) async {
         guard page.processingState == .temporaryFailure || page.processingState == .permanentFailure else { return }
+        // A run already in flight for this page will finish and write its own
+        // outcome; resetting the state under it and starting a second run only
+        // sets up the duplicate-generation race `process`'s comment describes.
+        guard (inFlightPageCounts[page.id] ?? 0) == 0 else { return }
         page.retryCount = 0
         page.nextAttemptAt = nil
         page.processingState = .captured
