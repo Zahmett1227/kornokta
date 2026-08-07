@@ -82,12 +82,14 @@ girer; biri unutulursa CI kırılır (bu proje bunu bilerek yapıyor):
 | `backend/schemas/llm_output.schema.json` | `type` enum'una `multiple_choice`; `options`/`correctOption` tanımı |
 | `backend/schemas/llmOutputTypes.ts` | `CARD_TYPES` dizisi + `LlmCard` tipi |
 | `ios/CizgiCore/Sources/CizgiCore/Models/Enums.swift` | `CardType.multipleChoice = "multiple_choice"` |
-| `evals/tests/test_ts_contract_sync.py` | Otomatik — sıralı karşılaştırma yapıyor, yeni değer iki tarafta da olmalı |
+| `evals/tests/test_ts_contract_sync.py` | Otomatik — yeni değer hem şemada hem TS'te olmalı |
 | `evals/tests/test_swift_contract_sync.py` | Aynısı Swift için |
 | `evals/tests/test_llm_output_schema.py` | Şema örneklerinin geçerliliği |
 
-> **Sıra önemli:** `CARD_TYPES` ile Swift `CardType` **aynı sırada** olmak
-> zorunda (sync testi sıralı kıyaslıyor). Yeni değeri iki yerde de **sona** ekle.
+> Sync testleri **küme** karşılaştırıyor, sıra değil (uygulama sırasında
+> doğrulandı) — ama yine de üç yere de sona eklemek okumayı kolaylaştırır.
+> Ayrıca Swift ham değerleri snake_case ve benzersiz olmak zorunda; ikisi de
+> ayrı testlerle bağlı.
 
 ## 3. Backend — prompt v2.4
 
