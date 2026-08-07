@@ -465,6 +465,9 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
   kararı, kurtarma modeli, yarış koşulları ve gizlilik tavizi
 - `docs/FAZ6-PLAN.md` — **GÜNCEL YÖN:** Faz 6'nın detaylı, dosya bazlı uygulama
   planı, sadeleşmiş sözleşme ve aşamalı durum tablosu
+- `docs/FAZ7-PLAN-coktan-secmeli.md` — **PLAN (uygulanmadı):** beş şıklı (TUS
+  tipi) kart; şema v2.1, kalite kapısı, FSRS eşlemesi, ANA-PLAN §13.3'ün onay
+  maddesiyle Faz 6 çatışması
 - `docs/COKLU-FOTO-TIMEOUT.md` — çoklu fotoğraf zaman aşımının teşhisi: neden
   sunucu tavanı değil telefonun askıya alınması, hangi azaltmalar yapıldı
 - `docs/FAZ5-DURUM.md` — 10 maddelik iPhone kabul listesi (6–10 hâlâ açık) ve
@@ -542,9 +545,14 @@ tema/yardımcılar; XcodeGen çalıştırılmadan Xcode onları hedefe almaz).
 6. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
    tek sentetik grup ürettiği için artık tetiklenmiyor, ama kod duruyor.
 
-### Aday sonraki özellikler (karar verilmedi)
+### Aday sonraki özellikler
 
-Bunlar öneri, taahhüt değil; sırayı kullanıcı seçer.
+- **Beş şıklı (TUS tipi) kart — planı yazıldı, uygulanmadı:**
+  [`docs/FAZ7-PLAN-coktan-secmeli.md`](docs/FAZ7-PLAN-coktan-secmeli.md).
+  A1+A2 (model/doğrulama + backend sözleşmesi) bu ortamda tamamen
+  doğrulanabilir; A3–A5 Mac gerektirir, asıl iş A6 (distraktör kalitesi).
+
+Aşağıdakiler öneri, taahhüt değil; sırayı kullanıcı seçer.
 
 - **Etiket/ders bazlı filtreli tekrar** ("bugün yalnız Farmakoloji").
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti ve
