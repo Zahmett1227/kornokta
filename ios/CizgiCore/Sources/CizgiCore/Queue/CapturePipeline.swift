@@ -273,7 +273,7 @@ public struct CapturePipeline: Sendable {
                 // The model found nothing markable to build a card from. Faz 6
                 // has no confirmation lane, so this is a terminal "couldn't make
                 // cards from this page" rather than a bounce to the user.
-                return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .invalidResponse)
+                return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .noContent)
             }
             let kind = Self.failureKind(for: error)
             return PipelineOutcome(jobId: jobId, finalState: kind.resultingState, failure: kind)
@@ -282,7 +282,9 @@ public struct CapturePipeline: Sendable {
         }
 
         guard !knowledge.cards.isEmpty else {
-            return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .invalidResponse)
+            // A well-formed response carrying no cards is not a broken one; the
+            // page simply had nothing marked on it (§21.2 — say what happened).
+            return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .noContent)
         }
 
         // The whole marked page is one implicit unit. A synthetic full-page
@@ -336,7 +338,7 @@ public struct CapturePipeline: Sendable {
         // A response that violates the contract will violate it again on replay.
         case .schemaInvalid: return .invalidResponse
         case .providerUnavailable: return .providerUnavailable
-        case .sourceInsufficient: return .invalidResponse
+        case .sourceInsufficient: return .noContent
         }
     }
 

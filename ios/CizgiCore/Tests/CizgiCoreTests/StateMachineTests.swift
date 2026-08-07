@@ -113,4 +113,25 @@ final class RetryPolicyTests: XCTestCase {
         XCTAssertTrue(FailureKind.network.isTransient)
         XCTAssertEqual(FailureKind.network.resultingState, .temporaryFailure)
     }
+
+    /// A page with nothing marked on it is finished, not broken: retrying the
+    /// same photograph would pay for the same answer again.
+    func testNothingFoundIsNotRetried() {
+        XCTAssertFalse(FailureKind.noContent.isTransient)
+        XCTAssertEqual(FailureKind.noContent.resultingState, .permanentFailure)
+    }
+
+    /// The queue used to print `String(describing:)` of this enum, so the user
+    /// read "invalidResponse" in a Turkish interface. Every case must now carry
+    /// a sentence a person can act on.
+    func testEveryFailureExplainsItselfInTurkish() {
+        let kinds: [FailureKind] = [
+            .network, .rateLimited, .providerUnavailable,
+            .invalidResponse, .configuration, .budgetExceeded, .noContent,
+        ]
+        for kind in kinds {
+            XCTAssertFalse(kind.message.isEmpty, "\(kind) mesajsız")
+            XCTAssertNotEqual(kind.message, String(describing: kind), "\(kind) hâlâ ham enum adı")
+        }
+    }
 }

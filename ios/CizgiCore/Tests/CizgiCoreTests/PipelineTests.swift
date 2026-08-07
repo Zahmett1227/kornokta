@@ -135,6 +135,10 @@ final class CapturePipelineTests: XCTestCase {
         let outcome = await pipeline(generator: FailingGenerator(error: .sourceInsufficient))
             .run(jobId: "job-5", imageURL: imageURL)
         XCTAssertEqual(outcome.finalState, .permanentFailure)
+        // Reported as "nothing marked here", not as a broken response: with
+        // photos coming from the library this is an ordinary outcome, and the
+        // user needs to know which of the two happened.
+        XCTAssertEqual(outcome.failure, .noContent)
     }
 
     func testGeneratorOutageIsTransient() async {

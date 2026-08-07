@@ -1,6 +1,7 @@
 # Plan — galeriden fotoğraf ekleme
 
-**Durum:** plan · **Tarih:** 2026-08-07 · **Büyüklük:** küçük (bir oturum) ·
+**Durum:** G1–G3 uygulandı (2026-08-07), **G4 gerçek cihaz doğrulaması açık** ·
+**Tarih:** 2026-08-07 · **Büyüklük:** küçük (bir oturum) ·
 **Dayanak:** ANA-PLAN §8.1 (yakalama), §21.2 (bir çekim kaybolmaz), §24.6
 (görüntü gizliliği), §4.3 (PDF/Share Sheet *sonraki* sürüm adayı).
 
@@ -88,7 +89,7 @@ Nerede yaşayacağı:
 |---|---|---|
 | **Karar mantığı** — bu bayt dizisi yeniden kodlanmalı mı, hangi uzun kenar, hangi kalite | `ios/CizgiCore/.../Backend/ImportedImage.swift` (Foundation-only) | **Bu ortamda gerçekten test edilebilir** (imza tespiti bayt başlıklarından: JPEG `FFD8`, PNG `89504E47`, HEIC `ftypheic/heix/mif1`) |
 | **Piksel işi** — decode, yön uygula, JPEG yaz | Aynı dosyada `#if canImport(ImageIO)` bloğu | ImageIO Linux'ta yok; kalıp `UploadImageEncoder`'ın bugünkü kalıbının aynısı |
-| **Seçici (picker)** | `ios/App/Features/Capture/PhotoLibraryPicker.swift` | SwiftUI/PhotosUI, App hedefi |
+| **Seçici (picker)** | `ios/App/Features/Capture/PhotoLibraryImporter.swift` | SwiftUI/PhotosUI, App hedefi |
 
 ## 4. Arayüz
 
@@ -111,12 +112,16 @@ Nerede yaşayacağı:
 
 ```
 PhotosPicker seçimi
-  → her öğe için loadTransferable(type: Data.self)      (paralel, sırayla değil)
+  → her öğe için loadTransferable(type: Data.self)      (sırayla — aşağıya bak)
   → ImportedImage.normalize(...)                        → JPEG + yön + boyut
   → CaptureView.handleScanned([Data])                   ← BURADAN SONRASI AYNI
       → PerceptualHasher.duplicateIndices(...)          → "daha önce çekmişsin?"
       → ProcessingQueue.enqueue → /api/jobs → kartlar
 ```
+
+Yükleme **sırayla**, paralel değil: iCloud'da duran bir öğe burada indiriliyor
+ve aynı anda on indirme başlatmak hepsini yavaşlatırken ilerleme sayısını da
+anlamsızlaştırır.
 
 Kritik nokta: **`handleScanned`'e giriyor**, kendi yolunu açmıyor. Yinelenen
 sorusu, kuyruk, paralellik, retry, iş kuyruğu — hiçbiri değişmiyor ve galeriden
@@ -151,7 +156,7 @@ ikinci kez çekmekten **daha** olası.)
 | Dosya | Değişiklik |
 |---|---|
 | `ios/CizgiCore/.../Backend/ImportedImage.swift` | **Yeni.** Bayt imzasından format tespiti, "yeniden kodla mı" kararı, ImageIO ile JPEG'e normalize + yön |
-| `ios/App/Features/Capture/PhotoLibraryPicker.swift` | **Yeni.** `PhotosPicker` sarmalayıcı, çoklu seçim, yükleme/ilerleme, kısmi hata raporu |
+| `ios/App/Features/Capture/PhotoLibraryImporter.swift` | **Yeni.** `PhotosPicker` yükleyicisi, sıralı indirme, ilerleme, kısmi hata sayımı |
 | `ios/App/Features/Capture/CaptureView.swift` | "Galeriden ekle" düğmesi, seçim durumu, `handleScanned`'e bağlanma, "N alınamadı" mesajı |
 | `ios/CizgiCore/.../Queue/StateMachine.swift` + `CapturePipeline.swift` | Kart üretilmeyen sayfa için ayrı hata nedeni/mesajı (§6 son satır) |
 | `ios/App/Features/ProcessingQueue/QueueView.swift` | O mesajın gösterimi |
@@ -171,10 +176,10 @@ ikinci kez çekmekten **daha** olası.)
 
 | Adım | Kapsam | Nerede doğrulanır |
 |---|---|---|
-| **G1** | `ImportedImage`: format tespiti + karar mantığı + testler | **Bu ortamda gerçekten** (Foundation-only kısım, izole pakette `swift test`) |
-| **G2** | ImageIO normalize (JPEG + yön), `PhotoLibraryPicker`, `CaptureView` bağlantısı | Mac derlemesi |
-| **G3** | "Kart üretilmedi" hata nedeni ve mesajı | `swift test` (CizgiCore) + Mac |
-| **G4** | Cihaz doğrulaması (§11) | Gerçek iPhone |
+| **G1** | `ImportedImage`: format tespiti + karar mantığı + testler | ✅ **Bu ortamda gerçekten koşuldu** — izole pakette 100 test yeşil (15'i yeni), her yeni test mutasyonla doğrulandı |
+| **G2** | ImageIO normalize (JPEG + yön), `PhotoLibraryImporter`, `CaptureView` bağlantısı | ✅ Yazıldı — **Mac derlemesi bekliyor** |
+| **G3** | "Kart üretilmedi" hata nedeni ve mesajı | ✅ `FailureKind.noContent` + her hataya Türkçe `message`; kuyruk artık ham enum adı basmıyor |
+| **G4** | Cihaz doğrulaması (§11) | ⬜ Gerçek iPhone |
 
 ## 11. Kabul kriterleri
 

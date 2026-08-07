@@ -105,6 +105,12 @@ Belge kamerası **simülatörde çalışmaz**. Gerçek iPhone gerekiyor: Signing
 
 - [ ] İşaretli bir sayfa çek → **hiçbir onay adımı olmadan** kartlar aktif
       desteye giriyor; kartlar ağırlıklı olarak işaretlediğin yerden
+- [ ] **Galeriden ekle** → seçilen fotoğraf kamerayla çekilmiş gibi kart
+      üretiyor. Özellikle dene: **küçük boyutlu bir HEIC** (galerinin varsayılan
+      formatı) ve **yan çekilmiş** bir fotoğraf — ikisi de içe aktarmada JPEG'e
+      ve düz yöne çevriliyor
+- [ ] Sayfa olmayan bir fotoğraf seç → kuyrukta "Bu fotoğrafta işaretlenmiş bir
+      şey bulunamadı" yazıyor (ham hata adı değil)
 - [ ] **5–10 fotoğrafı tek partide** yükle → gönderim saniyeler sürüyor, ekran
       kilitlense/uygulama kapatılsa bile kartlar sonradan geliyor, hiçbir sayfa
       iki kez üretilmiyor

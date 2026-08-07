@@ -465,8 +465,9 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
   kararı, kurtarma modeli, yarış koşulları ve gizlilik tavizi
 - `docs/FAZ6-PLAN.md` — **GÜNCEL YÖN:** Faz 6'nın detaylı, dosya bazlı uygulama
   planı, sadeleşmiş sözleşme ve aşamalı durum tablosu
-- `docs/PLAN-galeriden-foto.md` — **PLAN (uygulanmadı):** galeriden fotoğraf
-  ekleme; HEIC/EXIF-yönü tuzakları, tek noktada normalize etme kararı
+- `docs/PLAN-galeriden-foto.md` — galeriden fotoğraf ekleme: HEIC/EXIF-yönü
+  tuzakları, tek noktada normalize etme kararı (**G1–G3 uygulandı, cihaz
+  doğrulaması açık**)
 - `docs/FAZ7-PLAN-coktan-secmeli.md` — **PLAN (uygulanmadı):** beş şıklı (TUS
   tipi) kart; şema v2.1, kalite kapısı, FSRS eşlemesi, ANA-PLAN §13.3'ün onay
   maddesiyle Faz 6 çatışması
@@ -549,10 +550,6 @@ tema/yardımcılar; XcodeGen çalıştırılmadan Xcode onları hedefe almaz).
 
 ### Aday sonraki özellikler
 
-- **Galeriden fotoğraf ekleme — planı yazıldı, uygulanmadı:**
-  [`docs/PLAN-galeriden-foto.md`](docs/PLAN-galeriden-foto.md). Küçük ve
-  bağımsız; sözleşmeye dokunmadığı için beş şıklı karttan **önce** önerilir.
-  Dikkat: HEIC baytları bugün `image/jpeg` etiketiyle gider (planın §2.1'i).
 - **Beş şıklı (TUS tipi) kart — planı yazıldı, uygulanmadı:**
   [`docs/FAZ7-PLAN-coktan-secmeli.md`](docs/FAZ7-PLAN-coktan-secmeli.md).
   A1+A2 (model/doğrulama + backend sözleşmesi) bu ortamda tamamen
