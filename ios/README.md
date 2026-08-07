@@ -1,4 +1,4 @@
-# Çizgi — iOS (Faz 6: vision-öncelikli, kod tamam)
+# Çizgi — iOS (Faz 6 tamam + galeri içe aktarma + beş şıklı kart)
 
 Ana akış: **işaretli sayfayı çek → sayfa doğrudan bir vision modeline gider →
 kartlar onaysız aktif desteye girer → FSRS-6 ile tekrar edilir.** Onay ekranı,
@@ -14,6 +14,16 @@ sonuç kaybolmaz ve aynı sayfa iki kez üretilmez
 Backend URL ve cihaz tokenı girilmemişse kart üretimi sahte (`MockCardProvider`)
 ve vision modunda anlamlı kart üretmez — Faz 6 yapılandırılmış bir backend
 bekler. Tekrar etmek her zaman çevrimdışı çalışır.
+
+Sayfa **galeriden** de eklenebilir: seçilen her fotoğraf tek noktada JPEG'e ve
+düz yöne normalize edilip (`ImportedImage`) kameranın yoluna girer — yinelenen
+sayfa sorusu, kuyruk ve iş kuyruğu ondan sonrasını aynı şekilde işler.
+
+Kartların bir kısmı **beş şıklı (TUS tipi)** olabilir (§13.3). Şıkka dokununca
+doğru/yanlış işaretlenir ve her yanlış şıkkın neden yanlış olduğu açılır;
+**yanlış şık seçmek doğrudan "Unuttum"dur**, doğru seçince Zor/İyi/Kolay
+sorulur. Ne kadarının beş şıklı olacağı Ayarlar → "Beş şıklı kart"
+(Kapalı/Karışık/Hepsi) ile ayarlanır; sunucu kendi ayarını tavan kabul eder.
 
 **Yeni dosya eklendiyse `cd ios && xcodegen generate` şart** — `.xcodeproj`
 bilinçli olarak commit edilmiyor.
@@ -132,6 +142,20 @@ Belge kamerası **simülatörde çalışmaz**. Gerçek iPhone gerekiyor: Signing
 - [ ] "Yedeği hazırla → paylaş" JSON'unda görüntü/base64 yok; "Yedekten geri
       yükle" mevcut kartları ezmeden eksikleri ekliyor
 - [ ] Uygulamayı tamamen kapat, tekrar aç → kartlar ve kuyruk duruyor (§24.1)
+
+Beş şıklı kart (§13.3) için ayrıca:
+
+- [ ] Ayarlar → **Beş şıklı kart: Hepsi** yapıp bir sayfa çek → kartların bir
+      kısmı beş şıklı geliyor
+- [ ] Yanlış şık seç → kart otomatik "Unuttum" alıyor (dört puan gösterilmiyor)
+      ve seçtiğin şıkkın **neden yanlış** olduğu yazıyor
+- [ ] Doğru şık seç → Zor/İyi/Kolay soruluyor
+- [ ] Aynı kartı iki tekrarda gör → şıkların sırası değişiyor, ama bir tekrar
+      boyunca sabit kalıyor
+- [ ] Bilgilerim → kartı düzenle → doğru şıkkı değiştir → "Cevap" da onunla
+      değişiyor; "Şıkları kaldır" kartı silmeden düz karta çeviriyor
+- [ ] Bilgilerim'de **"Gözden geçir"** bölümü: sunucunun emin olamadığı kartlar
+      orada listeleniyor ve tekrar ekranında rozetle görünüyor
 
 Tam liste ve geçmiş bulgular: `docs/FAZ5-DURUM.md`, `CLAUDE.md` → "Sıradaki iş".
 

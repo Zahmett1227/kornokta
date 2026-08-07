@@ -158,6 +158,12 @@ depoya girmez, yalnız yerel `.env` ve Vercel proje ayarları. `SUPABASE_URL`
 boşsa diğer uçlar hiç etkilenmez, yalnız `/api/jobs` hangi değişkenin eksik
 olduğunu söyleyerek reddeder.
 
+**Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
+**dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
+PostgREST `insert`'i reddeder ve her çekim patlar. Migration'lar sırayla
+çalışır ve **hiçbiri geçmiş bir dosyayı düzenleyerek** eklenmez (Codex, PR #27
+P1): bugüne kadar `max_cards` ve `mc_mode` böyle eklendi.
+
 Şema tek bir migration'da: `jobs` tablosu + `page-uploads` özel kovası, ikisinde
 de RLS açık ve **policy yok** (yani yalnız servis anahtarı geçer). Sayfa
 baytları iş bitince siliniyor — §7.3'ten verilen bilinçli tavizin sınırı,

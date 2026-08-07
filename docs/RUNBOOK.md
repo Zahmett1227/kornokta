@@ -1,15 +1,16 @@
 # Runbook
 
-Güncel durum (2026-08-07): Faz 0–6 kod olarak tamam; kalan iş gerçek cihaz
-doğrulaması (`CLAUDE.md` → "Sıradaki iş"). Üç ayrı test paketi var — Python
-(eval araçları), Swift (iOS mantığı), TypeScript (backend).
+Güncel durum (2026-08-07): Faz 0–6 tamam ve cihazda doğrulandı; galeriden
+fotoğraf ekleme ve beş şıklı (TUS tipi) kart `main`'de. Kalan iş beş şıklı
+kartın kalite döngüsü (`CLAUDE.md` → "Sıradaki iş"). Üç ayrı test paketi var —
+Python (eval araçları), Swift (iOS mantığı), TypeScript (backend).
 
 ## Python — eval araçları
 
 ```bash
 pip install -r evals/requirements.txt
 
-python -m pytest evals -q                                        # 513 test
+python -m pytest evals -q                                        # 517 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json --check-files
 python -m evals.spikes.marker_detection.run --demo                # sentetik demo, ağ gerekmez
 ```
@@ -47,7 +48,7 @@ cd ios && xcodegen generate                                       # yoksa Xcode 
 cd backend
 npm install
 npm run typecheck
-npm test                                                          # 476 test
+npm test                                                          # 508 test
 ```
 
 Yerel sunucu (yalnız 127.0.0.1, dışarıya açılmaz):
@@ -88,6 +89,10 @@ Kısaca:
    `GOOGLE_CREDENTIALS_JSON`. **İş kuyruğu için şart:** `SUPABASE_URL` ve
    `SUPABASE_SERVICE_ROLE_KEY` (ADR-006). İkincisi RLS'i tamamen atlar — repoya
    girmez, yalnız yerel `.env` ve Vercel proje ayarları.
+   **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
+   **dağıtımdan önce** canlıya uygulanmalı — yeni kod sütunu yazar, sütun yoksa
+   PostgREST `insert`'i reddeder ve her çekim patlar. `backend/supabase/migrations/`
+   sırayla çalıştırılır; hiçbiri geçmişteki bir dosyayı düzenleyerek eklenmez.
 3. Production Branch ayarının doğru dala işaret ettiğinden emin ol —
    yanlışsa dağıtım "Ready" görünür ama alan adı eski sürümü servis eder.
 4. Doğrula:

@@ -16,17 +16,18 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
 - **Uygulama planı (detaylı, dosya bazlı, aşamalı):** [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md)
 - **Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
   değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
-- **Durum (2026-08-07):** **Faz 6 kod olarak tamam ve `main`'de** (PR #15–#27,
-  son merge `0679edc`). Vision akışı uçtan uca çalışıyor, kart üretimi asenkron
-  bir iş kuyruğuna taşındı, tekrar döngüsü onarıldı, kartlar düzenlenebiliyor ve
-  kaynağına dönülebiliyor. **Kalan iş kod değil, gerçek cihaz doğrulaması** —
-  "Sıradaki iş" bölümüne bak.
+- **Durum (2026-08-07 akşamı):** **Faz 6 tamam ve cihazda doğrulandı**
+  (PR #15–#27); üstüne **galeriden fotoğraf ekleme** (PR #28, cihazda
+  doğrulandı) ve **beş şıklı TUS kartı** (PR #29, A1–A5) geldi. `main` =
+  `09c629d`. Kalan tek gerçek iş: **beş şıklı kartın gerçek sayfayla ilk
+  denemesi ve distraktör kalitesi (A6)** — "Sıradaki iş" bölümüne bak.
 
 ### Ana akış bugün nasıl işliyor
 
-1. **Yakala:** işaretli sayfa fotoğrafı → dHash ile "bu sayfayı daha önce
-   çektin mi?" sorusu (reddetmez, **sorar**) → bayt diske yazıldıktan sonra
-   kuyruğa girer.
+1. **Yakala:** işaretli sayfa fotoğrafı — kameradan ya da **galeriden**
+   (galeriden gelen her fotoğraf tek noktada JPEG'e ve düz yöne normalize
+   edilir, `ImportedImage`) → dHash ile "bu sayfayı daha önce çektin mi?"
+   sorusu (reddetmez, **sorar**) → bayt diske yazıldıktan sonra kuyruğa girer.
 2. **Kuyruk:** `ProcessingQueue` sayfaları 3'lü paralel işler; işlem sürerken
    ekran kilidini ve bir arka plan assertion'ını tutar, geçici hataları
    `nextAttemptAt`'e uyarak kendiliğinden tekrar dener.
@@ -38,6 +39,13 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
 4. **Kartlar onaysız** `.active` olarak SwiftData'ya girer ve FSRS-6 ile tekrar
    edilir. Yanlış kart tekrar ekranından ya da Bilgilerim'den düzenlenir/askıya
    alınır; "Kaynağı göster" sayfa fotoğrafını ve modelin okuduğu metni gösterir.
+5. **Kartların bir kısmı beş şıklı** olabilir (§13.3, Ayarlar'daki mod).
+   Şıkka dokununca doğru/yanlış işaretlenir ve her yanlış şıkkın **neden
+   yanlış** olduğu açılır. FSRS eşlemesi asimetrik: **yanlış şık = Unuttum**
+   (dört puan gösterilmez), doğru şıkta Zor/İyi/Kolay sorulur.
+6. **Şüpheli kartlar bloklanmaz, işaretlenir:** sunucunun emin olamadığı kart
+   `lowConfidence` ile gelir, desteye girer ve Bilgilerim'de **"Gözden geçir"**
+   bölümünde listelenir (§13.3'ün onay maddesinin Faz 6'yı bozmayan karşılığı).
 
 ### Faz 6 boyunca merge edilen büyük işler
 
@@ -132,10 +140,12 @@ yorumları **İngilizce**.
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod tamam, ama **Faz 6'da ana akıştan çıktı** (kod geri dönüş için diskte, çağrılmıyor). Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı kararıyla atlanmıştı — `docs/FAZ2-PLAN.md`. |
 | Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Kalan: gerçek maliyet rakamları (§7). |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 (`evals/fsrs/` Python referansı + Swift portu), `ReviewScheduling` seam'i üzerinden bağlı. Bildirimler, günlük yeni kart limiti ve süre bütçeli hızlı oturum 2026-08-06/07'de **gerçek anlamlarına kavuştu** (PR #27). Ayrıntı: `docs/FAZ4-PLAN.md`. |
-| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone kabul listesi hâlâ açık.** `docs/FAZ5-DURUM.md`'deki 10 maddeden 1–5 denendi (ve o sırada bulunan gerçek hatalar düzeltildi), 6–10 (uçak modu, bildirim, sınırlar, yedek, "orijinali sakla") hiç koşulmadı. |
-| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Kod tamam, `main`'de** (PR #15–#27). B1 (backend v2 sözleşme + `/api/cards-vision`), B2 (iOS vision akışı + App cilası), B3 (prompt v2.3 + gecikme/kalite), UI redesign, B4 (bildirimler, hata/retry kuyruğu, maliyet görünürlüğü) bitti; üstüne asenkron iş kuyruğu (ADR-006) ve PR #27'nin onarımları geldi. **Kalan:** §11 kabul kriterleri = gerçek cihaz doğrulaması; `Models` alan sadeleşmesi + SwiftData göçü (bilerek ertelendi, §10.4 "mevcut kartlar korunmalı"); gerçek maliyet USD rakamları. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
+| Faz 5 — Sertleştirme | ✅ Kod tamam; **kullanıcı 2026-08-07'de kabul listesini kendi iPhone'unda koştu ve sorun çıkmadı.** Süreçte bulunan hatalar (`docs/FAZ5-DURUM.md`) daha önce düzeltilmişti. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"), gerçek maliyet USD rakamları. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
+| Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
+| Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
 
-**Dal durumu:** `main` güncel uç (`0679edc`, PR #27 squash merge). Çalışma
+**Dal durumu:** `main` güncel uç (`09c629d`, PR #29 squash merge). Çalışma
 dalları merge sonrası bırakılıyor; yeni iş `main`'in ucundan yeni bir dalla
 başlar.
 
@@ -340,22 +350,24 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       local yollar için).
 
 **Test durumu (2026-08-07):**
-- Backend (`backend/`): **476 test yeşil**, `tsc --noEmit` temiz — bu ortamda
+- Backend (`backend/`): **508 test yeşil**, `tsc --noEmit` temiz — bu ortamda
   gerçekten koşuldu.
+- Python (`evals/`): **517 test yeşil** — bu ortamda gerçekten koşuldu
+  (`pip install pytest jsonschema numpy pillow opencv-python-headless` sonrası).
 - Swift (`ios/CizgiCore/`): tam paket **Linux'ta derlenmiyor** (CoreGraphics,
-  SwiftData). PR #27'nin eklediği mantık (ReviewSession/ReviewPace/
+  SwiftData). Foundation'a bağlı mantık (ReviewSession/ReviewPace/
   DailyNewCardLedger, CardEditing, BackupExporter+Restorer, PerceptualHash,
-  ReviewReminders) bu ortama kurulan gerçek bir Swift araç zinciriyle, yalnız
-  Foundation'a bağlı dosyaları içeren izole bir pakette **63 testle koşuldu ve
-  geçti**. **Tam paketin ve App hedefinin son yeşil koşusu bir Mac'te
-  yapılmalı.**
-- SwiftUI dosyaları yalnız `swiftc -parse` ile denetlendi — bu **sözdizimi**
-  kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. Nitekim `SettingsView`'daki
-  geçersiz bir `Section` başlatıcısı ancak kullanıcının Xcode derlemesinde
-  çıktı (düzeltildi, `cfcc44c`). Bu sınıftan hatalar için **tek gerçek kapı bir
-  Mac derlemesi.**
-- Python (`evals/`): son bilinen 513 test yeşil — bu ortamda `pytest` kurulu
-  değil, bu oturumda koşulmadı.
+  ReviewReminders, ImportedImage, MultipleChoice, StateMachine) bu ortama
+  kurulan gerçek bir Swift araç zinciriyle, yalnız o dosyaları içeren izole bir
+  pakette **120 testle koşuldu ve geçti**. **Tam paketin son yeşil koşusu bir
+  Mac'te yapılmalı.**
+- App hedefi: kullanıcı `main`'i (PR #29 dahil) Xcode'da derledi, uygulama
+  sorunsuz açıldı.
+- SwiftUI dosyaları burada yalnız `swiftc -parse` ile denetlenebiliyor — bu
+  **sözdizimi** kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. Nitekim
+  `SettingsView`'daki geçersiz bir `Section` başlatıcısı ancak kullanıcının
+  Xcode derlemesinde çıktı (düzeltildi, `cfcc44c`). Bu sınıftan hatalar için
+  **tek gerçek kapı bir Mac derlemesi.**
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), Root Directory
 `backend`. Gerekli env değişkenleri `.env.example`'da; iş kuyruğu için
@@ -363,6 +375,12 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
 Supabase tarafında `jobs` tablosu + `page-uploads` özel kovası var; ikisinde de
 RLS açık ve **policy yok** (yalnız `service_role` geçer). Proje kimliği ve
 anahtar yalnız Vercel env'inde durur, repoda değil.
+
+**Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
+**dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
+PostgREST `insert`'i reddeder ve **her çekim patlar**. Şu ana kadarki iki
+sütun (`max_cards`, `mc_mode`) canlıda mevcut — `mc_mode` PR #29 merge
+edilmeden hemen önce uygulandı.
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -468,12 +486,12 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 - `docs/PLAN-galeriden-foto.md` — galeriden fotoğraf ekleme: HEIC/EXIF-yönü
   tuzakları, tek noktada normalize etme kararı (**uygulandı ve cihazda
   doğrulandı**)
-- `docs/FAZ7-PLAN-coktan-secmeli.md` — **PLAN (uygulanmadı):** beş şıklı (TUS
-  tipi) kart; şema v2.1, kalite kapısı, FSRS eşlemesi, ANA-PLAN §13.3'ün onay
-  maddesiyle Faz 6 çatışması
+- `docs/FAZ7-PLAN-coktan-secmeli.md` — beş şıklı (TUS tipi) kart: şema v2.1,
+  kalite kapısı, FSRS eşlemesi, ANA-PLAN §13.3'ün onay maddesiyle Faz 6
+  çatışmasının çözümü (**A1–A5 uygulandı; A6 açık**)
 - `docs/COKLU-FOTO-TIMEOUT.md` — çoklu fotoğraf zaman aşımının teşhisi: neden
   sunucu tavanı değil telefonun askıya alınması, hangi azaltmalar yapıldı
-- `docs/FAZ5-DURUM.md` — 10 maddelik iPhone kabul listesi (6–10 hâlâ açık) ve
+- `docs/FAZ5-DURUM.md` — iPhone kabul listesi (**2026-08-07'de koşuldu**) ve
   gerçek cihaz oturumlarında bulunan hatalar
 - `docs/FAZ2-PLAN.md` — Faz 2'nin tam kaydı: ne yapıldı, hangi hatalar
   bulundu/düzeltildi, çıkış kapısının neden atlandığı
@@ -499,63 +517,46 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 
 ## Sıradaki iş
 
-Kod tarafında bilinen bir eksik yok; **sıradaki iş gerçek cihazda doğrulama.**
-Aşağıdakiler öncelik sırasıyla.
+Faz 6, galeri içe aktarma ve beş şıklı kartın kodu `main`'de; ilk ikisi cihazda
+doğrulandı. **Kalan tek gerçek iş beş şıklı kartın kalitesi.**
 
-### 1. Gerçek cihaz doğrulaması (en öncelikli — hepsi tek bir oturumda yapılabilir)
+### 1. A6 — beş şıklı kartın gerçek sayfayla denenmesi (en öncelikli)
 
-Önce `git pull && cd ios && xcodegen generate` (PR #27 `ios/App` altına dört
-yeni dosya ekledi: `CardEditorView`, `CardSourceView`, `PageImageHasher` ve
-tema/yardımcılar; XcodeGen çalıştırılmadan Xcode onları hedefe almaz).
+Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla oturur.
 
-- **Faz 6 §11 kabul kriterleri:** işaretli sayfa → onaysız aktif kart → FSRS
-  tekrarı; kartlar ağırlıklı olarak *işaretlenen* içeriğe karşılık geliyor mu;
-  en az bir kısmı zenginleştirilmiş mi.
-- **Asıl şikayetin doğrulaması:** 5–10 fotoğrafı **tek partide** yükle. Beklenen:
-  `POST /api/jobs` saniyeler içinde döner, ekran kilitlense/uygulama kapatılsa
-  bile iş sunucuda sürer, bir sonraki açılışta kartlar gelir, **hiçbir sayfa iki
-  kez üretilmez**.
-- **PR #27'nin yeni davranışları:** normal vs hızlı oturum, "Unuttum" kartının
-  oturum sonunda geri gelmesi, "Geri al", günlük yeni kart limitinin ekran
-  yeniden açılınca sıfırlanmaması, kart düzenleme/askıya alma, "Kaynağı göster",
-  aynı sayfayı ikinci kez çekince çıkan soru, bildirimin doğru sayıyı söylemesi
-  ve dokununca Tekrar sekmesini açması, "Yedeği hazırla → geri yükle" turu.
-- **`docs/FAZ5-DURUM.md` kabul listesinin 6–10. maddeleri** (uçak modu +
-  "Tekrar dene", bildirim izni, sınırlar, yedeğin içinde görüntü olmaması,
-  "Orijinal sayfayı sakla" kapalıyken davranış).
+- İlk denemede **Ayarlar → Beş şıklı kart: Hepsi**. `Karışık` bilerek seçici
+  (yalnız ayırt etme/istisna kartları), tanım ağırlıklı bir sayfada hiç
+  üretmemesi normaldir; yolu doğrulamak için "Hepsi" daha net.
+- Bakılacaklar: şıklar aynı semantik sınıftan mı, distraktörler gerçekten
+  karıştırılabilir mi, "iki doğru" çıkan var mı, "neden yanlış" cümleleri
+  öğretiyor mu, şıklar telefonda okunacak kadar kısa mı.
+- Bulgular prompt v2.4'ün `multipleChoiceInstruction` bloğuna işlenir.
+- Ayrıca ilk turda ölç: **Ayarlar → Kullanım**'daki çıktı token sayısı beş şıklı
+  kartla ne kadar arttı (§8'in tahmini kart başına +80–150).
 
 ### 2. Küçük ve gerçek kalanlar
 
-1. **Gerçek maliyet rakamları.** `OPENAI_USD_PER_MILLION_*` hâlâ 0. Artık
-   Ayarlar → Kullanım bunu gösterdiği için doldurmanın görünür değeri var;
-   §0.6 gereği rakam **sağlayıcının kendi fiyatlandırma sayfasından** gelmeli,
-   uydurulmaz.
+1. **Gerçek maliyet rakamları.** `OPENAI_USD_PER_MILLION_*` hâlâ 0. Ayarlar →
+   Kullanım bunu gösterdiği için doldurmanın görünür değeri var; §0.6 gereği
+   rakam **sağlayıcının kendi fiyatlandırma sayfasından** gelmeli, uydurulmaz.
 2. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
-   başarılı çağrılar kaydediliyor, yani "Kullanım" başarısız denemelerin
-   maliyetini göstermiyor (`docs/FAZ3-PLAN.md`, F3-8).
+   başarılı çağrılar kaydediliyor (`docs/FAZ3-PLAN.md`, F3-8).
 3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
-   anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı"
-   diyor, cihazsız doğrulanamaz ve kullanıcıya görünür bir değeri yok.
+   anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı".
 
 ### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
 
-4. Codex'in PR #5'te bulduğu 8. bulgu: yarım sayfa genişliğinden dar ama gerçek
-   sütun boşluğunu kesen ortalanmış bir ayraç/başlık boşluğu hâlâ gizleyebilir
-   (`MAX_COLUMN_ITEM_WIDTH`, `documentAI.ts`/`ReadingOrder.swift`). Faz 6 ana
-   akışı OCR yapmadığı için pratikte ölü kod.
+4. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
+   ayraç/başlık boşluğu (`MAX_COLUMN_ITEM_WIDTH`). Faz 6 ana akışı OCR yapmadığı
+   için pratikte ölü kod.
 5. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
    için hâlâ tüm kelimeyi kıyaslıyor (ADR-003 "Açık kalan").
 6. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
-   tek sentetik grup ürettiği için artık tetiklenmiyor, ama kod duruyor.
+   tek sentetik grup ürettiği için tetiklenmiyor, ama kod duruyor.
 
 ### Aday sonraki özellikler
 
-- **Beş şıklı (TUS tipi) kart — A1–A5 uygulandı, `claude/multiple-choice`
-  dalında:** [`docs/FAZ7-PLAN-coktan-secmeli.md`](docs/FAZ7-PLAN-coktan-secmeli.md).
-  Kalan: **A6 (distraktör kalitesi, yalnız gerçek sayfalarla)** ve Mac
-  derlemesi + cihaz doğrulaması.
-
-Aşağıdakiler öneri, taahhüt değil; sırayı kullanıcı seçer.
+Öneri, taahhüt değil; sırayı kullanıcı seçer.
 
 - **Etiket/ders bazlı filtreli tekrar** ("bugün yalnız Farmakoloji").
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti ve
@@ -564,3 +565,5 @@ Aşağıdakiler öneri, taahhüt değil; sırayı kullanıcı seçer.
   kart takımı (maliyeti açıkça söyleyerek).
 - **FSRS ağırlık optimizasyonu:** yedeğe artık giren gerçek `ReviewLog`
   geçmişinden kullanıcıya özel ağırlık hesaplama (`evals/fsrs/` referansı var).
+- **PDF / Dosyalar'dan içe aktarma ve Share Sheet** (ANA-PLAN §4.3; galeri
+  planının §9'unda bilerek kapsam dışı bırakıldı).

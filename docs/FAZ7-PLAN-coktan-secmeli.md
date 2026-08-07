@@ -1,6 +1,6 @@
 # Faz 7 — Beş şıklı (TUS tipi) kart
 
-**Durum:** A1–A5 uygulandı (2026-08-07); **A6 (distraktör kalitesi) ve gerçek cihaz doğrulaması açık** · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
+**Durum:** A1–A5 `main`'de (PR #29, 2026-08-07); uygulama Mac'te derlendi ve açıldı. **A6 (distraktör kalitesi) ve beş şıklı kartın gerçek sayfayla ilk denemesi açık** · **Tarih:** 2026-08-07 · **Dayanak:** ANA-PLAN §13.3 (çoktan
 seçmeli kurallar), §4.2 (ilk sürümde varsayılan **değil**), §4.3 (sonraki sürüm
 adayı), §13.2 (üretim kuralları), §18 (FSRS).
 
@@ -296,7 +296,8 @@ Kullanıcı bunun yerine gerçek bir onay adımı isterse §6'daki akış
 | **A3** | `BackendCardProvider` çözümlemesi + `GeneratedCard`/`Card` alanları; `ProcessingQueue.persist` kartı şıklarıyla yazar | ✅ Yazıldı; 5 yeni `BackendCardProviderTests` **Mac'te koşacak** |
 | **A4** | Tekrar ekranı: şık seçimi, doğru/yanlış gösterimi, `why` metinleri, FSRS eşlemesi | ✅ Yazıldı — **Mac derlemesi + cihaz bekliyor** |
 | **A5** | Editör, kart detayı, yedek v3, Ayarlar'daki mod + uçtan uca ayar taşıma (`jobs.mc_mode`) | ✅ Yazıldı; backend tarafı 504 test yeşil |
-| **A6** | Gerçek sayfalarla prompt/distraktör kalite döngüsü | ⬜ Yalnız gerçek kullanım |
+| **A6** | Gerçek sayfalarla prompt/distraktör kalite döngüsü | ⬜ Yalnız gerçek kullanım — sıradaki iş |
+| **İnceleme** | Codex iki tur | ✅ Sekiz bulgunun sekizi kapatıldı; ikinci turun üçü ilk turdaki düzeltmelerin açtığı yollardı (aşağıya bak) |
 
 A1+A2 tek başına anlamlı ve tamamen bu ortamda doğrulanabilir; A3–A5 bir Mac
 gerektirir. **Asıl iş A6** — tıpkı B3'te olduğu gibi, kodun bittiği yerde
@@ -329,3 +330,40 @@ kalite başlıyor.
 4. **Maliyet/gecikme.** §8; `all` modu ölçmeden açılmamalı.
 5. **Uzun şıklar.** Beş uzun şık telefonda kaydırma gerektirir. Prompt'ta şık
    uzunluğu sınırı (kısa isim/ifade) ve arayüzde kaydırılabilir liste.
+
+## 13. Codex incelemesinin kapattığı sekiz açık (PR #29)
+
+Kayda geçiyor, çünkü ikisi bu belgede *doğru* diye yazılmış bir kararın
+uygulamada yanlış çıkan hâliydi.
+
+**Birinci tur**
+
+1. **(P1) Düzenleyicide cevap ile cevap anahtarı ayrışıyordu.** Doğru şıkkı
+   taşıyıp "Cevap"a dokunmayınca kart eski cevapta kalıyordu. Çözüm iki alanı
+   senkron tutmak değil, ikincisini kaldırmak oldu: beş şıklı kartta `back`
+   **türetiliyor**.
+2. **(P2) Cevap eşitliği aksan katlıyordu.** `optionKey` diyakritik katladığı
+   için "Şok"/"sok" eşit sayılıyor ve yeniden yazma tam gerektiği yerde
+   atlanıyordu. Ayrı bir `answerKey` eklendi — iki soru gerçekten farklı.
+3. **(P2) Sunucu ile cihaz normalizasyonu ayrışıyordu** (noktalama).
+4. **(P2) Geri alma FSRS kısıtını düşürüyordu:** yanlış cevaplanan kart geri
+   alınınca dört puan birden açılıyordu.
+5. **(P2) İşçi satırdaki eski modu yeniden kırpmıyordu** — dağıtımın tavanı
+   düşürülse bile eski iş beş şıklı kart ürettirebiliyordu (`stricterMode`).
+
+**İkinci tur** (üçü de birinci turun düzeltmelerinin açtığı yeni yollar)
+
+6. **(P2) "Şıkları kaldır" son seçimi yutuyordu:** işaret A'dan B'ye taşınıp
+   şıklar kaldırılınca cevap A olarak kaydediliyordu.
+7. **(P2) İki diyakritik tablosu hâlâ aynı değildi:** cihaz `â î û` katlıyordu,
+   sunucunun tablosu katlamıyor. Sunucununki kritik-token motoruyla paylaşılıp
+   `normalize.py`'ye kilitli olduğu için **cihaz ona uyduruldu**; iki taraf
+   artık aynı çiftlerle test ediliyor, biri kayarsa iki test birlikte kırılıyor.
+8. **(P2) Geri alma, düzenlenmiş kartta eski indeksi uyguluyordu.** Snapshot
+   artık şık listesinin parmak izini de taşıyor; liste değiştiyse kart
+   cevaplanmamış olarak sunuluyor.
+
+Ortak ders: **aynı soruyu iki yerde cevaplayan her kod çifti kayar.** Bu fazda
+üç kez oldu (kart tipi enum'u, şık karşılaştırma anahtarı, cevap/anahtar
+eşitliği) ve üçünde de çözüm aynı desendi — tek kaynak, ya da iki tarafı
+birlikte kıran bir test.

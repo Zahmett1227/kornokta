@@ -1,7 +1,10 @@
 # Faz 5 — Sertleştirme ve iPhone hazırlığı
 
-> **Güncelleme (2026-08-07):** Aşağıdaki kabul listesi hâlâ açık (6–10 hiç
-> koşulmadı), ama **Faz 6'dan sonra bir kısmının içeriği değişti**: onay ekranı
+> **Güncelleme (2026-08-07, akşam):** Kullanıcı listeyi kendi iPhone'unda
+> koştu ve **sorun çıkmadı** — Faz 5 kabulü kapandı. Aşağısı hangi maddelerin
+> neden değiştiğini ve geçmiş bulguları anlatan tarihsel kayıt olarak duruyor.
+>
+> **Faz 6'dan sonra bir kısmının içeriği değişmişti:** onay ekranı
 > ve bulut OCR ana akıştan çıktı, kart üretimi asenkron bir iş kuyruğuna taşındı,
 > kartlarda per-kart kaynak alıntısı yok. Cihazda koşulacak **güncel** liste
 > `ios/README.md` → "Cihazda elle kontrol listesi (Faz 6 kabulü)" ve `CLAUDE.md`

@@ -1,6 +1,6 @@
 # Plan — galeriden fotoğraf ekleme
 
-**Durum:** ✅ tamam — G1–G3 uygulandı ve **G4 gerçek iPhone'da doğrulandı**
+**Durum:** ✅ tamam — `main`'de (PR #28), G4 **gerçek iPhone'da doğrulandı**
 (kullanıcı, 2026-08-07) ·
 **Tarih:** 2026-08-07 · **Büyüklük:** küçük (bir oturum) ·
 **Dayanak:** ANA-PLAN §8.1 (yakalama), §21.2 (bir çekim kaybolmaz), §24.6

@@ -11,13 +11,17 @@
 ## Güncel ana akış (Faz 6 + ADR-006)
 
 ```text
-kamera → yerel düzeltme + JPEG → dHash ile yinelenen sayfa sorusu → diske yaz
+kamera ─┐
+galeri ─┴→ yerel düzeltme + JPEG (galeride: yön + format normalize)
+        → dHash ile yinelenen sayfa sorusu → diske yaz
   → ProcessingQueue (3'lü paralel, ekran kilidi + arka plan assertion)
   → POST /api/jobs  ─ sayfa Supabase Storage'a yazılır, satır 'queued', 202 döner
                      ─ üretim yanıttan SONRA waitUntil altında sürer:
                        claim → OpenAI vision (Structured Outputs) → sonuç satıra yazılır
   → GET /api/jobs?ids=  (telefon yoklar; unutulmuş işi başlatır, ölü işi geri alır)
   → kartlar onaysız .active → SwiftData → FSRS-6 tekrarı
+     (kartın bir kısmı beş şıklı olabilir; şüpheli olanlar bloklanmaz,
+      "Gözden geçir" listesinde işaretlenir)
 ```
 
 Üç şey bu akışın omurgası:
@@ -30,16 +34,26 @@ kamera → yerel düzeltme + JPEG → dHash ile yinelenen sayfa sorusu → diske
 - **Telefon Supabase'i hiç görmez.** `jobs` tablosu ve `page-uploads` kovasında
   RLS açık, policy yok; yalnız Vercel'deki `service_role` anahtarı geçer.
 
+Beş şıklı (TUS tipi) kart (§13.3) bu akışın içinde yaşar: sözleşme
+(`options`/`correctOption`) şema v2.1'de, yapısal kontrol
+`providers/multipleChoice.ts`'te, cihaz tarafı kuralları
+`CizgiCore/Models/MultipleChoice.swift`'te. **Şık karşılaştırma anahtarı iki
+yerde tanımlı** (sunucu `optionKey`, cihaz `comparisonKey`) ve ikisi aynı
+çiftlerle test edilir — anti-drift disiplininin bu fazdaki örneği.
+
 Karar kayıtları: [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md) (pivot),
 [`ADR-006`](ADR-006-supabase-is-kuyrugu.md) (iş kuyruğu),
 [`FAZ6-PLAN`](FAZ6-PLAN.md) (dosya bazlı plan ve durum),
-[`COKLU-FOTO-TIMEOUT`](COKLU-FOTO-TIMEOUT.md) (zaman aşımının teşhisi).
+[`COKLU-FOTO-TIMEOUT`](COKLU-FOTO-TIMEOUT.md) (zaman aşımının teşhisi),
+[`PLAN-galeriden-foto`](PLAN-galeriden-foto.md) (galeri içe aktarma ve HEIC
+tuzağı), [`FAZ7-PLAN-coktan-secmeli`](FAZ7-PLAN-coktan-secmeli.md) (beş şıklı
+kart).
 
 ## Bileşenler
 
 - **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, gerçek kart üretimi istemcisi (Faz 3), gerçek FSRS-6 tekrarı (Faz 4). Faz 1'de başladı, Faz 2-4'te tamamlandı; hepsi bir Mac'te `swift test` ile doğrulandı.
 - **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar, OpenAI vision ile kart üretir ve bunu asenkron bir iş kuyruğu üzerinden yürütür (`/api/jobs`). Google Document AI/uzlaştırma yolu (`/api/ocr`) kodda duruyor ama ana akışta çağrılmıyor. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır — Supabase yalnız bir **iş kuyruğu ve geçici görüntü kovasıdır**, işi biten sayfanın görüntüsü silinir.
-- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları, FSRS-6 referans algoritması (Faz 4). Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (503 Python testi).
+- **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları, FSRS-6 referans algoritması (Faz 4). Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (517 Python testi). Kart tipi enum'unun üç dilde aynı kalmasını da bu paket kontrol ediyor (`test_ts_contract_sync.py`, `test_swift_contract_sync.py`).
 
 ## Apple Vision yalnız önizleme ve geometri için — metin için değil
 
@@ -100,6 +114,13 @@ var. İkisinin ayrışmaması için:
 - Davranış, Python'dan üretilen paylaşılan vaka dosyalarıyla (`evals/shared/*.json`) her iki dilde de sabitleniyor.
 - Eşikler (`evals/spikes/marker_detection/config.json`) byte-birebir aynı kopya olarak `ios/CizgiCore/Sources/CizgiCore/Resources/`'a taşınıyor; bir Python testi ayrışırsa kırılıyor.
 - Her üretici `--check` modunda çalışıp CI'da doğrulanıyor.
+- Kart tipi enum'u üç yerde (`llm_output.schema.json`, `llmOutputTypes.ts`,
+  `Enums.swift`) ve eşitliği iki Python testiyle bağlı.
+- Şık karşılaştırma anahtarı iki dilde (`optionKey` / `comparisonKey`);
+  üretilemeyecek kadar küçük olduğu için **aynı çiftlerle** test ediliyor, yani
+  biri kayarsa iki test dosyası birlikte kırılıyor. Bu çift PR #29'da iki kez
+  ayrıştı (noktalama, sonra circumflex) — küçük bir tablonun bile elle senkron
+  tutulamadığının kaydı.
 
 ## Kanonik sözleşmeler
 
