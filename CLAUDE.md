@@ -138,10 +138,10 @@ yorumları **İngilizce**.
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
 | Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod tamam, ama **Faz 6'da ana akıştan çıktı** (kod geri dönüş için diskte, çağrılmıyor). Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı kararıyla atlanmıştı — `docs/FAZ2-PLAN.md`. |
-| Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Kalan: gerçek maliyet rakamları (§7). |
+| Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Gerçek maliyet rakamları girildi (2026-08-07, aşağıya bak). |
 | Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 (`evals/fsrs/` Python referansı + Swift portu), `ReviewScheduling` seam'i üzerinden bağlı. Bildirimler, günlük yeni kart limiti ve süre bütçeli hızlı oturum 2026-08-06/07'de **gerçek anlamlarına kavuştu** (PR #27). Ayrıntı: `docs/FAZ4-PLAN.md`. |
 | Faz 5 — Sertleştirme | ✅ Kod tamam; **kullanıcı 2026-08-07'de kabul listesini kendi iPhone'unda koştu ve sorun çıkmadı.** Süreçte bulunan hatalar (`docs/FAZ5-DURUM.md`) daha önce düzeltilmişti. |
-| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"), gerçek maliyet USD rakamları. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"). Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
 | Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
 | Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
 
@@ -395,6 +395,14 @@ Supabase tarafında `jobs` tablosu + `page-uploads` özel kovası var; ikisinde 
 RLS açık ve **policy yok** (yalnız `service_role` geçer). Proje kimliği ve
 anahtar yalnız Vercel env'inde durur, repoda değil.
 
+**Maliyet rakamları (2026-08-07):** `OPENAI_USD_PER_MILLION_INPUT_TOKENS=5`,
+`OPENAI_USD_PER_MILLION_OUTPUT_TOKENS=30` (OpenAI'nin pricing sayfasından,
+`gpt-5.6-sol`, Standard/short-context satırı — istekte `service_tier`
+gönderilmiyor ve tek sayfa fotoğrafı long-context eşiğinin çok altında, bu
+yüzden diğer sütunlar geçerli değil) ve `MAX_USD_PER_CARD_GENERATION=0.30`
+kullanıcı tarafından Vercel'e girildi ve redeploy edildi — Ayarlar → Kullanım
+artık gerçek USD gösteriyor. §0.6'nın "kalan iş" listesindeki bu madde kapandı.
+
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
 PostgREST `insert`'i reddeder ve **her çekim patlar**. Şu ana kadarki iki
@@ -555,22 +563,19 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 
 ### 2. Küçük ve gerçek kalanlar
 
-1. **Gerçek maliyet rakamları.** `OPENAI_USD_PER_MILLION_*` hâlâ 0. Ayarlar →
-   Kullanım bunu gösterdiği için doldurmanın görünür değeri var; §0.6 gereği
-   rakam **sağlayıcının kendi fiyatlandırma sayfasından** gelmeli, uydurulmaz.
-2. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
+1. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
    başarılı çağrılar kaydediliyor (`docs/FAZ3-PLAN.md`, F3-8).
-3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
+2. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
    anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı".
 
 ### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
 
-4. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
+3. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
    ayraç/başlık boşluğu (`MAX_COLUMN_ITEM_WIDTH`). Faz 6 ana akışı OCR yapmadığı
    için pratikte ölü kod.
-5. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
+4. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
    için hâlâ tüm kelimeyi kıyaslıyor (ADR-003 "Açık kalan").
-6. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
+5. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
    tek sentetik grup ürettiği için tetiklenmiyor, ama kod duruyor.
 
 ### Aday sonraki özellikler
