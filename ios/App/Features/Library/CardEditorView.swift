@@ -190,7 +190,15 @@ struct CardEditorView: View {
                 .padding(.vertical, 2)
             }
 
-            Button("Şıkları kaldır", role: .destructive) { options = [] }
+            Button("Şıkları kaldır", role: .destructive) {
+                // The derived answer is written down *before* the options go,
+                // or it goes with them: after moving the tick from A to B and
+                // then removing the options, `effectiveBack` would fall back to
+                // the stale `back` (A) and save it as the card's answer — the
+                // user's last choice lost without a word (Codex, PR #29).
+                back = effectiveBack
+                options = []
+            }
         } header: {
             header("Şıklar")
         } footer: {

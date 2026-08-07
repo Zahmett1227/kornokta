@@ -179,4 +179,20 @@ describe("optionKey", () => {
     expect(optionKey("hipokalemi")).not.toBe(optionKey("hiperkalemi"));
     expect(optionKey("hiponatremi")).not.toBe(optionKey("hipokalemi"));
   });
+
+  /// Pinned against the device's `MultipleChoice.comparisonKey`, whose test
+  /// (`ios/CizgiCore/Tests/.../MultipleChoiceTests.swift`,
+  /// `testFoldsExactlyWhatTheServerFolds`) asserts these exact pairs. The two
+  /// keys decide the same question — "is this the same option?" — on either
+  /// side of one HTTP call, and a card that passes here and fails there loses
+  /// its options in silence (Codex, PR #29).
+  it("folds exactly what the device folds — no more", () => {
+    expect(optionKey("ÇÖĞÜŞI")).toBe(optionKey("cogusi"));
+
+    // Not folded on either side: the circumflex vowels are not in the shared
+    // table, and punctuation is meaningful.
+    expect(optionKey("hâlâ")).not.toBe(optionKey("hala"));
+    expect(optionKey("HER2+")).not.toBe(optionKey("HER2"));
+    expect(optionKey("A-B")).not.toBe(optionKey("A B"));
+  });
 });

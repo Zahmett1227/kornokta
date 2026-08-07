@@ -143,24 +143,35 @@ public enum MultipleChoice {
     /// "did the model write the same distractor twice?"
     ///
     /// **Must stay identical to `optionKey` in `backend/providers/multipleChoice.ts`.**
-    /// It briefly was not: this side also split on punctuation, so `HER2+` and
-    /// `HER2` were duplicates here and distinct there — a card the server had
-    /// passed arrived and lost its options, ending up a five-option card with
-    /// nothing to choose from (Codex, PR #29). Punctuation is now kept on both
-    /// sides, because `A-B` and `A B` can genuinely be different answers.
+    /// Two rounds of Codex review were spent on exactly this drift (PR #29):
+    /// first this side also split on punctuation, then this side folded the
+    /// circumflex vowels `â î û` that the server's table does not. Either way
+    /// the symptom was the same and quiet: a card the server had passed lost
+    /// its options on arrival and turned into a plain one.
+    ///
+    /// The server's table is the one that moves last — it is shared with the
+    /// critical-token engine and pinned to `evals/ocr_eval/normalize.py` — so
+    /// this side matches it, letter for letter:
+    /// `ı ş ğ ç ö ü` fold, `İ`→`i`, `I`→`ı`→`i`, and **nothing else does**.
     static func comparisonKey(_ text: String) -> String {
         var folded = ""
         folded.reserveCapacity(text.count)
         for character in text {
             switch character {
-            case "İ", "I", "ı", "i", "Î", "î": folded.append("i")
+            // `İ` and `I` first: Turkish lowercasing, which is what the server
+            // does before folding. Everything after is the server's own map.
+            case "İ", "I", "ı", "i": folded.append("i")
             case "Ç", "ç": folded.append("c")
             case "Ğ", "ğ": folded.append("g")
             case "Ş", "ş": folded.append("s")
             case "Ö", "ö": folded.append("o")
-            case "Ü", "ü", "Û", "û": folded.append("u")
-            case "Â", "â": folded.append("a")
-            default: folded.append(contentsOf: character.lowercased())
+            case "Ü", "ü": folded.append("u")
+            default:
+                // Length-preserving, like the server's `turkishLower`: a
+                // character whose lowercase expands into several keeps its
+                // original form on both sides rather than diverging here.
+                let lowered = character.lowercased()
+                folded.append(contentsOf: lowered.count == 1 ? lowered : String(character))
             }
         }
         // Whitespace only — see the note above on staying identical to the

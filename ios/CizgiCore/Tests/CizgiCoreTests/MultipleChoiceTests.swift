@@ -81,6 +81,27 @@ final class MultipleChoiceValidationTests: XCTestCase {
         )
     }
 
+    /// The device folds exactly what the server folds — no more.
+    ///
+    /// These pairs are the same list as `optionKey`'s test in
+    /// `backend/tests/multipleChoice.test.ts`; if one side moves, the two test
+    /// files disagree and one of them fails. Circumflex vowels are the second
+    /// drift Codex caught (PR #29): this side folded `â î û`, the server's
+    /// table does not, so `hâlâ`/`hala` were duplicates here and distinct
+    /// there.
+    func testFoldsExactlyWhatTheServerFolds() {
+        // Folded on both sides.
+        XCTAssertEqual(MultipleChoice.comparisonKey("İskemi"), MultipleChoice.comparisonKey("iskemi"))
+        XCTAssertEqual(MultipleChoice.comparisonKey("ŞOK"), MultipleChoice.comparisonKey("sok"))
+        XCTAssertEqual(MultipleChoice.comparisonKey("Sağ  ventrikül"), MultipleChoice.comparisonKey("sag ventrikul"))
+        XCTAssertEqual(MultipleChoice.comparisonKey("ÇÖĞÜŞI"), MultipleChoice.comparisonKey("cogusi"))
+
+        // Folded on neither side.
+        XCTAssertNotEqual(MultipleChoice.comparisonKey("hâlâ"), MultipleChoice.comparisonKey("hala"))
+        XCTAssertNotEqual(MultipleChoice.comparisonKey("HER2+"), MultipleChoice.comparisonKey("HER2"))
+        XCTAssertNotEqual(MultipleChoice.comparisonKey("A-B"), MultipleChoice.comparisonKey("A B"))
+    }
+
     func testGenuinelyDifferentOptionsAreNotCalledDuplicates() {
         XCTAssertEqual(
             MultipleChoice.validate(

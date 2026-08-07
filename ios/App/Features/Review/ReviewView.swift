@@ -552,6 +552,15 @@ struct ReviewView: View {
         /// quietly breaking the wrong-option-is-always-`again` rule this screen
         /// exists to enforce (Codex, PR #29).
         let selectedOption: Int?
+        /// The card's option list as it stood when the grade was given.
+        ///
+        /// An index means nothing on its own: the user can leave for Bilgilerim
+        /// mid-session, reword the options, move the tick or remove them
+        /// entirely, and come back. Replaying the old index against a new list
+        /// would mark an option nobody chose — and, if it now happens to be the
+        /// correct one, hand back the grades a wrong answer is not allowed
+        /// (Codex, PR #29, second round).
+        let optionsFingerprint: String?
     }
 
     private func grade(_ card: Card, _ rating: ReviewRating) {
@@ -647,7 +656,8 @@ struct ReviewView: View {
                 lastReviewedAt: snapshotFields.lastReviewedAt,
                 updatedAt: snapshotFields.updatedAt,
                 countedAsNew: wasNew,
-                selectedOption: pickedOption
+                selectedOption: pickedOption,
+                optionsFingerprint: card.optionsRaw
             )
         }
 
@@ -709,12 +719,24 @@ struct ReviewView: View {
         working.rewind(snapshot.step)
         session = working
         lastGrade = nil
-        // The answer was on screen when they graded; putting it back hidden
-        // would make them recall a card they have just seen the answer to.
-        isAnswerVisible = true
-        // Restored, not cleared: the grade buttons on a five-option card depend
-        // on what was picked, and dropping it would hand back all four.
-        selectedOption = snapshot.selectedOption
+        if snapshot.optionsFingerprint == card.optionsRaw {
+            // The answer was on screen when they graded; putting it back hidden
+            // would make them recall a card they have just seen the answer to.
+            isAnswerVisible = true
+            // Restored, not cleared: the grade buttons on a five-option card
+            // depend on what was picked, and dropping it would hand back all
+            // four.
+            selectedOption = snapshot.selectedOption
+        } else {
+            // The options changed under the session, so there is no honest way
+            // to show the old answer: the stored index points into a list that
+            // no longer exists. The card is presented unanswered — which for a
+            // five-option card means picking again, and for a plain one means
+            // "Cevabı göster". The scheduling state is still rolled back; only
+            // the display cannot be reconstructed.
+            isAnswerVisible = false
+            selectedOption = nil
+        }
         shownAt = .now
     }
 }
