@@ -2,19 +2,43 @@
 
 > Ayrıntılar için ana kaynak: [ANA-PLAN](../Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md) §7 (teknik mimari), §16 (veri modeli), §17 (iş kuyruğu ve durum makinesi).
 
-> **⚠️ Faz 6 / B (2026-08-05):** Aşağıda anlatılan deterministik işlem hattı
-> (Apple Vision + cihaz-üstü işaret tespiti + Google Document AI + uzlaştırma +
-> grounding + fotoğraf-üstü onay) **ana akış olmaktan çıkarılıyor.** Yeni ana
-> akış tek bir vision çağrısıdır: *işaretli tam sayfa fotoğrafı → OpenAI vision
-> modeli işaretleri okur + zenginleştirilmiş kartları üretir → kartlar onaysız
-> desteye girer → FSRS*. Aşağıdaki bölümler Faz 6 öncesi (süperseded) mimariyi
-> anlatır; ilgili kod repoda kalır ama ana akışta çağrılmaz. Güncel yön:
-> [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md), [`FAZ6-PLAN`](FAZ6-PLAN.md).
+> **⚠️ Faz 6 (2026-08-05'te karar, 2026-08-07'de kod tamam):** "Deterministik
+> işlem hattı" başlığından itibaren anlatılanlar (Apple Vision + cihaz-üstü
+> işaret tespiti + Google Document AI + uzlaştırma + grounding + fotoğraf-üstü
+> onay) **ana akış olmaktan çıktı.** İlgili kod repoda duruyor ama çağrılmıyor
+> (geri dönüş için, ADR-005). Güncel akış hemen aşağıda.
+
+## Güncel ana akış (Faz 6 + ADR-006)
+
+```text
+kamera → yerel düzeltme + JPEG → dHash ile yinelenen sayfa sorusu → diske yaz
+  → ProcessingQueue (3'lü paralel, ekran kilidi + arka plan assertion)
+  → POST /api/jobs  ─ sayfa Supabase Storage'a yazılır, satır 'queued', 202 döner
+                     ─ üretim yanıttan SONRA waitUntil altında sürer:
+                       claim → OpenAI vision (Structured Outputs) → sonuç satıra yazılır
+  → GET /api/jobs?ids=  (telefon yoklar; unutulmuş işi başlatır, ölü işi geri alır)
+  → kartlar onaysız .active → SwiftData → FSRS-6 tekrarı
+```
+
+Üç şey bu akışın omurgası:
+
+- **İş kimliği = sayfa kimliği.** Uygulama beklerken öldürülse bile bir sonraki
+  açılış biten işi bulup alır; aynı sayfa iki kez üretilmez, ikinci ücret yok.
+- **Her durum değişikliği koşullu.** `claim`/`complete`/`fail`/`expire` PostgREST
+  filtreleriyle (`?status=eq.queued` gibi) yazılır; kaybeden yazma 0 satır
+  günceller ve kendi yüklemesini temizler. Kural `JobStoreLike`'ın başında.
+- **Telefon Supabase'i hiç görmez.** `jobs` tablosu ve `page-uploads` kovasında
+  RLS açık, policy yok; yalnız Vercel'deki `service_role` anahtarı geçer.
+
+Karar kayıtları: [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md) (pivot),
+[`ADR-006`](ADR-006-supabase-is-kuyrugu.md) (iş kuyruğu),
+[`FAZ6-PLAN`](FAZ6-PLAN.md) (dosya bazlı plan ve durum),
+[`COKLU-FOTO-TIMEOUT`](COKLU-FOTO-TIMEOUT.md) (zaman aşımının teşhisi).
 
 ## Bileşenler
 
 - **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData, Vision/VisionKit, Core Image. Yakalama, yerel OCR önizleme (satır kutuları için — metin için değil, bkz. aşağı), cihaz üstü işaret tespiti, kuyruk, gerçek kart üretimi istemcisi (Faz 3), gerçek FSRS-6 tekrarı (Faz 4). Faz 1'de başladı, Faz 2-4'te tamamlandı; hepsi bir Mac'te `swift test` ile doğrulandı.
-- **Backend** (`backend/`): Vercel Functions. Google kimlik bilgisini saklar, Document AI çağrısını yapar, iki motorun okumasını uzlaştırır, kritik token karşılaştırması yapar, OpenAI/Gemini ile kart üretir (Faz 3). Dağıtık ve uçtan uca doğrulandı. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır.
+- **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar, OpenAI vision ile kart üretir ve bunu asenkron bir iş kuyruğu üzerinden yürütür (`/api/jobs`). Google Document AI/uzlaştırma yolu (`/api/ocr`) kodda duruyor ama ana akışta çağrılmıyor. Kalıcı veri kaynağı değildir; ana veri iPhone'daki SwiftData'dadır — Supabase yalnız bir **iş kuyruğu ve geçici görüntü kovasıdır**, işi biten sayfanın görüntüsü silinir.
 - **Evals** (`evals/`): Altın test seti, OCR/işaret metrikleri, model karşılaştırma araçları, FSRS-6 referans algoritması (Faz 4). Faz 0'da kuruldu; sonraki fazlarda regresyon kapısı olarak kalıyor (503 Python testi).
 
 ## Apple Vision yalnız önizleme ve geometri için — metin için değil

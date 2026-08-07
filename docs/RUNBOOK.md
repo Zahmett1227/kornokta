@@ -1,15 +1,15 @@
 # Runbook
 
-Güncel durum: Faz 0/1/2 tamam (Faz 2 çıkış kapısı hariç, bkz.
-`docs/FAZ2-PLAN.md`). Üç ayrı test paketi var — Python (eval araçları),
-Swift (iOS mantığı), TypeScript (backend).
+Güncel durum (2026-08-07): Faz 0–6 kod olarak tamam; kalan iş gerçek cihaz
+doğrulaması (`CLAUDE.md` → "Sıradaki iş"). Üç ayrı test paketi var — Python
+(eval araçları), Swift (iOS mantığı), TypeScript (backend).
 
 ## Python — eval araçları
 
 ```bash
 pip install -r evals/requirements.txt
 
-python -m pytest evals -q                                        # 503 test
+python -m pytest evals -q                                        # 513 test
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json --check-files
 python -m evals.spikes.marker_detection.run --demo                # sentetik demo, ağ gerekmez
 ```
@@ -25,11 +25,21 @@ python -m evals.ocr_eval.vision_report evals/reports/google.json --verbose
 
 ```bash
 cd ios/CizgiCore
-swift test                                                        # 136 test, hepsi Mac'te doğrulandı (2026-08-03)
+swift test                                                        # yalnız bir Mac'te
 ```
 
+Paket **Linux'ta derlenmez** (CoreGraphics, SwiftData). Foundation'a bağlı yeni
+mantık, bir Swift araç zinciri kurup yalnız o dosyaları içeren izole bir pakette
+gerçekten koşturulabilir — PR #27'nin 63 testi böyle doğrulandı. SwiftUI
+dosyaları için elde yalnız `swiftc -parse` var; o **sözdizimi** kontrolüdür,
+tip/aşırı-yükleme hatasını yakalamaz.
+
 Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir
-(`ios/README.md`).
+(`ios/README.md`). `ios/App` altına dosya eklendiyse önce:
+
+```bash
+cd ios && xcodegen generate                                       # yoksa Xcode dosyayı hedefe almaz
+```
 
 ## Backend — TypeScript
 
@@ -37,7 +47,7 @@ Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir
 cd backend
 npm install
 npm run typecheck
-npm test                                                          # 419 test
+npm test                                                          # 476 test
 ```
 
 Yerel sunucu (yalnız 127.0.0.1, dışarıya açılmaz):
@@ -75,7 +85,9 @@ altında: [`backend/README.md`](../backend/README.md).
 Kısaca:
 1. Root Directory = `backend`
 2. Environment Variables: `.env.example`'daki listeyle aynı, artı
-   `GOOGLE_CREDENTIALS_JSON`
+   `GOOGLE_CREDENTIALS_JSON`. **İş kuyruğu için şart:** `SUPABASE_URL` ve
+   `SUPABASE_SERVICE_ROLE_KEY` (ADR-006). İkincisi RLS'i tamamen atlar — repoya
+   girmez, yalnız yerel `.env` ve Vercel proje ayarları.
 3. Production Branch ayarının doğru dala işaret ettiğinden emin ol —
    yanlışsa dağıtım "Ready" görünür ama alan adı eski sürümü servis eder.
 4. Doğrula:
@@ -83,6 +95,7 @@ Kısaca:
    curl https://<proje>.vercel.app/health          # {"ok":true}
    curl https://<proje>.vercel.app/api/ocr         # 405, "Yalnızca POST."
    curl -X POST https://<proje>.vercel.app/api/ocr # 401, "Yetkisiz."
+   curl https://<proje>.vercel.app/api/jobs        # 401 (yoklama da token ister)
    ```
 
 ## Sorun giderme

@@ -1,5 +1,12 @@
 # Faz 5 — Sertleştirme ve iPhone hazırlığı
 
+> **Güncelleme (2026-08-07):** Aşağıdaki kabul listesi hâlâ açık (6–10 hiç
+> koşulmadı), ama **Faz 6'dan sonra bir kısmının içeriği değişti**: onay ekranı
+> ve bulut OCR ana akıştan çıktı, kart üretimi asenkron bir iş kuyruğuna taşındı,
+> kartlarda per-kart kaynak alıntısı yok. Cihazda koşulacak **güncel** liste
+> `ios/README.md` → "Cihazda elle kontrol listesi (Faz 6 kabulü)" ve `CLAUDE.md`
+> → "Sıradaki iş" §1'dedir. Aşağısı tarihsel kayıt olarak duruyor.
+
 **Durum (2026-08-03):** Kod tarafı tamamlandı; fazın son kabulü gerçek iPhone
 üzerindeki aşağıdaki kontrol listesine bağlıdır. Linux ortamında Xcode, kamera,
 Keychain ve bildirim izni doğrulanamaz. **Aynı gün kullanıcı bu testi kendi

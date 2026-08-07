@@ -1,9 +1,11 @@
 # Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B)
 
-**Durum:** B1 (backend) uygulandı ve testlerle doğrulandı; B2'nin test
-edilebilir katmanı (iOS `BackendCardProvider`) uygulandı. Derin B2 (pipeline/
-kuyruk/arayüz sadeleştirmesi) henüz yapılmadı. Ayrıntı §9 tablosunda.
-Çalışma dalı: `faz6-vision`.
+**Durum (2026-08-07): kod tarafı tamam ve `main`'de** (PR #15–#27). B1, B2, B3,
+UI ve B4 bitti; üstüne planda olmayan iki iş geldi: çoklu fotoğraf zaman
+aşımının kökten çözümü (asenkron iş kuyruğu, ADR-006) ve PR #27'nin "vaat
+edilip tutulmamış" onarımları. **Kalan tek gerçek kapı §11 kabul kriterleri =
+gerçek cihaz doğrulaması**; ayrıca bilerek ertelenen `Models` alan sadeleşmesi
++ SwiftData göçü. Ayrıntı §9 tablosunda.
 
 **Karar kaydı:** [`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`](ADR-005-kisisel-vision-yeniden-tasarim.md)
 — bu fazın *neden* yapıldığı ve hangi ANA-PLAN ilkelerini gevşettiği orada.
@@ -245,10 +247,12 @@ Tek kullanıcı için önemsiz ama kaydedilmeli (§0.6, §20.3 — uydurma rakam
 |---|---|---|
 | **B0** | Bu belge + ADR-005 + roadmap güncellemesi | ✅ Önceki oturum |
 | **B1** | Backend: yeni prompt (v2.0), `/api/cards-vision`, `cleanText` kaldır, `cardGate` sadeleştir (auto_accept), şema v2, testler | ✅ **Uygulandı** (2026-08-05). Backend 425 test + Python 513 test yeşil; `tsc` temiz. Bkz. "Uygulama notu" altta. |
-| **B2** | iOS: yakalama → tam sayfa gönder → kartları `.active` kaydet; tespit/gruplama/onay adımlarını akıştan çıkar; kuyruk sadeleştir | 🟡 **Büyük kısmı yapıldı (CizgiCore).** `BackendCardProvider` → `/api/cards-vision`, v2 çözümleme, kartlar `.active`. **`CapturePipeline.run()` vision akışına çevrildi**: tam sayfa → `/api/cards-vision` → tek sentetik tam-sayfa grupla `.ready`; yerel OCR/işaret-tespiti/gruplama/onay ana akıştan çıktı (OCR-era parametreler imzada duruyor ama yok sayılıyor). OCR-akış pipeline testleri §8 gereği arşivlendi; korunan birim testleri yeşil. `swift build` + `swift test` **185 yeşil**. **Kalan (App hedefi, bu ortamda derlenemez, gerçek cihaz gerekir):** `ConfirmationView`'ı navigasyondan çıkar, `ProcessingQueue.persist`'te tam-sayfa crop'u atla, `needsReview`/`confirmationRequired` arayüz bölümlerini kaldır, `Models` alan sadeleşmesi + SwiftData göçü. |
-| **B3** | Gerçek sayfalarla prompt kalite döngüsü (işaret odağı + el yazısı okuma) | 🟡 **İterasyon sürüyor.** v2.1 → **v2.2** (ilk cihaz testi bulgusu): model tüm basılı sayfayı `readText`'e transkribe edip en temel olgulardan kart üretiyordu, el yazısı kenar notlarını atlıyordu. İki kök neden + düzeltme: **(P1)** `input_image`'a `detail:"high"` eklendi (yoksa API sayfayı düşük çözünürlükte karolar, ince el yazısı/fosforlu kaybolur) → `OPENAI_IMAGE_DETAIL` config. `reasoning` → `low` (medium/high çağrıyı yavaşlatıp zaman aşımına sokuyordu). **Kart kapsamı:** limit 4→12 (yoğun işaretli sayfada tüm işaretler kart olsun), `OPENAI_MAX_OUTPUT_TOKENS` 4096→8192, prompt v2.3 (sayfanın tamamını kapsa; el yazısı/daire/yıldız önce, temel olgular sona). **Zaman aşımı kökten çözüldü:** senkron vision çağrısı 1-2 dk sürebiliyor; `vercel.json maxDuration` 60→**300** (plan destekliyor), `OPENAI_TIMEOUT_MS`→290000, iOS `BackendConfiguration.timeout` 90→300 + kart provider'ına uzun-timeout'lu özel `URLSession` (`.shared`'ın 60s istek-timeout'u sınırlamasın). iOS değişiklikleri **rebuild** ister. **(P2)** prompt v2.2: önce işaretleri bul, `readText`'e YALNIZ işaretli/el yazısı içeriği yaz (tüm sayfayı değil), işaretsizden kart üretme, okunabilen her el yazısı ≥1 kart. Backend 426 test yeşil. Backend-only — yeniden çekerek test edilir. |
+| **B2** | iOS: yakalama → tam sayfa gönder → kartları `.active` kaydet; tespit/gruplama/onay adımlarını akıştan çıkar; kuyruk sadeleştir | ✅ **Yapıldı.** `BackendCardProvider` v2 çözümlüyor ve kartları `.active` üretiyor; `CapturePipeline.run()` vision akışında (tam sayfa → tek sentetik tam-sayfa grupla `.ready`); yerel OCR/işaret-tespiti/gruplama/onay ana akıştan çıktı (OCR-era parametreler imzada duruyor ama yok sayılıyor). OCR-akış pipeline testleri §8 gereği arşivlendi. App hedefi: `ConfirmationView` navigasyondan çıktı, `persist`'te tam-sayfa crop atlandı, `needsReview` bölümleri kaldırıldı — hepsi bir Mac'te derlendi. **Kalan tek madde:** `Models` alan sadeleşmesi + SwiftData göçü — bilerek ertelendi (§10.4 "mevcut kartlar korunmalı", cihazsız doğrulanamaz, kullanıcıya görünür değeri yok). |
+| **B3** | Gerçek sayfalarla prompt kalite döngüsü (işaret odağı + el yazısı okuma) | ✅ **v2.3'te oturdu.** İlk cihaz testinde model tüm basılı sayfayı `readText`'e transkribe edip en temel olgulardan kart üretiyor, el yazısı kenar notlarını atlıyordu. **(P1)** `input_image`'a `detail:"high"` (yoksa API sayfayı düşük çözünürlükte karolar, ince el yazısı/fosforlu kaybolur) → `OPENAI_IMAGE_DETAIL` config; `reasoning` → `low` (medium/high çağrıyı yavaşlatıp zaman aşımına sokuyordu). **(P2)** prompt: önce işaretleri bul, `readText`'e YALNIZ işaretli/el yazısı içeriği yaz, işaretsizden kart üretme, okunabilen her el yazısı ≥1 kart. **Kapsam:** kart limiti 4→12, `OPENAI_MAX_OUTPUT_TOKENS` 4096→8192, prompt v2.3 (el yazısı/daire/yıldız önce, temel olgular sona). Sayfa başına kart artık istemciden de ayarlanabiliyor (`maxCardsPerPage`, sunucu kendi tavanına kırpar). Kalan iterasyon gerçek kullanımla yapılır. |
 | **UI** | Sıcak-çalışma redesign (marka uyumlu amber+lacivert) + Faz 6 App temizlikleri | ✅ **Yapıldı ve `xcodebuild` ile derlendi (BUILD SUCCEEDED).** Tasarım sistemi (`App/Theme/CizgiTheme.swift`); Yakala/Tekrar(flashcard)/Bilgilerim + Kart detay yeniden tasarlandı; sekme çubuğu amber tint; Kuyruk temalandı; `ConfirmationView` navigasyondan çıktı; boş `sourceQuote` gizlendi; `persist`'te tam-sayfa crop atlandı. |
-| **B4** | Cila: maliyet takibi, hata/çevrimdışı kuyruk, FSRS bildirimleri (Faz 4 kalanı) | ~3–5 gün |
+| **B4** | Cila: maliyet takibi, hata/çevrimdışı kuyruk, FSRS bildirimleri (Faz 4 kalanı) | ✅ **Yapıldı.** `ProcessingQueue.retry` + "Tekrar dene"; kart olan günlere tarihli, gerçek sayıyı taşıyan bildirimler (`ReviewReminderPlanner`) + rozet + dokununca Tekrar sekmesi; Ayarlar'da `ModelRun` tabanlı "Kullanım" (USD yalnız sunucuda fiyat ayarlıysa — §0.6). |
+| **Zaman aşımı** | Çoklu fotoğrafta `NSURLErrorTimedOut` | ✅ **Kökten çözüldü.** Önce tavan (`vercel.json maxDuration` 300, `OPENAI_TIMEOUT_MS` 290000, iOS timeout 300 + uzun-timeout'lu `URLSession`), sonra telefon tarafı (3'lü paralellik, ekran kilidi, arka plan assertion, otomatik retry, `waitsForConnectivity`), sonunda **asenkron iş kuyruğu** (ADR-006): `POST /api/jobs` 202 döner, üretim `waitUntil` altında sürer, telefon yoklar. Teşhis: `docs/COKLU-FOTO-TIMEOUT.md`. |
+| **#27** | Tekrar döngüsü, kart düzenleme, "Kaynağı göster", altı yarım kalmış söz | ✅ **Yapıldı.** Faz 6'nın onay adımını kaldırırken verdiği söz ("yanlış kart sonradan düzeltilir") ancak burada tutuldu: `CardEditorView` + `CardSourceView`. Ayrıca gerçek bir süre bütçeli hızlı oturum, öğrenme adımı, geri alma, gerçekten günlük yeni-kart limiti, yedekten geri yükleme, yinelenen sayfa tespiti. Ayrıntı: `CLAUDE.md`. |
 
 ### Uygulama notu — B1 + B2 test edilebilir katman (2026-08-05)
 
@@ -336,6 +340,11 @@ davranış dokümante edildi.
    telefonda doğrulanmalı.
 
 ## 11. Kabul kriterleri (B "bitti" ne demek)
+
+**Durum (2026-08-07):** son madde (testler) yeşil — backend 476 test, `tsc`
+temiz; CizgiCore'un Faz 6 mantığı bir Mac'te doğrulandı (App hedefi de derlendi).
+**Diğer dört madde gerçek cihazda hiç ölçülmedi** ve bu fazın kapanmasını
+bekleten tek şey odur. Kontrol listesi `CLAUDE.md` → "Sıradaki iş" §1'de.
 
 - İşaretli bir sayfa fotoğrafı çekildiğinde, **hiçbir onay adımı olmadan**,
   kartlar doğrudan aktif desteye giriyor.

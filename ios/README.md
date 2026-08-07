@@ -1,31 +1,30 @@
-# Çizgi — iOS (Faz 1-4 tamam, Faz 5 cihaz kabulünde)
+# Çizgi — iOS (Faz 6: vision-öncelikli, kod tamam)
 
-Faz 1 hedefi (ANA-PLAN §25) tamam: uygulama çevrimdışı fotoğraf alıp kart
-oluşturabiliyor ve tekrar edebiliyor. Faz 2 de tamam: cihaz üstü işaret
-tespiti (fosforlu/alt çizgi), bulut OCR (backend üzerinden Google Document
-AI) ve iki motorun uzlaştırması çalışıyor. Backend URL ve cihaz tokenı
-girilmemişse kart üretimi hâlâ sahte (`MockCardProvider`); girilmişse
-`BackendCardProvider` gerçek `/api/cards` çağrısı yapar (§25 Faz 3) — ikisi
-de aynı `CardGenerating` protokolünün arkasında, Ayarlar'daki tek anahtar
-ikisini de birlikte açıp kapatıyor. Tekrar motoru artık gerçek FSRS-6
-(`FSRSScheduler`, §18 Faz 4) — bundled ağırlıklar okunamazsa eski
-`PlaceholderScheduler`'a düşüyor. Faz 3/4 istemci kodu **kullanıcı tarafından
-gerçek bir Mac'te `swift test` ile doğrulandı (2026-08-03)** — bkz.
-`docs/FAZ3-PLAN.md`, `docs/FAZ4-PLAN.md`.
+Ana akış: **işaretli sayfayı çek → sayfa doğrudan bir vision modeline gider →
+kartlar onaysız aktif desteye girer → FSRS-6 ile tekrar edilir.** Onay ekranı,
+cihaz-üstü işaret tespiti ve bulut OCR ana akıştan çıktı (kod geri dönüş için
+diskte, çağrılmıyor — `docs/ADR-005-kisisel-vision-yeniden-tasarim.md`).
 
-`swift test` gerçek bir Mac'te **136/136** geçiyor (2026-08-03). Faz 1/2'nin
-114 testi daha önce (2026-08-02), Faz 3/4'ün eklediği +22 test
-(`BackendCardProviderTests.swift`, `BackendPipelineTests.swift` içindeki
-`CardGenerationRequestTests`, `FSRSSchedulerTests.swift`) şimdi doğrulandı.
-Bulunan hatalar ve düzeltmeleri `docs/FAZ2-PLAN.md`'de.
+Kart üretimi **asenkron**: telefon `POST /api/jobs` ile sayfayı bırakır ve
+saniyeler içinde 202 alır, üretim sunucuda sürer, telefon `GET /api/jobs?ids=`
+ile yoklar. İş kimliği = sayfa kimliği, yani uygulama beklerken kapansa bile
+sonuç kaybolmaz ve aynı sayfa iki kez üretilmez
+(`docs/ADR-006-supabase-is-kuyrugu.md`).
+
+Backend URL ve cihaz tokenı girilmemişse kart üretimi sahte (`MockCardProvider`)
+ve vision modunda anlamlı kart üretmez — Faz 6 yapılandırılmış bir backend
+bekler. Tekrar etmek her zaman çevrimdışı çalışır.
+
+**Yeni dosya eklendiyse `cd ios && xcodegen generate` şart** — `.xcodeproj`
+bilinçli olarak commit edilmiyor.
 
 ## Apple Vision Türkçe okumuyor — bilerek
 
 `docs/ADR-002-birincil-ocr-secimi.md`: Apple Vision Türkçe metin tanımayı
-desteklemiyor (ölçüldü — `ı ş ğ İ` sıfır kez). Bu yüzden Vision'ın metni
-hiçbir zaman karta gitmiyor; yalnız canlı önizleme ve işaret tespitinin
-çalıştığı satır geometrisi için kullanılıyor. Gerçek metin backend
-üzerinden Google Document AI'dan geliyor (`CizgiCore/Backend/BackendClient.swift`).
+desteklemiyor (ölçüldü — `ı ş ğ İ` sıfır kez). Faz 6'dan beri uygulama cihazda
+hiç OCR yapmıyor; sayfayı okuyan tek şey vision modeli. Vision/Document AI
+kodu geri dönüş için duruyor ve bu kural onun için hâlâ geçerli: Apple'ın
+metni hiçbir zaman karta gitmez.
 
 ## Yapı
 
@@ -38,10 +37,11 @@ ios/
 │   ├── Backend/             BackendClient, DeviceTokenStore (Keychain), UploadImageEncoder
 │   ├── MarkerDetection/     İşaret tespiti — evals/spikes/marker_detection'ın Swift portu (§9)
 │   ├── Providers/          Kart üretimi protokolü: sahte + gerçek backend sağlayıcı
-│   ├── Scheduling/         Tekrar planlama — gerçek FSRS-6 (§18 Faz 4)
-│   └── Storage/            Görüntü deposu (§8.3)
+│   ├── Scheduling/         FSRS-6 + oturum kurgusu (ReviewSession, ReviewPace, hatırlatıcı planı)
+│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle, algısal hash
 ├── App/                SwiftUI uygulaması
-│   └── Features/Capture, ProcessingQueue, Confirmation, Review, Library, Settings
+│   └── Features/Capture, ProcessingQueue, Review, Library, Settings
+│                       (Confirmation/ ana akıştan çıktı, kod duruyor)
 ├── spikes/AppleVisionSpike/   Ölçüm aracı — --input bir klasörü özyinelemeli tarar
 └── project.yml         XcodeGen spec
 ```
@@ -53,11 +53,16 @@ cd ios/CizgiCore
 swift test
 ```
 
-136 test, hepsi Mac'te doğrulandı (yukarıya bakın): durum makinesi, işlem
-hattı, planlayıcı, görüntü deposu, backend istemcisi, işaret tespiti
-(paylaşılan Python vakalarına karşı sabitlenmiş), yükleme sıkıştırma, gerçek
-kart üretimi sağlayıcısı, FSRS-6 (paylaşılan Python vakalarına karşı
+Kapsam: durum makinesi, işlem hattı, tekrar oturumu (kuyruk/öğrenme adımı/geri
+alma/günlük hak), kart düzenleme ve kaynak çözümleme kuralları, yedek al/geri
+yükle, algısal hash, hatırlatıcı planı, görüntü deposu, backend istemcisi,
+FSRS-6 ve işaret tespiti (ikisi de paylaşılan Python vakalarına karşı
 sabitlenmiş). Kamera ve SwiftUI dışarıda kalır — onlar cihazda denenir.
+
+Paket **yalnız bir Mac'te derlenir** (CoreGraphics, SwiftData). Linux'ta
+Foundation'a bağlı dosyalar izole bir pakete alınıp gerçekten koşturulabilir;
+SwiftUI dosyaları için elde yalnız `swiftc -parse` vardır ve o tip hatalarını
+yakalamaz — App hedefinin tek gerçek kapısı Xcode derlemesidir.
 
 ## Uygulamayı çalıştır
 
@@ -93,34 +98,41 @@ XcodeGen kurmak istemezsen:
 
 Belge kamerası **simülatörde çalışmaz**. Gerçek iPhone gerekiyor: Signing & Capabilities altında kendi Apple ID'ni takım olarak seç, telefonu bağla, çalıştır.
 
-## Faz 1 çıkış kapısı — elle kontrol listesi
+## Cihazda elle kontrol listesi (Faz 6 kabulü)
 
-Cihazda sırayla:
+Önce Ayarlar'a backend adresini ve cihaz tokenını gir (`backend/README.md`);
+"Bağlı" ve "Vision — işaretli sayfadan doğrudan kart" görünmeli.
 
-- [ ] **Uçak modunda** bir kitap sayfası çek → tarama tamamlanınca "kuyruğa alındı" görünüyor
-- [ ] Arka arkaya 3 sayfa çek → çekim, işleme bitmesini beklemiyor (§P1)
-- [ ] Kuyrukta sayfalar "Onay gerekli" durumuna geçiyor
-- [ ] Onay ekranında satırlara dokunup "Kart oluştur" → kartlar üretiliyor
-- [ ] Tekrar sekmesinde kart geliyor, cevap açılıyor, dört puan çalışıyor
-- [ ] "Kaynağı göster" pasajı gösteriyor
+- [ ] İşaretli bir sayfa çek → **hiçbir onay adımı olmadan** kartlar aktif
+      desteye giriyor; kartlar ağırlıklı olarak işaretlediğin yerden
+- [ ] **5–10 fotoğrafı tek partide** yükle → gönderim saniyeler sürüyor, ekran
+      kilitlense/uygulama kapatılsa bile kartlar sonradan geliyor, hiçbir sayfa
+      iki kez üretilmiyor
+- [ ] Aynı sayfayı ikinci kez çek → "daha önce çekmişsin" sorusu çıkıyor
+      (reddetmiyor, soruyor)
+- [ ] Uçak modunda çek → hata kaybolmuyor; ağ gelince "Tekrar dene" aynı kaydı
+      tamamlıyor
+- [ ] Tekrar: normal oturum bugün bekleyen **tüm** kartları veriyor; hızlı
+      oturum ayrı bir seçenek ve süre bütçesine uyuyor
+- [ ] "Unuttum" dediğin kart aynı oturumun sonunda geri geliyor; "Geri al" son
+      puanlamayı gerçekten geri alıyor
+- [ ] Tekrar ekranından kartı düzenle / askıya al çalışıyor; askıya alınan kart
+      oturumdan çıkıyor
+- [ ] "Kaynağı göster" sayfa fotoğrafını ve modelin okuduğu metni gösteriyor
+      ("Orijinal sayfayı sakla" kapalıysa bunu söylüyor)
+- [ ] Günlük yeni kart limiti ekranı yeniden açınca sıfırlanmıyor
+- [ ] Bildirim izni verildiğinde hatırlatma **gerçek sayıyı** söylüyor ve
+      dokununca Tekrar sekmesi açılıyor
+- [ ] "Yedeği hazırla → paylaş" JSON'unda görüntü/base64 yok; "Yedekten geri
+      yükle" mevcut kartları ezmeden eksikleri ekliyor
 - [ ] Uygulamayı tamamen kapat, tekrar aç → kartlar ve kuyruk duruyor (§24.1)
-- [ ] Bilgilerim'de kart görünüyor, askıya alma çalışıyor
 
-Hepsi geçerse Faz 1 kapısı geçilmiş sayılır. Faz 2 için Ayarlar'a backend
-URL'i ve cihaz tokenı gir (`backend/README.md`) — girilmezse uygulama yerel
-moda düşer, işaret tespiti ve satır seçimi çalışır ama pasaj Vision'ın
-(Türkçe okumayan) metniyle dolar; bu bilerek böyle, sessizce yanlış metin
-göndermektense hiç göndermemeyi seçiyor.
+Tam liste ve geçmiş bulgular: `docs/FAZ5-DURUM.md`, `CLAUDE.md` → "Sıradaki iş".
 
 ## Bilinçli olarak henüz yok
 
 | Eksik | Nerede |
 |---|---|
-| Gerçek iPhone Faz 5 kabul testi | `docs/FAZ5-DURUM.md` |
-
-İşaret tespiti kararsız kaldığında (`quick_confirm`) ya da hiçbir şey
-bulamadığında (`user_selection`) çekim onay ekranına düşer, pasajı elle
-seçersin. Bu bilinçli: §19.3, işaret algılanmayan ve elle seçilmeyen bir
-çekimin karta dönüşmesini yasaklıyor. Eşikler
-(`evals/spikes/marker_detection/config.json`) "ilk kalibrasyon başlangıcı" —
-gerçek sayfalarda ne kadar isabetli olduğu henüz ölçülmedi (`docs/FAZ2-PLAN.md`).
+| Gerçek iPhone kabul testi (yukarıdaki liste) | `docs/FAZ5-DURUM.md`, `docs/FAZ6-PLAN.md` §11 |
+| `Models` alan sadeleşmesi + SwiftData göçü | `docs/FAZ6-PLAN.md` §9 |
+| Kartlarda kaynak kırpıntısı ve kitap/sayfa bilgisi (§5.5) | Vision akışında tam sayfa var, kırpıntı yok — uydurulmadı |

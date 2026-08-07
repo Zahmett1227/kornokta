@@ -201,3 +201,11 @@ silmeden önce ölürse.
 - **Doğrulanmayan:** servis anahtarıyla yapılan gerçek yazma/okuma/silme turu
   (bu ortamda servis anahtarı yok) ve iOS derlemesi (Swift araç zinciri yok).
   İkisi de kullanıcının elinde: ayrıntı `COKLU-FOTO-TIMEOUT.md` §5.
+
+**Güncelleme (2026-08-07):** kuyruk `main`'de (PR #25/#26). Kullanıcı Vercel'e
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` değişkenlerini ekledi ve iOS
+tarafını bir Mac'te derledi. PR #27 şemaya nullable bir `max_cards` sütunu
+ekledi (ayrı bir migration; istemcinin "sayfa başına kart" ayarı işçiye ancak
+satır üzerinden ulaşabiliyor, çünkü işçi isteği çok sonra çalışıyor) — backend
+test sayısı **476**. **Gerçek cihazda uçtan uca parti testi hâlâ yapılmadı**;
+bu ADR'nin asıl gerekçesini doğrulayacak tek şey odur.

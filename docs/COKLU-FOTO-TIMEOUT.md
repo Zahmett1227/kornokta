@@ -126,12 +126,12 @@ değişikliğinden ibaret (ADR-006 "Geri dönüş").
   Vercel'de `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` 12'den 8'e indirilirse sayfa
   başına süre kabaca üçte bir azalır. Artık bir zorunluluk değil (kimse
   beklemiyor), yalnız bir tercih. Tamamen ortam değişkeni.
-- **Ayarlar'daki "pasaj başına kart" ölü.** `CapturePipeline` `maxCards`'ı
-  `CardGenerationRequest`'e koyuyor, ama `BackendCardProvider` onu istek
-  gövdesine hiç yazmıyor ve sunucu her zaman kendi `maxCardsPerKnowledgeUnit`
-  değerini kullanıyor. Bilerek düzeltilmedi: ayarın kayıtlı varsayılanı 2 ve
-  kablolamak, B3'te kart kapsamını bilinçli olarak 12'ye yükselten kararı
-  sessizce geri alırdı. İstenirse ayrı bir iş.
+- ~~**Ayarlar'daki "pasaj başına kart" ölü.**~~ **Kapandı (PR #27).** Yeni bir
+  ayar anahtarıyla (`maxCardsPerPage`, varsayılan 12 — eskisini kablolamak
+  kayıtlı 2 değeri yüzünden B3'ün kararını sessizce geri alırdı) uçtan uca
+  bağlandı: istek gövdesi → `jobs.max_cards` sütunu → işçi. Sunucu **kendi
+  tavanına kırpıyor**, yani istemci daha az isteyebilir, fazlasını değil
+  (§21.3).
 - **Deneme hakkı.** Her kesinti `RetryPolicy`'nin beş hakkından birini yakıyor;
   beşi de biterse sayfa `.permanentFailure` olur ve kullanıcının "Tekrar dene"
   demesi gerekir (o da sayacı sıfırlıyor). Gerçek kullanımda beş kesinti
@@ -148,7 +148,7 @@ değişikliğinden ibaret (ADR-006 "Geri dönüş").
 
 Yapılan:
 
-- Backend **469 test yeşil** (38'i yeni `tests/jobsEndpoint.test.ts`),
+- Backend **476 test yeşil** (38'i yeni `tests/jobsEndpoint.test.ts`),
   `tsc --noEmit` temiz.
 - Gerçek Supabase projesine karşı: tablo ve kova yollarının doğruluğu,
   `in.(uuid)` filtresi, RLS'in publishable anahtarla yazmayı gerçekten
@@ -159,11 +159,9 @@ Yapılamayan (bu ortamın sınırı, kullanıcının elinde):
 
 - Servis anahtarıyla gerçek bir yazma/okuma/silme turu — bu ortamda servis
   anahtarı yok, MCP yalnız publishable anahtarı veriyor.
-- **iOS derlemesi.** Swift araç zinciri yok. Değişen dosyaların ikisi
-  (`ProcessingQueue.swift`, `AppEnvironment.swift`) App hedefinde — `swift test`
-  zaten kapsamaz, `xcodebuild -scheme Cizgi … build` gerekir. `BackendCardProvider`
-  ve `BackendClient` CizgiCore'da, onlar `swift test` ile derlenir ve yeni 9
-  test oradadır.
-- Gerçek cihazda uçtan uca: 5 işaretli sayfa arka arkaya → hepsinin saniyeler
-  içinde kuyruğa girmesi → uygulama kapatılıp açıldığında kartların gelmiş
-  olması.
+- **iOS derlemesi.** Bu ortamda yapılamaz; kullanıcı bir Mac'te derledi ve
+  uygulama çalıştı (2026-08-07).
+- **Gerçek cihazda uçtan uca — hâlâ yapılmadı ve asıl doğrulama budur:**
+  5–10 işaretli sayfa arka arkaya → hepsinin saniyeler içinde kuyruğa girmesi →
+  ekran kilitlense/uygulama kapatılsa bile kartların sonradan gelmesi → hiçbir
+  sayfanın iki kez üretilmemesi.

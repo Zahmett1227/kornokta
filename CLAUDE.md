@@ -3,7 +3,7 @@
 Bu dosya her yeni Claude Code oturumunun başında otomatik okunur. Amacı: bir
 önceki oturumun hafızasını taşımadan, buradan devam edilebilmesi.
 
-## ⚠️ Yön değişikliği — Faz 6 / "B" (2026-08-05)
+## Güncel yön — Faz 6 / vision-öncelikli (pivot: 2026-08-05)
 
 Uygulama sahibi bilinçli bir ürün pivotu kararı verdi: uygulama **tıbbi-güvenlik
 / kaynağa-sadakat omurgasından**, **kişisel kullanım için vision-öncelikli** bir
@@ -16,146 +16,104 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
 - **Uygulama planı (detaylı, dosya bazlı, aşamalı):** [`docs/FAZ6-PLAN.md`](docs/FAZ6-PLAN.md)
 - **Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
   değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
-- **Durum (2026-08-06):** **Faz 6 esasen kod-tamam ve `main`'de** (PR #15–#23
-  merge edildi). Vision akışı uçtan uca: `CapturePipeline` tam sayfayı doğrudan
-  `/api/cards-vision`'a gönderiyor, kartlar onaysız `.active`; UI "sıcak-çalışma"
-  redesign'ı (`App/Theme/CizgiTheme.swift`); `ConfirmationView` ana akıştan
-  çıktı, tam-sayfa crop atlandı, `needsReview` bölümleri kaldırıldı. **B3
-  kalite/gecikme:** `imageDetail:"high"`, `reasoning:"low"`, kart limiti 12,
-  `maxOutputTokens` 8192, prompt v2.3. **Zaman aşımı kökten çözüldü** (PR #22):
-  `vercel.json maxDuration` 300, `OPENAI_TIMEOUT_MS` 290000, iOS timeout 300 +
-  uzun-timeout'lu `URLSession`. **Codex P1** (PR #23): `.env.example` tüm B3
-  değerlerinde ayrışmıştı, config varsayılanlarına hizalandı + bir test şablonu
-  varsayılanlara kilitledi. **B4:** FSRS bildirimleri (`ReviewNotificationManager`
-  + Settings) ve hata/retry kuyruğu (`ProcessingQueue.retry` + "Tekrar dene")
-  **zaten bağlı**. Backend **428** test yeşil. **Gerçek kalan (hepsi ya riskli-
-  düşük-değer ya da bloke):** (a) `Models` alan sadeleşmesi + SwiftData göçü —
-  §10.4 "mevcut kartlar korunmalı", cihazsız doğrulanamaz, kullanıcıya görünür
-  değeri yok; (b) gerçek maliyet USD rakamları — §0.6 gereği uydurulmaz, gerçek
-  fiyat yok; (c) **§11 kabul kriterleri = gerçek cihaz doğrulaması** (kullanıcı
-  retest + Vercel env kontrolü).
-- **2026-08-06 — çoklu fotoğrafta zaman aşımı:** PR #22'nin tavan yükseltmesi
-  tek sayfayı kurtardı ama parti hâlâ patlıyordu. Kök neden sunucu tavanı değil,
-  telefonun 5–15 dakikalık **seri** bir partiyi ayakta tutamamasıydı (ekran
-  varsayılan 30 s'de kilitleniyor → iOS uygulamayı askıya alıyor → arka plan
-  oturumu olmayan `URLSession` kopuyor → `NSURLErrorTimedOut`). `ProcessingQueue`
-  artık sayfaları 3'lü paralel işliyor, işlem sürerken ekran kilidini ve bir arka
-  plan assertion'ını tutuyor, geçici hataları `nextAttemptAt`'e uyarak
-  kendiliğinden tekrar deniyor; `waitsForConnectivity` açıldı. Teşhis:
-  [`docs/COKLU-FOTO-TIMEOUT.md`](docs/COKLU-FOTO-TIMEOUT.md).
-- **2026-08-06 — ADR-006: bekleme telefondan çıktı (Supabase iş kuyruğu).**
-  Yukarıdakiler hatayı azaltıyor ama garanti etmiyordu: telefon hâlâ uzun bir
-  isteği bekliyordu. Kart üretimi artık asenkron — `POST /api/jobs` sayfayı
-  Supabase Storage'a yazıp saniyeler içinde 202 dönüyor, üretim `waitUntil`
-  altında yanıttan sonra sürüyor, `GET /api/jobs?ids=` sonucu topluyor.
-  **İş kimliği = sayfa kimliği**, yani uygulama beklerken öldürülse bile bir
-  sonraki açılış biten işi bulup alıyor (ikinci üretim ücreti yok). Cron yok —
-  Hobby'de günde bir kez — onun yerine telefonun yoklamaları hem unutulmuş bir
-  işi başlatıyor hem de işleyeni ölmüş bir işi geri alıyor; atomik `claim`
-  (PostgREST `?status=eq.queued`) çifte üretimi engelliyor, gerçek veritabanında
-  doğrulandı. Telefon Supabase'i hiç görmüyor: RLS açık + policy yok, yalnız
-  Vercel'in `service_role` anahtarı geçiyor. `/api/cards-vision` dokunulmadan
-  duruyor (geri dönüş istemci tarafında bir yol değişikliği).
-  Karar/gerekçe/§7.3 tavizi: [`docs/ADR-006-supabase-is-kuyrugu.md`](docs/ADR-006-supabase-is-kuyrugu.md).
-  Backend **469** test yeşil, `tsc --noEmit` temiz; merge sonrası Codex'in
-  bulduğu üç yarış (koşulsuz `enqueue` → çifte ödemeli üretim; kurtarmanın
-  denemeye kilitli olmaması; kuyruğa alma düşerse sızan görüntü) PR #26'da
-  kapatıldı; Codex aynı PR'ı da inceleyip nesne temizliğinde iki delik
-  daha buldu (kaybeden gönderimin kendi yüklemesi; `expire` sonrası düşen
-  yükleme), onlar da kapatıldı — kural artık `JobStoreLike`'ın başında yazılı: **her durum
-  değişikliği onu haklı çıkaran duruma koşullu olmak zorunda**; CizgiCore'a 9 test eklendi
-  ama **Swift bu ortamda derlenmedi** — bir Mac'te `swift test` +
-  `xcodebuild -scheme Cizgi … build` gerekiyor. Vercel'de iki yeni env
-  değişkeni şart: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- **Durum (2026-08-07):** **Faz 6 kod olarak tamam ve `main`'de** (PR #15–#27,
+  son merge `0679edc`). Vision akışı uçtan uca çalışıyor, kart üretimi asenkron
+  bir iş kuyruğuna taşındı, tekrar döngüsü onarıldı, kartlar düzenlenebiliyor ve
+  kaynağına dönülebiliyor. **Kalan iş kod değil, gerçek cihaz doğrulaması** —
+  "Sıradaki iş" bölümüne bak.
 
-- **2026-08-06 — tekrar döngüsü onarıldı.** Üç kusur üst üste binip gerçek bir
-  desteyi kullanılamaz kılıyordu: (a) `quickSessionMinutes × 5` **her** oturuma
-  uygulanıyordu, yani varsayılan 5 dk ile günde en fazla 25 kart —
-  §18.3'ün "bugün bekleyen tüm kartlar" varsayılanı erişilemezdi; (b) oturum
-  bitince `startSessionIfNeeded` boş olmayan kuyruğu yeniden kurmayı reddediyordu,
-  yani uygulamayı kapatmadan devam edilemiyordu; (c) kuyruk donmuş bir kimlik
-  listesiydi, "Unuttum" denen kart aynı oturumda geri gelmiyordu (öğrenme adımı
-  yok). Ayrıca geri alma yoktu — "Kolay"a yanlış basmak kalıcıydı.
-  Artık: normal oturum = bekleyen her kart, hızlı oturum ayrı bir seçenek ve
-  **gerçek bir süre bütçesi** (`ReviewPace`, her `ReviewLog`'un yıllardır kaydedip
-  kimsenin okumadığı `responseTimeMs` medyanından); unutulan kart oturumun sonuna
-  geri konuyor (en çok 3 kez); son puanlama geri alınabiliyor (kart alanları +
-  `ReviewLog` + günlük hak); yeni kart limiti `DailyNewCardLedger` ile **gerçekten
-  günlük** (önce her oturumda sıfırlanıyordu). Mantık `Scheduling/ReviewSession.swift`
-  içinde, App hedefinde değil — **28 yeni test bu ortamda gerçek `swift test` ile
-  koşuldu ve geçti** (Linux'ta bir Swift araç zinciri kurulup CizgiCore'un
-  Foundation-only alt kümesi izole bir pakette derlendi; tam paket CoreGraphics/
-  SwiftData yüzünden Linux'ta derlenmiyor). `ReviewView.swift` yalnız `swiftc -parse`
-  ile doğrulandı — tip denetimi hâlâ bir Mac gerektiriyor.
+### Ana akış bugün nasıl işliyor
 
-- **2026-08-06 — kart düzenleme ve "Kaynağı göster" bağlandı.** İkisi de
-  verilmiş ama tutulmamış sözlerdi. (a) Faz 6 onay adımını "yanlış kart sonradan
-  Bilgilerim'de düzeltilir" gerekçesiyle kaldırmıştı (ADR-005, FAZ6-PLAN §9) ama
-  düzeltme hiç yazılmamıştı — tek çare kartı silmekti. Artık `CardEditorView`
-  var, hem Bilgilerim'den hem **tekrar ekranından** (kötü kart orada fark edilir)
-  açılıyor; §6.5'in istediği "askıya al" da aynı menüde ve askıya alınan kart
-  oturumdan çıkarılıyor. Düzenleme FSRS geçmişine **dokunmuyor** — gerekçe
-  `CardEditorView.save`'de. (b) "Kaynağı göster" `card.sourceQuote`'a kapılıydı
-  ve vision akışı onu her kartta boş bırakıyor, yani uygulamanın ürettiği hiçbir
-  kartta görünmüyordu — oysa sayfa fotoğrafı diskte ve ilişki zinciri
-  (`Card → KnowledgeUnit → TextRegion → CapturedPage`) sağlamdı. Artık
-  `CardSourceView` sayfayı, modelin okuduğu metni, dersi ve çekim tarihini
-  gösteriyor; "Orijinal sayfayı sakla" kapalıysa bunu **söylüyor** (Ayarlar'a da
-  uyarı eklendi). §5.5'in istediği kırpıntı ve kitap/sayfa bilgisi bu akışta
-  gerçekten yok, o yüzden uydurulmadı. Kurallar `Models/CardEditing.swift`'te
-  (modelin "okuduğu metin" aslında kendi yedek metniyse ya da sorunun kendisiyse
-  kaynak sayılmıyor) — **14 yeni test, gerçek `swift test` ile geçti** (toplam 42).
-  **Not:** iki yeni App dosyası var; `cd ios && xcodegen generate` çalıştırmadan
-  Xcode onları hedefe almaz.
+1. **Yakala:** işaretli sayfa fotoğrafı → dHash ile "bu sayfayı daha önce
+   çektin mi?" sorusu (reddetmez, **sorar**) → bayt diske yazıldıktan sonra
+   kuyruğa girer.
+2. **Kuyruk:** `ProcessingQueue` sayfaları 3'lü paralel işler; işlem sürerken
+   ekran kilidini ve bir arka plan assertion'ını tutar, geçici hataları
+   `nextAttemptAt`'e uyarak kendiliğinden tekrar dener.
+3. **Üretim (asenkron):** `POST /api/jobs` sayfayı Supabase Storage'a yazar,
+   satırı `queued` yapar ve **saniyeler içinde 202** döner; üretim yanıttan
+   sonra `waitUntil` altında sürer. Telefon `GET /api/jobs?ids=` ile yoklar.
+   **İş kimliği = sayfa kimliği**, yani uygulama beklerken öldürülse bile bir
+   sonraki açılış biten işi bulup alır (ikinci üretim ücreti yok).
+4. **Kartlar onaysız** `.active` olarak SwiftData'ya girer ve FSRS-6 ile tekrar
+   edilir. Yanlış kart tekrar ekranından ya da Bilgilerim'den düzenlenir/askıya
+   alınır; "Kaynağı göster" sayfa fotoğrafını ve modelin okuduğu metni gösterir.
 
-- **2026-08-06 — kalan altı "yarım kalmış söz" kapatıldı.** Hepsi kodun bir şey
-  vaat edip tutmadığı yerlerdi:
-  1. **Yedek geri yüklenebiliyor.** `BackupExporter`'ın yalnız `encode`'u vardı;
-     artık `decode` + `BackupRestorer` var ve Ayarlar'da "Yedekten geri yükle".
-     Biçim v2: etiketler, `createdAt`, `canonicalClaim` ve **tüm `ReviewLog`
-     geçmişi** de yedeğe girdi (FSRS ağırlık optimizasyonunun ihtiyacı olan veri
-     cihazdan hiç çıkmıyordu). v1 dosyalar hâlâ okunuyor. Geri yükleme
-     **yalnızca ekler** — mevcut kart olduğu gibi bırakılır, gerekçe
-     `BackupRestorer.plan`'da.
-  2. **Yinelenen sayfa tespiti.** `perceptualHash` alanı hiç yazılmıyordu; artık
-     her çekimde dHash hesaplanıyor (`PerceptualHash`/`PerceptualHasher`,
-     Foundation-only ve test edilir; görüntüden gri örnek çıkarma
-     `PageImageHasher`'da). Aynı sayfa ikinci kez çekilirse Yakala ekranı
-     **soruyor**, reddetmiyor — eşik ilk kalibrasyon ve sayfayı bilerek yeniden
-     çekmek normal.
-  3. **Bildirim artık yalan söylemiyor.** Tek tekrarlı tetikleyici yerine, önümüzdeki
-     7 gün için **kart olan günlere** tarihli tek seferlik bildirimler kuruluyor,
-     her biri gerçek sayıyı taşıyor (`ReviewReminderPlanner`); rozet "şu an
-     bekleyen" sayısı; bildirime dokununca **Tekrar** sekmesi açılıyor (eskiden
-     Yakala açılıyordu).
-  4. **Maliyet görünür.** `ModelRun` yazılıp hiç okunmuyordu; Ayarlar'da
-     "Kullanım" bölümü çağrı ve token sayılarını gösteriyor. USD yalnız sunucuda
-     fiyat ayarlıysa gösteriliyor — §0.6 uydurma fiyatı yasaklıyor ve "0,00 USD"
-     bedava gibi okunurdu.
-  5. **Ayarlar doğru mimariyi raporluyor.** "Faz 3 / Google Document AI" diyordu;
-     Faz 6 hiç OCR yapmıyor.
-  6. **"Sayfa başına kart" ayarı gerçekten çalışıyor.** `maxCards` istek
-     gövdesine hiç yazılmıyordu. Artık uçtan uca bağlı; sunucu **kendi tavanına
-     kırpıyor**, yani istemci daha az isteyebilir, fazlasını değil (§21.3).
-     Yeni bir ayar anahtarı (`maxCardsPerPage`, varsayılan 12) — eskisini
-     bağlamak, kayıtlı 2 değeri yüzünden B3'ün 12'ye çıkarma kararını sessizce
-     geri alırdı. Supabase'e `max_cards` sütunu eklendi (migration repoda).
+### Faz 6 boyunca merge edilen büyük işler
 
-  Backend **476** test yeşil, `tsc --noEmit` temiz; CizgiCore'da **63 test gerçek
-  `swift test` ile geçti**. SwiftUI dosyaları yalnız `swiftc -parse` ile
-  denetlendi. **Not:** `ios/App` altında iki yeni dosya
-  (`CardEditorView`/`CardSourceView` ile birlikte dört); `cd ios && xcodegen generate`
-  şart.
+- **PR #15–#23 — vision akışı + kalite/gecikme.** `/api/cards-vision`, prompt
+  v2.3, `imageDetail:"high"`, `reasoning:"low"`, sayfa başına kart limiti 12,
+  `maxOutputTokens` 8192; "sıcak-çalışma" UI redesign
+  (`App/Theme/CizgiTheme.swift`); `ConfirmationView` ana akıştan çıktı,
+  tam-sayfa crop atlandı, `needsReview` bölümleri kaldırıldı. Zaman aşımı
+  tavanı yükseltildi: `vercel.json maxDuration` 300, `OPENAI_TIMEOUT_MS`
+  290000, iOS timeout 300 + uzun-timeout'lu `URLSession`.
+- **Çoklu fotoğrafta zaman aşımı** ([`docs/COKLU-FOTO-TIMEOUT.md`](docs/COKLU-FOTO-TIMEOUT.md)).
+  Tavan yükseltmesi tek sayfayı kurtardı, parti hâlâ patlıyordu. Kök neden
+  sunucu tavanı değil, telefonun 5–15 dakikalık **seri** bir partiyi ayakta
+  tutamamasıydı: ekran varsayılan 30 s'de kilitlenir → iOS uygulamayı askıya
+  alır → arka plan oturumu olmayan `URLSession` kopar (`NSURLErrorTimedOut`).
+  Çözüm: paralellik + ekran kilidi + arka plan assertion + otomatik retry +
+  `waitsForConnectivity`.
+- **PR #25/#26 — ADR-006: bekleme telefondan çıktı (Supabase iş kuyruğu)**
+  ([`docs/ADR-006-supabase-is-kuyrugu.md`](docs/ADR-006-supabase-is-kuyrugu.md)).
+  Yukarıdakiler hatayı azaltıyordu ama garanti etmiyordu; telefon hâlâ uzun bir
+  isteği bekliyordu. Cron yok (Hobby'de günde bir kez) — onun yerine telefonun
+  yoklamaları hem unutulmuş bir işi başlatıyor hem işleyeni ölmüş bir işi geri
+  alıyor; atomik `claim` (PostgREST `?status=eq.queued`) çifte üretimi
+  engelliyor, gerçek veritabanında doğrulandı. Telefon Supabase'i hiç görmüyor:
+  RLS açık + policy yok, yalnız Vercel'in `service_role` anahtarı geçiyor.
+  `/api/cards-vision` dokunulmadan duruyor (geri dönüş istemci tarafında bir yol
+  değişikliği). Codex'in bulduğu beş yarış/sızıntı PR #26'da kapatıldı; kural
+  artık `JobStoreLike`'ın başında yazılı: **her durum değişikliği onu haklı
+  çıkaran duruma koşullu olmak zorunda.** Vercel'de iki env değişkeni şart:
+  `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+- **PR #27 — tekrar döngüsü, kart düzenleme, kaynağa dönme, altı yarım kalmış
+  söz.** Ortak tema: kodun bir şey vaat edip tutmadığı yerler.
+  - **Tekrar döngüsü onarıldı.** `quickSessionMinutes × 5` **her** oturuma
+    uygulanıyordu (varsayılan 5 dk ile günde en fazla 25 kart — §18.3'ün "bugün
+    bekleyen tüm kartlar" varsayılanı erişilemezdi); biten oturum yeniden
+    kurulamıyordu; kuyruk donmuş bir kimlik listesiydi, "Unuttum" denen kart
+    aynı oturumda geri gelmiyordu; geri alma yoktu. Artık normal oturum =
+    bekleyen her kart, hızlı oturum ayrı bir seçenek ve **gerçek bir süre
+    bütçesi** (`ReviewPace`, `ReviewLog.responseTimeMs` medyanından), unutulan
+    kart oturumun sonuna dönüyor (en çok 3 kez), son puanlama geri alınabiliyor,
+    yeni kart limiti `DailyNewCardLedger` ile gerçekten günlük. Mantık
+    `Scheduling/ReviewSession.swift`'te.
+  - **Kart düzenleme ve "Kaynağı göster" bağlandı.** Faz 6 onay adımını "yanlış
+    kart sonradan düzeltilir" gerekçesiyle kaldırmıştı ama düzeltme hiç
+    yazılmamıştı (tek çare silmekti); "Kaynağı göster" ise `card.sourceQuote`'a
+    kapılıydı ve vision akışı onu her kartta boş bırakıyordu. Artık
+    `CardEditorView` (Bilgilerim + tekrar ekranı, "Askıya al" ile birlikte) ve
+    `CardSourceView` (sayfa fotoğrafı, modelin okuduğu metin, ders, çekim
+    tarihi) var. Düzenleme FSRS geçmişine **dokunmuyor**. Kurallar
+    `Models/CardEditing.swift`'te.
+  - **Altı yarım kalmış söz kapatıldı:** yedekten geri yükleme (biçim v2 —
+    etiketler, `createdAt`, `canonicalClaim` ve **tüm `ReviewLog` geçmişi**;
+    yalnızca ekler), dHash ile yinelenen sayfa tespiti, kart olan günlere tarihli
+    ve gerçek sayıyı taşıyan bildirimler (+ rozet, + dokununca Tekrar sekmesi),
+    Ayarlar'da `ModelRun` tabanlı "Kullanım" bölümü (USD yalnız sunucuda fiyat
+    ayarlıysa — §0.6), Ayarlar'ın doğru mimariyi raporlaması, ve uçtan uca
+    çalışan "sayfa başına kart" ayarı (`maxCardsPerPage`; sunucu kendi tavanına
+    kırpar — istemci daha az isteyebilir, fazlasını değil, §21.3).
 
-Aşağıdaki "Şu an neredeyiz" tablosu ve 1–11
-  maddeleri Faz 6 ÖNCESİ (süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
+**Kullanıcı kararları:** hata riski kabul edildi (uygulama tek çalışma kaynağı
+değil), yayınlanma yok (tamamen kişisel), OpenAI'de kalınıyor.
+
+Aşağıdaki 1–11 maddeleri ve "Kararlar" bölümünün bir kısmı Faz 6 ÖNCESİ
+(süperseded) mimariyi anlatır; **güncel yön yukarıdadır**.
 
 ## Proje ne
 
 Tek kullanıcılık (sahibi için) iOS uygulaması: kitapta işaretlenen (altı
-çizili/fosforlu) tıbbi bilgiyi fotoğraftan yakalar, kaynak-sadık öğrenme
-kartlarına dönüştürür, FSRS ile tekrar ettirir. Kullanıcı Türkçe konuşan bir
-TUS öğrencisi/hekim.
+çizili/fosforlu/dairelenmiş/yanına not alınmış) tıbbi bilgiyi fotoğraftan
+yakalar, bir vision modeline okutup zenginleştirilmiş öğrenme kartlarına
+dönüştürür, FSRS ile tekrar ettirir. Kullanıcı Türkçe konuşan bir TUS
+öğrencisi/hekim.
+
+> Faz 6 öncesinde ürünün omurgası **kaynağa sadakat + onay kapıları**ydı; pivot
+> bunu kişisel kullanım için bilinçle gevşetti (ADR-005). ANA-PLAN'ın ilgili
+> maddeleri hâlâ okunur, ama bu iki belge onların üstündedir.
 
 **Tüm ürün/mimari/kalite kararlarının kaynağı:**
 [`Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md`](Kisisel-Tibbi-Hafiza-Uygulamasi-ANA-PLAN.md).
@@ -165,28 +123,24 @@ sürekli atıf yapılır — bir davranış tuhaf görünüyorsa önce oraya bak
 Dokümantasyon ve kullanıcıyla iletişim **Türkçe**; kod tanımlayıcıları ve
 yorumları **İngilizce**.
 
-## Şu an neredeyiz (2026-08-03)
+## Şu an neredeyiz (2026-08-07)
 
 | Faz | Durum |
 |---|---|
 | Faz 0 — Risk azaltma | ✅ Tamam |
 | Faz 1 — Yerel uygulama iskeleti | ✅ Tamam |
-| Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod ve dağıtım tamam. 2026-08-04'te Faz 3 öncesi annotation-grounding katmanı eklendi: token/bbox kanıtı, grup sözleşmesi, tek-çağrılık OCR snapshot ve fotoğraf üstü onay. **Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı tarafından bilinçli olarak atlandı** — sebep ve araçlar `docs/FAZ2-PLAN.md`'de. Eşikler hâlâ "ilk kalibrasyon". |
-| Faz 3 — AI kart üretimi | ✅ Backend yazıldı, test edildi, gerçek anahtarla uçtan uca doğrulandı. iOS istemci entegrasyonu (`BackendCardProvider`, `ModelRun` kaydı) yazıldı ve **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, 136/136 yeşil)**. **Çıkış kapısı (gold pasaj kart kalite rubriği) kullanıcıyla birlikte ölçüldü ve kullanıcı tarafından yeterli görüldü**: 2 gerçek pasaj, 8 gerçek kart, %100 kabul — küçük bir örneklem, istatistiksel kanıt değil, ama kullanıcının kendi kararı (ANA-PLAN bir örneklem büyüklüğü şart koşmuyor). Ayrıntı ve gözlemler: `docs/FAZ3-PLAN.md`'nin "F3-10 — asıl ölçüm yapıldı" bölümü. Kalan: yalnız gerçek maliyet rakamları. |
-| Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 algoritması yazıldı (`evals/fsrs/` Python referansı + Swift portu), Faz 1'in zaten hazır olan offline review akışına (`ReviewView`, `ReviewSessionPlanner`, askıya alma) `ReviewScheduling` seam'i üzerinden bağlandı — **`ReviewView.swift`'te hiçbir değişiklik gerekmedi**. Python tarafı bu ortamda gerçekten çalıştırıldı (51 yeni test, hepsi geçiyor); Swift portu (`FSRSScheduler.swift`, 6 yeni test) **kullanıcı tarafından bir Mac'te `swift test` ile doğrulandı (2026-08-03, yeşil)**. Kalanların hepsi kapandı: bildirimler (`ReviewNotificationManager`), günlük yeni kart limiti ve süre bütçeli hızlı oturum — sonuncu ikisi 2026-08-06'da gerçek anlamlarına kavuştu (aşağıdaki tekrar döngüsü maddesi). Ayrıntı: `docs/FAZ4-PLAN.md`. |
-| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone testi 2026-08-03'te fiilen başladı**. Telefon backend'e bağlandı, 153/153 Swift testi bir Mac'te doğrulandı — ama sonrasında main annotation-grounding'e geçti (madde 9) ve o doğrulama artık eski bir kod tabanına ait. Kabul listesindeki 10 maddenin tamamı henüz koşulmadı; süreçte gerçek hatalar bulunup düzeltildi (dördü madde 1-4, üçü madde 9) — ayrıntı `docs/FAZ5-DURUM.md`. |
-| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | 🟡 **B1 tam + B2 (çekirdek + App cilası) + B3 başlangıç + UI redesign (2026-08-05).** `faz6-quality-ui` dalında: prompt v2.1 (kalite), `OPENAI_REASONING_EFFORT` medium, "sıcak-çalışma" UI redesign (`App/Theme/CizgiTheme.swift` + Yakala/Tekrar/Bilgilerim/Kuyruk), `ConfirmationView` navigasyondan çıktı, tam-sayfa crop atlandı — **App hedefi `xcodebuild` ile BUILD SUCCEEDED**, CizgiCore 185 test, backend 425, Python 513 yeşil. Kalan: Models göçü + B4.<br>**Önceki (`faz6-vision`, merge edildi PR #15):** Backend kart yolu yerinde v2'ye revize edildi: prompt v2.0, `/api/cards-vision`, `cleanText` kalktı, `cardGate` auto_accept'e sadeleşti, çıktı şeması v2 (`schemaVersion "2.0"`; transcription/knowledgeUnits/source-fidelity alanları çıktı, kart `tags`+`lowConfidence`). iOS: `BackendCardProvider` `/api/cards-vision`'a bağlandı; **`CapturePipeline.run()` vision akışına çevrildi** (tam sayfa → vision → tek sentetik grupla `.ready`; yerel OCR/işaret-tespiti/onay ana akıştan çıktı), kartlar `.active`. OCR-akış pipeline testleri §8 gereği arşivlendi. Backend 425 + Python 513 + Swift **185** test yeşil. Geri dönüş için OCR/reconcile/detection modülleri (backend+iOS) dokunulmadan diskte. **Kalan (App hedefi, gerçek cihaz):** `ConfirmationView` navigasyondan çıkarma, `persist` tam-sayfa crop atlama, `needsReview` arayüz bölümleri, `Models` alan sadeleşmesi + SwiftData göçü. Bkz. `docs/FAZ6-PLAN.md` §9 iki "Uygulama notu" ve `docs/ADR-005`. |
+| Faz 2 — Bulut OCR + işaret tespiti | ✅ Kod tamam, ama **Faz 6'da ana akıştan çıktı** (kod geri dönüş için diskte, çağrılmıyor). Çıkış kapısı (20 görüntülük altın set ölçümü) kullanıcı kararıyla atlanmıştı — `docs/FAZ2-PLAN.md`. |
+| Faz 3 — AI kart üretimi | ✅ Backend + iOS istemcisi tamam, gerçek anahtarla uçtan uca doğrulandı; gold pasaj kalite ölçümü kullanıcıyla birlikte yapıldı (`docs/FAZ3-PLAN.md`). Kart yolu Faz 6'da v2'ye (vision) revize edildi. Kalan: gerçek maliyet rakamları (§7). |
+| Faz 4 — FSRS tekrar motoru | ✅ Gerçek FSRS-6 (`evals/fsrs/` Python referansı + Swift portu), `ReviewScheduling` seam'i üzerinden bağlı. Bildirimler, günlük yeni kart limiti ve süre bütçeli hızlı oturum 2026-08-06/07'de **gerçek anlamlarına kavuştu** (PR #27). Ayrıntı: `docs/FAZ4-PLAN.md`. |
+| Faz 5 — Sertleştirme | 🟡 Kod tamam; **gerçek iPhone kabul listesi hâlâ açık.** `docs/FAZ5-DURUM.md`'deki 10 maddeden 1–5 denendi (ve o sırada bulunan gerçek hatalar düzeltildi), 6–10 (uçak modu, bildirim, sınırlar, yedek, "orijinali sakla") hiç koşulmadı. |
+| Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Kod tamam, `main`'de** (PR #15–#27). B1 (backend v2 sözleşme + `/api/cards-vision`), B2 (iOS vision akışı + App cilası), B3 (prompt v2.3 + gecikme/kalite), UI redesign, B4 (bildirimler, hata/retry kuyruğu, maliyet görünürlüğü) bitti; üstüne asenkron iş kuyruğu (ADR-006) ve PR #27'nin onarımları geldi. **Kalan:** §11 kabul kriterleri = gerçek cihaz doğrulaması; `Models` alan sadeleşmesi + SwiftData göçü (bilerek ertelendi, §10.4 "mevcut kartlar korunmalı"); gerçek maliyet USD rakamları. Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
 
-**Dal durumu:** `claude/project-review-issue-j0ycif`, `main`'in `0bca0d0`'i
-(PR #7/#8/#9/#10 dahil güncel uç) üzerine **sıfırdan kuruldu** — önceki bir
-oturumun aynı isimli dalı (`598b93c` üzerine kurulmuştu, commit `25e3fdd`)
-main'in `1c1855d`'ten sonra annotation-grounding'e gittiğini fark etmeden
-push edilmişti; o dal madde 9'da anlatıldığı gibi geçersiz kaldı ve terk
-edildi (obje veritabanında hâlâ erişilebilir ama branch ref'i artık ona
-işaret etmiyor).
+**Dal durumu:** `main` güncel uç (`0679edc`, PR #27 squash merge). Çalışma
+dalları merge sonrası bırakılıyor; yeni iş `main`'in ucundan yeni bir dalla
+başlar.
 
-**Bugünkü gerçek cihaz oturumunda bulunan ve düzeltilen sorunlar** (ayrıntı
-`docs/FAZ5-DURUM.md`, madde 4 bu oturuma ait):
+**Tarihsel kayıt — Faz 5/annotation-grounding döneminde bulunan ve düzeltilen
+sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
 1. `ProcessingQueue.swift`: orijinal sayfa görüntüsü, `.ready` durumu ve
    kartlar diske kalıcı olarak yazılmadan siliniyordu (kayıt başarısız olursa
    görüntü kurtarılamaz kalıyordu) — iki P1 bulgusu, ikisi de düzeltildi (PR #3).
@@ -385,33 +339,49 @@ işaret etmiyor).
       3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
       local yollar için).
 
-**Test durumu:**
-- Python (`evals/`): 511 test — bu oturumda dokunulmadı/koşulmadı.
-- Backend (`backend/`): **451 test**, yeşil — bu oturumda backend'e hiç
-  dokunulmadı.
-- Swift (`ios/CizgiCore/`): **171 test, yeşil** (168 mevcut + 3 yeni),
-  bu ortamda `swift test` ile gerçekten koşuldu (2026-08-04). App hedefi
-  de bu ortamda ilk kez gerçekten derlendi
-  (`xcodebuild -scheme Cizgi -destination 'generic/platform=iOS Simulator'
-  build`, **BUILD SUCCEEDED**, uyarısız) — ama gerçek cihaz/simülatör
-  çalıştırması hâlâ yapılmadı; `AppNavigator`/`HomeButton`/gesture
-  değişiklikleri yalnız derleme ile doğrulandı, davranışı değil.
+**Test durumu (2026-08-07):**
+- Backend (`backend/`): **476 test yeşil**, `tsc --noEmit` temiz — bu ortamda
+  gerçekten koşuldu.
+- Swift (`ios/CizgiCore/`): tam paket **Linux'ta derlenmiyor** (CoreGraphics,
+  SwiftData). PR #27'nin eklediği mantık (ReviewSession/ReviewPace/
+  DailyNewCardLedger, CardEditing, BackupExporter+Restorer, PerceptualHash,
+  ReviewReminders) bu ortama kurulan gerçek bir Swift araç zinciriyle, yalnız
+  Foundation'a bağlı dosyaları içeren izole bir pakette **63 testle koşuldu ve
+  geçti**. **Tam paketin ve App hedefinin son yeşil koşusu bir Mac'te
+  yapılmalı.**
+- SwiftUI dosyaları yalnız `swiftc -parse` ile denetlendi — bu **sözdizimi**
+  kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. Nitekim `SettingsView`'daki
+  geçersiz bir `Section` başlatıcısı ancak kullanıcının Xcode derlemesinde
+  çıktı (düzeltildi, `cfcc44c`). Bu sınıftan hatalar için **tek gerçek kapı bir
+  Mac derlemesi.**
+- Python (`evals/`): son bilinen 513 test yeşil — bu ortamda `pytest` kurulu
+  değil, bu oturumda koşulmadı.
 
-**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`). Yerel
-`main`, `ab9e0b1`'i (PR #12, madde 10) içeriyor — bu oturumun madde 11
-değişiklikleri **henüz commit edilmedi**, çalışma dizininde duruyor.
+**Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), Root Directory
+`backend`. Gerekli env değişkenleri `.env.example`'da; iş kuyruğu için
+**`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`** şart (kullanıcı ekledi).
+Supabase tarafında `jobs` tablosu + `page-uploads` özel kovası var; ikisinde de
+RLS açık ve **policy yok** (yalnız `service_role` geçer). Proje kimliği ve
+anahtar yalnız Vercel env'inde durur, repoda değil.
 
 ## Kararlar (değiştirmeden önce oku)
 
-> **Faz 6 / B (2026-08-05):** Aşağıdaki kararların çoğu tıbbi-güvenlik
-> omurgasına aittir ve Faz 6'da **bilinçle gevşetiliyor**. Güncel karar
-> `docs/ADR-005-kisisel-vision-yeniden-tasarim.md` + `docs/FAZ6-PLAN.md`.
-> Aşağıdakiler Faz 6 öncesi (süperseded) mimarinin kararlarıdır; kod hâlâ o
-> haldeyken geçerlidir.
+> **Faz 6 (2026-08-05 pivotu, kod 2026-08-07'de tamam):** Aşağıdaki kararların
+> bir kısmı tıbbi-güvenlik omurgasına aittir ve Faz 6'da **bilinçle
+> gevşetilmiştir**; ilgili kod artık ana akışta çağrılmıyor (silinmedi, geri
+> dönüş için duruyor). Güncel kararlar ADR-005 + ADR-006 + `docs/FAZ6-PLAN.md`.
+> Aşağıdakileri o kodu diriltmeden önce oku.
 
 - **`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`** — **GÜNCEL YÖN:**
   kişisel kullanım için vision-öncelikli pivot; §0.5/§10/§12.1/§19'un
   gevşetilmesi. Ana akışa dokunmadan önce bunu oku.
+- **`docs/ADR-006-supabase-is-kuyrugu.md`** — **GÜNCEL YÖN:** kart üretimi
+  asenkron; `POST /api/jobs` 202 döner, üretim `waitUntil` altında sürer,
+  telefon `GET /api/jobs?ids=` ile yoklar. İş kimliği = sayfa kimliği. Cron
+  yok; kurtarma telefonun yoklamalarıyla ve atomik `claim` ile yapılır.
+  §7.3'ten verilen taviz orada yazılı. `_jobs.ts`/`supabaseJobs.ts`'e
+  dokunmadan önce oku — kural: **her durum değişikliği onu haklı çıkaran
+  duruma koşullu olmak zorunda.**
 - **`docs/ADR-002-birincil-ocr-secimi.md`** — Apple Vision Türkçe metin
   tanımayı desteklemiyor (ölçüldü, `docs/FAZ0-BULGULAR.md`). Google Document
   AI birincil ve tek metin kaynağı; Vision yalnız önizleme + satır geometrisi
@@ -456,6 +426,12 @@ elle senkron tutma, üret ve kilitle.
   (`GOOGLE_CREDENTIALS_JSON`). İkisi de `.env`/Vercel env'de, asla kodda.
 - `DEVICE_TOKEN` yalnız iki yerde: backend ortam değişkeni + telefonun
   Keychain'i. Üçüncü kopya yok.
+- `SUPABASE_SERVICE_ROLE_KEY` RLS'i tamamen atlar: yalnız yerel `.env` ve Vercel
+  proje ayarları. Repoda, `config.ts`'te ve **iOS uygulamasında asla** olmaz —
+  telefon Supabase'i hiç görmez, her şeye backend üzerinden erişir. `jobs`
+  tablosunda ve `page-uploads` kovasında RLS açık ve **hiç policy yok**, yani
+  anonim/publishable anahtarla hiçbir satır okunamaz (gerçek projede
+  doğrulandı).
 - `evals/fixtures/` içine telifli kitap sayfası **commit edilmez** (gitignore'lu).
 - Sunucu loglarında görüntü içeriği veya tam OCR metni saklanmaz.
 
@@ -464,11 +440,20 @@ elle senkron tutma, üret ve kilitle.
 Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
-python -m pytest evals -q                    # 511 test
-cd ios/CizgiCore && swift test                # 167 test (bu oturumdan sonra hiç Mac'te koşulmadı, yukarı bak)
-cd backend && npm test                        # 451 test
+python -m pytest evals -q                     # 513 test (bu ortamda pytest kurulu değil)
+cd ios/CizgiCore && swift test                 # yalnız bir Mac'te — Linux'ta derlenmiyor
+cd backend && npm test                         # 476 test, yeşil
+cd backend && npm run typecheck                # tsc --noEmit
 cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
+cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 ```
+
+**Linux'ta Swift:** tam `CizgiCore` paketi burada derlenmez (CoreGraphics,
+SwiftData). Yeni yazılan mantık Foundation-only tutulursa, bir Swift araç
+zinciri kurup yalnız o dosyaları ve testlerini içeren izole bir pakette
+gerçekten koşturmak mümkün — PR #27'nin 63 testi böyle doğrulandı. SwiftUI
+dosyaları için elde yalnız `swiftc -parse` var ve o **tip hatalarını
+yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 
 ## Doküman haritası
 
@@ -476,8 +461,14 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 - `docs/ARCHITECTURE.md` — bileşenler, işlem hattı, anti-drift mekanizması
 - `docs/ADR-005-kisisel-vision-yeniden-tasarim.md` — **GÜNCEL YÖN:** kişisel
   vision-öncelikli pivot kararı (Faz 6 / B)
+- `docs/ADR-006-supabase-is-kuyrugu.md` — **GÜNCEL YÖN:** asenkron iş kuyruğu
+  kararı, kurtarma modeli, yarış koşulları ve gizlilik tavizi
 - `docs/FAZ6-PLAN.md` — **GÜNCEL YÖN:** Faz 6'nın detaylı, dosya bazlı uygulama
-  planı, sadeleşmiş sözleşme ve aşamalı süre tahmini
+  planı, sadeleşmiş sözleşme ve aşamalı durum tablosu
+- `docs/COKLU-FOTO-TIMEOUT.md` — çoklu fotoğraf zaman aşımının teşhisi: neden
+  sunucu tavanı değil telefonun askıya alınması, hangi azaltmalar yapıldı
+- `docs/FAZ5-DURUM.md` — 10 maddelik iPhone kabul listesi (6–10 hâlâ açık) ve
+  gerçek cihaz oturumlarında bulunan hatalar
 - `docs/FAZ2-PLAN.md` — Faz 2'nin tam kaydı: ne yapıldı, hangi hatalar
   bulundu/düzeltildi, çıkış kapısının neden atlandığı
 - `docs/FAZ3-PLAN.md` — Faz 3'ün tam kaydı: backend'de ne yazıldı, hangi
@@ -502,94 +493,63 @@ cd backend && npm run serve                    # yerel sunucu, 127.0.0.1:8787
 
 ## Sıradaki iş
 
-**En öncelikli (Faz 6 / B — YENİ YÖN, bkz. `docs/FAZ6-PLAN.md` §9):**
-B1 (backend) ve B2'nin çekirdeği (iOS `BackendCardProvider` + `CapturePipeline`
-vision akışı) `faz6-vision` dalında uygulandı ve testlerle doğrulandı (henüz
-commit edilmedi, çalışma dizininde; backend 425 / Python 513 / Swift 185 yeşil).
+Kod tarafında bilinen bir eksik yok; **sıradaki iş gerçek cihazda doğrulama.**
+Aşağıdakiler öncelik sırasıyla.
 
-**Sıradaki: B2 App-hedefi cilası (bu ortamda derlenemez — gerçek cihaz gerekir):**
-- `ConfirmationView`'ı navigasyondan çıkar (artık ulaşılmaz, ölü kod).
-- `ProcessingQueue.persist`: vision grupları için tam-sayfa crop kaydetmeyi atla
-  (şu an her sayfayı gereksizce crop olarak da saklıyor).
-- `LibraryView`'daki `needsReview`/"Onay bekliyor" bölümlerini kaldır (vision
-  akışında kart üretilmiyor).
-- (İsteğe bağlı) `ProcessingState.confirmationRequired`/`CardStatus.needsReview`
-  enum vakalarını kaldır — App hedefindeki exhaustive switch'lere dikkat.
-- `Models.swift`: `sourceQuote` vb. kaldırılan alanlar için SwiftData göçü
-  (tek cihaz, düşük risk).
-- Gerçek iPhone'da uçtan uca: işaretli sayfa → onaysız aktif kart → FSRS tekrar.
-Sonra B3 (prompt kalite döngüsü) + B4 (cila).
+### 1. Gerçek cihaz doğrulaması (en öncelikli — hepsi tek bir oturumda yapılabilir)
 
-Ayrıca: gerçek maliyet rakamları hâlâ 0 (`OPENAI_USD_PER_MILLION_*`, §7); tam
-sayfa girdi crop'tan pahalı, ilk çağrılarda `ModelRun.usage`'dan okunup
-doldurulmalı.
+Önce `git pull && cd ios && xcodegen generate` (PR #27 `ios/App` altına dört
+yeni dosya ekledi: `CardEditorView`, `CardSourceView`, `PageImageHasher` ve
+tema/yardımcılar; XcodeGen çalıştırılmadan Xcode onları hedefe almaz).
 
----
+- **Faz 6 §11 kabul kriterleri:** işaretli sayfa → onaysız aktif kart → FSRS
+  tekrarı; kartlar ağırlıklı olarak *işaretlenen* içeriğe karşılık geliyor mu;
+  en az bir kısmı zenginleştirilmiş mi.
+- **Asıl şikayetin doğrulaması:** 5–10 fotoğrafı **tek partide** yükle. Beklenen:
+  `POST /api/jobs` saniyeler içinde döner, ekran kilitlense/uygulama kapatılsa
+  bile iş sunucuda sürer, bir sonraki açılışta kartlar gelir, **hiçbir sayfa iki
+  kez üretilmez**.
+- **PR #27'nin yeni davranışları:** normal vs hızlı oturum, "Unuttum" kartının
+  oturum sonunda geri gelmesi, "Geri al", günlük yeni kart limitinin ekran
+  yeniden açılınca sıfırlanmaması, kart düzenleme/askıya alma, "Kaynağı göster",
+  aynı sayfayı ikinci kez çekince çıkan soru, bildirimin doğru sayıyı söylemesi
+  ve dokununca Tekrar sekmesini açması, "Yedeği hazırla → geri yükle" turu.
+- **`docs/FAZ5-DURUM.md` kabul listesinin 6–10. maddeleri** (uçak modu +
+  "Tekrar dene", bildirim izni, sınırlar, yedeğin içinde görüntü olmaması,
+  "Orijinal sayfayı sakla" kapalıyken davranış).
 
-**Aşağıdakiler Faz 6 ÖNCESİ (süperseded) önceliklerdir; B'ye geçilince çoğu
-geçersiz olacak, tarihsel bağlam için duruyor:**
+### 2. Küçük ve gerçek kalanlar
 
-**Eski en öncelikli:** madde 11'in üç değişikliğini gerçek cihazda doğrulamak
-(hiçbiri henüz commit edilmedi): (a) yeni app icon'un ana ekranda beklendiği
-gibi göründüğü, (b) her sayfadaki ev ikonunun gerçekten Yakala'ya dönüp tüm
-yığınları sıfırladığı (özellikle Onay ekranından ortadayken), (c) manuel
-alan çizerken kenar kenetlemesinin/pan düzeltmesinin/sil butonunun gerçek
-parmak hareketiyle beklenen gibi çalıştığı ve bir kutunun artık boş pasajla
-geri sekmediği. Bu oturumda yalnız `swift test` (171 yeşil) ve
-`xcodebuild … build` (BUILD SUCCEEDED) çalıştırılabildi — gerçek
-cihaz/simülatör çalıştırması hiç yapılmadı.
+1. **Gerçek maliyet rakamları.** `OPENAI_USD_PER_MILLION_*` hâlâ 0. Artık
+   Ayarlar → Kullanım bunu gösterdiği için doldurmanın görünür değeri var;
+   §0.6 gereği rakam **sağlayıcının kendi fiyatlandırma sayfasından** gelmeli,
+   uydurulmaz.
+2. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
+   başarılı çağrılar kaydediliyor, yani "Kullanım" başarısız denemelerin
+   maliyetini göstermiyor (`docs/FAZ3-PLAN.md`, F3-8).
+3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
+   anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı"
+   diyor, cihazsız doğrulanamaz ve kullanıcıya görünür bir değeri yok.
 
-Madde 10'un üç değişikliği (PR #12, `ab9e0b1`) main'e merge edildi ama
-kendi gerçek cihaz doğrulaması da hâlâ bekliyor: (a) `ConfirmationView`
-açıkken sekme çubuğunun gizlendiği ve "Seçili gruplardan kart oluştur"un
-tam görünüp dokunulabilir olduğu, (b) İşleme Kuyruğu'nda "Sil"in satırı
-(ve diskteki görüntülerini) gerçekten kaldırdığı, (c) Bilgilerim'de bir
-kartın silinebildiği.
+### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
 
-Madde 9'un doğrulaması (needsApproval→ready, Bilgilerim'de Onay bekliyor,
-confirmationReason) hâlâ bekliyor — main'e merge edildi ama gerçek cihazda
-hiç denenmedi. Bir Mac'te `swift test` (167 test, hiçbiri bu oturumdan sonra
-koşulmadı) her iki maddeyle birlikte yapılabilir.
+4. Codex'in PR #5'te bulduğu 8. bulgu: yarım sayfa genişliğinden dar ama gerçek
+   sütun boşluğunu kesen ortalanmış bir ayraç/başlık boşluğu hâlâ gizleyebilir
+   (`MAX_COLUMN_ITEM_WIDTH`, `documentAI.ts`/`ReadingOrder.swift`). Faz 6 ana
+   akışı OCR yapmadığı için pratikte ölü kod.
+5. `evals/ocr_eval/metrics.py`'deki `critical_token_error_rate` `hypo_hyper`
+   için hâlâ tüm kelimeyi kıyaslıyor (ADR-003 "Açık kalan").
+6. `ProcessingQueue.completedGroupIds` / çok-gruplu kısmi seçim modeli — Faz 6
+   tek sentetik grup ürettiği için artık tetiklenmiyor, ama kod duruyor.
 
-**Bir önceki oturumdan devralınan, hâlâ geçerli öncelik:** gerçek karmaşık
-bir sayfa fotoğrafını `evals/fixtures/complex-annotations/` altına
-yerleştirip fotoğraf-tabanlı grounding/onay akışını telefonda denemek.
-Beklenenler: kısa alt çizgi yalnız tokenı seçmeli, aynı metin farklı
-yerlerde ayrı kalmalı, tek OCR çağrısından sonra onay ekranı tekrar OCR
-yapmamalı. Ayrıntı: ADR-004. Üçü aynı anda, aynı gerçek cihaz oturumunda
-doğrulanabilir.
+### Aday sonraki özellikler (karar verilmedi)
 
-1. Bu dal (`claude/project-review-issue-j0ycif`) merge edilip Vercel'in
-   Production dağıtımı güncellenmeli (Production Branch ayarına dikkat —
-   `backend/README.md`'deki tuzak).
-2. `docs/FAZ5-DURUM.md`'deki 10 maddelik iPhone kabul listesinin geri
-   kalanını (bildirim, yedek, sınırlar, uçak modu) koş.
-3. Gerçek maliyet takibi: `OPENAI_USD_PER_MILLION_*`/`GEMINI_USD_PER_MILLION_*`
-   hâlâ 0 (uydurma rakam yok, §0.6) — sağlayıcının kendi fiyatlandırma
-   sayfasından doldurulmalı.
-4. Başarısız kart üretimi çağrıları için de bir `ModelRun` kaydı (şu an
-   yalnız başarılı çağrılar kaydediliyor — `docs/FAZ3-PLAN.md`'de F3-8
-   altında not edildi).
-5. Faz 4'ün küçük kalanları: ~~bildirimler~~ (ARTIK BAĞLI —
-   `ios/App/ReviewNotificationManager.swift` + SettingsView, günlük tekrar
-   hatırlatması `UNCalendarNotificationTrigger` ile kuruluyor); ~~süre-bütçeli
-   hızlı mod~~ ve ~~ayrı bir "yeni kart limiti" ayarı~~ da bağlı — ikisi de
-   2026-08-06'da gerçek anlamlarına kavuşturuldu (tekrar döngüsü maddesi).
-6. (Düşük öncelik) Codex'in PR #5'te bulduğu 8. bulgu ertelendi: yarım sayfa
-   genişliğinden dar ama yine de gerçek sütun boşluğunu kesen ortalanmış bir
-   ayraç/başlık, boşluğu hâlâ gizleyebilir (`documentAI.ts`/`ReadingOrder.swift`
-   içindeki `MAX_COLUMN_ITEM_WIDTH` sabitiyle ilgili — ayrıntı PR #5'in
-   yorumlarında). Gerçek kullanımda düşük olasılık, kullanıcı kararıyla
-   ertelendi.
-7. (Düşük öncelik, ADR-003 "Açık kalan") `evals/ocr_eval/metrics.py`'deki
-   manifest-tabanlı `critical_token_error_rate` ölçümü `hypo_hyper` için
-   hâlâ tüm kelimeyi kıyaslıyor — altın-set ölçümünde aynı yanlış-pozitif
-   görülürse `canonical_hypo_hyper` oraya da taşınmalı.
-8. (Bu oturumdan) `ProcessingQueue.completedGroupIds`/`CapturePipeline`'ın
-   çok-gruplu kısmi seçim modeli tam doğrulanmadı: bir kullanıcı bir
-   sayfadaki 5 gruptan 2'sini onaylayıp gönderirse, snapshot'ın
-   `autoSelectedGroupIds`'i yalnız o 2 grupla daralıyor — kalan 3 gruba aynı
-   sayfadan daha sonra dönmek şu an desteklenmiyor gibi görünüyor (kod
-   okumasıyla tespit edildi, cihazda doğrulanmadı). Gerçek kullanımda bir
-   sorun çıkarsa `CapturePipeline.swift`'teki `selection`/`groundedSelection`
-   inşasına bak.
+Bunlar öneri, taahhüt değil; sırayı kullanıcı seçer.
+
+- **Etiket/ders bazlı filtreli tekrar** ("bugün yalnız Farmakoloji").
+- **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti ve
+  bunların prompt iterasyonuna girdi olması.
+- **Sayfayı yeniden üret:** aynı fotoğraftan farklı bir `hint` ile ikinci bir
+  kart takımı (maliyeti açıkça söyleyerek).
+- **FSRS ağırlık optimizasyonu:** yedeğe artık giren gerçek `ReviewLog`
+  geçmişinden kullanıcıya özel ağırlık hesaplama (`evals/fsrs/` referansı var).
