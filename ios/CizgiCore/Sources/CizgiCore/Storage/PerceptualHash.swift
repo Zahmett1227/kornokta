@@ -120,8 +120,8 @@ public enum PerceptualHasher {
     ) -> (id: ID, distance: Int)? {
         var best: (id: ID, distance: Int)?
         for candidate in candidates {
+            guard isLikelyDuplicate(hash, candidate.hash) else { continue }
             let distance = distance(hash, candidate.hash)
-            guard distance <= duplicateThreshold else { continue }
             if best == nil || distance < best!.distance {
                 best = (candidate.id, distance)
             }

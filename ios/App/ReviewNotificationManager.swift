@@ -81,15 +81,6 @@ enum ReviewNotificationManager {
         #endif
     }
 
-    /// Keeps the icon honest between reschedules — after a review session, say.
-    static func updateBadge(dueDates: [Date], now: Date = .now) async {
-        #if canImport(UserNotifications)
-        try? await UNUserNotificationCenter.current().setBadgeCount(
-            ReviewReminderPlanner.badgeCount(dueDates: dueDates, now: now)
-        )
-        #endif
-    }
-
     #if canImport(UserNotifications)
     private static func withdrawPending(from center: UNUserNotificationCenter) async {
         let pending = await center.pendingNotificationRequests()
