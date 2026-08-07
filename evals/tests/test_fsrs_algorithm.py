@@ -141,6 +141,21 @@ class TestSubsequentReview:
         again, _ = schedule(self.STATE, AGAIN, 5.0, W, RETENTION)
         assert again.stability < self.STATE.stability
 
+    def test_forgetting_never_grows_stability_even_when_wildly_overdue(self):
+        """The property `_next_stability_failure`'s `min(...)` term exists for.
+
+        The long-term branch alone rises with elapsed time (the `(1 - r) * w14`
+        factor), so for an already-fragile card left for months it could exceed
+        the stability the card started with — "Unuttum" would then schedule the
+        card *further out* than before. Verified against the official
+        implementation (open-spaced-repetition/py-fsrs
+        `_next_forget_stability`), which clamps to `S / e^(w17*w18)`.
+        """
+        fragile = MemoryState(stability=0.05, difficulty=3.0)
+        for elapsed in (30.0, 100.0, 365.0, 3650.0):
+            lapsed, _ = schedule(fragile, AGAIN, elapsed, W, RETENTION)
+            assert lapsed.stability < fragile.stability, f"{elapsed} gün sonra büyüdü"
+
     def test_more_elapsed_time_at_the_same_rating_increases_stability_gain(self):
         """Recalling something after a longer gap is stronger evidence of a
         durable memory, so the stability increase should be bigger — this is

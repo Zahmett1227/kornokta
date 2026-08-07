@@ -53,6 +53,35 @@ hiç geçmiş yok. İleride `ReviewLog` verisi birikince gerçek bir
 optimizasyon çalıştırılıp `weights.json` güncellenebilir; kodun kendisi
 değişmez (§0.6).
 
+### Düzeltme (2026-08-07): unutma formülündeki eksik clamp
+
+İnceleme, unutma sonrası kararlılık formülünün resmi implementasyondan
+saptığını buldu. Resmi kaynak
+(`open-spaced-repetition/py-fsrs`, `Scheduler._next_forget_stability`) **iki**
+terimin küçüğünü alıyor:
+
+```python
+long_term  = w11 * D^-w12 * ((S+1)^w13 - 1) * e^((1-R)*w14)
+short_term = S / e^(w17*w18)
+return min(long_term, short_term)
+```
+
+Bizde yalnız `long_term` vardı. `long_term` geçen süreyle (`(1-R)·w14` terimi)
+büyüdüğü için, **kararlılığı düşük ve çok gecikmiş** bir kartta bu değer
+kartın kendi kararlılığını aşabiliyordu: yani "Unuttum" denen kart, öncekinden
+**daha uzun** bir aralığa gidebiliyordu. Sayısal örnek (proje ağırlıklarıyla):
+S=0.05, D=3, 100 gün gecikme → eski 0.0558 (büyüme!), yeni 0.0476.
+
+İki dilde birden düzeltildi (`algorithm.py` + `FSRSScheduler.swift`),
+`evals/shared/fsrs-cases.json` yeniden üretildi ve
+`lapsed_card_left_for_months` vakası tam bu rejimi sabitlemek için eklendi.
+Clamp yalnızca sonucu **düşürebildiği** için zamanlama sadece öne alınabilir;
+mevcut kartlar için risksiz yönde. Paritenin iki taraflı bozulmadığını
+gösteren şey Swift testlerinin aynı JSON'a karşı hâlâ yeşil olması — iki
+implementasyon da aynı biçimde eksik olduğu için parite testleri bu hatayı
+kendi başlarına yakalayamazdı; bu, "aynı davranış iki yerde" riskinin ilginç
+bir kalıntısı.
+
 ---
 
 ## Ne yazıldı

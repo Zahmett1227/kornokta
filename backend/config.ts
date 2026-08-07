@@ -190,12 +190,27 @@ function oneOf<T extends string>(name: string, allowed: readonly T[], fallback: 
   return raw as T;
 }
 
-function numeric(name: string, fallback: number): number {
+/**
+ * `min` defaults to 0 because every number here is a price, a count or a
+ * duration, and a negative one of any of those is a typo rather than a setting.
+ * Pass `min: 1` where zero is meaningless too — a zero timeout aborts every
+ * call before it starts, and a zero staleness window declares every live worker
+ * dead the instant it claims a job, handing its page to a second paid
+ * generation. Same reasoning as `oneOf`: fail loudly rather than let a
+ * mistyped variable look like the feature quietly not working.
+ *
+ * The cost ceilings deliberately keep `min: 0` — there, 0 means "disabled" and
+ * is documented as such on the fields themselves.
+ */
+function numeric(name: string, fallback: number, min = 0): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
   const value = Number(raw);
   if (!Number.isFinite(value)) {
     throw new ConfigError(`${name} sayı olmalı, alınan: ${raw}`);
+  }
+  if (value < min) {
+    throw new ConfigError(`${name} en az ${min} olmalı, alınan: ${raw}`);
   }
   return value;
 }
@@ -224,7 +239,7 @@ export function loadConfig(): Config {
         .split(",")
         .map((hint) => hint.trim())
         .filter(Boolean),
-      timeoutMs: numeric("DOCUMENTAI_TIMEOUT_MS", 60_000),
+      timeoutMs: numeric("DOCUMENTAI_TIMEOUT_MS", 60_000, 1),
       computeStyleInfo: boolean("DOCUMENTAI_COMPUTE_STYLE_INFO", false),
     },
     openai: {
@@ -247,14 +262,14 @@ export function loadConfig(): Config {
       // maxCardsPerKnowledgeUnit below) are not truncated to a `status:
       // "incomplete"` failure. A ceiling, not a target — at reasoning "low" the
       // model emits only what the cards need.
-      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 8192),
+      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 8192, 1),
       // Faz 6/B3: this was 4 for the old "one reconciled passage → ≤4 cards"
       // flow. In the vision flow one full page carries many distinct marks and
       // handwritten notes; capping at 4 made the model spend its whole budget on
       // the first, most basic printed facts and drop every handwritten insight
       // (second device test). Raised to 12 so a marked page's distinct points
       // each get a card. Now really "max cards per page"; env-overridable (§0.6).
-      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12),
+      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12, 1),
       // Faz 7 (§13.3): five-option cards. "mixed" by default — see the field's
       // own comment for why not "all".
       multipleChoiceMode: oneOf("OPENAI_MULTIPLE_CHOICE_MODE", MULTIPLE_CHOICE_MODES, "mixed"),
@@ -263,12 +278,12 @@ export function loadConfig(): Config {
       // `providerUnavailable`). vercel.json maxDuration is raised to 300 (plan
       // allows it); this aborts just under that so the backend returns a clean
       // retryable error instead of Vercel hard-killing the function first.
-      timeoutMs: numeric("OPENAI_TIMEOUT_MS", 290_000),
+      timeoutMs: numeric("OPENAI_TIMEOUT_MS", 290_000, 1),
     },
     gemini: {
       model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
-      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096),
-      timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000),
+      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096, 1),
+      timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
     },
     cost: {
       usdPer1000Pages: numeric("DOCUMENTAI_USD_PER_1000_PAGES", 1.5),
@@ -282,11 +297,11 @@ export function loadConfig(): Config {
     supabase: {
       url: optional("SUPABASE_URL", ""),
       bucket: optional("SUPABASE_BUCKET", "page-uploads"),
-      timeoutMs: numeric("SUPABASE_TIMEOUT_MS", 30_000),
+      timeoutMs: numeric("SUPABASE_TIMEOUT_MS", 30_000, 1),
       // 5.5 minutes: just past `vercel.json`'s 300 s ceiling, so a worker that
       // was killed at the ceiling is reclaimed promptly while one that is simply
       // slow is left alone.
-      staleAfterMs: numeric("SUPABASE_JOB_STALE_AFTER_MS", 330_000),
+      staleAfterMs: numeric("SUPABASE_JOB_STALE_AFTER_MS", 330_000, 1),
     },
   };
 }

@@ -23,14 +23,19 @@
  */
 
 import { authorize } from "./_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
+import { MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
 import { runCardGate } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
-import { parseMaxCards, parseMultipleChoiceMode, type CardGeneratorLike } from "./_cards.js";
+import {
+  VISION_MIME_TYPES,
+  parseMaxCards,
+  parseMultipleChoiceMode,
+  type CardGeneratorLike,
+} from "./_cards.js";
 
 /** How many jobs one poll may ask about. A batch is a handful of pages, never a hundred. */
 export const MAX_POLL_IDS = 50;
@@ -177,6 +182,12 @@ interface SubmitBody {
   maxCards?: unknown;
   /** The user's "beş şıklı kart" setting (§13.3); clamped to the deployment's own mode. */
   multipleChoiceMode?: unknown;
+  /**
+   * The user pressed "Tekrar dene" on a page this server had given up on. Only
+   * ever set by a deliberate human action, never by the queue's automatic
+   * retries — see `JobStoreLike.requeue` for why that distinction is the point.
+   */
+  force?: unknown;
 }
 
 async function submit(request: Request, deps: JobsDependencies): Promise<Response> {
@@ -193,9 +204,9 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   }
 
   const mimeType = typeof body.mimeType === "string" ? body.mimeType.trim() : "";
-  if (!ACCEPTED_MIME_TYPES.has(mimeType)) {
+  if (!VISION_MIME_TYPES.has(mimeType)) {
     return fail(
-      `Desteklenmeyen tür: ${mimeType || "(boş)"}. Kabul edilenler: ${[...ACCEPTED_MIME_TYPES].join(", ")}.`,
+      `Desteklenmeyen tür: ${mimeType || "(boş)"}. Kabul edilenler: ${[...VISION_MIME_TYPES].join(", ")}.`,
       415,
       false,
     );
@@ -229,6 +240,11 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   if (mcMode === null) {
     return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
   }
+
+  if (body.force !== undefined && typeof body.force !== "boolean") {
+    return fail("force true/false olmalı.", 400, false);
+  }
+  const force = body.force === true;
 
   // §21.3: refuse before spending, on the only bound knowable before the call.
   // Checked at submit rather than in the worker so the phone learns about it in
@@ -266,8 +282,10 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     return json(toJobView(existing), 202);
   }
   // A failure the phone cannot fix by trying again is reported as it stands
-  // rather than silently re-armed into another identical failure.
-  if (existing?.status === "failed" && existing.retryable === false) {
+  // rather than silently re-armed into another identical failure — unless the
+  // user asked for exactly that, which is the one thing that can carry
+  // information this row does not have (a corrected key, most of all).
+  if (existing?.status === "failed" && existing.retryable === false && !force) {
     return json(toJobView(existing), 200);
   }
 
@@ -300,7 +318,7 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     mayHaveOrphanedObject = true;
 
     const armed = existing
-      ? await deps.store.requeue(enqueueRequest)
+      ? await deps.store.requeue(enqueueRequest, { includePermanent: force })
       : await deps.store.insertQueued(enqueueRequest);
 
     if (!armed) {

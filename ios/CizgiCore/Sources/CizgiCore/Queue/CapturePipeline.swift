@@ -263,7 +263,11 @@ public struct CapturePipeline: Sendable {
         snapshot: OCRSnapshot? = nil,
         selectionOverride: [String]? = nil,
         selectionResultOverride: MarkerSelectionResult? = nil,
-        completedGroupIds: [String] = []
+        completedGroupIds: [String] = [],
+        /// Set only when the user asked for this run themselves ("Tekrar
+        /// dene"), never by the queue's own retries — see
+        /// `CardGenerationRequest.forceResubmit`.
+        forceResubmit: Bool = false
     ) async -> PipelineOutcome {
         let upload: PreparedUpload
         do {
@@ -287,7 +291,8 @@ public struct CapturePipeline: Sendable {
                     maxCards: maxCards,
                     imageData: upload.data,
                     mimeType: upload.mimeType,
-                    multipleChoiceMode: multipleChoiceMode
+                    multipleChoiceMode: multipleChoiceMode,
+                    forceResubmit: forceResubmit
                 )
             )
         } catch let error as CardGenerationError {

@@ -53,6 +53,16 @@ final class ProcessingQueue: ObservableObject {
 
     @Published private(set) var isRunning = false
 
+    /// Someone asked for a pass while one was already running.
+    ///
+    /// The eligible set is chosen once, before anything is in flight, so pages
+    /// captured *during* a batch are invisible to it — and a batch on the job
+    /// queue runs for minutes. Dropping the request on the floor left those
+    /// pages sitting at "Bekliyor" until the next launch or pull-to-refresh,
+    /// because the follow-up pass `processPending` schedules only ever looks at
+    /// pages that failed transiently.
+    private var rerunRequested = false
+
     init(container: ModelContainer, imageStore: ImageStore, pipeline: CapturePipeline) {
         self.container = container
         self.imageStore = imageStore
@@ -128,11 +138,27 @@ final class ProcessingQueue: ObservableObject {
 
     /// Processes every page that is not finished. Safe to call repeatedly; a
     /// page already at `.ready` is skipped.
+    ///
+    /// A call that arrives while a pass is running is remembered rather than
+    /// dropped, and the running pass loops once more when it finishes — that is
+    /// how a page captured mid-batch gets picked up without waiting for the
+    /// next launch. `shouldProcess` is what makes the extra lap cheap: a page
+    /// the first lap already finished is not selected again.
     func processPending() async {
-        guard !isRunning else { return }
+        guard !isRunning else {
+            rerunRequested = true
+            return
+        }
         isRunning = true
         defer { isRunning = false }
 
+        repeat {
+            rerunRequested = false
+            await runOnePass()
+        } while rerunRequested
+    }
+
+    private func runOnePass() async {
         reconcilePendingImageDeletions()
 
         let context = container.mainContext
@@ -331,7 +357,8 @@ final class ProcessingQueue: ObservableObject {
     private func process(
         _ page: CapturedPage,
         lineSelection: [String]?,
-        selectionResult: MarkerSelectionResult?
+        selectionResult: MarkerSelectionResult?,
+        forceResubmit: Bool = false
     ) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
@@ -384,7 +411,8 @@ final class ProcessingQueue: ObservableObject {
             snapshot: decodedSnapshot(for: page),
             selectionOverride: lineSelection,
             selectionResultOverride: selectionResult,
-            completedGroupIds: completedGroupIds(for: page)
+            completedGroupIds: completedGroupIds(for: page),
+            forceResubmit: forceResubmit
         )
 
         apply(outcome, to: page, context: context)
@@ -771,6 +799,12 @@ final class ProcessingQueue: ObservableObject {
         }
     }
 
+    /// The user pressing "Tekrar dene" — not the queue retrying by itself.
+    ///
+    /// That distinction is what `forceResubmit` carries: only a person can know
+    /// something the server's own "do not retry this" verdict does not, and
+    /// without it a page the server gave up on stayed stuck no matter how many
+    /// times this was tapped (§17; `CardGenerationRequest.forceResubmit`).
     func retry(_ page: CapturedPage) async {
         guard page.processingState == .temporaryFailure || page.processingState == .permanentFailure else { return }
         // A run already in flight for this page will finish and write its own
@@ -781,6 +815,11 @@ final class ProcessingQueue: ObservableObject {
         page.nextAttemptAt = nil
         page.processingState = .captured
         try? container.mainContext.save()
-        await process(page)
+        await process(page, lineSelection: nil, selectionResult: nil, forceResubmit: true)
+        // A manual retry that fails transiently sets `nextAttemptAt` like any
+        // other run, but nothing was honouring it: `scheduleRetryDrain` only ran
+        // at the end of `processPending`, so "kendiliğinden yeniden denenecek"
+        // meant "when you next open the app".
+        scheduleRetryDrain()
     }
 }

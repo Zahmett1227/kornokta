@@ -13,7 +13,16 @@ public struct ImageStore: Sendable {
     }
 
     public let root: URL
-    private let fileManager: FileManager
+    /// `FileManager` is not `Sendable`, which makes storing one in a `Sendable`
+    /// struct a warning today and an error under the Swift 6 language mode.
+    ///
+    /// Kept (rather than reaching for `.default` at each call site) because the
+    /// injection seam is what lets a test point a store at a scratch directory.
+    /// `nonisolated(unsafe)` is the honest annotation for it: the only
+    /// operations used here — `createDirectory`, `fileExists`, `removeItem`,
+    /// `url(for:in:)` — are documented as safe to call concurrently on a single
+    /// instance, and `FileManager.default` is shared process-wide anyway.
+    private nonisolated(unsafe) let fileManager: FileManager
 
     public init(root: URL, fileManager: FileManager = .default) throws {
         self.root = root

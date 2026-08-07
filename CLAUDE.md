@@ -350,27 +350,61 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       local yollar için).
 
 **Test durumu (2026-08-07, akşam — `fix/review-round-1` dalı):**
-- Backend (`backend/`): **517 test yeşil**, `tsc --noEmit` temiz — kullanıcının
-  Mac'inde gerçekten koşuldu. (+9: iş kuyruğu fence testleri +
-  `supabaseJobs.test.ts`.)
-- Swift (`ios/CizgiCore/`): **tam paket bir Mac'te koşuldu: 304/304 yeşil.**
+- Backend (`backend/`): **527 test yeşil**, `tsc --noEmit` temiz — kullanıcının
+  Mac'inde gerçekten koşuldu.
+- Python (`evals/`): **518 test yeşil**, aynı Mac'te koşuldu.
+- Swift (`ios/CizgiCore/`): **tam paket bir Mac'te koşuldu: 305/305 yeşil.**
   (Önceki tek kırmızı — `BackupExporterTests`'in bayat `formatVersion: 1`
   beklentisi — düzeltildi; test artık `BackupExporter.formatVersion`'a bağlı.)
 - App hedefi: `xcodegen generate` + `xcodebuild build` (iOS Simulator,
-  imzasız) aynı Mac'te **başarılı**.
+  imzasız) aynı Mac'te **başarılı**; `swift build` artık **uyarısız**.
 - CI: yeni `.github/workflows/ios.yml` macOS runner'da `swift test` + App
   build koşuyor — Swift'in CI kapısı olmaması bu dalda kapandı.
 
-**Bu dalda kapatılan inceleme bulguları (2026-08-07 akşam turu):** iOS'ta
-çakışan iki koşunun kart setini iki kez kalıcılaştırması (`apply`'ın `.ready`
-dalına `hasPersistedGroup` süzgeci + `process(pageID:)`'te `shouldProcess`
-yeniden kontrolü + `retry`'de in-flight koruması), iptalin geç gelen sonuçla
-ezilmesi (`apply` başında `.cancelled` guard'ı); backend'de `complete`/`fail`'in
-`started_at` fence'i (ADR-006 kuralının son iki istisnası — `claim` artık
-kazandığı satırı döner, worker o satırın parametreleriyle üretir), Storage
-`getImage` 404'ünün ve OpenAI `incomplete`/gövde-içi `failed` durumlarının
-retryable sayılması (jobId = sayfa kimliği kalıcı kilidini açar); README durum
-tablosu ve PRIVACY sağlayıcı tablosu güncel akışa çekildi.
+**Bu dalda kapatılan inceleme bulguları (2026-08-07 akşam turu).** Codex'in
+listesi + bağımsız iki incelemenin bulguları; ayrıntılı gerekçeler kod
+yorumlarında.
+
+*Veri bütünlüğü / yarışlar:*
+- iOS: çakışan iki koşunun kart setini **iki kez** kalıcılaştırması (`apply`'ın
+  `.ready` dalına `hasPersistedGroup` süzgeci, `process(pageID:)`'te
+  `shouldProcess` yeniden kontrolü, `retry`'de in-flight koruması).
+- iOS: iptalin geç gelen sonuçla ezilmesi (`apply` başında `.cancelled` guard'ı).
+- Backend: `complete`/`fail` artık `started_at` fence'li — ADR-006 kuralının son
+  iki istisnası kapandı. `claim` kazandığı satırı döner; worker o satırın
+  parametreleriyle üretir, fence'i kaybederse ne sonuç yazar ne paylaşılan
+  nesne yolunu siler.
+
+*Kalıcı kilitler (jobId = sayfa kimliği olduğu için hepsi "sayfa bir daha
+üretilemez" demekti):*
+- Storage `getImage` 404'ü, OpenAI `incomplete` ve gövde-içi `failed` artık
+  retryable.
+- **`force` bayrağı:** kullanıcının "Tekrar dene"si kalıcı hatayı da yeniden
+  kuruyor (`POST /api/jobs` `force: true` → `requeue(includePermanent)`).
+  Otomatik retry'ler bunu **kullanmaz**. Bu olmadan yanlış API anahtarıyla
+  üretilen sayfalar, anahtar düzeltildikten sonra bile sonsuza dek kilitliydi.
+- Vision uçları artık PDF/TIFF'i kapıda çeviriyor (`VISION_MIME_TYPES`);
+  önceden OpenAI'den 400 dönüp kalıcı hataya çevriliyordu.
+- iOS: bilinmeyen kart tipi artık yalnız o kartı düşürüyor, tüm yanıtı değil.
+
+*FSRS (§18.1 — resmi algoritmaya sadakat):* `nextStabilityFailure`/
+`_next_stability_failure` resmi `min(long_term, S / e^(w17·w18))` clamp'ini
+**taşımıyordu**; open-spaced-repetition/py-fsrs `_next_forget_stability` ile
+karşılaştırılarak doğrulandı ve iki dilde birden eklendi,
+`evals/shared/fsrs-cases.json` yeniden üretildi. Etkisi: çok gecikmiş,
+kararlılığı düşük bir kart "Unuttum" sonrası **daha uzun** aralık alabiliyordu.
+
+*Diğer:* `numeric()` artık negatif/sıfır değerleri reddediyor
+(`SUPABASE_JOB_STALE_AFTER_MS=0` her canlı işçiyi anında bayat sayıyordu);
+elle retry sonrası `scheduleRetryDrain` çağrılıyor; parti sürerken çekilen
+sayfalar için `rerunRequested` (önce bir sonraki açılışa kadar bekliyorlardı);
+QueueView'da kart taşıyan sayfanın silinmesi artık onay istiyor; `ImageStore`
+Swift 6 `Sendable` uyarısı kapatıldı; README/PRIVACY güncel akışa çekildi.
+
+**Bilerek yapılmayan:** sunucu tarafında `attempts` üst sınırı. Telefonun
+`RetryPolicy.maxAttempts` = 5'i otomatik denemeleri zaten sınırlıyor ve çağrı
+başına maliyet tavanı artık gerçek; sunucuya sabit bir tavan koymak yeni
+eklenen `force` kaçışını da kapatırdı.
 - Python (`evals/`): **517 test yeşil** — bu ortamda gerçekten koşuldu
   (`pip install pytest jsonschema numpy pillow opencv-python-headless` sonrası).
 - Swift (`ios/CizgiCore/`): tam paket **Linux'ta derlenmiyor** (CoreGraphics,

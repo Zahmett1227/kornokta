@@ -295,6 +295,20 @@
         "difficulty": 4.9902283692968386,
         "intervalDays": 33.25320069862036
       }
+    },
+    {
+      "name": "lapsed_card_left_for_months",
+      "input": {
+        "priorStability": 0.05,
+        "priorDifficulty": 3.0,
+        "rating": 1,
+        "elapsedDays": 100.0
+      },
+      "expected": {
+        "stability": 0.04758639996671754,
+        "difficulty": 7.6843759692968385,
+        "intervalDays": 0.04758639996671754
+      }
     }
   ]
 }

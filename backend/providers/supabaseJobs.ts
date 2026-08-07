@@ -106,12 +106,21 @@ export interface JobStoreLike {
   /** Creates a brand-new queued job. `false` when a row for this id already exists. */
   insertQueued(request: EnqueueRequest): Promise<boolean>;
   /**
-   * failed-and-retryable → `queued`, with fresh page bytes.
+   * failed → `queued`, with fresh page bytes.
    *
-   * Conditional on the row still being a retryable failure, so a submission
-   * that raced another one cannot reset a job a worker has already claimed.
+   * Conditional on the row still being a failure, so a submission that raced
+   * another one cannot reset a job a worker has already claimed.
+   *
+   * `includePermanent` drops only the `retryable=is.true` half of that
+   * condition, never the `status=eq.failed` half. It exists for one caller: the
+   * user pressing "Tekrar dene" on a page the server gave up on. Automatic
+   * retries must not use it — a permanent failure is by definition one that
+   * repeating alone will not fix — but a *person* asking again usually knows
+   * something the server does not (a corrected API key, most of all), and
+   * without this the page was unrecoverable: the job id is the page id, so the
+   * only escape was deleting the capture and re-shooting it.
    */
-  requeue(request: EnqueueRequest): Promise<boolean>;
+  requeue(request: EnqueueRequest, options?: { includePermanent?: boolean }): Promise<boolean>;
   /**
    * `queued` → `processing`, conditional on the row still being `queued`.
    *
@@ -354,9 +363,13 @@ export class SupabaseJobStore implements JobStoreLike {
     }
   }
 
-  async requeue(request: EnqueueRequest): Promise<boolean> {
+  async requeue(
+    request: EnqueueRequest,
+    options: { includePermanent?: boolean } = {},
+  ): Promise<boolean> {
+    const retryableFilter = options.includePermanent ? "" : "&retryable=is.true";
     const payload = await this.callJson(
-      `${this.restBase}?id=eq.${request.id}&status=eq.failed&retryable=is.true`,
+      `${this.restBase}?id=eq.${request.id}&status=eq.failed${retryableFilter}`,
       "PATCH",
       { Prefer: "return=representation" },
       SupabaseJobStore.queuedFields(request),

@@ -15,7 +15,7 @@
  */
 
 import { authorize } from "./_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
+import { MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import {
@@ -27,6 +27,20 @@ import {
 import { runCardGate, type CardDecision, type CardGateReport, type CardVerdict } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
+
+/**
+ * What the vision model itself accepts — a strict subset of `_ocr.ts`'s
+ * `ACCEPTED_MIME_TYPES`, which is Document AI's list.
+ *
+ * The two endpoints on this path send the bytes straight into an OpenAI
+ * `input_image` part, and that API takes neither PDF nor TIFF. Validating
+ * against the OCR list let both through the door to be rejected by the provider
+ * as a 400 instead — which, on the job queue, is a *permanent* failure on a job
+ * id that equals the page id. The phone only ever sends JPEG, so this is a door
+ * that was never walked through; it is still the door's job to be the right
+ * shape (§21.2: fail at the edge, with a reason).
+ */
+export const VISION_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export interface CardsRequestBody {
   /** Client-generated job id; doubles as the generated output's `requestId` (§14). */
@@ -162,10 +176,10 @@ export async function handleCardsRequest(
   }
 
   const mimeType = typeof body.mimeType === "string" ? body.mimeType.trim() : "";
-  if (!ACCEPTED_MIME_TYPES.has(mimeType)) {
+  if (!VISION_MIME_TYPES.has(mimeType)) {
     return fail(
       `Desteklenmeyen tür: ${mimeType || "(boş)"}. Kabul edilenler: ` +
-        `${[...ACCEPTED_MIME_TYPES].join(", ")}.`,
+        `${[...VISION_MIME_TYPES].join(", ")}.`,
       415,
       false,
     );

@@ -209,3 +209,43 @@ ekledi (ayrı bir migration; istemcinin "sayfa başına kart" ayarı işçiye an
 satır üzerinden ulaşabiliyor, çünkü işçi isteği çok sonra çalışıyor) — backend
 test sayısı **476**. **Gerçek cihazda uçtan uca parti testi hâlâ yapılmadı**;
 bu ADR'nin asıl gerekçesini doğrulayacak tek şey odur.
+
+## İkinci inceleme turu (2026-08-07 akşamı)
+
+Yukarıdaki "her durum değişikliği koşullu olmak zorunda" kuralının **iki
+istisnası kalmıştı** ve inceleme onları buldu:
+
+6. **`complete` ve `fail` yalnız `id` ile yazıyordu.** Üretim sürerken deneme
+   bayatlarsa (bir yoklama `expire` eder, yeni bir gönderim işi yeniden kurar),
+   emekli işçinin geç gelen cevabı canlı denemenin üstüne yazılabiliyordu.
+   Düzeltme: ikisi de artık `?status=eq.processing&started_at=eq.<encoded>`
+   koşullu, yani `expire` ile aynı fence. Fence kaybedilirse sonuç düşürülür
+   (`jobs.result_dropped`) ve **paylaşılan nesne yoluna dokunulmaz** — yol
+   deterministik (`pages/<jobId>`) olduğu için silmek, yeni denemenin taze
+   baytlarını götürürdü. Bunu mümkün kılmak için `claim` artık boolean yerine
+   kazandığı satırı döner; işçi de üretimini o satırın parametreleriyle yapar
+   (önceden claim'den *önce* okunan anlık görüntüyü kullanıyordu).
+
+7. **Kalıcı hata kaçışsızdı.** İş kimliği = sayfa kimliği olduğundan
+   `failed` + `retryable=false` bir satır, o sayfayı `/api/jobs` üzerinden
+   sonsuza dek üretilemez yapıyordu; `requeue` filtresi `retryable=is.true`
+   istiyor, `submit` de satırı olduğu gibi geri döndürüyordu. En kötü hâli:
+   yanlış bir API anahtarıyla üretilen her sayfa, anahtar düzeltildikten sonra
+   bile kilitli kalıyordu — tek çare sayfayı silip yeniden çekmekti.
+   Düzeltme iki koldan:
+   - Bazı hatalar zaten kalıcı sayılmamalıydı: Storage `getImage` 404'ü
+     (eşzamanlı temizlik silmiş olabilir), OpenAI `status:"incomplete"` (token
+     harcaması stokastik) ve gövde-içi `status:"failed"` artık **retryable**.
+   - Gerçekten kalıcı olanlar için `POST /api/jobs` bir `force: true` bayrağı
+     kabul ediyor (`requeue(..., { includePermanent: true })`). Bu bayrağı
+     **yalnız kullanıcının "Tekrar dene" dokunuşu** taşır, kuyruğun otomatik
+     denemeleri asla — tekrarlamanın tek başına çözmeyeceği bir hatayı
+     tekrarlamak anlamsız, ama bir *insanın* yeniden sorması sunucunun
+     bilmediği bir şeyi taşıyabilir. `force` yalnız `retryable` koşulunu
+     düşürür; `status=eq.failed` koşulu yerinde kalır, yani canlı bir işçi
+     (`processing`) ya da biten bir iş (`ready`) asla geri çekilemez.
+
+Ayrıca vision uçları artık PDF/TIFF'i **kapıda** çeviriyor (`VISION_MIME_TYPES`,
+Document AI'ın listesinin bir alt kümesi): OpenAI ikisini de kabul etmiyor,
+dolayısıyla eskiden kapıdan geçip sağlayıcıdan 400 alıyor ve yukarıdaki kalıcı
+kilide dönüşüyorlardı.

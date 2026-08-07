@@ -87,10 +87,14 @@ function stubStore(seed: JobRow[] = []) {
       });
       return true;
     },
-    async requeue(request: EnqueueRequest) {
+    async requeue(request: EnqueueRequest, options: { includePermanent?: boolean } = {}) {
       calls.push(`requeue:${request.id}`);
       const row = rows.get(request.id);
-      if (!row || row.status !== "failed" || row.retryable !== true) return false;
+      if (!row || row.status !== "failed") return false;
+      // `includePermanent` drops only the retryable half of the condition —
+      // mirroring the real store's filter, so a stub that ignored it could not
+      // hide a handler that re-armed a claimed job.
+      if (row.retryable !== true && !options.includePermanent) return false;
       rows.set(request.id, {
         ...row,
         status: "queued",
@@ -425,6 +429,69 @@ describe("POST /api/jobs — yeniden gönderim", () => {
     expect(response.status).toBe(202);
     expect(store.rows.get(JOB_ID)).toMatchObject({ status: "ready", error: null });
   });
+
+  it("force ile kalıcı bir hata da yeniden kurulur (kullanıcının 'Tekrar dene'si)", async () => {
+    // İş kimliği = sayfa kimliği olduğundan, kalıcı hata kaçışsız bir durumdu:
+    // yanlış bir API anahtarıyla üretilen her sayfa, anahtar düzeltildikten
+    // sonra bile sonsuza dek kilitli kalıyordu. Tek çare sayfayı silip yeniden
+    // çekmekti.
+    const store = stubStore([row({ status: "failed", retryable: false, error: "401", imagePath: null })]);
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    const response = await handleJobsRequest(post({ ...VALID_BODY, force: true }), d);
+    await d.settled();
+
+    expect(response.status).toBe(202);
+    expect(store.rows.get(JOB_ID)).toMatchObject({ status: "ready", error: null });
+    expect(generator.seen).toHaveLength(1);
+  });
+
+  it("force, alınmış (processing) bir işi geri çekmez", async () => {
+    // `force` yalnız `retryable` koşulunu düşürür, `status=eq.failed` koşulunu
+    // değil: canlı bir işçiyi ikinci bir ücretli üretimle yarıştıramaz.
+    const store = stubStore([
+      row({ status: "processing", startedAt: new Date(NOW).toISOString(), imagePath: imagePathFor(JOB_ID) }),
+    ]);
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    const response = await handleJobsRequest(post({ ...VALID_BODY, force: true }), d);
+    await d.settled();
+
+    expect(response.status).toBe(202);
+    expect(store.rows.get(JOB_ID)?.status).toBe("processing");
+    expect(generator.seen).toHaveLength(0);
+  });
+
+  it("force, biten bir işi yeniden üretmez", async () => {
+    const store = stubStore([row({ status: "ready", result: { ok: true }, imagePath: null })]);
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    const response = await handleJobsRequest(post({ ...VALID_BODY, force: true }), d);
+    await d.settled();
+
+    expect(response.status).toBe(200);
+    expect(generator.seen).toHaveLength(0);
+  });
+
+  it("force olmadan kalıcı hata olduğu gibi bildirilir", async () => {
+    const store = stubStore([row({ status: "failed", retryable: false, error: "401", imagePath: null })]);
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    const response = await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)?.status).toBe("failed");
+    expect(generator.seen).toHaveLength(0);
+  });
+
+  it("force boolean değilse sessizce yutmaz", async () => {
+    const response = await handleJobsRequest(post({ ...VALID_BODY, force: "evet" }), deps());
+    expect(response.status).toBe(400);
+  });
 });
 
 describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
@@ -734,6 +801,17 @@ describe("POST /api/jobs — doğrulama", () => {
     const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType: "image/gif" }), deps());
     expect(response.status).toBe(415);
     expect(ACCEPTED_MIME_TYPES.has("image/gif")).toBe(false);
+  });
+
+  it("OCR'ın kabul ettiği ama vision modelinin okuyamadığı türleri kapıda çevirir", async () => {
+    // Kalıcı hatanın bedeli burada yüksek: iş kimliği = sayfa kimliği olduğu
+    // için sağlayıcıdan dönecek 400, o sayfayı kilitleyen bir `retryable=false`
+    // satırına dönüşürdü.
+    for (const mimeType of ["application/pdf", "image/tiff"]) {
+      expect(ACCEPTED_MIME_TYPES.has(mimeType), mimeType).toBe(true);
+      const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType }), deps());
+      expect(response.status, mimeType).toBe(415);
+    }
   });
 
   it("çok büyük görüntü için 413 verir", async () => {
