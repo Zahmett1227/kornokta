@@ -25,7 +25,11 @@ struct CaptureView: View {
     /// Held while the duplicate question is on screen — nothing is written to
     /// disk until the user answers it.
     @State private var pendingImages: [Data] = []
-    @State private var duplicateCount = 0
+    /// Which of `pendingImages` duplicate something. Computed once, so the
+    /// "yalnız yenilerini ekle" path skips exactly what the question described.
+    @State private var pendingDuplicates: Set<Int> = []
+
+    private var duplicateCount: Int { pendingDuplicates.count }
 
     private var inFlight: [CapturedPage] {
         pages.filter { !$0.processingState.isTerminal }
@@ -91,7 +95,7 @@ struct CaptureView: View {
                     : "\(duplicateCount) sayfayı daha önce çekmişsin.",
                 isPresented: Binding(
                     get: { duplicateCount > 0 },
-                    set: { if !$0 { pendingImages = []; duplicateCount = 0 } }
+                    set: { if !$0 { clearPending() } }
                 ),
                 titleVisibility: .visible
             ) {
@@ -99,7 +103,7 @@ struct CaptureView: View {
                     Button("Yalnız yenilerini ekle") { storeSkippingDuplicates() }
                 }
                 Button("Yine de ekle") { storeAllPending() }
-                Button("Vazgeç", role: .cancel) { pendingImages = []; duplicateCount = 0 }
+                Button("Vazgeç", role: .cancel) { clearPending() }
             } message: {
                 Text("Tekrar eklersen aynı sayfadan ikinci bir kart takımı üretilir "
                      + "ve üretim ücreti yeniden ödenir.")
@@ -208,20 +212,28 @@ struct CaptureView: View {
         // charge from the provider. Asked, never enforced: the similarity
         // threshold is a first calibration, and re-shooting a page on purpose is
         // a perfectly normal thing to do.
-        let duplicates = images.filter { environment.queue.likelyDuplicate(of: $0) != nil }
+        //
+        // The batch is compared against itself as well as against the store: one
+        // scan can hand back the same page twice, and neither copy is in the
+        // store yet (Codex, PR #27).
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: images.map { PageImageHasher.hash($0) },
+            storedHashes: environment.queue.storedPageHashes()
+        )
         guard duplicates.isEmpty else {
             pendingImages = images
-            duplicateCount = duplicates.count
+            pendingDuplicates = duplicates
             return
         }
         store(images)
     }
 
-    /// Drops the images that match a page already in the store.
+    /// Keeps only the images the question did not flag.
     private func storeSkippingDuplicates() {
-        let fresh = pendingImages.filter { environment.queue.likelyDuplicate(of: $0) == nil }
-        pendingImages = []
-        duplicateCount = 0
+        let fresh = pendingImages.enumerated()
+            .filter { !pendingDuplicates.contains($0.offset) }
+            .map(\.element)
+        clearPending()
         guard !fresh.isEmpty else {
             lastCapturedIds = []
             return
@@ -231,9 +243,13 @@ struct CaptureView: View {
 
     private func storeAllPending() {
         let images = pendingImages
-        pendingImages = []
-        duplicateCount = 0
+        clearPending()
         store(images)
+    }
+
+    private func clearPending() {
+        pendingImages = []
+        pendingDuplicates = []
     }
 
     private func store(_ images: [Data]) {

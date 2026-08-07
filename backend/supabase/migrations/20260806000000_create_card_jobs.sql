@@ -28,10 +28,6 @@ create table public.jobs (
   mime_type text not null,
   -- Optional free-text steer from the user ("sadece sol sütun", §5.1).
   hint text,
-  -- The user's "sayfa başına kart" setting. Null means the deployment default;
-  -- the server clamps to it either way, so a client can only ask for fewer
-  -- (§6.7, §21.3). Added by 20260806010000_add_max_cards_to_jobs.sql.
-  max_cards integer check (max_cards is null or max_cards >= 1),
   attempts integer not null default 0,
   -- Exactly the body `/api/cards-vision` returns today: { output, gate,
   -- cardPromptVersion }. Stored verbatim so the iOS decoder is reused unchanged

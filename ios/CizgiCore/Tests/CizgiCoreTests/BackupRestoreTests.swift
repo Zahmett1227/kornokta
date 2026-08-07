@@ -239,6 +239,67 @@ final class BackupRestoreTests: XCTestCase {
         XCTAssertNil(PerceptualHasher.nearestDuplicate(to: base, among: [(id: "far", hash: far)]))
     }
 
+    // MARK: Batch de-duplication
+
+    private func hashes(_ bits: [UInt64?]) -> [PerceptualHash?] {
+        bits.map { $0.map(PerceptualHash.init(bits:)) }
+    }
+
+    /// The gap Codex found: comparing only against stored pages let a page
+    /// photographed twice in one scan through twice — two card sets, two
+    /// charges — because neither copy was in the store yet.
+    func testTheSamePageTwiceInOneScanIsCaughtEvenWhenItIsBrandNew() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: hashes([0b1010, 0b1010]),
+            storedHashes: []
+        )
+        XCTAssertEqual(duplicates, [1], "ilk kopya tutulmalı, ikincisi elenmeli")
+    }
+
+    func testThreeCopiesYieldOnePageAndTwoSkips() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: hashes([0b1010, 0b1010, 0b1010]),
+            storedHashes: []
+        )
+        XCTAssertEqual(duplicates, [1, 2])
+    }
+
+    func testAnAlreadyStoredPageIsStillCaught() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: hashes([0b1010, UInt64.max]),
+            storedHashes: [PerceptualHash(bits: 0b1010)]
+        )
+        XCTAssertEqual(duplicates, [0])
+    }
+
+    func testDistinctPagesInOneScanAllSurvive() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: hashes([0, UInt64.max, 0x00FF_00FF_00FF_00FF]),
+            storedHashes: []
+        )
+        XCTAssertTrue(duplicates.isEmpty)
+    }
+
+    /// A skipped copy must not become the thing later images are compared
+    /// against, or the original would end up shadowed by its own duplicate.
+    func testASkippedCopyDoesNotShadowTheOriginal() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: hashes([0b1, 0b1, 0b1]),
+            storedHashes: []
+        )
+        XCTAssertEqual(duplicates, [1, 2])
+    }
+
+    /// Unreadable is not the same as "seen before"; losing a capture to a
+    /// decoder's bad day would be the worse failure (§21.2).
+    func testAnUnhashableImageIsNeverCalledADuplicate() {
+        let duplicates = PerceptualHasher.duplicateIndices(
+            hashes: [nil, nil],
+            storedHashes: [PerceptualHash(bits: 0)]
+        )
+        XCTAssertTrue(duplicates.isEmpty)
+    }
+
     // MARK: Reminders
 
     private var calendar: Calendar {

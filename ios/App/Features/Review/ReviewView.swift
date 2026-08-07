@@ -358,6 +358,17 @@ struct ReviewView: View {
         return ReviewPace.secondsPerCard(recentResponseTimesMs: recent.map(\.responseTimeMs))
     }
 
+    /// Silent on failure for the same reason `RootView`'s copy is: a throw here
+    /// means notification permission was revoked outside the app, which Ayarlar
+    /// reports the next time the toggle is touched.
+    private func refreshReminders() async {
+        try? await ReviewNotificationManager.reschedule(
+            enabled: environment.settings.notificationsEnabled,
+            hour: environment.settings.notificationHour,
+            dueDates: allCards.filter { $0.status == .active }.map(\.dueDate)
+        )
+    }
+
     private func estimatedMinutes(for cardCount: Int) -> Int {
         max(1, Int((Double(cardCount) * secondsPerCard / 60).rounded()))
     }
@@ -482,6 +493,18 @@ struct ReviewView: View {
         let step = working.advance(relearn: rating == .again)
         session = working
 
+        // Grading moved due dates, so the reminders scheduled from the old ones
+        // are now wrong. Rescheduling otherwise happens only at launch, in
+        // Ayarlar and on backgrounding — so a user who cleared their reviews at
+        // 19:50 and stayed in the app would get a banner at 20:00 announcing
+        // cards that no longer exist, which is the exact failure this reminder
+        // rewrite was for (Codex, PR #27). Done once the session ends rather
+        // than per grade: withdrawing and re-adding a week of requests after
+        // every card would be pure churn.
+        if working.isFinished {
+            Task { await refreshReminders() }
+        }
+
         if let step {
             lastGrade = GradeSnapshot(
                 step: step,
@@ -513,11 +536,25 @@ struct ReviewView: View {
             return
         }
 
+        // A throw and an empty result mean opposite things and must not be
+        // collapsed with `try?`. Empty is fine — the log's own insert may have
+        // failed, so there is nothing to remove. A throw leaves the log's fate
+        // unknown, and undoing anyway would restore the card's scheduling state
+        // while a `ReviewLog` still claims the review happened: a history that
+        // contradicts the card, exported into every backup from then on.
         let logId = snapshot.logId
         var descriptor = FetchDescriptor<ReviewLog>(predicate: #Predicate { $0.id == logId })
         descriptor.fetchLimit = 1
-        if let log = try? context.fetch(descriptor).first {
-            context.delete(log)
+        let storedLog: ReviewLog?
+        do {
+            storedLog = try context.fetch(descriptor).first
+        } catch {
+            // `lastGrade` is deliberately kept, so the button stays and the user
+            // can try again rather than silently losing the ability to undo.
+            return
+        }
+        if let storedLog {
+            context.delete(storedLog)
         }
 
         card.dueDate = snapshot.dueDate

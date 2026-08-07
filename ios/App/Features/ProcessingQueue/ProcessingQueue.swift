@@ -74,32 +74,20 @@ final class ProcessingQueue: ObservableObject {
         pipeline = pipeline.withGenerator(generator)
     }
 
-    /// A page already in the store that looks like the image about to be
-    /// captured, if there is one.
+    /// Hashes of every page already in the store, for the capture screen's
+    /// duplicate check.
     ///
-    /// Nothing acts on this automatically: the capture screen asks. The
-    /// threshold is a first calibration and a page can legitimately be re-shot
-    /// (a blurry first attempt, better light), so refusing would be the app
-    /// overruling the user on a guess.
-    func likelyDuplicate(of imageData: Data) -> (page: CapturedPage, distance: Int)? {
-        guard let hash = PageImageHasher.hash(imageData) else { return nil }
-
+    /// Returns the raw hashes rather than answering "is this a duplicate?" per
+    /// image: the batch has to be compared against itself as well as against the
+    /// store, and that decision belongs in one tested place
+    /// (`PerceptualHasher.duplicateIndices`).
+    func storedPageHashes() -> [PerceptualHash] {
         let context = container.mainContext
-        let descriptor = FetchDescriptor<CapturedPage>()
-        guard let pages = try? context.fetch(descriptor) else { return nil }
-
-        let candidates: [(id: UUID, hash: PerceptualHash)] = pages.compactMap { page in
-            guard
-                !page.pendingDeletion,
-                let stored = page.perceptualHash,
-                let parsed = PerceptualHash(stringValue: stored)
-            else { return nil }
-            return (page.id, parsed)
+        guard let pages = try? context.fetch(FetchDescriptor<CapturedPage>()) else { return [] }
+        return pages.compactMap { page in
+            guard !page.pendingDeletion, let stored = page.perceptualHash else { return nil }
+            return PerceptualHash(stringValue: stored)
         }
-        guard let match = PerceptualHasher.nearestDuplicate(to: hash, among: candidates),
-              let page = pages.first(where: { $0.id == match.id })
-        else { return nil }
-        return (page, match.distance)
     }
 
     /// Registers a freshly captured image. Returns once the bytes are on disk —

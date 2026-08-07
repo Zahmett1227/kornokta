@@ -108,6 +108,42 @@ public enum PerceptualHasher {
         distance(lhs, rhs) <= duplicateThreshold
     }
 
+    /// Which images in one scan duplicate something — a page already stored, or
+    /// an earlier image in the same batch.
+    ///
+    /// The second half matters as much as the first: `VNDocumentCameraViewController`
+    /// hands back everything the user shot, and shooting the same page twice
+    /// without turning it is exactly what happens when the first attempt looked
+    /// blurry. Comparing only against stored pages let both copies through, so a
+    /// brand-new page photographed twice still produced two card sets and two
+    /// charges (Codex, PR #27).
+    ///
+    /// An image whose hash could not be computed is never called a duplicate:
+    /// unreadable is not the same as "seen before", and dropping it would lose a
+    /// capture over a decoder's bad day (§21.2).
+    ///
+    /// The *first* of a set of identical images is kept, so a batch of three
+    /// copies yields one page and two skips.
+    public static func duplicateIndices(
+        hashes: [PerceptualHash?],
+        storedHashes: [PerceptualHash]
+    ) -> Set<Int> {
+        var duplicates: Set<Int> = []
+        var accepted: [PerceptualHash] = storedHashes
+
+        for (index, hash) in hashes.enumerated() {
+            guard let hash else { continue }
+            if accepted.contains(where: { isLikelyDuplicate(hash, $0) }) {
+                duplicates.insert(index)
+            } else {
+                // Only a kept image becomes something later ones are compared
+                // against — otherwise a skipped copy would shadow the original.
+                accepted.append(hash)
+            }
+        }
+        return duplicates
+    }
+
     /// The closest already-captured page, when it is close enough to be worth
     /// mentioning.
     ///
