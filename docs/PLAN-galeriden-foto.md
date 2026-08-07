@@ -1,6 +1,7 @@
 # Plan — galeriden fotoğraf ekleme
 
-**Durum:** G1–G3 uygulandı (2026-08-07), **G4 gerçek cihaz doğrulaması açık** ·
+**Durum:** ✅ tamam — G1–G3 uygulandı ve **G4 gerçek iPhone'da doğrulandı**
+(kullanıcı, 2026-08-07) ·
 **Tarih:** 2026-08-07 · **Büyüklük:** küçük (bir oturum) ·
 **Dayanak:** ANA-PLAN §8.1 (yakalama), §21.2 (bir çekim kaybolmaz), §24.6
 (görüntü gizliliği), §4.3 (PDF/Share Sheet *sonraki* sürüm adayı).
@@ -179,7 +180,7 @@ ikinci kez çekmekten **daha** olası.)
 | **G1** | `ImportedImage`: format tespiti + karar mantığı + testler | ✅ **Bu ortamda gerçekten koşuldu** — izole pakette 100 test yeşil (15'i yeni), her yeni test mutasyonla doğrulandı |
 | **G2** | ImageIO normalize (JPEG + yön), `PhotoLibraryImporter`, `CaptureView` bağlantısı | ✅ Yazıldı — **Mac derlemesi bekliyor** |
 | **G3** | "Kart üretilmedi" hata nedeni ve mesajı | ✅ `FailureKind.noContent` + her hataya Türkçe `message`; kuyruk artık ham enum adı basmıyor |
-| **G4** | Cihaz doğrulaması (§11) | ⬜ Gerçek iPhone |
+| **G4** | Cihaz doğrulaması (§11) | ✅ Kullanıcı gerçek iPhone'da denedi, sorun çıkmadı (2026-08-07) |
 
 ## 11. Kabul kriterleri
 

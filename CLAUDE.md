@@ -466,8 +466,8 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 - `docs/FAZ6-PLAN.md` — **GÜNCEL YÖN:** Faz 6'nın detaylı, dosya bazlı uygulama
   planı, sadeleşmiş sözleşme ve aşamalı durum tablosu
 - `docs/PLAN-galeriden-foto.md` — galeriden fotoğraf ekleme: HEIC/EXIF-yönü
-  tuzakları, tek noktada normalize etme kararı (**G1–G3 uygulandı, cihaz
-  doğrulaması açık**)
+  tuzakları, tek noktada normalize etme kararı (**uygulandı ve cihazda
+  doğrulandı**)
 - `docs/FAZ7-PLAN-coktan-secmeli.md` — **PLAN (uygulanmadı):** beş şıklı (TUS
   tipi) kart; şema v2.1, kalite kapısı, FSRS eşlemesi, ANA-PLAN §13.3'ün onay
   maddesiyle Faz 6 çatışması
