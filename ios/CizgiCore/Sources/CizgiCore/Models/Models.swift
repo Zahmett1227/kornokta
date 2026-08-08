@@ -508,7 +508,16 @@ public final class ExerciseRun {
     /// storageValue`. Storing the name alone cannot tell "Konusuz" apart from
     /// "no topic filter", and restoring into the wrong one changes which cards
     /// the resumed session covers.
-    public var topicFilterRaw: String?
+    ///
+    /// `originalName` because this property used to be called `topic`. Without
+    /// it lightweight migration reads the rename as "drop one column, add an
+    /// empty one", so a device that ran an earlier build of this work would
+    /// resume its in-flight run with the topic filter silently widened to
+    /// "Tümü". Legacy rows carried a bare topic name, which is already the
+    /// right storage value; a legacy `nil` still cannot say whether the user
+    /// had picked "Tümü" or "Konusuz", but that ambiguity is exactly the bug
+    /// this rename fixes and no migration can recover it after the fact.
+    @Attribute(originalName: "topic") public var topicFilterRaw: String?
     /// String UUIDs keep the exact shuffled order durable across relaunches.
     public var queuedCardIds: [String]
     public var position: Int
