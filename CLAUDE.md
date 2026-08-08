@@ -25,8 +25,10 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   ve üstüne **Egzersiz'in merkeze alınması + Bilgi Haritası** (PR #33) geldi.
   `main` = `a8909f0`. Supabase `subject` kolonu **canlıya uygulandı**
   (`information_schema` ile doğrulandı: `jobs.subject text null`) — o
-  bloklayıcı kapandı. Alt navigasyon cihazda açılıp **doğru göründüğü teyit
-  edildi**; Bilgi Haritası ve Egzersiz'in "Bitir"i henüz cihazda denenmedi.
+  bloklayıcı kapandı. **Üç P0 da cihazda doğrulandı** (alt bar, "Konusuz"
+  kovası, Egzersiz'in "Bitir"i). Kalan doğrulamalar — en kritiği **ilk gerçek
+  çekim**, çünkü OpenAI'nin konu enum'unu kabul edip etmediği hâlâ bilinmiyor —
+  "Sıradaki iş / 1"de madde madde listeli.
 
 ### Ders/konu sınıflandırması + egzersiz modu (2026-08-08)
 
@@ -235,7 +237,7 @@ yorumları **İngilizce**.
 | Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
 | Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
 | Ders/konu sınıflandırması + Egzersiz modu | ✅ **Tamam** (PR #32). Supabase `subject` kolonu canlıda. Bkz. aşağıdaki bölüm. |
-| Egzersiz merkeze + Bilgi Haritası | 🟡 **`main`'de** (PR #33, dört tur: ilk dilim + P0/P1/P2 düzeltmeleri + Codex'in bir P2'si). CI ve Mac derlemesi yeşil, **alt navigasyon cihazda doğrulandı**. **Kalan:** Bilgi Haritası ile Egzersiz'in "Bitir"ini cihazda görmek. Bkz. `docs/PLAN-egzersiz-bilgi-haritasi.md`. |
+| Egzersiz merkeze + Bilgi Haritası | 🟡 **`main`'de** (PR #33, dört tur: ilk dilim + P0/P1/P2 düzeltmeleri + Codex'in bir P2'si). CI ve Mac derlemesi yeşil. **Üç P0 da cihazda doğrulandı:** alt bar, Bilgi Haritası'nın "Konusuz" kovası, Egzersiz'in "Bitir"i. **Kalan doğrulamalar "Sıradaki iş / 1"de listeli** — en önemlisi derin ekranda barın kaybolması. Bkz. `docs/PLAN-egzersiz-bilgi-haritasi.md`. |
 
 **Dal durumu:** `main` güncel uç (`a8909f0`, PR #33 squash merge). Çalışma
 dalları merge sonrası siliniyor; yeni iş `main`'in ucundan yeni bir dalla
@@ -693,7 +695,57 @@ değil:
 düşer, B planı enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek;
 (b) atanan konular gerçekten doğru mu (kart detayında "Sınıflandırma").
 
-### 1. A6 — beş şıklı kartın gerçek sayfayla denenmesi (en öncelikli)
+### 1. Cihaz doğrulama listesi (PR #33 + ilk gerçek çekim)
+
+**Bu bölüm kullanıcıya sorulacak soruların listesidir.** Kod ve CI yeşil; buradaki
+maddelerin hiçbiri testle kapatılamaz, yalnız gerçek cihazda görülerek kapanır.
+Bir madde doğrulandığında **buradan silinip** "cihazda doğrulananlar"a taşınır.
+
+**✅ Cihazda doğrulanmış (2026-08-08):**
+- Alt navigasyon kök ekranlarda doğru görünüyor → yerli sekme çubuğu gerçekten
+  gizleniyor, çift bar yok.
+- Bilgi Haritası'nda **"Konusuz" kovası dolu** → `SubjectBackfillMigration`
+  beklendiği gibi çalışmış, harita mevcut destede boş görünmüyor.
+- Egzersiz'de **"Bitir" var ve biten koşu "Son Egzersizler"e düşüyor** → çıkış
+  düğmesi çalışıyor *ve* koşu `finishedAt` ile kapanıyor. İkincisi kritik:
+  "Son Egzersizler" yalnız kapanmış koşuları listeler, yani orada görünmesi bir
+  sonraki açılışta kullanıcının o oturuma geri düşmeyeceğinin kanıtı.
+
+**🔲 Henüz doğrulanmamış — önem sırasıyla:**
+
+1. **Bir sayfa çek (en kritik, PR #33 ile ilgisi yok).** Sistemin en büyük açık
+   riski: OpenAI'nin model-yüzlü şemadaki `anyOf: [enum-string, null]` konu
+   alanını kabul edip etmediği **hiç denenmedi**.
+   - *Beklenen:* kart geliyor; kart detayında "Sınıflandırma" bölümünde makul
+     bir ders/konu yazıyor.
+   - *Olmazsa:* tüm işler düşer, kart üretimi tamamen durur. **B planı:**
+     `buildModelResponseSchema`'dan enum'u kaldırıp yalnız prompt
+     (`topicInstruction`) + sunucu sanitizasyonuna (`sanitizeTopics`) güvenmek.
+     Üç katmanlı savunma zaten bunun için kuruldu.
+   - Aynı çekim **A6'yı da açar** (aşağıdaki bölüm) — tek oturumda ikisi birden.
+2. **Derin ekranda alt bar kayboluyor mu.** PR #33'ün en büyük mimari
+   değişikliğinin tek gözle kanıtı. Bilgilerim → bir kart, ya da Yakala → Kuyruk.
+   - *Beklenen:* bar gidiyor, içeriğin üstüne binmiyor.
+   - *Olmazsa:* `rootTabBarInset()` yerleşimi çalışmıyor demektir; bar artık
+     TabView'ın barı olmadığı için `.toolbar(.hidden, for: .tabBar)` da
+     kurtarmaz — çözüm push'ları değer tabanlı `NavigationLink`'e çevirmek.
+3. **Bilgi Haritası → "Konusuz" satırına dokun.** Kovanın *görünmesi* ile ondan
+   Egzersiz *başlatılabilmesi* ayrı şeyler; ikincisi yeni `TopicFilter.none`
+   yolunu kullanıyor.
+   - *Beklenen:* o dersin konusuz kartlarıyla bir Egzersiz başlıyor.
+4. **"Hızlı 10"u üst üste iki kez çalıştır.** Farklı kartlar gelmeli.
+   - *Olmazsa:* `ExerciseSelection.pick`'in örneklem düzeltmesi tutmamış, hâlâ
+     en yeni on kart geliyor demektir.
+5. **Aktif oturumdayken Bilgi Haritası'ndan bir derse dokun.** "Devam eden bir
+   Egzersiz var" diyaloğu çıkmalı; "baştan başla" seçilirse koşu kapanıp
+   başlangıç ekranına yeni filtreyle dönülmeli.
+6. **Erişilebilirlik yazı boyutu (en büyük iki kademe).** Alt barda etiketler
+   kalkıp yalnız ikonlar kalmalı, taşma/sarma olmamalı.
+7. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli olarak sona bırakıldı.
+   Bir kartı Egzersiz'de yanlış yapıp sonraki günlerde doğru yapınca listeden
+   düşmesi beklenir.
+
+### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
 Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla oturur.
 
@@ -707,7 +759,7 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 - Ayrıca ilk turda ölç: **Ayarlar → Kullanım**'daki çıktı token sayısı beş şıklı
   kartla ne kadar arttı (§8'in tahmini kart başına +80–150).
 
-### 2. Küçük ve gerçek kalanlar
+### 3. Küçük ve gerçek kalanlar
 
 1. **Biten işlerin `result` satırının saklama süresi (senin kararın).** Codex'in
    PR #30'da bulduğu §7.3 açığı: üretilen kart metinleri + `readText`
@@ -722,7 +774,7 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 3. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote` vb. Faz 6'da
    anlamsızlaşan alanlar). Bilerek ertelendi: §10.4 "mevcut kartlar korunmalı".
 
-### 3. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
+### 4. Düşük öncelikli, kullanıcı kararıyla ertelenmiş
 
 3. Codex'in PR #5'te bulduğu 8. bulgu: dar ama gerçek bir sütun boşluğunu kesen
    ayraç/başlık boşluğu (`MAX_COLUMN_ITEM_WIDTH`). Faz 6 ana akışı OCR yapmadığı
