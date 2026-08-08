@@ -21,6 +21,57 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   doğrulandı) ve **beş şıklı TUS kartı** (PR #29, A1–A5) geldi. `main` =
   `09c629d`. Kalan tek gerçek iş: **beş şıklı kartın gerçek sayfayla ilk
   denemesi ve distraktör kalitesi (A6)** — "Sıradaki iş" bölümüne bak.
+- **Durum (2026-08-08):** **ders/konu sınıflandırması + egzersiz modu**
+  eklendi (aşağıdaki bölüm). Testler: backend 548, Swift 330, Python 518 yeşil;
+  App hedefi Mac'te derlendi. **Cihazda henüz denenmedi ve Supabase `subject`
+  kolonu canlıya HENÜZ uygulanmadı** — dağıtımdan önce şart.
+
+### Ders/konu sınıflandırması + egzersiz modu (2026-08-08)
+
+Üç istek tek turda: yakalarken yapışkan ders seçimi, her karta konu ataması,
+ve FSRS'e dokunmayan bir egzersiz modu.
+
+- **Konu şablonu tek kaynak:** `backend/schemas/subject_topics.json` (11 ders,
+  143 konu) — tusoskop `src/data/subjectTopicSchema.js`'ten **elle** portlandı
+  (o repo dışarıda, üretici erişemiyor; senkron tarihi JSON'un `_comment`
+  alanında). `ios/CizgiCore/.../Resources/subject_topics.json` byte-birebir
+  kopyası; `backend/tests/subjectTopics.test.ts` ayrışırsa kırılıyor — projenin
+  kurulu anti-drift deseni. **Konu adları yalnız ders içinde tekil**
+  ("İmmünoloji" hem Patoloji hem Mikrobiyoloji'de), bu yüzden her kontrol
+  `(ders, konu)` çifti üzerinden.
+- **Şema v2.2 / prompt v2.5:** karta opsiyonel `topic` alanı eklendi. Kanonik
+  şemada enum YOK (ders-bağımsız); enum yalnız model-yüzlü dinamik şemada
+  (`buildModelResponseSchema(maxCards, topicEnum)` → `anyOf: [enum-string,
+  null]`). Üç katman: şema enum'u + prompt (`topicInstruction`) + sunucu
+  sanitizasyonu (`sanitizeTopics`). **Geçersiz konu işi asla düşürmez, null'a
+  çevrilir** — jobId = sayfa kimliği olduğu için bir sınıflandırma inceliği
+  sayfayı kalıcı kilitleyemez. v2.0/v2.1 payload'ları hâlâ geçerli.
+- **Ders isteğe taşındı:** `subject` → `POST /api/jobs` gövdesi → `jobs.subject`
+  kolonu → worker → generator. Bilinmeyen ders 400 değil, **null olarak saklanır**
+  (lenient; `maxCards`/`mcMode`'un aksine, çünkü konu bir zorunluluk değil).
+- **Kart başına kesin konu, SwiftData şeması değişmeden:** `persist` artık
+  kartları konuya göre bölüp **konu başına bir `KnowledgeUnit`** üretiyor (hepsi
+  aynı `TextRegion`'ı paylaşıyor) — `TopicGrouping`. Yan etki: aynı sayfanın
+  farklı konulu kartları `ReviewSessionPlanner` için artık "kardeş" değil.
+- **Tek seferlik migration:** `SubjectBackfillMigration` (flag
+  `cizgi.migration.subjectBackfill.v1`) mevcut tüm unit'lerin dersini
+  normalize ediyor; tanınmayan/boş olan → **"Patoloji"** (kullanıcı beyanı:
+  mevcut destenin tamamı Patoloji). Zaten kanonik olan bir ders **hiç
+  yazılmıyor** → idempotent, başarısız kayıtta flag yazılmıyor ve sonraki
+  açılışta yeniden deneniyor. Konular nil kalıyor; filtrelerde **"Konusuz"**
+  kovası var (yoksa eski destenin tamamı her ders filtresinde görünmez olurdu).
+- **UI:** Yakala'da yatay ders şeridi (`SubjectPickerBar`, `AppSettings.
+  defaultSubject`'e yazıyor → yapışkan, restart'ta kalıyor); Ayarlar'daki
+  serbest metin alanı **picker** oldu (serbest metin artık konu listesiyle
+  çelişirdi); Bilgilerim'de ders→konu filtre menüsü (in-memory, `#Predicate`
+  değil); `CardEditorView`'da "Sınıflandırma" bölümü — sınıflandırma
+  değişikliği daima **bul-veya-oluştur + yeniden bağlama**, böylece aynı
+  unit'i paylaşan kardeş kartlar asla etkilenmiyor.
+- **Egzersiz modu:** `ExerciseSession` (CizgiCore, RNG enjekte edilebilir) +
+  `ExerciseView`. Aynı filtreler, karışık sıra, soru → "Cevabı göster" → cevap
+  → "Sıradaki". **Puanlama yok, `ReviewLog` yok, FSRS alanlarına dokunulmuyor**;
+  kart düzenleme duruyor. Giriş: Tekrar sekmesinin başlangıç ekranı (hem dolu
+  hem "Bugünlük bitti" halinde).
 
 ### Ana akış bugün nasıl işliyor
 
@@ -578,8 +629,17 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 
 ## Sıradaki iş
 
-Faz 6, galeri içe aktarma ve beş şıklı kartın kodu `main`'de; ilk ikisi cihazda
-doğrulandı. **Kalan tek gerçek iş beş şıklı kartın kalitesi.**
+### 0. Dağıtımdan ÖNCE: Supabase `subject` kolonu (bloklayıcı)
+
+```sql
+alter table public.jobs add column subject text;
+```
+`backend/supabase/migrations/20260807120000_add_subject_to_jobs.sql`. Yeni kod
+bu kolonu yazıyor; kolon yoksa PostgREST `insert`'i reddeder ve **her çekim
+patlar** (`mc_mode`'da yaşandı). Ardından ilk gerçek çekimde iki şeyi doğrula:
+(a) OpenAI `anyOf: [enum-string, null]`'ı kabul etti mi — reddederse tüm işler
+düşer, B planı enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek;
+(b) atanan konular gerçekten doğru mu (kart detayında "Sınıflandırma").
 
 ### 1. A6 — beş şıklı kartın gerçek sayfayla denenmesi (en öncelikli)
 
@@ -624,7 +684,9 @@ Kod bitti, kalite bitmedi — B3'te olduğu gibi bu ancak gerçek sayfalarla otu
 
 Öneri, taahhüt değil; sırayı kullanıcı seçer.
 
-- **Etiket/ders bazlı filtreli tekrar** ("bugün yalnız Farmakoloji").
+- ~~**Etiket/ders bazlı filtreli tekrar**~~ — 2026-08-08'de geldi: Bilgilerim'de
+  ders/konu filtresi ve Egzersiz modu. **Tekrar (FSRS) oturumunun kendisi hâlâ
+  filtresiz**; "bugün yalnız Farmakoloji tekrarı" istenirse ayrı bir iş.
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti ve
   bunların prompt iterasyonuna girdi olması.
 - **Sayfayı yeniden üret:** aynı fotoğraftan farklı bir `hint` ile ikinci bir

@@ -85,6 +85,7 @@ public struct BackendCardProvider: CardGenerating {
                 hint: hint,
                 maxCards: request.maxCards,
                 multipleChoiceMode: request.multipleChoiceMode,
+                subject: request.subject,
                 force: request.forceResubmit,
                 token: token
             )
@@ -99,6 +100,7 @@ public struct BackendCardProvider: CardGenerating {
                 hint: hint,
                 maxCards: request.maxCards,
                 multipleChoiceMode: request.multipleChoiceMode,
+                subject: request.subject,
                 force: true,
                 token: token
             )
@@ -225,6 +227,7 @@ public struct BackendCardProvider: CardGenerating {
         hint: String?,
         maxCards: Int,
         multipleChoiceMode: MultipleChoiceMode?,
+        subject: String?,
         force: Bool,
         token: String
     ) async throws -> RemoteJobView? {
@@ -245,6 +248,7 @@ public struct BackendCardProvider: CardGenerating {
                 // the Ayarlar control did nothing.
                 maxCards: maxCards,
                 multipleChoiceMode: multipleChoiceMode?.rawValue,
+                subject: subject,
                 // Omitted rather than sent as `false`: an ordinary submission
                 // should look exactly as it always did on the wire.
                 force: force ? true : nil
@@ -376,7 +380,8 @@ public struct BackendCardProvider: CardGenerating {
                 riskFlags: [],
                 requiresUserApproval: false,
                 options: Self.options(of: card),
-                lowConfidence: card.lowConfidence
+                lowConfidence: card.lowConfidence,
+                topic: card.topic
             )
         }
 
@@ -436,6 +441,10 @@ public struct BackendCardProvider: CardGenerating {
         /// Same rule as `maxCards`: the deployment's own mode is the ceiling
         /// (§21.3, §13.3). Omitted when the user has not chosen one.
         let multipleChoiceMode: String?
+        /// Canonical subject name (schema v2.2) for per-card topics. Omitted
+        /// when no subject is selected; the server stores unknown names as
+        /// null rather than failing the capture.
+        let subject: String?
         /// Present only on a user-initiated retry (§17): asks the server to
         /// re-arm even a failure it had marked permanent.
         let force: Bool?
@@ -504,13 +513,16 @@ struct RemoteCard: Decodable {
     /// that is not five-option, so both decode to `nil` without a special case.
     let options: [RemoteCardOption]?
     let correctOption: Int?
+    /// Schema v2.2: canonical topic from the subject's list. Absent on older
+    /// responses and `null` when no subject was sent, both decoding to `nil`.
+    let topic: String?
 }
 
 /// In an extension rather than the type body so the memberwise initialiser
 /// survives — the tests build these by hand.
 extension RemoteCard {
     private enum CodingKeys: String, CodingKey {
-        case id, type, front, back, explanation, difficulty, tags, lowConfidence, options, correctOption
+        case id, type, front, back, explanation, difficulty, tags, lowConfidence, options, correctOption, topic
     }
 
     init(from decoder: Decoder) throws {
@@ -525,7 +537,8 @@ extension RemoteCard {
             tags: try values.decode([String].self, forKey: .tags),
             lowConfidence: try values.decode(Bool.self, forKey: .lowConfidence),
             options: try values.decodeIfPresent([RemoteCardOption].self, forKey: .options),
-            correctOption: try values.decodeIfPresent(Int.self, forKey: .correctOption)
+            correctOption: try values.decodeIfPresent(Int.self, forKey: .correctOption),
+            topic: try values.decodeIfPresent(String.self, forKey: .topic)
         )
     }
 }

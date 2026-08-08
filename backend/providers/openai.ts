@@ -19,8 +19,9 @@
  * and OpenAI's own error string, which describe the *call*, not the content.
  */
 
-import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction } from "../prompts/cardGeneration.js";
+import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction, topicInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
+import { sanitizeTopics, topicsFor } from "./subjectTopics.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 
@@ -102,6 +103,13 @@ export interface CardGenerationRequest {
    * marked content off the image itself (v2 prompt).
    */
   hint?: string;
+  /**
+   * Canonical subject name (schema v2.2) the capture was made under. When it
+   * matches `schemas/subject_topics.json`, that subject's topic list is
+   * injected into the model-facing schema as an enum on the per-card `topic`
+   * field. Absent or unknown means "no topic assignment" — never an error.
+   */
+  subject?: string;
 }
 
 export interface CardGenerationResult {
@@ -143,7 +151,10 @@ function isTransientStatus(status: number): boolean {
  * `cardGate` — three independent layers for the same rule, not one hoping to
  * hold.
  */
-export function buildModelResponseSchema(maxCardsPerKnowledgeUnit: number): Record<string, unknown> {
+export function buildModelResponseSchema(
+  maxCardsPerKnowledgeUnit: number,
+  topicEnum?: readonly string[],
+): Record<string, unknown> {
   const clone = structuredClone(LLM_OUTPUT_SCHEMA) as {
     required: string[];
     properties: Record<string, unknown>;
@@ -159,18 +170,30 @@ export function buildModelResponseSchema(maxCardsPerKnowledgeUnit: number): Reco
 
   // Structured Outputs strict mode has no optional properties: every key in
   // `properties` must also be in `required`, and "absent" is expressed as a
-  // nullable type instead. `options`/`correctOption` are optional in the
-  // canonical §14 schema (a v2.0 payload predates them and is still valid), so
-  // they have to be promoted here — otherwise OpenAI rejects the schema for a
-  // `required` array that does not list every key in `properties`.
+  // nullable type instead. `options`/`correctOption`/`topic` are optional in
+  // the canonical §14 schema (a v2.0 payload predates them and is still
+  // valid), so they have to be promoted here — otherwise OpenAI rejects the
+  // schema for a `required` array that does not list every key in
+  // `properties`.
   const card = (clone.properties.cards as {
     items: { required: string[]; properties: Record<string, unknown> };
   }).items;
+
+  // With a known subject the per-card topic is constrained to that subject's
+  // canonical list at decoding time — the cheapest of the three layers that
+  // hold this field (schema enum, prompt, `sanitizeTopics`). Without one, the
+  // canonical `["string","null"]` stays and the prompt says "leave it null".
+  if (topicEnum && topicEnum.length > 0) {
+    card.properties.topic = {
+      anyOf: [{ type: "string", enum: [...topicEnum] }, { type: "null" }],
+    };
+  }
+
   for (const key of Object.keys(card.properties)) {
     if (!card.required.includes(key)) card.required.push(key);
   }
-  // The model has nothing to choose here: what it produces is v2.1.
-  clone.properties.schemaVersion = { type: "string", const: "2.1" };
+  // The model has nothing to choose here: what it produces is v2.2.
+  clone.properties.schemaVersion = { type: "string", const: "2.2" };
 
   return clone as Record<string, unknown>;
 }
@@ -198,6 +221,7 @@ export function buildUserInstruction(
   request: CardGenerationRequest,
   maxCards: number,
   multipleChoiceMode: MultipleChoiceMode,
+  topicEnum: readonly string[] | null = null,
 ): string {
   const hint = request.hint?.trim();
   return [
@@ -208,6 +232,7 @@ export function buildUserInstruction(
       "noktalarının her birini kapsamaya çalış; el yazısı ve daire/yıldız ile işaretlenenleri önceliklendir. " +
       "Az sayıda temel kartla yetinme — işaretlenen tüm farklı noktalara ulaş.",
     multipleChoiceInstruction(multipleChoiceMode),
+    topicInstruction(topicEnum ? request.subject ?? null : null, topicEnum),
     hint ? `Kullanıcı ipucu: ${hint}` : "Kullanıcı ipucu: (yok)",
   ].join("\n");
 }
@@ -259,6 +284,10 @@ export class OpenAICardGenerator {
       request.maxCards ?? this.config.maxCardsPerKnowledgeUnit,
       this.config.maxCardsPerKnowledgeUnit,
     );
+    // An unknown subject degrades to "no topic assignment" rather than an
+    // error: a stale job row or an older client must never lock a page out of
+    // generation over a classification nicety.
+    const topicEnum = request.subject ? topicsFor(request.subject) ?? null : null;
     const body = {
       model: this.config.model,
       reasoning: { effort: this.config.reasoningEffort },
@@ -281,6 +310,7 @@ export class OpenAICardGenerator {
                   request.multipleChoiceMode ?? this.config.multipleChoiceMode,
                   this.config.multipleChoiceMode,
                 ),
+                topicEnum,
               ),
             },
             {
@@ -300,7 +330,7 @@ export class OpenAICardGenerator {
         format: {
           type: "json_schema",
           name: "cizgi_llm_output",
-          schema: buildModelResponseSchema(maxCards),
+          schema: buildModelResponseSchema(maxCards, topicEnum ?? undefined),
           strict: true,
         },
       },
@@ -372,6 +402,18 @@ export class OpenAICardGenerator {
     }
     if (typeof modelJson !== "object" || modelJson === null || Array.isArray(modelJson)) {
       throw new OpenAIError("Model yanıtı bir JSON nesnesi değil.", undefined, false);
+    }
+
+    // Third of the three layers holding the topic field (after the schema
+    // enum and the prompt): anything off the subject's canonical list — or
+    // any topic at all when the subject is unknown — is forced to null here,
+    // never allowed to fail the job.
+    const modelRecord = modelJson as Record<string, unknown>;
+    if (Array.isArray(modelRecord.cards)) {
+      modelRecord.cards = sanitizeTopics(
+        modelRecord.cards as Array<{ topic?: string | null }>,
+        request.subject ?? null,
+      );
     }
 
     const rawUsage = {

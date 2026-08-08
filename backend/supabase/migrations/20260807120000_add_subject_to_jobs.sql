@@ -1,0 +1,16 @@
+-- The subject (ders) the capture was made under, carried on the job
+-- (schema v2.2, per-card topic assignment).
+--
+-- The worker runs long after the request that carried the selection has gone,
+-- so it is written down with the job — the same reason max_cards and mc_mode
+-- are (§6.7, §13.3).
+--
+-- Nullable: null means "no topic assignment", which is what every job written
+-- before this column existed meant too. The server validates the name against
+-- schemas/subject_topics.json at submit time and stores unknown names as null,
+-- so no CHECK constraint here — the canonical list lives in one file, not two.
+--
+-- ⚠ Apply to the live database BEFORE deploying the code that writes it:
+-- PostgREST rejects an insert naming a missing column and every capture fails
+-- (the mc_mode lesson, CLAUDE.md "Migration sırası").
+alter table public.jobs add column subject text;

@@ -21,6 +21,11 @@ public struct GeneratedCard: Sendable, Equatable {
     /// karta dönüşmemeli" — which Faz 6 answers by flagging rather than
     /// blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
     public let lowConfidence: Bool
+    /// Canonical topic name (schema v2.2) from the subject's list in
+    /// `Resources/subject_topics.json`, or `nil` when the capture carried no
+    /// subject or the model was unsure. Already validated server-side; the
+    /// phone checks it once more before persisting (`TopicGrouping`).
+    public let topic: String?
 
     public init(
         type: CardType,
@@ -31,7 +36,8 @@ public struct GeneratedCard: Sendable, Equatable {
         riskFlags: [RiskFlag] = [],
         requiresUserApproval: Bool = false,
         options: [CardOption]? = nil,
-        lowConfidence: Bool = false
+        lowConfidence: Bool = false,
+        topic: String? = nil
     ) {
         self.type = type
         self.front = front
@@ -42,6 +48,7 @@ public struct GeneratedCard: Sendable, Equatable {
         self.requiresUserApproval = requiresUserApproval
         self.options = options
         self.lowConfidence = lowConfidence
+        self.topic = topic
     }
 }
 

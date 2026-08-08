@@ -27,6 +27,10 @@ struct CizgiApp: App {
 
         self.container = container
         _environment = StateObject(wrappedValue: environment)
+
+        // After the container exists, before any view reads it: the library
+        // filters assume every unit's subject is either canonical or nil.
+        SubjectBackfillMigration.runIfNeeded(container: container)
     }
 
     var body: some Scene {

@@ -26,6 +26,7 @@ import {
 } from "../providers/openai.js";
 import { runCardGate, type CardDecision, type CardGateReport, type CardVerdict } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
+import { SUBJECTS } from "../providers/subjectTopics.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 
 /**
@@ -54,6 +55,8 @@ export interface CardsRequestBody {
   maxCards?: unknown;
   /** The user's "beş şıklı kart" setting (§13.3). Clamped the same way. */
   multipleChoiceMode?: unknown;
+  /** Canonical subject name for per-card topics (schema v2.2). Unknown names degrade to null. */
+  subject?: unknown;
 }
 
 /**
@@ -93,6 +96,22 @@ export function parseMultipleChoiceMode(
   if (index < 0) return null;
   const ceilingIndex = MULTIPLE_CHOICE_MODES.indexOf(ceiling);
   return MULTIPLE_CHOICE_MODES[Math.min(index, ceilingIndex)]!;
+}
+
+/**
+ * Reads a client-supplied subject name (schema v2.2).
+ *
+ * Lenient where the two parsers above are strict: an unknown subject becomes
+ * `undefined` ("no topic assignment") rather than a 400. A topic is a
+ * classification nicety, and an older client, a renamed subject, or a legacy
+ * free-text value must never make a paid capture fail over it. The caller
+ * still rejects non-string values as a malformed body.
+ */
+export function parseSubject(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || !SUBJECTS.includes(trimmed)) return undefined;
+  return trimmed;
 }
 
 export interface CardsSuccess {
@@ -219,6 +238,11 @@ export async function handleCardsRequest(
     return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
   }
 
+  if (body.subject !== undefined && typeof body.subject !== "string") {
+    return fail("subject bir metin (string) olmalı.", 400, false);
+  }
+  const subject = parseSubject(body.subject);
+
   // §21.3: refuse before spending, using the only bound knowable before the
   // call — the output-token ceiling. Input-token cost depends on the image
   // and prompt and is not estimated here; it is still recorded for real
@@ -244,6 +268,7 @@ export async function handleCardsRequest(
       hint,
       maxCards,
       multipleChoiceMode,
+      subject,
     });
 
     // §13.3's structural check runs before the health gate, so the gate — and

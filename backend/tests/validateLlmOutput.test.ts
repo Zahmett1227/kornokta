@@ -84,6 +84,28 @@ describe("validateLlmOutput", () => {
     expect(validateLlmOutput(broken).valid).toBe(false);
   });
 
+  it("accepts a v2.2 card with a topic, and a topicless v2.1 payload stays valid", () => {
+    const withTopic = validOutput();
+    withTopic.schemaVersion = "2.2";
+    withTopic.cards[0]!.topic = "İnflamasyon";
+    expect(validateLlmOutput(withTopic)).toEqual({ valid: true, errors: [] });
+
+    withTopic.cards[0]!.topic = null;
+    expect(validateLlmOutput(withTopic)).toEqual({ valid: true, errors: [] });
+
+    // Backward compatibility: a pre-topic payload (no `topic` key at all)
+    // must keep validating — old results stored in job rows are re-read.
+    const legacy = validOutput();
+    legacy.schemaVersion = "2.1";
+    expect(validateLlmOutput(legacy)).toEqual({ valid: true, errors: [] });
+  });
+
+  it("rejects a non-string topic", () => {
+    const broken = validOutput() as unknown as { cards: Array<Record<string, unknown>> };
+    broken.cards[0]!.topic = 42;
+    expect(validateLlmOutput(broken).valid).toBe(false);
+  });
+
   it("rejects a difficulty outside 1..5", () => {
     const broken = validOutput();
     broken.cards[0]!.difficulty = 9;

@@ -34,6 +34,7 @@ import {
   VISION_MIME_TYPES,
   parseMaxCards,
   parseMultipleChoiceMode,
+  parseSubject,
   type CardGeneratorLike,
 } from "./_cards.js";
 
@@ -182,6 +183,8 @@ interface SubmitBody {
   maxCards?: unknown;
   /** The user's "beş şıklı kart" setting (§13.3); clamped to the deployment's own mode. */
   multipleChoiceMode?: unknown;
+  /** Canonical subject name for per-card topics (schema v2.2). Unknown names degrade to null. */
+  subject?: unknown;
   /**
    * The user pressed "Tekrar dene" on a page this server had given up on. Only
    * ever set by a deliberate human action, never by the queue's automatic
@@ -241,6 +244,11 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     return fail(`multipleChoiceMode şunlardan biri olmalı: ${MULTIPLE_CHOICE_MODES.join(", ")}.`, 400, false);
   }
 
+  if (body.subject !== undefined && typeof body.subject !== "string") {
+    return fail("subject bir metin (string) olmalı.", 400, false);
+  }
+  const subject = parseSubject(body.subject);
+
   if (body.force !== undefined && typeof body.force !== "boolean") {
     return fail("force true/false olmalı.", 400, false);
   }
@@ -296,7 +304,7 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   // one's worker had already claimed, producing two paid generations racing
   // over one image and one result row (Codex, PR #25 P1).
   const imagePath = imagePathFor(jobId);
-  const enqueueRequest = { id: jobId, imagePath, mimeType, hint, maxCards, mcMode };
+  const enqueueRequest = { id: jobId, imagePath, mimeType, hint, maxCards, mcMode, subject };
   // Set the moment this request could leave bytes at `imagePath` that no row
   // points at — which happens two ways, not one: a successful `expire` nulls
   // `image_path` while the old object is still in the bucket, and a successful
@@ -490,6 +498,9 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       // Recorded at submit time for the same reason `maxCards` is: the setting
       // that chose this is long gone by the time the worker runs.
       multipleChoiceMode: job.mcMode ?? undefined,
+      // Also recorded at submit time; an unknown name in an old row degrades
+      // to "no topic assignment" inside the generator, never to a failure.
+      subject: job.subject ?? undefined,
     });
     // §13.3's structural check, before the health gate: a card whose options
     // are broken is downgraded to a plain one rather than lost, so what the

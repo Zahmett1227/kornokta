@@ -28,10 +28,22 @@ struct SettingsView: View {
                 backendSection
 
                 Section {
-                    TextField("Varsayılan ders", text: Binding(
-                        get: { environment.settings.defaultSubject },
-                        set: { environment.settings.defaultSubject = $0; environment.settings.save() }
-                    ))
+                    // A picker, not free text: the subject now decides which
+                    // topic list the model is constrained to (schema v2.2), so
+                    // a name outside the template would silently mean "no
+                    // topics at all". Same stored value as the capture screen's
+                    // strip — changing it in either place changes both.
+                    if let names = SubjectPickerBar.schema?.subjectNames {
+                        Picker("Ders", selection: Binding(
+                            get: { SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject) ?? "" },
+                            set: { environment.settings.defaultSubject = $0; environment.settings.save() }
+                        )) {
+                            Text("Seçilmedi").tag("")
+                            ForEach(names, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                    }
 
                     Stepper(
                         "Sayfa başına kart: \(environment.settings.maxCardsPerPage)",
@@ -59,7 +71,9 @@ struct SettingsView: View {
                     // Until now this control did nothing at all: the value was
                     // never put in the request and the server always used its own
                     // ceiling. Fewer cards also means a faster, cheaper call.
-                    Text("İşaretli bir sayfadan en fazla kaç kart üretilsin. "
+                    Text("Ders, Yakala ekranındaki şeritle aynı ayardır; seçilen "
+                         + "dersin konu listesinden her karta bir konu atanır. "
+                         + "İşaretli bir sayfadan en fazla kaç kart üretilsin. "
                          + "Az kart daha hızlı ve daha ucuz üretilir. Beş şıklı "
                          + "kartlarda TUS tipi soru ve şıklar üretilir; sunucu "
                          + "kendi ayarını tavan kabul eder.")

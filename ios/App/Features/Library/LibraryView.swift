@@ -11,8 +11,28 @@ import CizgiCore
 struct LibraryView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
-    @Query(sort: \Card.createdAt, order: .reverse) private var cards: [Card]
+    @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
     @State private var searchText = ""
+    @State private var subjectFilter: String?
+    @State private var topicFilter: TopicFilter = .all
+
+    /// Everything below counts and lists from here, not from the raw query: a
+    /// filtered screen that still showed unfiltered totals and "en çok
+    /// unutulanlar" would be reporting on a deck the user is not looking at.
+    ///
+    /// Filtered in memory rather than with `#Predicate`, on purpose: subject
+    /// and topic live on an optional relationship, and this deck is hundreds
+    /// of cards — the same choice the existing text search already makes.
+    private var cards: [Card] {
+        allCards.filter {
+            LibraryCardFilter.matches(
+                subject: $0.knowledgeUnit?.subject,
+                topic: $0.knowledgeUnit?.topic,
+                subjectFilter: subjectFilter,
+                topicFilter: topicFilter
+            )
+        }
+    }
 
     private var filtered: [Card] {
         guard !searchText.isEmpty else { return cards }
@@ -44,7 +64,7 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $navigator.libraryPath) {
             Group {
-                if cards.isEmpty {
+                if allCards.isEmpty {
                     emptyState
                 } else {
                     list
@@ -54,6 +74,11 @@ struct LibraryView: View {
             .navigationTitle("Bilgilerim")
             .searchable(text: $searchText, prompt: "Kartlarda ara")
             .homeButtonToolbar()
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                }
+            }
         }
         .tint(Cizgi.accent)
     }
@@ -78,15 +103,26 @@ struct LibraryView: View {
     private var list: some View {
         List {
             Section {
-                HStack(spacing: Cizgi.Space.sm) {
-                    StatTile(value: "\(cards.count)", label: "Toplam")
-                    StatTile(value: "\(activeCount)", label: "Aktif")
-                    StatTile(value: "\(suspendedCount)", label: "Askıda")
+                VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
+                    ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                    HStack(spacing: Cizgi.Space.sm) {
+                        StatTile(value: "\(cards.count)", label: "Toplam")
+                        StatTile(value: "\(activeCount)", label: "Aktif")
+                        StatTile(value: "\(suspendedCount)", label: "Askıda")
+                    }
                 }
                 .listRowInsets(EdgeInsets(top: Cizgi.Space.sm, leading: Cizgi.Space.lg,
                                           bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            }
+
+            if cards.isEmpty {
+                Section {
+                    Text("Bu filtreye uyan kart yok.")
+                        .font(.subheadline)
+                        .foregroundStyle(Cizgi.muted)
+                }
             }
 
             if !needsSecondLook.isEmpty {
@@ -239,6 +275,11 @@ struct CardDetailView: View {
                     }
                 } header: { sectionHeader("Şıklar") }
             }
+
+            Section {
+                LabeledContent("Ders", value: card.knowledgeUnit?.subject ?? "Seçilmedi")
+                LabeledContent("Konu", value: card.knowledgeUnit?.topic ?? "Konusuz")
+            } header: { sectionHeader("Sınıflandırma") }
 
             if !(card.knowledgeUnit?.tags ?? []).isEmpty {
                 Section {
