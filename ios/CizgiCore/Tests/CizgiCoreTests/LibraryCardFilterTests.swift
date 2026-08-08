@@ -41,4 +41,27 @@ final class LibraryCardFilterTests: XCTestCase {
         XCTAssertFalse(matches(subject: "Patoloji", topic: "İnflamasyon",
                                filterSubject: "Patoloji", filterTopic: .none))
     }
+
+    /// A stored filter has to come back as the same filter. `topicName` folds
+    /// `.none` and `.all` onto the same `nil`, so an exercise resumed after a
+    /// relaunch would have silently widened from "Konusuz" to every topic.
+    func testStoredFilterSurvivesARoundTripIncludingTheKonusuzBucket() {
+        for filter: TopicFilter in [.all, .none, .topic("İnflamasyon")] {
+            XCTAssertEqual(TopicFilter.fromStorage(filter.storageValue), filter)
+        }
+
+        XCTAssertNil(TopicFilter.all.storageValue)
+        XCTAssertNotNil(TopicFilter.none.storageValue)
+        XCTAssertNotEqual(TopicFilter.none.storageValue, TopicFilter.all.storageValue)
+    }
+
+    /// The sentinel must not be reachable by any real topic name, and no
+    /// canonical topic may collide with it.
+    func testKonusuzSentinelCannotCollideWithACanonicalTopic() throws {
+        let schema = try SubjectTopicSchema.bundled()
+        let allTopics = schema.subjects.flatMap(\.topics)
+
+        XCTAssertFalse(allTopics.contains(TopicFilter.noneStorageToken))
+        XCTAssertFalse(allTopics.isEmpty, "şema boşsa bu kontrol bir şey kanıtlamaz")
+    }
 }

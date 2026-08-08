@@ -22,22 +22,46 @@ struct RootView: View {
     }
 
     var body: some View {
+        // The native tab bar cannot give the centre destination the visual
+        // priority Egzersiz needs, so `CizgiRootTabBar` replaces it. Two rules
+        // keep that swap honest:
+        //
+        // 1. `.toolbar(.hidden, for: .tabBar)` goes on each *child* of the
+        //    TabView, which is the placement that hides this TabView's own bar.
+        //    On the TabView itself it addresses an enclosing tab bar — of which
+        //    there is none — so the native bar would have stayed. The
+        //    `.tabItem` labels are kept as the fallback that failure mode
+        //    deserves: a labelled bar, never five blank items.
+        // 2. The replacement is attached per tab root (`rootTabBarInset`),
+        //    *inside* each NavigationStack. A pushed screen is then simply a
+        //    different view and loses the bar with no bookkeeping — no depth
+        //    flag and no `NavigationPath.isEmpty` check, neither of which this
+        //    app can answer correctly (see `AppNavigator`).
         TabView(selection: $navigator.selectedTab) {
             CaptureView()
                 .tabItem { Label("Yakala", systemImage: "camera") }
                 .tag(AppNavigator.RootTab.capture)
+                .toolbar(.hidden, for: .tabBar)
 
             ReviewView()
                 .tabItem { Label("Tekrar", systemImage: "rectangle.stack") }
                 .tag(AppNavigator.RootTab.review)
+                .toolbar(.hidden, for: .tabBar)
+
+            ExerciseView()
+                .tabItem { Label("Egzersiz", systemImage: "brain.head.profile") }
+                .tag(AppNavigator.RootTab.exercise)
+                .toolbar(.hidden, for: .tabBar)
 
             LibraryView()
                 .tabItem { Label("Bilgilerim", systemImage: "books.vertical") }
                 .tag(AppNavigator.RootTab.library)
+                .toolbar(.hidden, for: .tabBar)
 
             SettingsView()
                 .tabItem { Label("Ayarlar", systemImage: "gearshape") }
                 .tag(AppNavigator.RootTab.settings)
+                .toolbar(.hidden, for: .tabBar)
         }
         .tint(Cizgi.accent)
         .environmentObject(navigator)
@@ -84,6 +108,154 @@ struct RootView: View {
             hour: environment.settings.notificationHour,
             dueDates: reviewableDueDates
         )
+    }
+}
+
+/// Attaches the replacement root bar to a tab's root content.
+///
+/// Must be applied *inside* the tab's `NavigationStack`, to the root screen
+/// only. That placement is what makes depth handling free: a pushed detail
+/// screen is a different view, so it never receives the inset and the bar goes
+/// away on its own. Deriving the same thing from `NavigationPath.isEmpty` does
+/// not work here — every push in this app is a view-based `NavigationLink`,
+/// which leaves the bound path empty, so the bar would have stayed on every
+/// detail screen (the exact overlap `ConfirmationView` once had to work around,
+/// and whose `.toolbar(.hidden, for: .tabBar)` no longer applies to a bar that
+/// is not the TabView's).
+struct RootTabBarInset: ViewModifier {
+    @EnvironmentObject private var navigator: AppNavigator
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !navigator.isTabBarHidden {
+                    CizgiRootTabBar(selection: $navigator.selectedTab)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: navigator.isTabBarHidden)
+    }
+}
+
+extension View {
+    func rootTabBarInset() -> some View { modifier(RootTabBarInset()) }
+}
+
+/// A five-destination root bar with Egzersiz as the unmistakable centre of the
+/// app.
+///
+/// Three things this deliberately does *not* do:
+///
+/// - It does not raise the centre item with `.offset`. An offset moves pixels
+///   but not layout, so the visibly protruding top of the most important
+///   button was outside the parent's `contentShape` and simply did not respond
+///   to taps — and it drew past the `safeAreaInset` this bar reserves, over the
+///   content above. The lift here is real layout: a taller icon well plus
+///   `alignment: .bottom`, so the hit area is exactly what the eye sees.
+/// - It does not use fixed point sizes. The wells scale with Dynamic Type
+///   (`@ScaledMetric`), labels shrink before they truncate, and at
+///   accessibility sizes the labels drop away entirely rather than wrapping
+///   five ways across the width — the icons and VoiceOver labels carry it.
+/// - It does not give Egzersiz a permanently "on" look. A centre item that is
+///   always filled amber cannot tell the user which tab they are on, which is
+///   the one job a tab bar has.
+private struct CizgiRootTabBar: View {
+    private struct Item: Identifiable {
+        var id: AppNavigator.RootTab { tab }
+        let tab: AppNavigator.RootTab
+        let title: String
+        let icon: String
+        let selectedIcon: String
+    }
+
+    @Binding var selection: AppNavigator.RootTab
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Both wells grow with the text size, keeping the lift proportional.
+    @ScaledMetric(relativeTo: .body) private var well: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var centreWell: CGFloat = 52
+
+    private let tabs: [Item] = [
+        Item(tab: .capture, title: "Yakala", icon: "camera", selectedIcon: "camera.fill"),
+        Item(tab: .review, title: "Tekrar", icon: "rectangle.stack", selectedIcon: "rectangle.stack.fill"),
+        // Same glyph in both states on purpose: the disc behind it is the
+        // selection indicator here, and a `.fill` variant of this symbol is not
+        // something to rely on across OS versions.
+        Item(tab: .exercise, title: "Egzersiz", icon: "brain.head.profile", selectedIcon: "brain.head.profile"),
+        Item(tab: .library, title: "Bilgilerim", icon: "books.vertical", selectedIcon: "books.vertical.fill"),
+        Item(tab: .settings, title: "Ayarlar", icon: "gearshape", selectedIcon: "gearshape.fill"),
+    ]
+
+    private var showsLabels: Bool { !dynamicTypeSize.isAccessibilitySize }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            ForEach(tabs) { item in
+                tabButton(item)
+            }
+        }
+        .padding(.horizontal, Cizgi.Space.xs)
+        // Room for the centre well to stand above the others without leaving
+        // the bar's own bounds.
+        .padding(.top, (centreWell - well) / 2 + Cizgi.Space.xs)
+        .padding(.bottom, Cizgi.Space.xs)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Cizgi.hairline).frame(height: 1)
+        }
+        .shadow(color: .black.opacity(0.08), radius: 12, y: -4)
+    }
+
+    private func tabButton(_ item: Item) -> some View {
+        let isSelected = selection == item.tab
+        let isCentre = item.tab == .exercise
+        return Button {
+            selection = item.tab
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: isSelected ? item.selectedIcon : item.icon)
+                    .font(isCentre ? .title3.weight(.bold) : .body.weight(.semibold))
+                    .foregroundStyle(centreForeground(isCentre: isCentre, isSelected: isSelected))
+                    .frame(width: isCentre ? centreWell : well,
+                           height: isCentre ? centreWell : well)
+                    .background { centreBackground(isCentre: isCentre, isSelected: isSelected) }
+
+                if showsLabels {
+                    Text(item.title)
+                        .font(.caption2.weight(isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? Cizgi.ink : Cizgi.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func centreForeground(isCentre: Bool, isSelected: Bool) -> Color {
+        if isCentre { return isSelected ? Cizgi.ink : Cizgi.accent }
+        return isSelected ? Cizgi.accent : Cizgi.muted
+    }
+
+    /// Selected Egzersiz is a filled amber disc; unselected is the same disc
+    /// outlined. It still reads as the primary destination at a glance, and it
+    /// can still say "you are not here".
+    @ViewBuilder
+    private func centreBackground(isCentre: Bool, isSelected: Bool) -> some View {
+        if isCentre {
+            if isSelected {
+                Circle()
+                    .fill(Cizgi.accent)
+                    .shadow(color: Cizgi.accent.opacity(0.38), radius: 10, y: 4)
+            } else {
+                Circle()
+                    .fill(Cizgi.accentSoft)
+                    .overlay(Circle().stroke(Cizgi.accent, lineWidth: 2))
+            }
+        }
     }
 }
 

@@ -496,6 +496,105 @@ public final class ModelRun {
     }
 }
 
+/// A free-practice session. It is deliberately separate from `ReviewLog` and
+/// has no relationship to Card scheduling fields: Egzersiz history may inform
+/// its own weak-point picker, but can never mutate FSRS by being saved.
+@Model
+public final class ExerciseRun {
+    @Attribute(.unique) public var id: UUID
+    public var modeRaw: String
+    public var subject: String?
+    /// The chosen `TopicFilter`, not a topic name — see `TopicFilter.
+    /// storageValue`. Storing the name alone cannot tell "Konusuz" apart from
+    /// "no topic filter", and restoring into the wrong one changes which cards
+    /// the resumed session covers.
+    ///
+    /// `originalName` because this property used to be called `topic`. Without
+    /// it lightweight migration reads the rename as "drop one column, add an
+    /// empty one", so a device that ran an earlier build of this work would
+    /// resume its in-flight run with the topic filter silently widened to
+    /// "Tümü". Legacy rows carried a bare topic name, which is already the
+    /// right storage value; a legacy `nil` still cannot say whether the user
+    /// had picked "Tümü" or "Konusuz", but that ambiguity is exactly the bug
+    /// this rename fixes and no migration can recover it after the fact.
+    @Attribute(originalName: "topic") public var topicFilterRaw: String?
+    /// String UUIDs keep the exact shuffled order durable across relaunches.
+    public var queuedCardIds: [String]
+    public var position: Int
+    public var startedAt: Date
+    public var finishedAt: Date?
+
+    @Relationship(deleteRule: .cascade, inverse: \ExerciseAttempt.run)
+    public var attempts: [ExerciseAttempt]
+
+    public var mode: ExerciseMode {
+        get { ExerciseMode(rawValue: modeRaw) ?? .free }
+        set { modeRaw = newValue.rawValue }
+    }
+
+    public var topicFilter: TopicFilter {
+        get { TopicFilter.fromStorage(topicFilterRaw) }
+        set { topicFilterRaw = newValue.storageValue }
+    }
+
+    public init(
+        id: UUID = UUID(),
+        mode: ExerciseMode,
+        subject: String? = nil,
+        topicFilter: TopicFilter = .all,
+        queuedCardIds: [UUID],
+        position: Int = 0,
+        startedAt: Date = .now,
+        finishedAt: Date? = nil
+    ) {
+        self.id = id
+        self.modeRaw = mode.rawValue
+        self.subject = subject
+        self.topicFilterRaw = topicFilter.storageValue
+        self.queuedCardIds = queuedCardIds.map(\.uuidString)
+        self.position = position
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.attempts = []
+    }
+
+    public var queue: [UUID] {
+        queuedCardIds.compactMap(UUID.init(uuidString:))
+    }
+}
+
+@Model
+public final class ExerciseAttempt {
+    @Attribute(.unique) public var id: UUID
+    public var cardId: UUID
+    public var resultRaw: String
+    public var selectedOption: Int?
+    public var responseTimeMs: Int
+    public var answeredAt: Date
+    public var run: ExerciseRun?
+
+    public var result: ExerciseResult {
+        get { ExerciseResult(rawValue: resultRaw) ?? .unsure }
+        set { resultRaw = newValue.rawValue }
+    }
+
+    public init(
+        id: UUID = UUID(),
+        cardId: UUID,
+        result: ExerciseResult,
+        selectedOption: Int? = nil,
+        responseTimeMs: Int,
+        answeredAt: Date = .now
+    ) {
+        self.id = id
+        self.cardId = cardId
+        self.resultRaw = result.rawValue
+        self.selectedOption = selectedOption
+        self.responseTimeMs = responseTimeMs
+        self.answeredAt = answeredAt
+    }
+}
+
 public enum CizgiSchema {
     /// Every model type, for `ModelContainer(for:)`.
     public static let allModels: [any PersistentModel.Type] = [
@@ -506,6 +605,8 @@ public enum CizgiSchema {
         Card.self,
         ReviewLog.self,
         OCRCorrection.self,
-        ModelRun.self
+        ModelRun.self,
+        ExerciseRun.self,
+        ExerciseAttempt.self
     ]
 }

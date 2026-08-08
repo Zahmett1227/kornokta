@@ -76,9 +76,39 @@ ve FSRS'e dokunmayan bir egzersiz modu.
   geldikten sonra "Seçilmedi" kullanıcının gerçek bir tercihi.
 - **Egzersiz modu:** `ExerciseSession` (CizgiCore, RNG enjekte edilebilir) +
   `ExerciseView`. Aynı filtreler, karışık sıra, soru → "Cevabı göster" → cevap
-  → "Sıradaki". **Puanlama yok, `ReviewLog` yok, FSRS alanlarına dokunulmuyor**;
-  kart düzenleme duruyor. Giriş: Tekrar sekmesinin başlangıç ekranı (hem dolu
-  hem "Bugünlük bitti" halinde).
+  → "Sıradaki". **`ReviewLog` yazılmıyor ve FSRS alanlarına dokunulmuyor**;
+  kart düzenleme duruyor. (İlk sürümde puanlama da yoktu; aşağıdaki bölüme bak.)
+
+### Egzersiz merkeze alındı + Bilgi Haritası (2026-08-08, ikinci tur)
+
+Ayrıntılı kayıt: [`docs/PLAN-egzersiz-bilgi-haritasi.md`](docs/PLAN-egzersiz-bilgi-haritasi.md).
+Kısaca değişen sözleşmeler:
+
+- **Egzersiz artık bir sekme kökü ve uygulamanın varsayılan açılış ekranı.**
+  `goHome()` de oraya gidiyor. Alt navigasyon yerli `TabView` çubuğu değil,
+  `CizgiRootTabBar`; **her sekmenin `NavigationStack`'i içindeki kök içeriğe**
+  `rootTabBarInset()` ile bağlı. Bu yerleştirme kasıtlı: push edilen ekran barı
+  doğal olarak almıyor. Derinliği `NavigationPath.isEmpty`'den türetme —
+  projedeki her push view tabanlı `NavigationLink` ve o, bağlı path'i
+  **doldurmuyor** (aynı sebeple `goHome()`'un path sıfırlaması da bir şey pop
+  etmiyor; bilinen ve açık bir sınır).
+- **Egzersiz artık puanlanıyor** ama FSRS'ten tamamen ayrı: `ExerciseRun` /
+  `ExerciseAttempt`. Bu geçmiş "Zayıf noktalar" seçimini besliyor. Puan
+  sönümlenir (doğru yanıt **eksiltir**, her deneme 7 günde bir yarılanır, 30
+  günden eskisi sayılmaz) ve biten koşular 90 gün sonra siliniyor
+  (`ExerciseHistory`). **Yedeğe girmiyor** — bilinçli: pratik geçmişi zaten
+  süreli, ve kaybı yalnız bir sezgiselin sıfırlanması demek (FSRS lapse'i ve
+  `lowConfidence` çalışmaya devam eder).
+- **Alt navigasyonu gizleyen ekran görünür bir çıkış borçlu.** Aktif egzersiz
+  oturumu barı gizliyor; karşılığında sol üstte "Bitir" var. Bu kural
+  `AppNavigator.isTabBarHidden`'ın başında yazılı.
+- **Bilgi Haritası** (`Bilgilerim → Bilgi Haritası`): kanonik ders/konu kapsamı.
+  Tanınmayan ad **asla kanonik düğüm üretmiyor**, ama sayılıyor — "Konusuz",
+  "tanınmayan konu" ve "sınıflandırılmamış" kovaları ekrandaki satırların
+  toplamının desteye eşit olmasını sağlıyor. Bugünkü destede tüm konular nil
+  olduğu için pratikte her şey "Konusuz" kovasında görünür.
+- Şema artık tek yerden: **`SubjectTopicSchema.shared`** (önceden Bilgilerim,
+  Yakala sekmesinin `SubjectPickerBar.schema`'sını okuyordu).
 
 ### Ana akış bugün nasıl işliyor
 

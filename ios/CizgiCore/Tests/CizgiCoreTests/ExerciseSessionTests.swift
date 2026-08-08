@@ -101,4 +101,61 @@ final class ExerciseSessionTests: XCTestCase {
         session.remove(session.current!)
         XCTAssertEqual(session.current, following)
     }
+
+    func testRecordingResultsAdvancesAndBuildsAPracticeOnlySummary() {
+        var generator = SeededGenerator(seed: 21)
+        var session = ExerciseSession(cardIds: ids(3), using: &generator)
+
+        session.record(.knew)
+        session.record(.unsure)
+        session.record(.missed)
+
+        XCTAssertTrue(session.isFinished)
+        XCTAssertEqual(session.summary, ExerciseSummary(knew: 1, unsure: 1, missed: 1))
+        XCTAssertEqual(session.summary.answered, 3)
+    }
+
+    func testRestartClearsPracticeResults() {
+        var generator = SeededGenerator(seed: 31)
+        var session = ExerciseSession(cardIds: ids(2), using: &generator)
+        session.record(.missed)
+
+        var restartGenerator = SeededGenerator(seed: 32)
+        session.restart(using: &restartGenerator)
+
+        XCTAssertEqual(session.summary.answered, 0)
+        XCTAssertTrue(session.results.isEmpty)
+        XCTAssertEqual(session.completed, 0)
+    }
+
+    /// Leaving a run early is a first-class exit, not an abandonment: the
+    /// finish screen still has to be able to report what was answered.
+    func testFinishingEarlyEndsTheWalkButKeepsTheAnswersGivenSoFar() {
+        var generator = SeededGenerator(seed: 41)
+        var session = ExerciseSession(cardIds: ids(6), using: &generator)
+        session.record(.knew)
+        session.record(.missed)
+
+        session.finishEarly()
+
+        XCTAssertTrue(session.isFinished)
+        XCTAssertNil(session.current)
+        XCTAssertEqual(session.completed, 6)
+        XCTAssertEqual(session.summary, ExerciseSummary(knew: 1, unsure: 0, missed: 1))
+        XCTAssertEqual(session.summary.answered, 2)
+    }
+
+    func testDurableInitializerClampsPositionAndDropsUnknownResults() {
+        let cards = ids(2)
+        let unknown = UUID()
+        let session = ExerciseSession(
+            queue: cards,
+            position: 99,
+            results: [cards[0]: .knew, unknown: .missed]
+        )
+
+        XCTAssertTrue(session.isFinished)
+        XCTAssertEqual(session.position, 2)
+        XCTAssertEqual(session.results, [cards[0]: .knew])
+    }
 }

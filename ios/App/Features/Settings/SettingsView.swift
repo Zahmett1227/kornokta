@@ -25,15 +25,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                backendSection
-
                 Section {
                     // A picker, not free text: the subject now decides which
                     // topic list the model is constrained to (schema v2.2), so
                     // a name outside the template would silently mean "no
                     // topics at all". Same stored value as the capture screen's
                     // strip — changing it in either place changes both.
-                    if let names = SubjectPickerBar.schema?.subjectNames {
+                    if let names = SubjectTopicSchema.shared?.subjectNames {
                         Picker("Ders", selection: Binding(
                             get: { SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject) ?? "" },
                             set: { environment.settings.defaultSubject = $0; environment.settings.save() }
@@ -187,7 +185,13 @@ struct SettingsView: View {
                             : "Backend ayarlanmadan kart üretimi sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır."
                     )
                 }
+
+                // Single-user daily controls stay first. Provider credentials
+                // are necessary setup, but not part of the ordinary learning
+                // loop, so they live at the bottom as an advanced section.
+                backendSection
             }
+            .rootTabBarInset()
             .fileImporter(
                 isPresented: $isImportingBackup,
                 allowedContentTypes: [.json],
@@ -195,7 +199,6 @@ struct SettingsView: View {
                 onCompletion: restore
             )
             .navigationTitle("Ayarlar")
-            .homeButtonToolbar()
             .onAppear {
                 // Shown as a placeholder, never as text: reading the stored
                 // token back into an on-screen field would put it somewhere a
@@ -464,7 +467,7 @@ struct SettingsView: View {
         // set during the first launch, while the store is still empty, and a
         // restore happens afterwards. Normalizing here is what keeps a restored
         // card inside the same picker and filters as a captured one.
-        let schema = SubjectPickerBar.schema
+        let schema = SubjectTopicSchema.shared
         let subject = schema.map {
             SubjectBackfill.restoredSubject(existing: record.subject, schema: $0, fallback: "Patoloji")
         } ?? record.subject

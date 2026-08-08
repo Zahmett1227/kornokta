@@ -78,8 +78,8 @@ struct CaptureView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(Cizgi.paper.ignoresSafeArea())
+            .rootTabBarInset()
             .navigationTitle("Yakala")
-            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink {

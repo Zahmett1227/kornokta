@@ -9,12 +9,18 @@ import CizgiCore
 /// so the old "Onay bekliyor" section is gone. Any legacy `needsReview` card
 /// still appears in "Son eklenenler" and can be managed from its detail screen.
 struct LibraryView: View {
+    private enum ContentMode: String, CaseIterable {
+        case cards = "Kartlar"
+        case map = "Bilgi Haritası"
+    }
+
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
     @State private var searchText = ""
     @State private var subjectFilter: String?
     @State private var topicFilter: TopicFilter = .all
+    @State private var contentMode: ContentMode = .cards
 
     /// Everything below counts and lists from here, not from the raw query: a
     /// filtered screen that still showed unfiltered totals and "en çok
@@ -63,20 +69,39 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack(path: $navigator.libraryPath) {
-            Group {
-                if allCards.isEmpty {
-                    emptyState
-                } else {
-                    list
+            VStack(spacing: 0) {
+                Picker("Görünüm", selection: $contentMode) {
+                    ForEach(ContentMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, Cizgi.Space.lg)
+                .padding(.vertical, Cizgi.Space.sm)
+
+                Group {
+                    switch contentMode {
+                    case .cards:
+                        // `.searchable` lives on this branch, not on the stack:
+                        // in map mode the field searched nothing, and a search
+                        // box that ignores what you type is worse than none.
+                        Group {
+                            if allCards.isEmpty { emptyState } else { list }
+                        }
+                        .searchable(text: $searchText, prompt: "Kartlarda ara")
+                    case .map:
+                        KnowledgeMapView(cards: allCards)
+                    }
                 }
             }
             .background(Cizgi.paper.ignoresSafeArea())
+            .rootTabBarInset()
             .navigationTitle("Bilgilerim")
-            .searchable(text: $searchText, prompt: "Kartlarda ara")
-            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                    if contentMode == .cards {
+                        SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                    }
                 }
             }
         }

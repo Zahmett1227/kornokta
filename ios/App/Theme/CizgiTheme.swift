@@ -157,6 +157,103 @@ struct StatTile: View {
     }
 }
 
+/// Shared hierarchy for root-screen introductions. Keeping the eyebrow, title
+/// and supporting copy aligned prevents every feature from inventing a new
+/// visual language as the app grows.
+struct ScreenHero: View {
+    let eyebrow: String
+    let title: String
+    let subtitle: String
+    let systemImage: String
+
+    var body: some View {
+        CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
+            HStack(alignment: .top, spacing: Cizgi.Space.lg) {
+                VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
+                    Text(eyebrow.uppercased())
+                        .font(.caption2.weight(.bold))
+                        .tracking(1.1)
+                        .foregroundStyle(Cizgi.accent)
+                    Text(title)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Cizgi.ink)
+                    Text(subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Cizgi.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: systemImage)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(Cizgi.ink)
+                    .frame(width: 58, height: 58)
+                    .background(Cizgi.accent, in: Circle())
+            }
+        }
+    }
+}
+
+struct CizgiSectionTitle: View {
+    let title: String
+    var subtitle: String?
+
+    init(_ title: String, subtitle: String? = nil) {
+        self.title = title
+        self.subtitle = subtitle
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Cizgi.ink)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(Cizgi.muted)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Compact root-screen action used for quick starts and cross-feature jumps.
+struct FeatureActionCard: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    var isProminent = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(isProminent ? Cizgi.ink : Cizgi.accent)
+                Spacer(minLength: Cizgi.Space.xs)
+                Text(title)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Cizgi.ink)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(Cizgi.muted)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
+            .padding(Cizgi.Space.lg)
+            .background(isProminent ? Cizgi.accentSoft : Cizgi.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
+                    .stroke(isProminent ? Cizgi.accent.opacity(0.7) : Cizgi.hairline, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Button styles
 
 /// The primary amber action button.
