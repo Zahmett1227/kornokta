@@ -21,10 +21,12 @@ dairelenmiş/yanına not alınmış) kısmı kendisi okuyup zenginleştirilmiş 
   doğrulandı) ve **beş şıklı TUS kartı** (PR #29, A1–A5) geldi. `main` =
   `09c629d`. Kalan tek gerçek iş: **beş şıklı kartın gerçek sayfayla ilk
   denemesi ve distraktör kalitesi (A6)** — "Sıradaki iş" bölümüne bak.
-- **Durum (2026-08-08):** **ders/konu sınıflandırması + egzersiz modu**
-  eklendi (aşağıdaki bölüm). Testler: backend 548, Swift 330, Python 518 yeşil;
-  App hedefi Mac'te derlendi. **Cihazda henüz denenmedi ve Supabase `subject`
-  kolonu canlıya HENÜZ uygulanmadı** — dağıtımdan önce şart.
+- **Durum (2026-08-08):** **ders/konu sınıflandırması + egzersiz modu** (PR #32)
+  ve üstüne **Egzersiz'in merkeze alınması + Bilgi Haritası** (PR #33) geldi.
+  `main` = `a8909f0`. Supabase `subject` kolonu **canlıya uygulandı**
+  (`information_schema` ile doğrulandı: `jobs.subject text null`) — o
+  bloklayıcı kapandı. Alt navigasyon cihazda açılıp **doğru göründüğü teyit
+  edildi**; Bilgi Haritası ve Egzersiz'in "Bitir"i henüz cihazda denenmedi.
 
 ### Ders/konu sınıflandırması + egzersiz modu (2026-08-08)
 
@@ -232,8 +234,10 @@ yorumları **İngilizce**.
 | Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı** (PR #15–#27, kabul 2026-08-07). B1–B4 + asenkron iş kuyruğu (ADR-006) + PR #27'nin onarımları. **Kalan (küçük, bilerek ertelenmiş):** `Models` alan sadeleşmesi + SwiftData göçü (§10.4 "mevcut kartlar korunmalı"). Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`. |
 | Galeriden fotoğraf ekleme | ✅ **Tamam ve cihazda doğrulandı** (PR #28). İçe aktarılan her fotoğraf tek noktada JPEG'e + düz yöne normalize ediliyor, sonra kameranın yoluna giriyor. Bkz. `docs/PLAN-galeriden-foto.md`. |
 | Faz 7 — Beş şıklı (TUS tipi) kart | 🟡 **A1–A5 `main`'de** (PR #29); Codex iki tur inceledi, sekiz bulgunun sekizi kapatıldı. Kullanıcı derledi, uygulama sorunsuz açıldı. **Kalan: A6 — distraktör kalitesi** ve beş şıklı kartın gerçek sayfayla ilk denemesi. Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md`. |
+| Ders/konu sınıflandırması + Egzersiz modu | ✅ **Tamam** (PR #32). Supabase `subject` kolonu canlıda. Bkz. aşağıdaki bölüm. |
+| Egzersiz merkeze + Bilgi Haritası | 🟡 **`main`'de** (PR #33, dört tur: ilk dilim + P0/P1/P2 düzeltmeleri + Codex'in bir P2'si). CI ve Mac derlemesi yeşil, **alt navigasyon cihazda doğrulandı**. **Kalan:** Bilgi Haritası ile Egzersiz'in "Bitir"ini cihazda görmek. Bkz. `docs/PLAN-egzersiz-bilgi-haritasi.md`. |
 
-**Dal durumu:** `main` güncel uç (`2c52d4c`, PR #30 squash merge). Çalışma
+**Dal durumu:** `main` güncel uç (`a8909f0`, PR #33 squash merge). Çalışma
 dalları merge sonrası siliniyor; yeni iş `main`'in ucundan yeni bir dalla
 başlar.
 
@@ -437,17 +441,26 @@ sorunlar** (Faz 6 öncesi mimariye ait; ayrıntı `docs/FAZ5-DURUM.md`):
       3 yeni test eklendi (kenetleme, uzak/yakın satır fallback'i remote ve
       local yollar için).
 
-**Test durumu (2026-08-07, akşam — PR #30 `main`'e merge edildi):**
-- Backend (`backend/`): **527 test yeşil**, `tsc --noEmit` temiz — kullanıcının
-  Mac'inde gerçekten koşuldu.
-- Python (`evals/`): **518 test yeşil**, aynı Mac'te koşuldu.
-- Swift (`ios/CizgiCore/`): **tam paket bir Mac'te koşuldu: 305/305 yeşil.**
-  (Önceki tek kırmızı — `BackupExporterTests`'in bayat `formatVersion: 1`
-  beklentisi — düzeltildi; test artık `BackupExporter.formatVersion`'a bağlı.)
-- App hedefi: `xcodegen generate` + `xcodebuild build` (iOS Simulator,
-  imzasız) aynı Mac'te **başarılı**; `swift build` artık **uyarısız**.
-- CI: yeni `.github/workflows/ios.yml` macOS runner'da `swift test` + App
-  build koşuyor — Swift'in CI kapısı olmaması bu dalda kapandı.
+**Test durumu (2026-08-08 — PR #33 `main`'e merge edildi):**
+- Swift (`ios/CizgiCore/`): **363 test fonksiyonu** (PR #33 29 tane ekledi).
+  Tam paket hem CI'da macOS runner'da hem kullanıcının Mac'inde yeşil.
+- App hedefi: CI'da `xcodegen generate` + `xcodebuild build` (iOS Simulator,
+  imzasız) → `** BUILD SUCCEEDED **`; kullanıcı aynı üç adımı kendi Mac'inde
+  de koştu ve uygulamayı cihazda açtı.
+- Backend (`backend/`): **548 test yeşil**, `tsc --noEmit` temiz. Python
+  (`evals/`): **518 test yeşil**. PR #33 `backend/` ve `evals/`'e
+  **hiç dokunmadı**, sayılar PR #32'den devam ediyor.
+- CI: `.github/workflows/ios.yml` macOS runner'da `swift test` + App build
+  koşuyor — Swift'in CI kapısı olmaması PR #30'da kapanmıştı ve PR #33'te
+  gerçekten işe yaradı (bu ortamda Mac olmadığı için SwiftUI tip hatalarını
+  yakalayabilecek tek kapı oydu).
+
+**Bu ortamın kalıcı sınırı:** Linux'ta `CizgiCore` derlenmiyor (CoreGraphics,
+SwiftData) ve SwiftUI dosyaları yalnız `swiftc -parse` görebiliyor — bu
+**sözdizimi** kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. Foundation-only
+mantık izole bir pakette gerçekten koşturulabilir (PR #33'te 43 test böyle
+doğrulandı, gerçek bir Swift 5.10 araç zinciri indirilerek). Ama App hedefi ve
+tam paket için **tek gerçek kapı CI'daki macOS işi ya da bir Mac derlemesi.**
 
 **PR #30'da kapatılan inceleme bulguları (2026-08-07 akşam turu).** Codex'in
 listesi + bağımsız iki incelemenin bulguları; ayrıntılı gerekçeler kod
@@ -666,14 +679,16 @@ yakalamaz**; App hedefinin tek gerçek kapısı bir Mac derlemesidir.
 
 ## Sıradaki iş
 
-### 0. Dağıtımdan ÖNCE: Supabase `subject` kolonu (bloklayıcı)
+### 0. Supabase `subject` kolonu — ✅ uygulandı (2026-08-08)
 
-```sql
-alter table public.jobs add column subject text;
-```
-`backend/supabase/migrations/20260807120000_add_subject_to_jobs.sql`. Yeni kod
-bu kolonu yazıyor; kolon yoksa PostgREST `insert`'i reddeder ve **her çekim
-patlar** (`mc_mode`'da yaşandı). Ardından ilk gerçek çekimde iki şeyi doğrula:
+`alter table public.jobs add column subject text;`
+(`backend/supabase/migrations/20260807120000_add_subject_to_jobs.sql`) canlıya
+uygulandı; `information_schema.columns` ile doğrulandı. **Bloklayıcı değil
+artık** — kolon olmadan PostgREST `insert`'i reddeder ve her çekim patardı
+(`mc_mode`'da yaşanmıştı, "Migration sırası" kuralı oradan geliyor).
+
+Kalan iki doğrulama **ilk gerçek çekimde** yapılacak, ikisi de kolonla ilgili
+değil:
 (a) OpenAI `anyOf: [enum-string, null]`'ı kabul etti mi — reddederse tüm işler
 düşer, B planı enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek;
 (b) atanan konular gerçekten doğru mu (kart detayında "Sınıflandırma").
