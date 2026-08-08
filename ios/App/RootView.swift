@@ -24,21 +24,31 @@ struct RootView: View {
     var body: some View {
         TabView(selection: $navigator.selectedTab) {
             CaptureView()
-                .tabItem { Label("Yakala", systemImage: "camera") }
                 .tag(AppNavigator.RootTab.capture)
 
             ReviewView()
-                .tabItem { Label("Tekrar", systemImage: "rectangle.stack") }
                 .tag(AppNavigator.RootTab.review)
 
+            ExerciseView()
+                .tag(AppNavigator.RootTab.exercise)
+
             LibraryView()
-                .tabItem { Label("Bilgilerim", systemImage: "books.vertical") }
                 .tag(AppNavigator.RootTab.library)
 
             SettingsView()
-                .tabItem { Label("Ayarlar", systemImage: "gearshape") }
                 .tag(AppNavigator.RootTab.settings)
         }
+        // The native tab bar cannot give the centre destination the visual
+        // priority Egzersiz needs. The replacement below remains a normal,
+        // accessible five-destination bar while allowing a raised centre item.
+        .toolbar(.hidden, for: .tabBar)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if navigator.showsRootTabBar {
+                CizgiRootTabBar(selection: $navigator.selectedTab)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: navigator.showsRootTabBar)
         .tint(Cizgi.accent)
         .environmentObject(navigator)
         .task {
@@ -84,6 +94,93 @@ struct RootView: View {
             hour: environment.settings.notificationHour,
             dueDates: reviewableDueDates
         )
+    }
+}
+
+/// A five-destination root bar with Egzersiz as the unmistakable centre of the
+/// app. It deliberately uses buttons rather than gestures so Dynamic Type,
+/// VoiceOver and the 44-point minimum target all work without special cases.
+private struct CizgiRootTabBar: View {
+    private struct Item: Identifiable {
+        var id: AppNavigator.RootTab { tab }
+        let tab: AppNavigator.RootTab
+        let title: String
+        let icon: String
+    }
+
+    @Binding var selection: AppNavigator.RootTab
+
+    private let tabs: [Item] = [
+        Item(tab: .capture, title: "Yakala", icon: "camera"),
+        Item(tab: .review, title: "Tekrar", icon: "rectangle.stack"),
+        Item(tab: .exercise, title: "Egzersiz", icon: "brain.head.profile"),
+        Item(tab: .library, title: "Bilgilerim", icon: "books.vertical"),
+        Item(tab: .settings, title: "Ayarlar", icon: "gearshape"),
+    ]
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            ForEach(tabs) { item in
+                tabButton(item.tab, title: item.title, icon: item.icon)
+            }
+        }
+        .padding(.horizontal, Cizgi.Space.xs)
+        .padding(.top, Cizgi.Space.sm)
+        .padding(.bottom, Cizgi.Space.xs)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Cizgi.hairline).frame(height: 1)
+        }
+        .shadow(color: .black.opacity(0.08), radius: 12, y: -4)
+    }
+
+    private func tabButton(
+        _ tab: AppNavigator.RootTab,
+        title: String,
+        icon: String
+    ) -> some View {
+        let isSelected = selection == tab
+        let isExercise = tab == .exercise
+        return Button {
+            selection = tab
+        } label: {
+            VStack(spacing: isExercise ? 3 : 4) {
+                Image(systemName: isSelected ? selectedIcon(icon) : icon)
+                    .font(isExercise ? .title2.weight(.bold) : .body.weight(.semibold))
+                    .frame(width: isExercise ? 52 : 28, height: isExercise ? 52 : 28)
+                    .foregroundStyle(isExercise ? Cizgi.ink : (isSelected ? Cizgi.accent : Cizgi.muted))
+                    .background {
+                        if isExercise {
+                            Circle()
+                                .fill(Cizgi.accent)
+                                .shadow(color: Cizgi.accent.opacity(0.38), radius: 10, y: 4)
+                        }
+                    }
+                    .offset(y: isExercise ? -10 : 0)
+
+                Text(title)
+                    .font(.caption2.weight(isSelected || isExercise ? .bold : .medium))
+                    .foregroundStyle(isSelected ? Cizgi.ink : Cizgi.muted)
+                    .offset(y: isExercise ? -8 : 0)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 52)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private func selectedIcon(_ icon: String) -> String {
+        switch icon {
+        case "camera": return "camera.fill"
+        case "rectangle.stack": return "rectangle.stack.fill"
+        case "brain.head.profile": return "brain.head.profile"
+        case "books.vertical": return "books.vertical.fill"
+        case "gearshape": return "gearshape.fill"
+        default: return icon
+        }
     }
 }
 

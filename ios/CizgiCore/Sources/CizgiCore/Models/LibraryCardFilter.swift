@@ -10,6 +10,11 @@ public enum TopicFilter: Hashable, Sendable {
     case all
     case none
     case topic(String)
+
+    public var topicName: String? {
+        guard case .topic(let name) = self else { return nil }
+        return name
+    }
 }
 
 /// Subject/topic filtering for "Bilgilerim" and the exercise mode, kept out of

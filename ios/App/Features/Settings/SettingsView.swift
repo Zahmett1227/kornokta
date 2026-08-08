@@ -25,8 +25,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                backendSection
-
                 Section {
                     // A picker, not free text: the subject now decides which
                     // topic list the model is constrained to (schema v2.2), so
@@ -187,6 +185,11 @@ struct SettingsView: View {
                             : "Backend ayarlanmadan kart üretimi sahte; kartlar taslak niteliğindedir. Tekrar etmek her zaman çevrimdışı çalışır."
                     )
                 }
+
+                // Single-user daily controls stay first. Provider credentials
+                // are necessary setup, but not part of the ordinary learning
+                // loop, so they live at the bottom as an advanced section.
+                backendSection
             }
             .fileImporter(
                 isPresented: $isImportingBackup,
@@ -195,7 +198,6 @@ struct SettingsView: View {
                 onCompletion: restore
             )
             .navigationTitle("Ayarlar")
-            .homeButtonToolbar()
             .onAppear {
                 // Shown as a placeholder, never as text: reading the stored
                 // token back into an on-screen field would put it somewhere a

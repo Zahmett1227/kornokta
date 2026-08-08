@@ -79,7 +79,6 @@ struct CaptureView: View {
             }
             .background(Cizgi.paper.ignoresSafeArea())
             .navigationTitle("Yakala")
-            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     NavigationLink {

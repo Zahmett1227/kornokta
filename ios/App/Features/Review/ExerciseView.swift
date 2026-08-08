@@ -5,25 +5,32 @@ import CizgiCore
 /// Egzersiz modu — free practice over the whole deck, independent of FSRS.
 ///
 /// Same question → "Cevabı göster" → answer rhythm as `ReviewView`, and the
-/// same card-edit affordance, but **nothing is written**: no `ReviewLog`, no
-/// scheduling update, no daily new-card ledger entry. That is the point — going
-/// over a subject before an exam should not disturb a spaced-repetition history
-/// that took months to build, and the grade buttons are what would.
+/// same card-edit affordance. Only an `ExerciseRun`/`ExerciseAttempt` history is
+/// written: no `ReviewLog`, scheduling update or daily new-card ledger entry.
+/// Going over a subject before an exam must not disturb a spaced-repetition
+/// history that took months to build.
 ///
 /// The queue itself (shuffle, position, finish) lives in `ExerciseSession` so
 /// `swift test` covers it; this file is the shell.
 struct ExerciseView: View {
     @EnvironmentObject private var environment: AppEnvironment
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var navigator: AppNavigator
+    @Environment(\.modelContext) private var context
 
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
+    @Query(sort: \ExerciseRun.startedAt, order: .reverse) private var exerciseRuns: [ExerciseRun]
 
     @State private var session: ExerciseSession?
+    @State private var currentRun: ExerciseRun?
     @State private var isAnswerVisible = false
     @State private var selectedOption: Int?
+    @State private var shownAt = Date()
     @State private var editingCard: Card?
     @State private var subjectFilter: String?
     @State private var topicFilter: TopicFilter = .all
+    /// 0 means every eligible card; the other values are quick, predictable
+    /// session sizes rather than a free-form number field.
+    @State private var requestedCardCount = 20
 
     /// Suspended cards stay out — the user has said they do not want to see
     /// them. Everything else is fair game regardless of its due date, which is
@@ -45,56 +52,92 @@ struct ExerciseView: View {
         return allCards.first { $0.id == id }
     }
 
-    var body: some View {
-        ZStack {
-            Cizgi.paper.ignoresSafeArea()
-            Group {
-                if let session, !session.isFinished {
-                    if let card = currentCard {
-                        cardBody(card, session: session)
-                    } else {
-                        // Deleted from the editor mid-session. Keyed on `total`
-                        // and not `completed`, unlike ReviewView: dropping a
-                        // missing card shrinks the queue without moving the
-                        // cursor, so `completed` would stay put, SwiftUI would
-                        // reuse this view, `onAppear` would never fire again
-                        // and a *run* of deleted cards would park the session
-                        // on a blank screen.
-                        Color.clear
-                            .onAppear { skipCurrentCard() }
-                            .id(session.total)
-                    }
-                } else if session != nil {
-                    completionScreen
-                } else {
-                    startScreen
+    private var weakCards: [Card] {
+        let practiceWeight = exerciseRuns
+            .flatMap(\.attempts)
+            .reduce(into: [UUID: Int]()) { scores, attempt in
+                switch attempt.result {
+                case .knew: break
+                case .unsure: scores[attempt.cardId, default: 0] += 1
+                case .missed: scores[attempt.cardId, default: 0] += 3
                 }
             }
+        return eligibleCards.sorted { left, right in
+            let leftPractice = practiceWeight[left.id, default: 0]
+            let rightPractice = practiceWeight[right.id, default: 0]
+            if leftPractice != rightPractice {
+                return leftPractice > rightPractice
+            }
+            if left.lapseCount != right.lapseCount {
+                return left.lapseCount > right.lapseCount
+            }
+            if left.lowConfidence != right.lowConfidence {
+                return left.lowConfidence && !right.lowConfidence
+            }
+            if left.stability != right.stability {
+                return left.stability < right.stability
+            }
+            return left.updatedAt < right.updatedAt
         }
-        .navigationTitle("Egzersiz")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                if let session, !session.isFinished {
-                    Text("\(session.completed + 1) / \(session.total)")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(Cizgi.muted)
+    }
+
+    private var isSessionActive: Bool {
+        guard let session else { return false }
+        return !session.isFinished
+    }
+
+    var body: some View {
+        NavigationStack(path: $navigator.exercisePath) {
+            ZStack {
+                Cizgi.paper.ignoresSafeArea()
+                Group {
+                    if let session, !session.isFinished {
+                        if let card = currentCard {
+                            cardBody(card, session: session)
+                        } else {
+                            // Deleted from the editor mid-session. Keyed on `total`
+                            // and not `completed`, unlike ReviewView: dropping a
+                            // missing card shrinks the queue without moving the
+                            // cursor, so `completed` would stay put, SwiftUI would
+                            // reuse this view, `onAppear` would never fire again
+                            // and a *run* of deleted cards would park the session
+                            // on a blank screen.
+                            Color.clear
+                                .onAppear { skipCurrentCard() }
+                                .id(session.total)
+                        }
+                    } else if session != nil {
+                        completionScreen
+                    } else {
+                        startScreen
+                    }
                 }
             }
-            ToolbarItem(placement: .primaryAction) {
-                if let card = currentCard {
-                    // Kept from the review screen on purpose: the exercise run
-                    // is exactly where a wrong card gets noticed.
-                    Button {
-                        editingCard = card
-                    } label: {
-                        Label("Kartı düzenle", systemImage: "pencil")
+            .navigationTitle("Egzersiz")
+            .navigationBarTitleDisplayMode(isSessionActive ? .inline : .large)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    if let session, !session.isFinished {
+                        Text("\(session.completed + 1) / \(session.total)")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Cizgi.muted)
                     }
-                    .tint(Cizgi.accent)
-                    .disabled(session?.isFinished ?? true)
-                    .accessibilityLabel("Kartı düzenle")
-                } else if session == nil {
-                    SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    if let card = currentCard {
+                        // Kept from the review screen on purpose: the exercise run
+                        // is exactly where a wrong card gets noticed.
+                        Button {
+                            editingCard = card
+                        } label: {
+                            Label("Kartı düzenle", systemImage: "pencil")
+                        }
+                        .tint(Cizgi.accent)
+                        .disabled(session?.isFinished ?? true)
+                        .accessibilityLabel("Kartı düzenle")
+                    } else if session == nil {
+                        SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                    }
                 }
             }
         }
@@ -102,6 +145,18 @@ struct ExerciseView: View {
             CardEditorView(card: card)
         }
         .tint(Cizgi.accent)
+        .onAppear {
+            restoreActiveRunIfNeeded()
+            navigator.isTabBarHidden = isSessionActive
+            applyIncomingTarget()
+        }
+        .onChange(of: navigator.exerciseTarget?.id) { _, _ in
+            applyIncomingTarget()
+        }
+        .onChange(of: isSessionActive) { _, active in
+            navigator.isTabBarHidden = active
+        }
+        .onDisappear { navigator.isTabBarHidden = false }
     }
 
     // MARK: Start
@@ -109,41 +164,169 @@ struct ExerciseView: View {
     @ViewBuilder
     private var startScreen: some View {
         let count = eligibleCards.count
-        VStack(spacing: Cizgi.Space.xl) {
-            VStack(spacing: Cizgi.Space.xs) {
-                Text("\(count)")
-                    .font(.system(size: 56, weight: .bold, design: .rounded))
-                    .foregroundStyle(Cizgi.ink)
-                Text("kart hazır")
-                    .font(.subheadline)
-                    .foregroundStyle(Cizgi.muted)
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: Cizgi.Space.xl) {
+                ScreenHero(
+                    eyebrow: "Günlük çalışma alanı",
+                    title: "Bilgiyi aktif kullan",
+                    subtitle: "Dilediğin konuyu karışık çalış. Egzersiz sonuçları tekrar planını değiştirmez.",
+                    systemImage: "brain.head.profile"
+                )
 
-            ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
-                .padding(.horizontal, Cizgi.Space.lg)
+                VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                    CizgiSectionTitle(
+                        "Hızlı başlangıç",
+                        subtitle: "Hazırlık ekranı olmadan doğrudan çalışmaya geç."
+                    )
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Cizgi.Space.md) {
+                        FeatureActionCard(
+                            title: "Hızlı 10",
+                            subtitle: "Seçiminden 10 karışık kart",
+                            systemImage: "bolt.fill",
+                            isProminent: true
+                        ) {
+                            start(cards: eligibleCards, limit: 10, mode: .quick)
+                        }
+                        .disabled(count == 0)
+                        .opacity(count == 0 ? 0.45 : 1)
 
-            if count == 0 {
-                Text("Bu filtreye uyan kart yok.")
-                    .font(.subheadline)
-                    .foregroundStyle(Cizgi.muted)
-            } else {
-                Button("Başla") { start() }
-                    .buttonStyle(CizgiPrimaryButtonStyle())
-                    .padding(.horizontal, Cizgi.Space.xl)
-            }
+                        FeatureActionCard(
+                            title: "Zayıf noktalar",
+                            subtitle: "Unutulan ve düşük güvenli kartlar",
+                            systemImage: "scope"
+                        ) {
+                            start(cards: weakCards, limit: 20, mode: .weak)
+                        }
+                        .disabled(count == 0)
+                        .opacity(count == 0 ? 0.45 : 1)
+                    }
+                }
 
-            Text("Karışık sırada; puanlama yok, tekrar planın değişmez.")
+                VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                    CizgiSectionTitle(
+                        "Egzersizini kur",
+                        subtitle: "Ders ve konu filtresini sağ üstteki menüden değiştirebilirsin."
+                    )
+
+                    ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+
+                    CardSurface {
+                        VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                            HStack {
+                                Label("\(count) kart hazır", systemImage: "rectangle.stack.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Cizgi.ink)
+                                Spacer()
+                                if let subjectFilter {
+                                    TagChip(subjectFilter, systemImage: "book")
+                                }
+                            }
+
+                            Picker("Kart sayısı", selection: $requestedCardCount) {
+                                Text("10").tag(10)
+                                Text("20").tag(20)
+                                Text("Tümü").tag(0)
+                            }
+                            .pickerStyle(.segmented)
+
+                            if count == 0 {
+                                Text("Bu filtreye uyan kart yok.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Cizgi.muted)
+                            } else {
+                                Button("Egzersize başla") {
+                                    start(
+                                        cards: eligibleCards,
+                                        limit: requestedCardCount == 0 ? nil : requestedCardCount,
+                                        mode: .free
+                                    )
+                                }
+                                .buttonStyle(CizgiPrimaryButtonStyle())
+                            }
+                        }
+                    }
+                }
+
+                Label(
+                    "Puanlama yalnız bu oturumun özetini oluşturur; FSRS ve tekrar tarihleri aynı kalır.",
+                    systemImage: "checkmark.shield"
+                )
                 .font(.footnote)
                 .foregroundStyle(Cizgi.muted)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Cizgi.Space.xl)
+
+                if !completedRuns.isEmpty {
+                    VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                        CizgiSectionTitle(
+                            "Son Egzersizler",
+                            subtitle: "FSRS'den bağımsız çalışma geçmişin."
+                        )
+                        ForEach(completedRuns.prefix(3)) { run in
+                            runHistoryCard(run)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, Cizgi.Space.lg)
+            .padding(.vertical, Cizgi.Space.md)
         }
-        .padding(Cizgi.Space.xl)
+    }
+
+    private var completedRuns: [ExerciseRun] {
+        exerciseRuns.filter { $0.finishedAt != nil }
+    }
+
+    private func runHistoryCard(_ run: ExerciseRun) -> some View {
+        let knew = run.attempts.filter { $0.result == .knew }.count
+        let unsure = run.attempts.filter { $0.result == .unsure }.count
+        let missed = run.attempts.filter { $0.result == .missed }.count
+        return CardSurface {
+            HStack(spacing: Cizgi.Space.md) {
+                Image(systemName: modeIcon(run.mode))
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Cizgi.accent)
+                    .frame(width: 42, height: 42)
+                    .background(Cizgi.accentSoft, in: Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(modeTitle(run.mode))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Cizgi.ink)
+                    Text(run.startedAt, format: .dateTime.day().month().hour().minute())
+                        .font(.caption)
+                        .foregroundStyle(Cizgi.muted)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text("\(knew) / \(run.attempts.count)")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Cizgi.ink)
+                    Text("\(unsure) kararsız · \(missed) yanlış")
+                        .font(.caption2)
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+        }
+    }
+
+    private func modeTitle(_ mode: ExerciseMode) -> String {
+        switch mode {
+        case .free: return "Serbest Egzersiz"
+        case .quick: return "Hızlı Egzersiz"
+        case .weak: return "Zayıf Noktalar"
+        }
+    }
+
+    private func modeIcon(_ mode: ExerciseMode) -> String {
+        switch mode {
+        case .free: return "shuffle"
+        case .quick: return "bolt.fill"
+        case .weak: return "scope"
+        }
     }
 
     @ViewBuilder
     private var completionScreen: some View {
-        VStack(spacing: Cizgi.Space.lg) {
+        let summary = session?.summary ?? ExerciseSummary(knew: 0, unsure: 0, missed: 0)
+        VStack(spacing: Cizgi.Space.xl) {
             VStack(spacing: Cizgi.Space.md) {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 52))
@@ -151,17 +334,24 @@ struct ExerciseView: View {
                 Text("Egzersiz bitti")
                     .font(.title3.weight(.bold))
                     .foregroundStyle(Cizgi.ink)
-                Text("\(session?.total ?? 0) kart gözden geçirildi.")
+                Text("\(summary.answered) kart yanıtlandı.")
                     .font(.subheadline)
                     .foregroundStyle(Cizgi.muted)
             }
+
+            HStack(spacing: Cizgi.Space.sm) {
+                StatTile(value: "\(summary.knew)", label: "Biliyordum")
+                StatTile(value: "\(summary.unsure)", label: "Kararsız")
+                StatTile(value: "\(summary.missed)", label: "Bilemedim")
+            }
+
             Button("Baştan karıştır") { restart() }
                 .buttonStyle(CizgiPrimaryButtonStyle())
-                .padding(.horizontal, Cizgi.Space.xl)
-            Button("Bitir") { dismiss() }
+            Button("Bitir") { finish() }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Cizgi.accent)
         }
+        .padding(.horizontal, Cizgi.Space.xl)
         .padding(Cizgi.Space.xl)
     }
 
@@ -254,10 +444,22 @@ struct ExerciseView: View {
     @ViewBuilder
     private func actionArea(_ card: Card) -> some View {
         if isAnswerVisible {
-            // One button where the review screen has four. Nothing to record,
-            // so nothing to ask.
-            Button("Sıradaki") { advance() }
-                .buttonStyle(CizgiPrimaryButtonStyle())
+            if let options = card.options, let selectedOption {
+                let result: ExerciseResult = options[selectedOption].isCorrect ? .knew : .missed
+                Button("Sıradaki") { recordAndAdvance(result, selectedOption: selectedOption) }
+                    .buttonStyle(CizgiPrimaryButtonStyle())
+            } else {
+                VStack(spacing: Cizgi.Space.sm) {
+                    Text("Nasıldı?")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Cizgi.muted)
+                    HStack(spacing: Cizgi.Space.sm) {
+                        resultButton("Bilemedim", result: .missed, tint: Cizgi.danger)
+                        resultButton("Kararsızdım", result: .unsure, tint: Cizgi.warning)
+                        resultButton("Biliyordum", result: .knew, tint: Cizgi.success)
+                    }
+                }
+            }
         } else if card.options != nil {
             Text("Bir şık seç")
                 .font(.footnote)
@@ -343,31 +545,129 @@ struct ExerciseView: View {
 
     // MARK: Actions
 
-    private func start() {
+    private func start(cards: [Card], limit: Int?, mode: ExerciseMode) {
+        let selected = limit.map { Array(cards.prefix($0)) } ?? cards
         var generator = SystemRandomNumberGenerator()
-        session = ExerciseSession(cardIds: eligibleCards.map(\.id), using: &generator)
+        let newSession = ExerciseSession(cardIds: selected.map(\.id), using: &generator)
+        session = newSession
+        beginRun(for: newSession, mode: mode)
         resetCardState()
     }
 
     private func restart() {
+        guard var restarted = session else { return }
         var generator = SystemRandomNumberGenerator()
-        session?.restart(using: &generator)
+        restarted.restart(using: &generator)
+        session = restarted
+        beginRun(for: restarted, mode: currentRun?.mode ?? .free)
         resetCardState()
     }
 
-    private func advance() {
-        session?.advance()
+    private func finish() {
+        session = nil
+        currentRun = nil
         resetCardState()
+    }
+
+    private func recordAndAdvance(_ result: ExerciseResult, selectedOption: Int? = nil) {
+        guard var working = session, let cardId = working.current else { return }
+        let answeredAt = Date()
+        if let currentRun {
+            let attempt = ExerciseAttempt(
+                cardId: cardId,
+                result: result,
+                selectedOption: selectedOption,
+                responseTimeMs: max(0, Int(answeredAt.timeIntervalSince(shownAt) * 1_000)),
+                answeredAt: answeredAt
+            )
+            attempt.run = currentRun
+            context.insert(attempt)
+        }
+
+        working.record(result)
+        session = working
+        currentRun?.position = working.position
+        if working.isFinished {
+            currentRun?.finishedAt = answeredAt
+        }
+        try? context.save()
+        resetCardState()
+    }
+
+    private func resultButton(_ title: String, result: ExerciseResult, tint: Color) -> some View {
+        Button(title) { recordAndAdvance(result) }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Cizgi.Space.md)
+            .background(Cizgi.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
+                    .stroke(tint.opacity(0.55), lineWidth: 1.5)
+            )
     }
 
     private func skipCurrentCard() {
         guard let id = session?.current else { return }
         session?.remove(id)
+        if let session {
+            currentRun?.queuedCardIds = session.queue.map(\.uuidString)
+            currentRun?.position = session.position
+            if session.isFinished { currentRun?.finishedAt = .now }
+            try? context.save()
+        }
         resetCardState()
     }
 
     private func resetCardState() {
         isAnswerVisible = false
         selectedOption = nil
+        shownAt = .now
+    }
+
+    private func beginRun(for session: ExerciseSession, mode: ExerciseMode) {
+        let run = ExerciseRun(
+            mode: mode,
+            subject: subjectFilter,
+            topic: topicFilter.topicName,
+            queuedCardIds: session.queue
+        )
+        context.insert(run)
+        try? context.save()
+        currentRun = run
+    }
+
+    private func restoreActiveRunIfNeeded() {
+        guard session == nil,
+              let run = exerciseRuns.first(where: { $0.finishedAt == nil }),
+              !run.queue.isEmpty else { return }
+        let results = Dictionary(
+            run.attempts.map { ($0.cardId, $0.result) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        let restored = ExerciseSession(
+            queue: run.queue,
+            position: run.position,
+            results: results
+        )
+        session = restored
+        currentRun = run
+        subjectFilter = run.subject
+        topicFilter = run.topic.map(TopicFilter.topic) ?? .all
+        if restored.isFinished {
+            run.finishedAt = .now
+            try? context.save()
+        }
+        resetCardState()
+    }
+
+    private func applyIncomingTarget() {
+        guard let target = navigator.exerciseTarget else { return }
+        subjectFilter = target.subject
+        topicFilter = target.topic.map(TopicFilter.topic) ?? .all
+        // Consume exactly once. A later visit to Egzersiz should keep whatever
+        // filter the user chose here, not reapply an old cross-feature jump.
+        navigator.exerciseTarget = nil
     }
 }

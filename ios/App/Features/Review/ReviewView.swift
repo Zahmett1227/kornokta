@@ -13,6 +13,7 @@ import CizgiCore
 /// is on screen, and what a tap means.
 struct ReviewView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
 
     @Query private var allCards: [Card]
@@ -100,7 +101,6 @@ struct ReviewView: View {
                 }
             }
             .navigationTitle("Tekrar")
-            .homeButtonToolbar()
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     if let session, !session.isFinished {
@@ -204,13 +204,14 @@ struct ReviewView: View {
     /// Free practice, deliberately a secondary control: it changes no
     /// scheduling state, so it must not compete with the real review session.
     private var exerciseLink: some View {
-        NavigationLink {
-            ExerciseView()
+        Button {
+            navigator.openExercise(subject: nil)
         } label: {
             Label("Egzersiz · karışık, puansız", systemImage: "shuffle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Cizgi.accent)
         }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder
