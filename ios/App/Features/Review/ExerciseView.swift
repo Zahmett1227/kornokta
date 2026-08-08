@@ -31,6 +31,7 @@ struct ExerciseView: View {
     /// 0 means every eligible card; the other values are quick, predictable
     /// session sizes rather than a free-form number field.
     @State private var requestedCardCount = 20
+    @State private var isConfirmingEarlyFinish = false
 
     /// Suspended cards stay out — the user has said they do not want to see
     /// them. Everything else is fair game regardless of its due date, which is
@@ -52,33 +53,32 @@ struct ExerciseView: View {
         return allCards.first { $0.id == id }
     }
 
-    private var weakCards: [Card] {
-        let practiceWeight = exerciseRuns
-            .flatMap(\.attempts)
-            .reduce(into: [UUID: Int]()) { scores, attempt in
-                switch attempt.result {
-                case .knew: break
-                case .unsure: scores[attempt.cardId, default: 0] += 1
-                case .missed: scores[attempt.cardId, default: 0] += 3
-                }
-            }
-        return eligibleCards.sorted { left, right in
-            let leftPractice = practiceWeight[left.id, default: 0]
-            let rightPractice = practiceWeight[right.id, default: 0]
-            if leftPractice != rightPractice {
-                return leftPractice > rightPractice
-            }
-            if left.lapseCount != right.lapseCount {
-                return left.lapseCount > right.lapseCount
-            }
-            if left.lowConfidence != right.lowConfidence {
-                return left.lowConfidence && !right.lowConfidence
-            }
-            if left.stability != right.stability {
-                return left.stability < right.stability
-            }
-            return left.updatedAt < right.updatedAt
+    private var practiceOutcomes: [ExerciseOutcome] {
+        exerciseRuns.flatMap(\.attempts).map {
+            ExerciseOutcome(cardId: $0.cardId, result: $0.result, answeredAt: $0.answeredAt)
         }
+    }
+
+    /// Weakest first. The ordering itself lives in `WeakPointRanking` so the
+    /// decay rules that keep a relearned card from being drilled for ever are
+    /// covered by `swift test` rather than only by looking at the screen.
+    private var weakCards: [Card] {
+        let cards = eligibleCards
+        let ranked = WeakPointRanking.rank(
+            cards.map {
+                WeakPointCandidate(
+                    cardId: $0.id,
+                    lapseCount: $0.lapseCount,
+                    lowConfidence: $0.lowConfidence,
+                    stability: $0.stability,
+                    updatedAt: $0.updatedAt
+                )
+            },
+            outcomes: practiceOutcomes,
+            now: .now
+        )
+        let byId = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return ranked.compactMap { byId[$0.cardId] }
     }
 
     private var isSessionActive: Bool {
@@ -113,9 +113,23 @@ struct ExerciseView: View {
                     }
                 }
             }
+            .rootTabBarInset()
             .navigationTitle("Egzersiz")
             .navigationBarTitleDisplayMode(isSessionActive ? .inline : .large)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    // The only exit from an active run. Egzersiz is a tab root,
+                    // so there is no back button, and the run hides the tab bar
+                    // to stay focused: without this the user is held here until
+                    // the last card of a queue that may be the whole deck — and
+                    // because an unfinished run is restored on launch, killing
+                    // the app would drop them straight back into it.
+                    if isSessionActive {
+                        Button("Bitir") { isConfirmingEarlyFinish = true }
+                            .tint(Cizgi.accent)
+                            .accessibilityLabel("Egzersizi bitir")
+                    }
+                }
                 ToolbarItem(placement: .principal) {
                     if let session, !session.isFinished {
                         Text("\(session.completed + 1) / \(session.total)")
@@ -143,6 +157,16 @@ struct ExerciseView: View {
         }
         .sheet(item: $editingCard) { card in
             CardEditorView(card: card)
+        }
+        .confirmationDialog(
+            "Egzersizi bitir?",
+            isPresented: $isConfirmingEarlyFinish,
+            titleVisibility: .visible
+        ) {
+            Button("Bitir", role: .destructive) { finishEarly() }
+            Button("Devam et", role: .cancel) {}
+        } message: {
+            Text("Yanıtladığın kartların özeti kalır. Tekrar planın zaten değişmiyor.")
         }
         .tint(Cizgi.accent)
         .onAppear {
@@ -545,10 +569,19 @@ struct ExerciseView: View {
 
     // MARK: Actions
 
+    /// `.weak` is the only mode whose incoming order carries meaning, so it is
+    /// the only one that takes a prefix. The rest are sampled: `eligibleCards`
+    /// is `createdAt` descending, and a prefix of that is the same newest N
+    /// cards every single time — "Hızlı 10" would never show card eleven.
     private func start(cards: [Card], limit: Int?, mode: ExerciseMode) {
-        let selected = limit.map { Array(cards.prefix($0)) } ?? cards
         var generator = SystemRandomNumberGenerator()
-        let newSession = ExerciseSession(cardIds: selected.map(\.id), using: &generator)
+        let selected = ExerciseSelection.pick(
+            from: cards.map(\.id),
+            limit: limit,
+            ranked: mode == .weak,
+            using: &generator
+        )
+        let newSession = ExerciseSession(cardIds: selected, using: &generator)
         session = newSession
         beginRun(for: newSession, mode: mode)
         resetCardState()
@@ -563,7 +596,28 @@ struct ExerciseView: View {
         resetCardState()
     }
 
+    /// Stops the run where it stands and shows the finish screen for what was
+    /// answered. The run is closed in the same breath: an `ExerciseRun` with no
+    /// `finishedAt` is what `restoreActiveRunIfNeeded` reopens on launch, so
+    /// leaving one behind would put the user back inside the session they just
+    /// asked to leave.
+    private func finishEarly() {
+        guard var working = session else { return }
+        working.finishEarly()
+        session = working
+        currentRun?.position = working.position
+        currentRun?.finishedAt = .now
+        try? context.save()
+        resetCardState()
+    }
+
     private func finish() {
+        // Belt and braces for the same reason as `finishEarly`: every path off
+        // the completion screen must leave a closed run behind.
+        if let currentRun, currentRun.finishedAt == nil {
+            currentRun.finishedAt = .now
+            try? context.save()
+        }
         session = nil
         currentRun = nil
         resetCardState()

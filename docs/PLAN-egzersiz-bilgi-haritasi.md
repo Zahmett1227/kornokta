@@ -31,12 +31,45 @@ Branch: `codex/egzersiz-bilgi-haritasi-ui`
 - [x] Ortak hero, bolum basligi ve hizli eylem kartlari
 - [x] Ayarlarda gunluk ogrenme kontrollerini teknik kurulumun onune alma
 
+## Inceleme turunda kapatilanlar (2026-08-08)
+
+Ilk dilim gozden gecirildi; asagidakiler ayni dalda duzeltildi.
+
+- **Aktif oturumdan cikis.** Oturum alt navigasyonu gizliyordu ama Egzersiz bir
+  sekme koku oldugu icin geri butonu da yok: kullanici kuyrugun son kartina
+  kadar ekranda kilitli kaliyordu. Yarim kalan kosu her aciliste geri
+  yuklendigi ve varsayilan sekme Egzersiz oldugu icin uygulamayi oldurmek de
+  cikis degildi. Artik sol ustte onay soran bir **Bitir** var
+  (`ExerciseSession.finishEarly()`), yanitlanan kartlarin ozeti korunuyor ve
+  kosu `finishedAt` ile kapatiliyor. Kural: alt navigasyonu gizleyen her ekran
+  gorunur bir cikis borclu.
+- **Alt navigasyonun derinlik mantigi.** `showsRootTabBar`, `NavigationPath.
+  isEmpty` uzerinden calisiyordu; ancak uygulamadaki her push view tabanli
+  `NavigationLink { ... }` ve bu, bagli `NavigationPath`i doldurmaz. Bar bu
+  yuzden her detay ekraninda kaliyordu. Cozum bir bayrak degil, **yerlestirme**:
+  bar artik her sekmenin `NavigationStack` *icindeki* kok icerigine
+  `rootTabBarInset()` ile bagli, push edilen ekran onu dogal olarak almiyor.
+- **Yerli sekme cubugu.** `.toolbar(.hidden, for: .tabBar)` TabView'in kendisine
+  uygulanmisti; o yerlesim kapsayan bir TabView'i hedefler. Modifier her
+  cocuga tasindi ve `.tabItem` etiketleri geri kondu: gizleme tutmazsa etiketli
+  bir cubuk kalir, bes bos oge degil.
+- **Oturum secimi rastgele degil, hep en yeni N karti veriyordu.** Havuz
+  `createdAt` azalan sirada geldigi icin `prefix` her "Hizli 10"da ayni on
+  karti sectiriyordu; karistirma yalniz *sirayi* rastgeleliyordu. Artik
+  `ExerciseSelection.pick` sirali olmayan modlarda once orneklem aliyor;
+  yalniz Zayif Noktalar prefix kullaniyor, cunku onun sirasi anlamli.
+- **Zayif nokta puani sonumlenmiyordu.** Yanlis +3, dogru 0 ve zaman penceresi
+  yoktu: bir kez kacirilan kart listeden hic dusemiyordu. Artik `knew` puani
+  **eksiltiyor**, her deneme 7 gunde bir yarilaniyor ve 30 gunden eski deneme
+  hic sayilmiyor (`ExercisePracticeWeight`). Siralama `WeakPointRanking`e
+  tasindi, yani `swift test` kapsaminda.
+
 ## Siradaki Egzersiz asamalari
 
 ### E1 - Oturum yonetimi
 
 - Devam eden oturumu ana ekranda ayri kartla gosterme
-- Oturumu bilincli olarak bitir/iptal etme
+- ~~Oturumu bilincli olarak bitir/iptal etme~~ (yukaridaki turda geldi)
 - Yanlislar ve kararsizlardan tek dokunusla yeni Egzersiz
 - Son kullanilan kurulumun hatirlanmasi
 

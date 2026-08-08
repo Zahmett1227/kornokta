@@ -89,6 +89,7 @@ struct LibraryView: View {
                 }
             }
             .background(Cizgi.paper.ignoresSafeArea())
+            .rootTabBarInset()
             .navigationTitle("Bilgilerim")
             .searchable(text: $searchText, prompt: "Kartlarda ara")
             .toolbar {

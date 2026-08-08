@@ -191,6 +191,7 @@ struct SettingsView: View {
                 // loop, so they live at the bottom as an advanced section.
                 backendSection
             }
+            .rootTabBarInset()
             .fileImporter(
                 isPresented: $isImportingBackup,
                 allowedContentTypes: [.json],

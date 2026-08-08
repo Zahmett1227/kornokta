@@ -96,6 +96,14 @@ public struct ExerciseSession: Equatable, Sendable {
         advance()
     }
 
+    /// Ends the walk where it stands, so the caller can show the finish screen
+    /// for a run the user chose to stop. The answers already given are kept —
+    /// a partial run is still a run, and abandoning it must not be the only
+    /// way out of a queue the user no longer wants to sit through.
+    public mutating func finishEarly() {
+        position = queue.count
+    }
+
     /// Reshuffles and starts over. A second pass in the original order would
     /// be recall of the sequence as much as of the cards.
     public mutating func restart(using generator: inout some RandomNumberGenerator) {

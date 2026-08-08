@@ -128,6 +128,23 @@ final class ExerciseSessionTests: XCTestCase {
         XCTAssertEqual(session.completed, 0)
     }
 
+    /// Leaving a run early is a first-class exit, not an abandonment: the
+    /// finish screen still has to be able to report what was answered.
+    func testFinishingEarlyEndsTheWalkButKeepsTheAnswersGivenSoFar() {
+        var generator = SeededGenerator(seed: 41)
+        var session = ExerciseSession(cardIds: ids(6), using: &generator)
+        session.record(.knew)
+        session.record(.missed)
+
+        session.finishEarly()
+
+        XCTAssertTrue(session.isFinished)
+        XCTAssertNil(session.current)
+        XCTAssertEqual(session.completed, 6)
+        XCTAssertEqual(session.summary, ExerciseSummary(knew: 1, unsure: 0, missed: 1))
+        XCTAssertEqual(session.summary.answered, 2)
+    }
+
     func testDurableInitializerClampsPositionAndDropsUnknownResults() {
         let cards = ids(2)
         let unknown = UUID()

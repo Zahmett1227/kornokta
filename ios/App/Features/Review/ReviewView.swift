@@ -100,6 +100,7 @@ struct ReviewView: View {
                     }
                 }
             }
+            .rootTabBarInset()
             .navigationTitle("Tekrar")
             .toolbar {
                 ToolbarItem(placement: .principal) {

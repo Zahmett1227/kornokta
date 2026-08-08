@@ -22,33 +22,47 @@ struct RootView: View {
     }
 
     var body: some View {
+        // The native tab bar cannot give the centre destination the visual
+        // priority Egzersiz needs, so `CizgiRootTabBar` replaces it. Two rules
+        // keep that swap honest:
+        //
+        // 1. `.toolbar(.hidden, for: .tabBar)` goes on each *child* of the
+        //    TabView, which is the placement that hides this TabView's own bar.
+        //    On the TabView itself it addresses an enclosing tab bar — of which
+        //    there is none — so the native bar would have stayed. The
+        //    `.tabItem` labels are kept as the fallback that failure mode
+        //    deserves: a labelled bar, never five blank items.
+        // 2. The replacement is attached per tab root (`rootTabBarInset`),
+        //    *inside* each NavigationStack. A pushed screen is then simply a
+        //    different view and loses the bar with no bookkeeping — no depth
+        //    flag and no `NavigationPath.isEmpty` check, neither of which this
+        //    app can answer correctly (see `AppNavigator`).
         TabView(selection: $navigator.selectedTab) {
             CaptureView()
+                .tabItem { Label("Yakala", systemImage: "camera") }
                 .tag(AppNavigator.RootTab.capture)
+                .toolbar(.hidden, for: .tabBar)
 
             ReviewView()
+                .tabItem { Label("Tekrar", systemImage: "rectangle.stack") }
                 .tag(AppNavigator.RootTab.review)
+                .toolbar(.hidden, for: .tabBar)
 
             ExerciseView()
+                .tabItem { Label("Egzersiz", systemImage: "brain.head.profile") }
                 .tag(AppNavigator.RootTab.exercise)
+                .toolbar(.hidden, for: .tabBar)
 
             LibraryView()
+                .tabItem { Label("Bilgilerim", systemImage: "books.vertical") }
                 .tag(AppNavigator.RootTab.library)
+                .toolbar(.hidden, for: .tabBar)
 
             SettingsView()
+                .tabItem { Label("Ayarlar", systemImage: "gearshape") }
                 .tag(AppNavigator.RootTab.settings)
+                .toolbar(.hidden, for: .tabBar)
         }
-        // The native tab bar cannot give the centre destination the visual
-        // priority Egzersiz needs. The replacement below remains a normal,
-        // accessible five-destination bar while allowing a raised centre item.
-        .toolbar(.hidden, for: .tabBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if navigator.showsRootTabBar {
-                CizgiRootTabBar(selection: $navigator.selectedTab)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.2), value: navigator.showsRootTabBar)
         .tint(Cizgi.accent)
         .environmentObject(navigator)
         .task {
@@ -95,6 +109,36 @@ struct RootView: View {
             dueDates: reviewableDueDates
         )
     }
+}
+
+/// Attaches the replacement root bar to a tab's root content.
+///
+/// Must be applied *inside* the tab's `NavigationStack`, to the root screen
+/// only. That placement is what makes depth handling free: a pushed detail
+/// screen is a different view, so it never receives the inset and the bar goes
+/// away on its own. Deriving the same thing from `NavigationPath.isEmpty` does
+/// not work here — every push in this app is a view-based `NavigationLink`,
+/// which leaves the bound path empty, so the bar would have stayed on every
+/// detail screen (the exact overlap `ConfirmationView` once had to work around,
+/// and whose `.toolbar(.hidden, for: .tabBar)` no longer applies to a bar that
+/// is not the TabView's).
+struct RootTabBarInset: ViewModifier {
+    @EnvironmentObject private var navigator: AppNavigator
+
+    func body(content: Content) -> some View {
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !navigator.isTabBarHidden {
+                    CizgiRootTabBar(selection: $navigator.selectedTab)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: navigator.isTabBarHidden)
+    }
+}
+
+extension View {
+    func rootTabBarInset() -> some View { modifier(RootTabBarInset()) }
 }
 
 /// A five-destination root bar with Egzersiz as the unmistakable centre of the
