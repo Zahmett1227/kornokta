@@ -504,7 +504,11 @@ public final class ExerciseRun {
     @Attribute(.unique) public var id: UUID
     public var modeRaw: String
     public var subject: String?
-    public var topic: String?
+    /// The chosen `TopicFilter`, not a topic name — see `TopicFilter.
+    /// storageValue`. Storing the name alone cannot tell "Konusuz" apart from
+    /// "no topic filter", and restoring into the wrong one changes which cards
+    /// the resumed session covers.
+    public var topicFilterRaw: String?
     /// String UUIDs keep the exact shuffled order durable across relaunches.
     public var queuedCardIds: [String]
     public var position: Int
@@ -519,11 +523,16 @@ public final class ExerciseRun {
         set { modeRaw = newValue.rawValue }
     }
 
+    public var topicFilter: TopicFilter {
+        get { TopicFilter.fromStorage(topicFilterRaw) }
+        set { topicFilterRaw = newValue.storageValue }
+    }
+
     public init(
         id: UUID = UUID(),
         mode: ExerciseMode,
         subject: String? = nil,
-        topic: String? = nil,
+        topicFilter: TopicFilter = .all,
         queuedCardIds: [UUID],
         position: Int = 0,
         startedAt: Date = .now,
@@ -532,7 +541,7 @@ public final class ExerciseRun {
         self.id = id
         self.modeRaw = mode.rawValue
         self.subject = subject
-        self.topic = topic
+        self.topicFilterRaw = topicFilter.storageValue
         self.queuedCardIds = queuedCardIds.map(\.uuidString)
         self.position = position
         self.startedAt = startedAt

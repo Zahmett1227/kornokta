@@ -63,6 +63,26 @@ Ilk dilim gozden gecirildi; asagidakiler ayni dalda duzeltildi.
   **eksiltiyor**, her deneme 7 gunde bir yarilaniyor ve 30 gunden eski deneme
   hic sayilmiyor (`ExercisePracticeWeight`). Siralama `WeakPointRanking`e
   tasindi, yani `swift test` kapsaminda.
+- **Zayif Noktalar saglam kartlarla dolduruluyordu.** Siralama tek basina
+  "zayif mi" sorusunu yanitlayamaz; saglikli bir destenin de bir ilk elemani
+  vardir. `WeakPointRanking.weakOnly` yalniz aleyhine kanit olan karti aliyor
+  (taze pratik hatasi, FSRS lapse'i ya da dusuk guven). Kanit yoksa dugme
+  kapali ve alt yazisi bunu soyluyor.
+- **Harita hedefi devam eden oturumu gormezden geliyordu.** Filtre degisiyor,
+  kuyruk ayni kaliyordu: cipler "Farmakoloji" derken ekranda Patoloji kartlari.
+  Artik soruluyor — yeni secimle bastan basla (kosu duzgun kapanir) ya da bu
+  oturuma devam et.
+- **Tekrar ekranindaki Egzersiz baglantisi filtreleri siliyordu.**
+  `ExerciseTarget` artik `filter: nil` ile "beni sadece Egzersiz'e goturur"
+  diyebiliyor; filtreyi yalnizca gercekten daraltma isteyen Bilgi Haritasi
+  gonderiyor.
+- **"Konusuz" filtresi yeniden aciliste kayboluyordu.** `topicName` hem `.all`
+  hem `.none` icin `nil`; kosu bu yuzden her tekrar yuklemede "Tumu"ne
+  genisliyordu. `ExerciseRun` artik filtrenin kendisini sakliyor
+  (`TopicFilter.storageValue`, `topicFilterRaw`).
+- **`run.attempts` sirasizdi.** `uniquingKeysWith: { _, latest in latest }`
+  SwiftData iliskisinde "en son" anlamina gelmiyordu; once `answeredAt`
+  siralaniyor.
 
 ## Siradaki Egzersiz asamalari
 

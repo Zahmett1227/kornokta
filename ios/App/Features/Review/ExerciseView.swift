@@ -32,6 +32,9 @@ struct ExerciseView: View {
     /// session sizes rather than a free-form number field.
     @State private var requestedCardCount = 20
     @State private var isConfirmingEarlyFinish = false
+    /// A filter requested from another screen that arrived mid-run, parked
+    /// until the user says what should happen to the run.
+    @State private var pendingTarget: AppNavigator.ExerciseTarget.Filter?
 
     /// Suspended cards stay out — the user has said they do not want to see
     /// them. Everything else is fair game regardless of its due date, which is
@@ -59,12 +62,13 @@ struct ExerciseView: View {
         }
     }
 
-    /// Weakest first. The ordering itself lives in `WeakPointRanking` so the
-    /// decay rules that keep a relearned card from being drilled for ever are
-    /// covered by `swift test` rather than only by looking at the screen.
+    /// The cards there is evidence against, weakest first. Selection *and*
+    /// ordering live in `WeakPointRanking` so the decay rules that keep a
+    /// relearned card from being drilled for ever are covered by `swift test`
+    /// rather than only by looking at the screen.
     private var weakCards: [Card] {
         let cards = eligibleCards
-        let ranked = WeakPointRanking.rank(
+        let ranked = WeakPointRanking.weakOnly(
             cards.map {
                 WeakPointCandidate(
                     cardId: $0.id,
@@ -79,6 +83,14 @@ struct ExerciseView: View {
         )
         let byId = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ranked.compactMap { byId[$0.cardId] }
+    }
+
+    private var pendingTargetMessage: String {
+        guard let pendingTarget else { return "" }
+        let requested = pendingTarget.topic.map { "\(pendingTarget.subject) · \($0)" }
+            ?? pendingTarget.subject
+        return "\(requested) için Egzersiz istedin. Baştan başlarsan bu oturum "
+            + "yanıtladıklarınla birlikte kapanır."
     }
 
     private var isSessionActive: Bool {
@@ -168,6 +180,19 @@ struct ExerciseView: View {
         } message: {
             Text("Yanıtladığın kartların özeti kalır. Tekrar planın zaten değişmiyor.")
         }
+        .confirmationDialog(
+            "Devam eden bir Egzersiz var",
+            isPresented: Binding(
+                get: { pendingTarget != nil },
+                set: { if !$0 { pendingTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Yeni seçimle baştan başla", role: .destructive) { restartWithPendingTarget() }
+            Button("Bu oturuma devam et", role: .cancel) { pendingTarget = nil }
+        } message: {
+            Text(pendingTargetMessage)
+        }
         .tint(Cizgi.accent)
         .onAppear {
             restoreActiveRunIfNeeded()
@@ -188,6 +213,10 @@ struct ExerciseView: View {
     @ViewBuilder
     private var startScreen: some View {
         let count = eligibleCards.count
+        // Computed once per render on purpose: `weakCards` walks every attempt
+        // ever recorded, and the start screen reads it for the count, the
+        // disabled state and the tap.
+        let weak = weakCards
         ScrollView {
             VStack(alignment: .leading, spacing: Cizgi.Space.xl) {
                 ScreenHero(
@@ -214,15 +243,21 @@ struct ExerciseView: View {
                         .disabled(count == 0)
                         .opacity(count == 0 ? 0.45 : 1)
 
+                        // Offered only when the deck actually has weak cards.
+                        // Padding the run out to 20 with cards the user has
+                        // never got wrong would make the label a lie and bury
+                        // the few that do need work.
                         FeatureActionCard(
                             title: "Zayıf noktalar",
-                            subtitle: "Unutulan ve düşük güvenli kartlar",
+                            subtitle: weak.isEmpty
+                                ? "Şimdilik zayıf kart yok"
+                                : "\(weak.count) unutulan / düşük güvenli kart",
                             systemImage: "scope"
                         ) {
-                            start(cards: weakCards, limit: 20, mode: .weak)
+                            start(cards: weak, limit: 20, mode: .weak)
                         }
-                        .disabled(count == 0)
-                        .opacity(count == 0 ? 0.45 : 1)
+                        .disabled(weak.isEmpty)
+                        .opacity(weak.isEmpty ? 0.45 : 1)
                     }
                 }
 
@@ -684,7 +719,7 @@ struct ExerciseView: View {
         let run = ExerciseRun(
             mode: mode,
             subject: subjectFilter,
-            topic: topicFilter.topicName,
+            topicFilter: topicFilter,
             queuedCardIds: session.queue
         )
         context.insert(run)
@@ -696,10 +731,12 @@ struct ExerciseView: View {
         guard session == nil,
               let run = exerciseRuns.first(where: { $0.finishedAt == nil }),
               !run.queue.isEmpty else { return }
-        let results = Dictionary(
-            run.attempts.map { ($0.cardId, $0.result) },
-            uniquingKeysWith: { _, latest in latest }
-        )
+        // A SwiftData relationship has no defined order, so "keep the second
+        // one" would not have meant "keep the newest". Sort first, then let the
+        // last write win.
+        let results = run.attempts
+            .sorted { $0.answeredAt < $1.answeredAt }
+            .reduce(into: [UUID: ExerciseResult]()) { $0[$1.cardId] = $1.result }
         let restored = ExerciseSession(
             queue: run.queue,
             position: run.position,
@@ -708,7 +745,7 @@ struct ExerciseView: View {
         session = restored
         currentRun = run
         subjectFilter = run.subject
-        topicFilter = run.topic.map(TopicFilter.topic) ?? .all
+        topicFilter = run.topicFilter
         if restored.isFinished {
             run.finishedAt = .now
             try? context.save()
@@ -718,10 +755,41 @@ struct ExerciseView: View {
 
     private func applyIncomingTarget() {
         guard let target = navigator.exerciseTarget else { return }
-        subjectFilter = target.subject
-        topicFilter = target.topic.map(TopicFilter.topic) ?? .all
         // Consume exactly once. A later visit to Egzersiz should keep whatever
         // filter the user chose here, not reapply an old cross-feature jump.
         navigator.exerciseTarget = nil
+
+        // A jump with no filter (the link on the review screen) is only asking
+        // to be taken here.
+        guard let filter = target.filter else { return }
+
+        // With a run in progress, applying the filter alone would be a lie: the
+        // chips would read "Farmakoloji" over a queue of Patoloji cards the
+        // session was built from. The two honest options are the user's to
+        // pick, so ask rather than silently dropping either their request or
+        // the run they are in the middle of.
+        if isSessionActive {
+            pendingTarget = filter
+        } else {
+            apply(filter)
+        }
+    }
+
+    private func apply(_ filter: AppNavigator.ExerciseTarget.Filter) {
+        subjectFilter = filter.subject
+        topicFilter = filter.topic.map(TopicFilter.topic) ?? .all
+    }
+
+    /// Closes the current run and lands on the start screen with the requested
+    /// filter, ready to begin. `finishEarly` first so the abandoned run is
+    /// stored complete and never reopened on the next launch.
+    private func restartWithPendingTarget() {
+        guard let filter = pendingTarget else { return }
+        pendingTarget = nil
+        finishEarly()
+        session = nil
+        currentRun = nil
+        apply(filter)
+        resetCardState()
     }
 }

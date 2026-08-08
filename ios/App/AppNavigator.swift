@@ -6,9 +6,18 @@ import SwiftUI
 @MainActor
 final class AppNavigator: ObservableObject {
     struct ExerciseTarget: Equatable {
+        struct Filter: Equatable {
+            let subject: String
+            let topic: String?
+        }
+
         let id = UUID()
-        let subject: String?
-        let topic: String?
+        /// `nil` means "just take me to Egzersiz" — the link on the review
+        /// screen is a jump, not an opinion about what to practise. Only a
+        /// caller that is genuinely asking for a narrower run (Bilgi Haritası)
+        /// sends a filter, and only that caller gets to overwrite the choice
+        /// the user made in the Egzersiz filter menu.
+        let filter: Filter?
     }
 
     enum RootTab: Hashable {
@@ -53,8 +62,18 @@ final class AppNavigator: ObservableObject {
         libraryPath = NavigationPath()
     }
 
-    func openExercise(subject: String?, topic: String? = nil) {
-        exerciseTarget = ExerciseTarget(subject: subject, topic: topic)
+    /// Switches to Egzersiz and leaves the filters exactly as the user left them.
+    func openExercise() {
+        show(ExerciseTarget(filter: nil))
+    }
+
+    /// Switches to Egzersiz and narrows it, e.g. "Bu dersten Egzersiz".
+    func openExercise(subject: String, topic: String? = nil) {
+        show(ExerciseTarget(filter: .init(subject: subject, topic: topic)))
+    }
+
+    private func show(_ target: ExerciseTarget) {
+        exerciseTarget = target
         exercisePath = NavigationPath()
         selectedTab = .exercise
     }

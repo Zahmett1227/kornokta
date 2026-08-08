@@ -87,6 +87,29 @@ public struct WeakPointCandidate: Equatable, Sendable {
 }
 
 public enum WeakPointRanking {
+    /// Whether the deck holds any evidence against this card at all: a recent
+    /// practice mistake, an FSRS lapse, or a card the server itself was unsure
+    /// about.
+    static func isWeak(_ candidate: WeakPointCandidate, score: Double) -> Bool {
+        score > 0 || candidate.lapseCount > 0 || candidate.lowConfidence
+    }
+
+    /// Only the cards there is a reason to drill, weakest first.
+    ///
+    /// Ranking alone cannot answer this. Sorting a perfectly healthy deck still
+    /// produces a first element, so taking the top 20 of it would offer twenty
+    /// cards the user has never once got wrong under the heading "Zayıf
+    /// noktalar". An empty result is a real and useful answer here.
+    public static func weakOnly(
+        _ candidates: [WeakPointCandidate],
+        outcomes: [ExerciseOutcome],
+        now: Date
+    ) -> [WeakPointCandidate] {
+        let scores = ExercisePracticeWeight.scores(for: outcomes, now: now)
+        let weak = candidates.filter { isWeak($0, score: scores[$0.cardId, default: 0]) }
+        return rank(weak, outcomes: outcomes, now: now)
+    }
+
     /// Weakest first. Practice history leads because it is the most recent
     /// evidence; FSRS lapses, low confidence and low stability break ties, and
     /// `updatedAt` makes the order total so the same deck always ranks the

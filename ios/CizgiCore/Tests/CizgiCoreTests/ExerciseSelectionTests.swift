@@ -155,6 +155,68 @@ final class ExerciseSelectionTests: XCTestCase {
         XCTAssertEqual(scores[card] ?? 0, 3, accuracy: 0.001)
     }
 
+    // MARK: Weak-only selection
+
+    /// Sorting a healthy deck still yields a first element. Offering its top 20
+    /// as "zayıf noktalar" would be a label with nothing behind it.
+    func testAHealthyDeckHasNoWeakPointsAtAll() {
+        let weak = WeakPointRanking.weakOnly(
+            [candidate(UUID()), candidate(UUID()), candidate(UUID())],
+            outcomes: [],
+            now: now
+        )
+
+        XCTAssertTrue(weak.isEmpty)
+    }
+
+    func testOnlyCardsWithEvidenceAgainstThemAreOffered() {
+        let missedRecently = UUID(), lapsed = UUID(), unsureServer = UUID(), healthy = UUID()
+        let weak = WeakPointRanking.weakOnly(
+            [
+                candidate(healthy),
+                candidate(missedRecently),
+                candidate(lapsed, lapses: 2),
+                candidate(unsureServer, lowConfidence: true),
+            ],
+            outcomes: [outcome(missedRecently, .missed, daysAgo: 1)],
+            now: now
+        )
+
+        XCTAssertEqual(Set(weak.map(\.cardId)), [missedRecently, lapsed, unsureServer])
+        XCTAssertEqual(weak.first?.cardId, missedRecently, "en taze kanıt başa gelmeli")
+    }
+
+    /// The counterpart of the decay rule: once a card is answered correctly
+    /// often enough its score drops back to zero and it leaves the list, so a
+    /// single old mistake cannot pin it there for ever.
+    func testARelearnedCardLeavesTheWeakListEntirely() {
+        let card = UUID()
+        let weak = WeakPointRanking.weakOnly(
+            [candidate(card)],
+            outcomes: [
+                outcome(card, .missed, daysAgo: 25),
+                outcome(card, .knew, daysAgo: 3),
+                outcome(card, .knew, daysAgo: 1),
+            ],
+            now: now
+        )
+
+        XCTAssertTrue(weak.isEmpty)
+    }
+
+    /// A lapse in FSRS is independent evidence, so it keeps the card listed
+    /// even when the practice score has been worked back down.
+    func testAnFsrsLapseKeepsACardListedEvenAfterCorrectPractice() {
+        let card = UUID()
+        let weak = WeakPointRanking.weakOnly(
+            [candidate(card, lapses: 1)],
+            outcomes: [outcome(card, .knew, daysAgo: 1)],
+            now: now
+        )
+
+        XCTAssertEqual(weak.map(\.cardId), [card])
+    }
+
     // MARK: Ranking fallbacks
 
     func testWithoutPracticeHistoryFsrsSignalsDecideTheOrder() {

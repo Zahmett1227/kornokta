@@ -15,6 +15,30 @@ public enum TopicFilter: Hashable, Sendable {
         guard case .topic(let name) = self else { return nil }
         return name
     }
+
+    /// A spelled-out sentinel rather than a control character: this project has
+    /// already lost time to an invisible NUL byte hiding inside a key string,
+    /// and no canonical topic name is ever going to look like this.
+    static let noneStorageToken = "__konusuz__"
+
+    /// Durable form for storing a chosen filter alongside a run.
+    ///
+    /// `topicName` cannot do this job: it is `nil` for both `.all` and `.none`,
+    /// so a session started on the "Konusuz" bucket would come back after a
+    /// relaunch covering *every* topic — a different set of cards than the one
+    /// the user picked.
+    public var storageValue: String? {
+        switch self {
+        case .all: return nil
+        case .none: return Self.noneStorageToken
+        case .topic(let name): return name
+        }
+    }
+
+    public static func fromStorage(_ raw: String?) -> TopicFilter {
+        guard let raw else { return .all }
+        return raw == noneStorageToken ? .none : .topic(raw)
+    }
 }
 
 /// Subject/topic filtering for "Bilgilerim" and the exercise mode, kept out of

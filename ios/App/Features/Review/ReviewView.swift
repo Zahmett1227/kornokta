@@ -206,7 +206,7 @@ struct ReviewView: View {
     /// scheduling state, so it must not compete with the real review session.
     private var exerciseLink: some View {
         Button {
-            navigator.openExercise(subject: nil)
+            navigator.openExercise()
         } label: {
             Label("Egzersiz · karışık, puansız", systemImage: "shuffle")
                 .font(.subheadline.weight(.semibold))
