@@ -33,7 +33,11 @@ public enum TopicGrouping {
         return order.map { topic in (topic: topic, cards: grouped[topic] ?? []) }
     }
 
-    static func validatedTopic(
+    /// A topic is only meaningful under its own subject, so the pair is checked
+    /// together. Public because the backup restore path needs the same rule: a
+    /// restored subject may have been remapped, and its stored topic has to be
+    /// re-checked against the subject the card actually ends up with.
+    public static func validatedTopic(
         _ topic: String?,
         subject: String?,
         schema: SubjectTopicSchema?

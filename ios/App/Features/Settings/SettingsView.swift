@@ -366,7 +366,10 @@ struct SettingsView: View {
                     // §13.3: without these a restored five-option card would be
                     // a question with nothing to choose from.
                     options: card.options,
-                    lowConfidence: card.lowConfidence
+                    lowConfidence: card.lowConfidence,
+                    // Alongside `subject`: without it a restored deck lands
+                    // entirely in "Konusuz" and no topic filter reproduces it.
+                    topic: card.knowledgeUnit?.topic
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -456,10 +459,24 @@ struct SettingsView: View {
         card.lastReviewedAt = record.lastReviewedAt
         card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
 
-        if record.subject != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
+        // A backup can carry pre-picker subjects ("patoloji", free text) that
+        // the one-time migration will never see: on a fresh install its flag is
+        // set during the first launch, while the store is still empty, and a
+        // restore happens afterwards. Normalizing here is what keeps a restored
+        // card inside the same picker and filters as a captured one.
+        let schema = SubjectPickerBar.schema
+        let subject = schema.map {
+            SubjectBackfill.restoredSubject(existing: record.subject, schema: $0, fallback: "Patoloji")
+        } ?? record.subject
+        // Re-checked against the subject the card actually ends up with: a
+        // remapped subject can leave a stored topic belonging to another ders.
+        let topic = TopicGrouping.validatedTopic(record.topic, subject: subject, schema: schema)
+
+        if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
             let unit = KnowledgeUnit(
                 canonicalClaim: record.canonicalClaim ?? record.front,
-                subject: record.subject,
+                subject: subject,
+                topic: topic,
                 tags: record.tags,
                 createdAt: card.createdAt
             )

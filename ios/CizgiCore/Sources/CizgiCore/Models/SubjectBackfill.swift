@@ -26,4 +26,26 @@ public enum SubjectBackfill {
         }
         return canonical == existing ? nil : canonical
     }
+
+    /// The same normalization for a card arriving from a backup, with one
+    /// deliberate difference: **an absent subject stays absent.**
+    ///
+    /// The migration maps nil → fallback because at that point the subject
+    /// field predated the picker, so "empty" meant "never asked". Once the
+    /// picker exists, "Seçilmedi" is a choice the user can make on purpose, and
+    /// a restore that overwrote it with Patoloji would be inventing data.
+    ///
+    /// This exists because the migration flag is set on the first launch of a
+    /// fresh install — while the store is still empty — so a backup restored
+    /// afterwards is never seen by it, and its pre-picker subjects would
+    /// otherwise sit outside every picker and filter (Codex, PR #32).
+    public static func restoredSubject(
+        existing: String?,
+        schema: SubjectTopicSchema,
+        fallback: String
+    ) -> String? {
+        let trimmed = existing?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        return schema.canonicalSubject(matching: trimmed) ?? fallback
+    }
 }

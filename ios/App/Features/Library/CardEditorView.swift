@@ -164,6 +164,27 @@ struct CardEditorView: View {
         .tint(Cizgi.accent)
     }
 
+    /// Clearing the topic belongs to the *setter*, not to `onChange`.
+    ///
+    /// `onAppear` loads the card by assigning straight to `@State`, and an
+    /// `onChange(of: subject)` observer could not tell that initial write apart
+    /// from a real edit: opening any classified card fired it, wiped the topic
+    /// that had just been loaded, and the next save persisted the card as
+    /// "Konusuz" without the user touching the ders (Codex, PR #32). A binding
+    /// setter only ever runs from the Picker itself.
+    private var subjectBinding: Binding<String> {
+        Binding(
+            get: { subject },
+            set: { newValue in
+                guard newValue != subject else { return }
+                subject = newValue
+                // Topic names are unique only within a subject, so one can
+                // never carry over to another ders.
+                topic = ""
+            }
+        )
+    }
+
     /// Ders/konu (schema v2.2). The model assigns these at capture time; this
     /// is where a wrong guess — or a card captured before the feature existed —
     /// gets corrected.
@@ -171,14 +192,9 @@ struct CardEditorView: View {
     private var classificationSection: some View {
         if let schema = SubjectPickerBar.schema {
             Section {
-                Picker("Ders", selection: $subject) {
+                Picker("Ders", selection: subjectBinding) {
                     Text("Seçilmedi").tag("")
                     ForEach(schema.subjectNames, id: \.self) { Text($0).tag($0) }
-                }
-                .onChange(of: subject) { _, _ in
-                    // Topic names are unique only within a subject, so one can
-                    // never carry over to another ders.
-                    topic = ""
                 }
 
                 if let topics = schema.topics(for: subject) {

@@ -67,6 +67,13 @@ ve FSRS'e dokunmayan bir egzersiz modu.
   değil); `CardEditorView`'da "Sınıflandırma" bölümü — sınıflandırma
   değişikliği daima **bul-veya-oluştur + yeniden bağlama**, böylece aynı
   unit'i paylaşan kardeş kartlar asla etkilenmiyor.
+- **Yedek biçimi v4:** `CardRecord`'a `topic` eklendi. Yoksa sınıflandırma
+  export'tan sağ çıkıyor ama restore'dan çıkmıyordu; kurtarılan deste tümüyle
+  "Konusuz" kovasına düşerdi. Restore ayrıca eski ders adlarını normalize
+  ediyor (`SubjectBackfill.restoredSubject`) — migration flag'i taze kurulumun
+  ilk açılışında, depo boşken yazıldığı için sonradan gelen bir yedeği hiç
+  görmüyor. Migration'dan tek farkı: **ders yoksa yok kalıyor**, çünkü picker
+  geldikten sonra "Seçilmedi" kullanıcının gerçek bir tercihi.
 - **Egzersiz modu:** `ExerciseSession` (CizgiCore, RNG enjekte edilebilir) +
   `ExerciseView`. Aynı filtreler, karışık sıra, soru → "Cevabı göster" → cevap
   → "Sıradaki". **Puanlama yok, `ReviewLog` yok, FSRS alanlarına dokunulmuyor**;
