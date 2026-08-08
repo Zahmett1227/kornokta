@@ -31,6 +31,9 @@ struct CizgiApp: App {
         // After the container exists, before any view reads it: the library
         // filters assume every unit's subject is either canonical or nil.
         SubjectBackfillMigration.runIfNeeded(container: container)
+        // Depends on the subject backfill above having already run — it only
+        // touches units already carrying "Patoloji".
+        TopicBackfillMigration.runIfNeeded(container: container)
     }
 
     var body: some Scene {
