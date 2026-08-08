@@ -21,9 +21,10 @@ import Foundation
 /// defined fallback, so an old backup restores as the subset it always was
 /// rather than failing.
 public enum BackupExporter {
-    /// 3 adds a card's five options (§13.3). Older files still restore: every
-    /// field added after version 1 is decoded with `decodeIfPresent`.
-    public static let formatVersion = 3
+    /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2).
+    /// Older files still restore: every field added after version 1 is decoded
+    /// with `decodeIfPresent`.
+    public static let formatVersion = 4
 
     /// One graded review, as recorded at the time (§16.7).
     public struct ReviewRecord: Codable, Sendable, Equatable {
@@ -94,6 +95,11 @@ public enum BackupExporter {
         /// Whether the card is waiting to be looked at (§13.3 rule 6). Restoring
         /// without it would quietly launder a flagged card into a clean one.
         public let lowConfidence: Bool
+        // --- added in version 4 ---
+        /// The card's konu (schema v2.2). Exported alongside `subject` because
+        /// without it every restored card falls into the "Konusuz" bucket and
+        /// the topic filters no longer reproduce the deck that was backed up.
+        public let topic: String?
 
         public init(
             id: UUID,
@@ -116,7 +122,8 @@ public enum BackupExporter {
             canonicalClaim: String? = nil,
             reviews: [ReviewRecord] = [],
             options: [CardOption]? = nil,
-            lowConfidence: Bool = false
+            lowConfidence: Bool = false,
+            topic: String? = nil
         ) {
             self.id = id
             self.type = type
@@ -139,6 +146,7 @@ public enum BackupExporter {
             self.reviews = reviews
             self.options = options
             self.lowConfidence = lowConfidence
+            self.topic = topic
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -167,6 +175,7 @@ public enum BackupExporter {
             reviews = try values.decodeIfPresent([ReviewRecord].self, forKey: .reviews) ?? []
             options = try values.decodeIfPresent([CardOption].self, forKey: .options)
             lowConfidence = try values.decodeIfPresent(Bool.self, forKey: .lowConfidence) ?? false
+            topic = try values.decodeIfPresent(String.self, forKey: .topic)
         }
     }
 

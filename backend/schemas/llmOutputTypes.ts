@@ -99,6 +99,14 @@ export interface Card {
   options?: CardOption[] | null;
   /** Index of the correct option. See `options`. */
   correctOption?: number | null;
+  /**
+   * Canonical topic name from the subject's list in
+   * `schemas/subject_topics.json` (schema v2.2), or null when the request
+   * carried no subject or the model was unsure. The canonical schema accepts
+   * any string here — the enum constraint lives only in the model-facing
+   * variant, and `sanitizeTopics` nulls anything off-list afterwards.
+   */
+  topic?: string | null;
 }
 
 export interface Usage {
@@ -110,7 +118,7 @@ export interface Usage {
 }
 
 export interface LlmOutput {
-  schemaVersion: "2.0" | "2.1";
+  schemaVersion: "2.0" | "2.1" | "2.2";
   requestId: string;
   /** The raw text the model read off the marked content — audit only (§6.3). */
   readText: string;

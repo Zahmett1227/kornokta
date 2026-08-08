@@ -19,7 +19,8 @@ final class BackendCardProviderTests: XCTestCase {
         tags: [String] = ["Farmakoloji"],
         lowConfidence: Bool = false,
         options: [RemoteCardOption]? = nil,
-        correctOption: Int? = nil
+        correctOption: Int? = nil,
+        topic: String? = nil
     ) -> RemoteCard {
         RemoteCard(
             id: id,
@@ -31,7 +32,8 @@ final class BackendCardProviderTests: XCTestCase {
             tags: tags,
             lowConfidence: lowConfidence,
             options: options,
-            correctOption: correctOption
+            correctOption: correctOption,
+            topic: topic
         )
     }
 
@@ -58,6 +60,37 @@ final class BackendCardProviderTests: XCTestCase {
             gate: RemoteCardGateReport(verdicts: verdicts, warnings: warnings),
             cardPromptVersion: "2.0"
         )
+    }
+
+    // MARK: Per-card topic (schema v2.2)
+
+    func testTopicSurvivesTheMapping() throws {
+        let decoded = success(
+            cards: [card(topic: "İnflamasyon")],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        XCTAssertEqual(knowledge.cards.first?.topic, "İnflamasyon")
+    }
+
+    func testTopicDecodesFromV22AndDefaultsToNilOnOlderResponses() throws {
+        // A v2.2 card names its topic; a pre-topic (v2.0/v2.1) card has no
+        // `topic` key at all. Both must decode — the second one is exactly
+        // what an already-stored job result looks like after this update.
+        let v22 = """
+        {"id":"c1","type":"direct_recall","front":"f","back":"b","explanation":"",
+         "difficulty":2,"tags":[],"lowConfidence":false,"options":null,
+         "correctOption":null,"topic":"İnflamasyon"}
+        """
+        let legacy = """
+        {"id":"c2","type":"direct_recall","front":"f","back":"b","explanation":"",
+         "difficulty":2,"tags":[],"lowConfidence":false}
+        """
+        let decoder = JSONDecoder()
+        let withTopic = try decoder.decode(RemoteCard.self, from: Data(v22.utf8))
+        let without = try decoder.decode(RemoteCard.self, from: Data(legacy.utf8))
+        XCTAssertEqual(withTopic.topic, "İnflamasyon")
+        XCTAssertNil(without.topic)
     }
 
     // MARK: Five-option cards (§13.3)

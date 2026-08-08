@@ -24,6 +24,9 @@ struct CardEditorView: View {
     @State private var isLoaded = false
     /// Editable copies of the five options; empty when this is a plain card.
     @State private var options: [EditableOption] = []
+    /// Empty string means "Seçilmedi"/"Konusuz" — `Picker` tags cannot be nil.
+    @State private var subject = ""
+    @State private var topic = ""
 
     /// A row in the option editor. `id` is stable across edits so SwiftUI does
     /// not lose the keyboard focus every time a character is typed.
@@ -117,6 +120,8 @@ struct CardEditorView: View {
                         .foregroundStyle(Cizgi.muted)
                 }
 
+                classificationSection
+
                 if !options.isEmpty {
                     optionsSection
                 }
@@ -151,10 +156,62 @@ struct CardEditorView: View {
                 options = (card.options ?? []).map {
                     EditableOption(text: $0.text, why: $0.why ?? "", isCorrect: $0.isCorrect)
                 }
+                subject = SubjectPickerBar.canonicalSubject(card.knowledgeUnit?.subject) ?? ""
+                topic = card.knowledgeUnit?.topic ?? ""
                 isLoaded = true
             }
         }
         .tint(Cizgi.accent)
+    }
+
+    /// Clearing the topic belongs to the *setter*, not to `onChange`.
+    ///
+    /// `onAppear` loads the card by assigning straight to `@State`, and an
+    /// `onChange(of: subject)` observer could not tell that initial write apart
+    /// from a real edit: opening any classified card fired it, wiped the topic
+    /// that had just been loaded, and the next save persisted the card as
+    /// "Konusuz" without the user touching the ders (Codex, PR #32). A binding
+    /// setter only ever runs from the Picker itself.
+    private var subjectBinding: Binding<String> {
+        Binding(
+            get: { subject },
+            set: { newValue in
+                guard newValue != subject else { return }
+                subject = newValue
+                // Topic names are unique only within a subject, so one can
+                // never carry over to another ders.
+                topic = ""
+            }
+        )
+    }
+
+    /// Ders/konu (schema v2.2). The model assigns these at capture time; this
+    /// is where a wrong guess — or a card captured before the feature existed —
+    /// gets corrected.
+    @ViewBuilder
+    private var classificationSection: some View {
+        if let schema = SubjectPickerBar.schema {
+            Section {
+                Picker("Ders", selection: subjectBinding) {
+                    Text("Seçilmedi").tag("")
+                    ForEach(schema.subjectNames, id: \.self) { Text($0).tag($0) }
+                }
+
+                if let topics = schema.topics(for: subject) {
+                    Picker("Konu", selection: $topic) {
+                        Text("Konusuz").tag("")
+                        ForEach(topics, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+            } header: {
+                header("Sınıflandırma")
+            } footer: {
+                Text("Kartın dersi ve konusu; Bilgilerim ve Egzersiz "
+                     + "filtrelerinde kullanılır.")
+                    .font(.footnote)
+                    .foregroundStyle(Cizgi.muted)
+            }
+        }
     }
 
     /// The five options (§13.3): text, which one is correct, and why each wrong
@@ -224,7 +281,11 @@ struct CardEditorView: View {
     private func save() {
         guard let edit = validation.edit, optionValidation == nil else { return }
         let optionsChanged = editedOptions != card.options
+        applyClassification()
         guard CardEditor.changes(edit, from: card.front, card.back, card.explanation) || optionsChanged else {
+            // Still saved: `applyClassification` may have moved the card even
+            // when its text is untouched.
+            try? context.save()
             dismiss()
             return
         }
@@ -242,5 +303,58 @@ struct CardEditorView: View {
         card.updatedAt = .now
         try? context.save()
         dismiss()
+    }
+
+    /// Moves the card onto a unit carrying the chosen ders/konu.
+    ///
+    /// Always find-or-create-and-rebind rather than writing the new values onto
+    /// the current unit: a unit is shared by every card on the page that got the
+    /// same topic, so editing it in place would silently reclassify its
+    /// siblings. Re-binding touches exactly the card in front of the user. A
+    /// unit left with no cards is harmless — it keeps its region, which is what
+    /// "Kaynağı göster" reads.
+    private func applyClassification() {
+        let newSubject = subject.isEmpty ? nil : subject
+        let newTopic = topic.isEmpty ? nil : topic
+        let current = card.knowledgeUnit
+        guard current?.subject != newSubject || current?.topic != newTopic else { return }
+
+        // Nothing to share with, and nothing to preserve: a fresh unit is the
+        // only way a unitless card can carry a subject at all.
+        guard let current else {
+            let unit = KnowledgeUnit(canonicalClaim: card.front, subject: newSubject, topic: newTopic)
+            context.insert(unit)
+            card.knowledgeUnit = unit
+            card.updatedAt = .now
+            return
+        }
+
+        // The card is alone on its unit: no sibling can be affected, so the
+        // unit itself moves and its region link and claim survive intact.
+        if current.cards.count <= 1 {
+            current.subject = newSubject
+            current.topic = newTopic
+            current.updatedAt = .now
+            card.updatedAt = .now
+            return
+        }
+
+        let sibling = current.region?.knowledgeUnits.first {
+            $0.id != current.id && $0.subject == newSubject && $0.topic == newTopic
+        }
+        let target = sibling ?? {
+            let unit = KnowledgeUnit(
+                canonicalClaim: current.canonicalClaim,
+                subject: newSubject,
+                topic: newTopic,
+                tags: current.tags,
+                sourceConcern: current.sourceConcern
+            )
+            unit.region = current.region
+            context.insert(unit)
+            return unit
+        }()
+        card.knowledgeUnit = target
+        card.updatedAt = .now
     }
 }

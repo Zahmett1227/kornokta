@@ -28,10 +28,22 @@ struct SettingsView: View {
                 backendSection
 
                 Section {
-                    TextField("Varsayılan ders", text: Binding(
-                        get: { environment.settings.defaultSubject },
-                        set: { environment.settings.defaultSubject = $0; environment.settings.save() }
-                    ))
+                    // A picker, not free text: the subject now decides which
+                    // topic list the model is constrained to (schema v2.2), so
+                    // a name outside the template would silently mean "no
+                    // topics at all". Same stored value as the capture screen's
+                    // strip — changing it in either place changes both.
+                    if let names = SubjectPickerBar.schema?.subjectNames {
+                        Picker("Ders", selection: Binding(
+                            get: { SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject) ?? "" },
+                            set: { environment.settings.defaultSubject = $0; environment.settings.save() }
+                        )) {
+                            Text("Seçilmedi").tag("")
+                            ForEach(names, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                    }
 
                     Stepper(
                         "Sayfa başına kart: \(environment.settings.maxCardsPerPage)",
@@ -59,7 +71,9 @@ struct SettingsView: View {
                     // Until now this control did nothing at all: the value was
                     // never put in the request and the server always used its own
                     // ceiling. Fewer cards also means a faster, cheaper call.
-                    Text("İşaretli bir sayfadan en fazla kaç kart üretilsin. "
+                    Text("Ders, Yakala ekranındaki şeritle aynı ayardır; seçilen "
+                         + "dersin konu listesinden her karta bir konu atanır. "
+                         + "İşaretli bir sayfadan en fazla kaç kart üretilsin. "
                          + "Az kart daha hızlı ve daha ucuz üretilir. Beş şıklı "
                          + "kartlarda TUS tipi soru ve şıklar üretilir; sunucu "
                          + "kendi ayarını tavan kabul eder.")
@@ -352,7 +366,10 @@ struct SettingsView: View {
                     // §13.3: without these a restored five-option card would be
                     // a question with nothing to choose from.
                     options: card.options,
-                    lowConfidence: card.lowConfidence
+                    lowConfidence: card.lowConfidence,
+                    // Alongside `subject`: without it a restored deck lands
+                    // entirely in "Konusuz" and no topic filter reproduces it.
+                    topic: card.knowledgeUnit?.topic
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -442,10 +459,24 @@ struct SettingsView: View {
         card.lastReviewedAt = record.lastReviewedAt
         card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
 
-        if record.subject != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
+        // A backup can carry pre-picker subjects ("patoloji", free text) that
+        // the one-time migration will never see: on a fresh install its flag is
+        // set during the first launch, while the store is still empty, and a
+        // restore happens afterwards. Normalizing here is what keeps a restored
+        // card inside the same picker and filters as a captured one.
+        let schema = SubjectPickerBar.schema
+        let subject = schema.map {
+            SubjectBackfill.restoredSubject(existing: record.subject, schema: $0, fallback: "Patoloji")
+        } ?? record.subject
+        // Re-checked against the subject the card actually ends up with: a
+        // remapped subject can leave a stored topic belonging to another ders.
+        let topic = TopicGrouping.validatedTopic(record.topic, subject: subject, schema: schema)
+
+        if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
             let unit = KnowledgeUnit(
                 canonicalClaim: record.canonicalClaim ?? record.front,
-                subject: record.subject,
+                subject: subject,
+                topic: topic,
                 tags: record.tags,
                 createdAt: card.createdAt
             )

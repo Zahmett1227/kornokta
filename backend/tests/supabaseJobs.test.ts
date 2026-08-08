@@ -23,15 +23,15 @@ const CONFIG: SupabaseConfig = {
 
 const ROW_JSON =
   `[{"id":"3f2504e0-4f89-11d3-9a0c-0305e82c3301","status":"processing","image_path":"pages/x",` +
-  `"mime_type":"image/jpeg","hint":null,"max_cards":null,"mc_mode":null,"attempts":2,"result":null,` +
+  `"mime_type":"image/jpeg","hint":null,"max_cards":null,"mc_mode":null,"subject":"Patoloji","attempts":2,"result":null,` +
   `"error":null,"retryable":null,"created_at":"2026-08-06T12:00:00Z","updated_at":"2026-08-06T12:00:00Z",` +
   `"started_at":"2026-08-06T12:00:00+00:00","finished_at":null}]`;
 
 function stubTransport(status: number, body: string) {
-  const seen: { url: string; method: string }[] = [];
+  const seen: { url: string; method: string; body?: Uint8Array | string }[] = [];
   const transport: Transport = {
-    async send({ url, method }) {
-      seen.push({ url, method });
+    async send({ url, method, body: sentBody }) {
+      seen.push({ url, method, body: sentBody });
       return { status, body: new TextEncoder().encode(body) };
     },
   };
@@ -50,6 +50,30 @@ describe("SupabaseJobStore fences", () => {
     expect(seen[0]?.url).toContain("status=eq.queued");
     expect(claimed?.attempts).toBe(2);
     expect(claimed?.startedAt).toBe(STARTED_AT);
+    // The subject column round-trips into camelCase like hint/maxCards do.
+    expect(claimed?.subject).toBe("Patoloji");
+  });
+
+  it("insertQueued yazdığı satırda subject kolonunu taşır (yoksa null)", async () => {
+    const { transport, seen } = stubTransport(201, "");
+    const store = new SupabaseJobStore(CONFIG, "key", transport);
+
+    await store.insertQueued({
+      id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+      imagePath: "pages/x",
+      mimeType: "image/jpeg",
+      subject: "Patoloji",
+    });
+    await store.insertQueued({
+      id: "3f2504e0-4f89-11d3-9a0c-0305e82c3302",
+      imagePath: "pages/y",
+      mimeType: "image/jpeg",
+    });
+
+    const first = JSON.parse(String(seen[0]?.body)) as Array<Record<string, unknown>>;
+    const second = JSON.parse(String(seen[1]?.body)) as Array<Record<string, unknown>>;
+    expect(first[0]?.subject).toBe("Patoloji");
+    expect(second[0]?.subject).toBeNull();
   });
 
   it("claim, yarışı kaybedince null döner", async () => {

@@ -76,6 +76,7 @@ function stubStore(seed: JobRow[] = []) {
         hint: request.hint ?? null,
         maxCards: request.maxCards ?? null,
         mcMode: request.mcMode ?? null,
+        subject: request.subject ?? null,
         attempts: 0,
         result: null,
         error: null,
@@ -102,6 +103,7 @@ function stubStore(seed: JobRow[] = []) {
         mimeType: request.mimeType,
         hint: request.hint ?? null,
         maxCards: request.maxCards ?? null,
+        subject: request.subject ?? null,
         result: null,
         error: null,
         retryable: null,
@@ -239,6 +241,7 @@ function row(overrides: Partial<JobRow> = {}): JobRow {
     hint: null,
     maxCards: null,
     mcMode: null,
+    subject: null,
     attempts: 0,
     result: null,
     error: null,
@@ -307,6 +310,44 @@ describe("POST /api/jobs — kabul", () => {
     await d.settled();
 
     expect(generator.seen[0]?.hint).toBe("sadece sol sütun");
+  });
+
+  it("dersi iş satırına yazar ve üreticiye taşır (şema v2.2)", async () => {
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    await handleJobsRequest(post({ ...VALID_BODY, subject: "Patoloji" }), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)?.subject).toBe("Patoloji");
+    expect(generator.seen[0]?.subject).toBe("Patoloji");
+  });
+
+  it("bilinmeyen dersi null olarak saklar — sınıflandırma inceliği çekimi düşürmez", async () => {
+    const store = stubStore();
+    const generator = stubGenerator(validOutput());
+    const d = deps({ store: store.store, generator: generator.generator });
+
+    const response = await handleJobsRequest(post({ ...VALID_BODY, subject: "Uydurma Ders" }), d);
+    await d.settled();
+
+    expect(response.status).toBe(202);
+    expect(store.rows.get(JOB_ID)?.subject).toBeNull();
+    expect(generator.seen[0]?.subject).toBeUndefined();
+  });
+
+  it("subject string değilse 400 (bozuk gövde), subject'siz eski istemci aynen çalışır", async () => {
+    const d = deps({});
+    const bad = await handleJobsRequest(post({ ...VALID_BODY, subject: 7 }), d);
+    expect(bad.status).toBe(400);
+
+    const store = stubStore();
+    const d2 = deps({ store: store.store });
+    const ok = await handleJobsRequest(post(VALID_BODY), d2);
+    await d2.settled();
+    expect(ok.status).toBe(202);
+    expect(store.rows.get(JOB_ID)?.subject).toBeNull();
   });
 
   it("iş bittiğinde sayfa görüntüsünü depodan siler (§7.3)", async () => {

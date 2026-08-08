@@ -607,34 +607,44 @@ final class ProcessingQueue: ObservableObject {
         region.page = page
         context.insert(region)
 
-        let unit = KnowledgeUnit(
-            canonicalClaim: knowledge.canonicalClaim,
-            subject: page.source?.subject,
-            tags: knowledge.tags,
-            sourceConcern: knowledge.sourceConcern
-        )
-        unit.region = region
-        context.insert(unit)
-
-        for generated in knowledge.cards {
-            let card = Card(
-                // Not `generated.type` directly: if the options did not survive
-                // validation, storing the card as `multipleChoice` would leave a
-                // five-option card with nothing to choose from (Codex, PR #29).
-                type: MultipleChoice.resolvedType(current: generated.type, options: generated.options),
-                front: generated.front,
-                back: generated.back,
-                explanation: generated.explanation,
-                sourceQuote: generated.sourceQuote,
-                riskFlags: generated.riskFlags,
-                // Faz 1 cards come from the mock, so they start as drafts the
-                // user activates — nothing auto-enters the deck (§19.1).
-                status: generated.requiresUserApproval ? .needsReview : .active,
-                options: generated.options,
-                lowConfidence: generated.lowConfidence
+        // One `KnowledgeUnit` per topic rather than one per page (schema
+        // v2.2): the unit is where subject/topic live, so this is what makes
+        // a card's topic exact without touching the SwiftData schema. All
+        // units share the page's single `TextRegion`; a page whose cards
+        // carry no topics degrades to the old one-unit shape.
+        let subject = page.source?.subject
+        let schema = try? SubjectTopicSchema.bundled()
+        for topicGroup in TopicGrouping.partition(knowledge.cards, subject: subject, schema: schema) {
+            let unit = KnowledgeUnit(
+                canonicalClaim: knowledge.canonicalClaim,
+                subject: subject,
+                topic: topicGroup.topic,
+                tags: knowledge.tags,
+                sourceConcern: knowledge.sourceConcern
             )
-            card.knowledgeUnit = unit
-            context.insert(card)
+            unit.region = region
+            context.insert(unit)
+
+            for generated in topicGroup.cards {
+                let card = Card(
+                    // Not `generated.type` directly: if the options did not survive
+                    // validation, storing the card as `multipleChoice` would leave a
+                    // five-option card with nothing to choose from (Codex, PR #29).
+                    type: MultipleChoice.resolvedType(current: generated.type, options: generated.options),
+                    front: generated.front,
+                    back: generated.back,
+                    explanation: generated.explanation,
+                    sourceQuote: generated.sourceQuote,
+                    riskFlags: generated.riskFlags,
+                    // Faz 1 cards come from the mock, so they start as drafts the
+                    // user activates — nothing auto-enters the deck (§19.1).
+                    status: generated.requiresUserApproval ? .needsReview : .active,
+                    options: generated.options,
+                    lowConfidence: generated.lowConfidence
+                )
+                card.knowledgeUnit = unit
+                context.insert(card)
+            }
         }
 
         // Only the real backend generator reports this (§16.8); the mock

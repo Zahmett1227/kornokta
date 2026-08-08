@@ -15,11 +15,14 @@
  * v2.4 (Faz 7): five-option (TUS-style) cards, §13.3. The rules live in
  * `multipleChoiceInstruction`, which is added to the per-request instruction
  * rather than the system prompt because the mode is a deployment setting.
+ * v2.5: per-card `topic` from the canonical subject list (schema v2.2). The
+ * rules live in `topicInstruction`, per-request like the five-option block,
+ * because the topic list depends on the subject the capture was made under.
  */
 
 import type { MultipleChoiceMode } from "../config.js";
 
-export const CARD_PROMPT_VERSION = "2.4";
+export const CARD_PROMPT_VERSION = "2.5";
 
 export const CARD_GENERATION_SYSTEM_PROMPT = `Sen bir TUS/tıp öğrencisinin kişisel çalışma asistanısın. Sana bir ders kitabı sayfasının fotoğrafı veriliyor. Öğrenci önemli gördüğü yerleri fosforlu kalemle işaretlemiş, altını çizmiş, daire içine almış, yıldız/artı/ünlem/ok gibi semboller koymuş ve kenarlara/satır aralarına el yazısıyla kendi notlarını eklemiş olabilir.
 
@@ -96,5 +99,29 @@ export function multipleChoiceInstruction(mode: MultipleChoiceMode): string {
       "ya da klasik tuzağın adı). Doğru şıkkın why alanı boş kalsın.",
     "- Şıklar kısa olsun (bir terim ya da kısa ifade); telefonda okunacak.",
     "Beş şıklı yapmadığın kartlarda options ve correctOption null kalsın.",
+  ].join("\n");
+}
+
+/**
+ * The per-card topic rule (schema v2.2), or the instruction to leave it null.
+ *
+ * Per request for the same reason as `multipleChoiceInstruction`: the topic
+ * list depends on the subject the capture was made under, and the strict
+ * schema always carries the `topic` key — the model has to be told explicitly
+ * when to leave it null, otherwise it will try to fill a field it can see.
+ */
+export function topicInstruction(
+  subject: string | null,
+  topics: readonly string[] | null,
+): string {
+  if (!subject || !topics || topics.length === 0) {
+    return "Konu ataması yapma: her kartta topic alanını null bırak.";
+  }
+  return [
+    `Bu sayfa "${subject}" dersinden. Her kart için topic alanına aşağıdaki konu listesinden ` +
+      "kartın içeriğine EN uygun olan TEK konuyu, adı birebir aynı yazarak koy. " +
+      "Listede olmayan bir konu adı üretme; hiçbiri gerçekten uymuyorsa ya da emin değilsen " +
+      "topic alanını null bırak.",
+    `Konu listesi: ${topics.join(" | ")}`,
   ].join("\n");
 }

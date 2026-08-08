@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "required": ["schemaVersion", "requestId", "readText", "cards", "usage"],
   "properties": {
-    "schemaVersion": { "type": "string", "enum": ["2.0", "2.1"] },
+    "schemaVersion": { "type": "string", "enum": ["2.0", "2.1", "2.2"] },
     "requestId": { "type": "string", "minLength": 1 },
     "readText": {
       "type": "string",
@@ -52,6 +52,10 @@
             "type": ["integer", "null"],
             "minimum": 0,
             "maximum": 4
+          },
+          "topic": {
+            "description": "Şema v2.2: dersin kanonik konu listesinden (schemas/subject_topics.json) konu adı; ders bilinmiyorsa veya model emin değilse null. Kanonik şema ders-bağımsız olduğu için burada enum yok — enum kısıtı yalnız model-yüzlü dinamik şemada (buildModelResponseSchema) yaşar; sunucu geçersiz değeri null'a çevirir (sanitizeTopics), işi asla düşürmez. v2.0/v2.1 kartlarında yoktur, o yüzden zorunlu değildir.",
+            "type": ["string", "null"]
           }
         }
       }

@@ -1,0 +1,204 @@
+{
+  "_comment": "Ders → konu şablonu. Kaynak: tusoskop projesi src/data/subjectTopicSchema.js (elle senkron, 2026-08-07). tusoskop bu repo dışında olduğu için CI oradan doğrulayamaz — orada konu eklenirse burası elle güncellenir. ios/CizgiCore/Sources/CizgiCore/Resources/subject_topics.json bu dosyanın byte-birebir kopyasıdır; ayrışırsa backend/tests/subjectTopics.test.ts kırılır. Konu adları yalnız ders içinde tekildir (örn. İmmünoloji hem Patoloji hem Mikrobiyoloji altında) — geçerlilik daima (ders, konu) çifti üzerinden kontrol edilir.",
+  "version": 1,
+  "subjects": [
+    {
+      "name": "Fizyoloji",
+      "topics": [
+        "Baş Boyun Embriyolojisi",
+        "Doku Histolojisi ve Fizyolojisi",
+        "Endokrin ve Genital Sistem HistoFizyolojisi",
+        "Gastrointestinal Sistem HistoFizyolojisi",
+        "Genel Embriyoloji",
+        "Genital Sistem HistoFizyolojisi",
+        "Hematopoetik Sistem HistoFizyolojisi",
+        "Hücre Histolojisi ve Fizyolojisi",
+        "Kardiyovasküler Sistem HistoFizyolojisi",
+        "Kas Dokusu HistoFizyolojisi",
+        "Sinir Sistemi HistoFizyolojisi",
+        "Solunum Sistemi HistoFizyolojisi",
+        "Üriner Sistem HistoFizyolojisi"
+      ]
+    },
+    {
+      "name": "Patoloji",
+      "topics": [
+        "Çevresel ve Enfeksiyoz Hastalıklar",
+        "Deri Hastalıkları",
+        "Endokrin Sistem Hastalıkları",
+        "Erkek Genital Sistem Hastalıkları",
+        "Gastrointestinal Sistem Hastalıkları",
+        "Genel Tekrar ve Entegre Vakalar",
+        "Hematopoetik Sistem Hastalıkları",
+        "Hemodinamik Bozukluklar",
+        "Hücre Zedelenmesi",
+        "İmmünoloji",
+        "İnflamasyon",
+        "Kadın Genital Sistem Hastalıkları",
+        "Kalp Hastalıkları",
+        "Kalp ve İskelet Sistemi Hastalıkları",
+        "Karaciğer Hastalıkları",
+        "Meme Hastalıkları",
+        "Neoplazi",
+        "Onarım ve Yara İyileşmesi",
+        "Pankreas Hastalıkları",
+        "Pediatrik Hastalıklar",
+        "Sinir Sistem Hastalıkları",
+        "Solunum Sistem Hastalıkları",
+        "Üriner Sistem Hastalıkları",
+        "Vasküler Hastalıklar"
+      ]
+    },
+    {
+      "name": "Farmakoloji",
+      "topics": [
+        "Diğer Sistem İlaçları",
+        "Endokrin Sistem Farmakolojisi",
+        "Genel Farmakoloji",
+        "Kardiyovasküler Sistem Farmakolojisi",
+        "Kemoterapötikler ve İmmünomodülatörler",
+        "Otokoidler ve NSAİİ",
+        "Otonom Sinir Sistemi Farmakolojisi",
+        "Santral Sinir Sistemi Farmakolojisi"
+      ]
+    },
+    {
+      "name": "Mikrobiyoloji",
+      "topics": [
+        "Bakteriyoloji",
+        "Genel Mikrobiyoloji",
+        "İmmünoloji",
+        "Klinik Mikrobiyoloji",
+        "Mikoloji",
+        "Parazitoloji",
+        "Viroloji"
+      ]
+    },
+    {
+      "name": "Dahiliye",
+      "topics": [
+        "Endokrinoloji",
+        "Gastroenteroloji",
+        "Geriatri",
+        "Göğüs Hastalıkları",
+        "Hematoloji",
+        "Hepatoloji",
+        "Kardiyoloji",
+        "Nefroloji",
+        "Onkoloji",
+        "Romatoloji"
+      ]
+    },
+    {
+      "name": "Pediatri",
+      "topics": [
+        "Beslenme",
+        "Büyüme ve Gelişme",
+        "Genetik",
+        "Neonatoloji",
+        "Pediatrik Aciller, Zehirlenmeler ve Yoğun Bakım",
+        "Pediatrik Endokrinoloji ve Metabolizma",
+        "Pediatrik Enfeksiyon Hastalıkları",
+        "Pediatrik Gastroenteroloji",
+        "Pediatrik Göğüs Hastalıkları",
+        "Pediatrik Hematoloji ve Onkoloji",
+        "Pediatrik İmmünoloji/Alerji",
+        "Pediatrik Kardiyoloji",
+        "Pediatrik Nefroloji",
+        "Pediatrik Nöroloji",
+        "Pediatrik Romatoloji"
+      ]
+    },
+    {
+      "name": "Kadın Hastalıkları ve Doğum",
+      "topics": [
+        "İnfertilite",
+        "Jinekoloji",
+        "Onkoloji",
+        "Perinatoloji"
+      ]
+    },
+    {
+      "name": "Küçük Stajlar",
+      "topics": [
+        "Anestezi",
+        "Beyin Cerrahisi",
+        "Çocuk Cerrahisi",
+        "Dermatoloji",
+        "Fizik Tedavi ve Rehabilitasyon",
+        "Göz Hastalıkları",
+        "Halk Sağlığı",
+        "Kulak Burun Boğaz",
+        "Nöroloji",
+        "Ortopedi",
+        "Psikiyatri",
+        "Radyoloji",
+        "Üroloji"
+      ]
+    },
+    {
+      "name": "Biyokimya",
+      "topics": [
+        "Aminoasitler",
+        "Enzimler ve Klinik Biyokimya",
+        "Hormon Metabolizması",
+        "Hücre ve Organeller",
+        "Karbonhidratlar",
+        "Lipid Metabolizması",
+        "Metabolizma Organizasyonu",
+        "Nükleik Asitler ve Genom",
+        "Proteinler",
+        "Vitaminler"
+      ]
+    },
+    {
+      "name": "Genel Cerrahi",
+      "topics": [
+        "Adrenal Bez Hastalıkları",
+        "Akut Batın",
+        "Apendiks Hastalıkları",
+        "Asit Baz Bozuklukları",
+        "Beslenme",
+        "Cerrahi Enfeksiyonlar ve Komplikasyonlar",
+        "Dalak Hastalıkları",
+        "Deri Hastalıkları",
+        "GIS Kanamaları",
+        "Hemostaz ve Kan Transfüzyonu",
+        "İnce Barsak Hastalıkları",
+        "İntestinal Tıkanıklıklar ve GİS Fistülleri",
+        "Karaciğer Hastalıkları ve Portal HT",
+        "Karın Duvarı ve Herniler",
+        "Kolon Rektum Hastalıkları",
+        "Meme Hastalıkları",
+        "Mezenterik Hastalıklar",
+        "Mide Hastalıkları ve Morbid Obezite",
+        "Özefagus Hastalıkları",
+        "Pankreas Hastalıkları",
+        "Perianal Hastalıklar",
+        "Safra yolları Hastalıkları",
+        "Şok",
+        "Tiroid ve Paratiroid Hastalıkları",
+        "Transplantasyon",
+        "Travma ve Travma Hastasına Yaklaşım",
+        "Travmaya Sistemik Cevap",
+        "Yanık",
+        "Yara İyileşmesi"
+      ]
+    },
+    {
+      "name": "Anatomi",
+      "topics": [
+        "Anatomiye Giriş ve Terminoloji",
+        "Dolaşım",
+        "Duyu",
+        "Eklemler",
+        "Kaslar",
+        "Kemikler",
+        "Nöroanatomi",
+        "Sindirim",
+        "Solunum",
+        "Ürogenital"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CARD_GENERATION_SYSTEM_PROMPT, CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
+import { CARD_GENERATION_SYSTEM_PROMPT, CARD_PROMPT_VERSION, topicInstruction } from "../prompts/cardGeneration.js";
 import {
   HANDWRITING_SECOND_OPINION_PROMPT,
   HANDWRITING_SECOND_OPINION_PROMPT_VERSION,
@@ -67,5 +67,26 @@ describe("prompt contracts (§15)", () => {
   it("handwriting prompt asks for transcription only, never a card (§10.4, §15.3)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("Kart veya açıklama üretme");
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("en fazla üç aday");
+  });
+
+  it("card prompt is at v2.5 (per-card topic assignment)", () => {
+    expect(CARD_PROMPT_VERSION).toBe("2.5");
+  });
+
+  it("topic instruction names the subject, lists topics verbatim, and allows null (v2.5)", () => {
+    const text = topicInstruction("Patoloji", ["İnflamasyon", "Neoplazi"]);
+    expect(text).toContain('"Patoloji" dersinden');
+    expect(text).toContain("İnflamasyon | Neoplazi");
+    expect(text).toContain("null");
+    expect(text).toContain("Listede olmayan bir konu adı üretme");
+  });
+
+  it("topic instruction says leave-it-null when there is no subject or no list", () => {
+    // The strict schema always carries the `topic` key, so the model must be
+    // told explicitly — same reason multipleChoiceInstruction has an "off"
+    // sentence.
+    for (const text of [topicInstruction(null, null), topicInstruction("Patoloji", []), topicInstruction(null, ["X"])]) {
+      expect(text).toContain("topic alanını null bırak");
+    }
   });
 });

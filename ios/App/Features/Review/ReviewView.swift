@@ -155,11 +155,16 @@ struct ReviewView: View {
     private var startScreen: some View {
         let pending = pendingIds.count
         if pending == 0 {
-            emptyState(
-                title: "Bugünlük bitti",
-                icon: "checkmark.circle",
-                message: "Şu an tekrar bekleyen kart yok."
-            )
+            VStack(spacing: Cizgi.Space.lg) {
+                emptyState(
+                    title: "Bugünlük bitti",
+                    icon: "checkmark.circle",
+                    message: "Şu an tekrar bekleyen kart yok."
+                )
+                // Offered here too, not only above: with nothing due this is
+                // exactly when someone wants to go over a subject anyway.
+                exerciseLink
+            }
         } else {
             VStack(spacing: Cizgi.Space.xl) {
                 VStack(spacing: Cizgi.Space.xs) {
@@ -188,9 +193,23 @@ struct ReviewView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Cizgi.accent)
                     }
+
+                    exerciseLink
                 }
             }
             .padding(Cizgi.Space.xl)
+        }
+    }
+
+    /// Free practice, deliberately a secondary control: it changes no
+    /// scheduling state, so it must not compete with the real review session.
+    private var exerciseLink: some View {
+        NavigationLink {
+            ExerciseView()
+        } label: {
+            Label("Egzersiz · karışık, puansız", systemImage: "shuffle")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Cizgi.accent)
         }
     }
 

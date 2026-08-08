@@ -53,6 +53,7 @@ struct CaptureView: View {
             ScrollView {
                 VStack(spacing: Cizgi.Space.xl) {
                     hero
+                    SubjectPickerBar()
                     captureButton
                     importButton
                     if !lastCapturedIds.isEmpty {
@@ -338,7 +339,12 @@ struct CaptureView: View {
                 // success message below is never a lie (§24.1).
                 let id = try environment.queue.enqueue(
                     imageData: data,
-                    subject: environment.settings.defaultSubject
+                    // Canonicalised rather than passed through: a legacy
+                    // free-text value from the old Settings field is not a
+                    // subject the topic template knows, and letting it reach
+                    // `Source.subject` would put a name the filters can never
+                    // match into the store.
+                    subject: SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject)
                 )
                 ids.append(id)
             }

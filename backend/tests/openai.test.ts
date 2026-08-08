@@ -117,6 +117,12 @@ describe("buildModelResponseSchema", () => {
     }
 
     expect(() => assertNoBareConstOrEnum(buildModelResponseSchema(4), "$")).not.toThrow();
+    // The topic enum is injected into the same schema, so it has to satisfy
+    // the same rule — and it is on every job that carries a subject, i.e.
+    // every ordinary capture once the picker is in use.
+    expect(() =>
+      assertNoBareConstOrEnum(buildModelResponseSchema(4, ["İnflamasyon", "Neoplazi"]), "$"),
+    ).not.toThrow();
   });
 
   it("lists every card property in `required` — strict mode has no optional keys", () => {
@@ -132,12 +138,34 @@ describe("buildModelResponseSchema", () => {
     expect(card.required).toContain("correctOption");
   });
 
-  it("pins the model's schemaVersion to 2.1", () => {
+  it("pins the model's schemaVersion to 2.2", () => {
     const schema = buildModelResponseSchema(4) as {
       properties: { schemaVersion: { const?: string; type?: string } };
     };
-    expect(schema.properties.schemaVersion.const).toBe("2.1");
+    expect(schema.properties.schemaVersion.const).toBe("2.2");
     expect(schema.properties.schemaVersion.type).toBe("string");
+  });
+
+  it("constrains topic to the subject's list when one is given, nullable either way", () => {
+    const topics = ["İnflamasyon", "Neoplazi"];
+    const withEnum = buildModelResponseSchema(4, topics) as {
+      properties: { cards: { items: { required: string[]; properties: Record<string, unknown> } } };
+    };
+    const card = withEnum.properties.cards.items;
+    expect(card.required).toContain("topic");
+    expect(card.properties.topic).toEqual({
+      anyOf: [{ type: "string", enum: topics }, { type: "null" }],
+    });
+    // Strict mode still needs every key in `required` with the enum injected.
+    expect([...card.required].sort()).toEqual(Object.keys(card.properties).sort());
+
+    // Without a subject the canonical nullable-string stays: the prompt says
+    // "leave it null" and `sanitizeTopics` enforces it.
+    const withoutEnum = buildModelResponseSchema(4) as {
+      properties: { cards: { items: { required: string[]; properties: Record<string, { type?: unknown }> } } };
+    };
+    expect(withoutEnum.properties.cards.items.required).toContain("topic");
+    expect(withoutEnum.properties.cards.items.properties.topic?.type).toEqual(["string", "null"]);
   });
 
   it("leaves the canonical schema alone (options stay optional there)", () => {
@@ -201,6 +229,55 @@ describe("OpenAICardGenerator", () => {
     await generator.generateCards(noHint);
     const userText = calls[0]!.body.input[1].content[0].text as string;
     expect(userText).toContain("(yok)");
+  });
+
+  it("injects the subject's topic enum and instruction, and keeps a valid topic", async () => {
+    const { transport, calls } = stubTransport(
+      200,
+      responsesEnvelope(modelOutput({ cards: [{ ...modelOutput().cards[0], topic: "İnflamasyon" }] })),
+    );
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+
+    const result = await generator.generateCards({ ...REQUEST, subject: "Patoloji" });
+
+    const schema = calls[0]!.body.text.format.schema as {
+      properties: { cards: { items: { properties: { topic: unknown } } } };
+    };
+    expect(schema.properties.cards.items.properties.topic).toEqual({
+      anyOf: [{ type: "string", enum: expect.arrayContaining(["İnflamasyon", "Neoplazi"]) }, { type: "null" }],
+    });
+    const userText = calls[0]!.body.input[1].content[0].text as string;
+    expect(userText).toContain('"Patoloji" dersinden');
+    expect(userText).toContain("İnflamasyon");
+    expect(result.output.cards[0]!.topic).toBe("İnflamasyon");
+  });
+
+  it("sanitizes an off-list or unknown-subject topic to null instead of failing the job", async () => {
+    const card = { ...modelOutput().cards[0], topic: "Bakteriyoloji" }; // valid elsewhere, not Patoloji
+    {
+      const { transport } = stubTransport(200, responsesEnvelope(modelOutput({ cards: [card] })));
+      const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+      const result = await generator.generateCards({ ...REQUEST, subject: "Patoloji" });
+      expect(result.output.cards[0]!.topic).toBeNull();
+    }
+    {
+      // An unknown subject (stale job row, older client) degrades to "no
+      // topic": the schema gets no enum and whatever comes back is nulled.
+      const { transport, calls } = stubTransport(200, responsesEnvelope(modelOutput({ cards: [card] })));
+      const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+      const result = await generator.generateCards({ ...REQUEST, subject: "Uydurma Ders" });
+      const userText = calls[0]!.body.input[1].content[0].text as string;
+      expect(userText).toContain("Konu ataması yapma");
+      expect(result.output.cards[0]!.topic).toBeNull();
+    }
+  });
+
+  it("tells the model to leave topic null when no subject was sent", async () => {
+    const { transport, calls } = stubTransport(200, responsesEnvelope(modelOutput()));
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    await generator.generateCards(REQUEST);
+    const userText = calls[0]!.body.input[1].content[0].text as string;
+    expect(userText).toContain("Konu ataması yapma");
   });
 
   it("splices in requestId and a computed usage block rather than trusting the model", async () => {

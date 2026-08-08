@@ -62,6 +62,8 @@ export interface JobRow {
   maxCards: number | null;
   /** The user's five-option setting (§13.3); null means the deployment default. */
   mcMode: MultipleChoiceMode | null;
+  /** Canonical subject name (schema v2.2); null means "no topic assignment". */
+  subject: string | null;
   attempts: number;
   /** `{ output, gate, cardPromptVersion }` — exactly what `/api/cards-vision` returns. */
   result: unknown | null;
@@ -80,6 +82,7 @@ export interface EnqueueRequest {
   hint?: string;
   maxCards?: number;
   mcMode?: MultipleChoiceMode;
+  subject?: string;
 }
 
 /**
@@ -206,6 +209,7 @@ interface JobRowJson {
   hint: string | null;
   max_cards: number | null;
   mc_mode: MultipleChoiceMode | null;
+  subject: string | null;
   attempts: number;
   result: unknown | null;
   error: string | null;
@@ -225,6 +229,9 @@ export function toJobRow(row: JobRowJson): JobRow {
     hint: row.hint,
     maxCards: row.max_cards,
     mcMode: row.mc_mode,
+    // `?? null` and not a bare read: a row fetched before the column migration
+    // ran would otherwise carry `undefined` where the type promises null.
+    subject: row.subject ?? null,
     attempts: row.attempts,
     result: row.result,
     error: row.error,
@@ -337,6 +344,7 @@ export class SupabaseJobStore implements JobStoreLike {
       hint: request.hint ?? null,
       max_cards: request.maxCards ?? null,
       mc_mode: request.mcMode ?? null,
+      subject: request.subject ?? null,
       // Cleared, not left behind: a resubmitted page must not show the phone
       // the error from the attempt before it.
       result: null,
