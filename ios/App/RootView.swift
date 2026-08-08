@@ -142,34 +142,61 @@ extension View {
 }
 
 /// A five-destination root bar with Egzersiz as the unmistakable centre of the
-/// app. It deliberately uses buttons rather than gestures so Dynamic Type,
-/// VoiceOver and the 44-point minimum target all work without special cases.
+/// app.
+///
+/// Three things this deliberately does *not* do:
+///
+/// - It does not raise the centre item with `.offset`. An offset moves pixels
+///   but not layout, so the visibly protruding top of the most important
+///   button was outside the parent's `contentShape` and simply did not respond
+///   to taps — and it drew past the `safeAreaInset` this bar reserves, over the
+///   content above. The lift here is real layout: a taller icon well plus
+///   `alignment: .bottom`, so the hit area is exactly what the eye sees.
+/// - It does not use fixed point sizes. The wells scale with Dynamic Type
+///   (`@ScaledMetric`), labels shrink before they truncate, and at
+///   accessibility sizes the labels drop away entirely rather than wrapping
+///   five ways across the width — the icons and VoiceOver labels carry it.
+/// - It does not give Egzersiz a permanently "on" look. A centre item that is
+///   always filled amber cannot tell the user which tab they are on, which is
+///   the one job a tab bar has.
 private struct CizgiRootTabBar: View {
     private struct Item: Identifiable {
         var id: AppNavigator.RootTab { tab }
         let tab: AppNavigator.RootTab
         let title: String
         let icon: String
+        let selectedIcon: String
     }
 
     @Binding var selection: AppNavigator.RootTab
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Both wells grow with the text size, keeping the lift proportional.
+    @ScaledMetric(relativeTo: .body) private var well: CGFloat = 30
+    @ScaledMetric(relativeTo: .body) private var centreWell: CGFloat = 52
 
     private let tabs: [Item] = [
-        Item(tab: .capture, title: "Yakala", icon: "camera"),
-        Item(tab: .review, title: "Tekrar", icon: "rectangle.stack"),
-        Item(tab: .exercise, title: "Egzersiz", icon: "brain.head.profile"),
-        Item(tab: .library, title: "Bilgilerim", icon: "books.vertical"),
-        Item(tab: .settings, title: "Ayarlar", icon: "gearshape"),
+        Item(tab: .capture, title: "Yakala", icon: "camera", selectedIcon: "camera.fill"),
+        Item(tab: .review, title: "Tekrar", icon: "rectangle.stack", selectedIcon: "rectangle.stack.fill"),
+        // Same glyph in both states on purpose: the disc behind it is the
+        // selection indicator here, and a `.fill` variant of this symbol is not
+        // something to rely on across OS versions.
+        Item(tab: .exercise, title: "Egzersiz", icon: "brain.head.profile", selectedIcon: "brain.head.profile"),
+        Item(tab: .library, title: "Bilgilerim", icon: "books.vertical", selectedIcon: "books.vertical.fill"),
+        Item(tab: .settings, title: "Ayarlar", icon: "gearshape", selectedIcon: "gearshape.fill"),
     ]
+
+    private var showsLabels: Bool { !dynamicTypeSize.isAccessibilitySize }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             ForEach(tabs) { item in
-                tabButton(item.tab, title: item.title, icon: item.icon)
+                tabButton(item)
             }
         }
         .padding(.horizontal, Cizgi.Space.xs)
-        .padding(.top, Cizgi.Space.sm)
+        // Room for the centre well to stand above the others without leaving
+        // the bar's own bounds.
+        .padding(.top, (centreWell - well) / 2 + Cizgi.Space.xs)
         .padding(.bottom, Cizgi.Space.xs)
         .background(.ultraThinMaterial)
         .overlay(alignment: .top) {
@@ -178,52 +205,56 @@ private struct CizgiRootTabBar: View {
         .shadow(color: .black.opacity(0.08), radius: 12, y: -4)
     }
 
-    private func tabButton(
-        _ tab: AppNavigator.RootTab,
-        title: String,
-        icon: String
-    ) -> some View {
-        let isSelected = selection == tab
-        let isExercise = tab == .exercise
+    private func tabButton(_ item: Item) -> some View {
+        let isSelected = selection == item.tab
+        let isCentre = item.tab == .exercise
         return Button {
-            selection = tab
+            selection = item.tab
         } label: {
-            VStack(spacing: isExercise ? 3 : 4) {
-                Image(systemName: isSelected ? selectedIcon(icon) : icon)
-                    .font(isExercise ? .title2.weight(.bold) : .body.weight(.semibold))
-                    .frame(width: isExercise ? 52 : 28, height: isExercise ? 52 : 28)
-                    .foregroundStyle(isExercise ? Cizgi.ink : (isSelected ? Cizgi.accent : Cizgi.muted))
-                    .background {
-                        if isExercise {
-                            Circle()
-                                .fill(Cizgi.accent)
-                                .shadow(color: Cizgi.accent.opacity(0.38), radius: 10, y: 4)
-                        }
-                    }
-                    .offset(y: isExercise ? -10 : 0)
+            VStack(spacing: 4) {
+                Image(systemName: isSelected ? item.selectedIcon : item.icon)
+                    .font(isCentre ? .title3.weight(.bold) : .body.weight(.semibold))
+                    .foregroundStyle(centreForeground(isCentre: isCentre, isSelected: isSelected))
+                    .frame(width: isCentre ? centreWell : well,
+                           height: isCentre ? centreWell : well)
+                    .background { centreBackground(isCentre: isCentre, isSelected: isSelected) }
 
-                Text(title)
-                    .font(.caption2.weight(isSelected || isExercise ? .bold : .medium))
-                    .foregroundStyle(isSelected ? Cizgi.ink : Cizgi.muted)
-                    .offset(y: isExercise ? -8 : 0)
+                if showsLabels {
+                    Text(item.title)
+                        .font(.caption2.weight(isSelected ? .bold : .medium))
+                        .foregroundStyle(isSelected ? Cizgi.ink : Cizgi.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 52)
-        .accessibilityLabel(title)
+        .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private func selectedIcon(_ icon: String) -> String {
-        switch icon {
-        case "camera": return "camera.fill"
-        case "rectangle.stack": return "rectangle.stack.fill"
-        case "brain.head.profile": return "brain.head.profile"
-        case "books.vertical": return "books.vertical.fill"
-        case "gearshape": return "gearshape.fill"
-        default: return icon
+    private func centreForeground(isCentre: Bool, isSelected: Bool) -> Color {
+        if isCentre { return isSelected ? Cizgi.ink : Cizgi.accent }
+        return isSelected ? Cizgi.accent : Cizgi.muted
+    }
+
+    /// Selected Egzersiz is a filled amber disc; unselected is the same disc
+    /// outlined. It still reads as the primary destination at a glance, and it
+    /// can still say "you are not here".
+    @ViewBuilder
+    private func centreBackground(isCentre: Bool, isSelected: Bool) -> some View {
+        if isCentre {
+            if isSelected {
+                Circle()
+                    .fill(Cizgi.accent)
+                    .shadow(color: Cizgi.accent.opacity(0.38), radius: 10, y: 4)
+            } else {
+                Circle()
+                    .fill(Cizgi.accentSoft)
+                    .overlay(Circle().stroke(Cizgi.accent, lineWidth: 2))
+            }
         }
     }
 }

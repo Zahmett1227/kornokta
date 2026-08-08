@@ -87,8 +87,12 @@ struct ExerciseView: View {
 
     private var pendingTargetMessage: String {
         guard let pendingTarget else { return "" }
-        let requested = pendingTarget.topic.map { "\(pendingTarget.subject) · \($0)" }
-            ?? pendingTarget.subject
+        let requested: String
+        switch pendingTarget.topic {
+        case .all: requested = pendingTarget.subject
+        case .none: requested = "\(pendingTarget.subject) · Konusuz"
+        case .topic(let name): requested = "\(pendingTarget.subject) · \(name)"
+        }
         return "\(requested) için Egzersiz istedin. Baştan başlarsan bu oturum "
             + "yanıtladıklarınla birlikte kapanır."
     }
@@ -195,6 +199,7 @@ struct ExerciseView: View {
         }
         .tint(Cizgi.accent)
         .onAppear {
+            pruneExpiredHistory()
             restoreActiveRunIfNeeded()
             navigator.isTabBarHidden = isSessionActive
             applyIncomingTarget()
@@ -307,7 +312,12 @@ struct ExerciseView: View {
                 }
 
                 Label(
-                    "Puanlama yalnız bu oturumun özetini oluşturur; FSRS ve tekrar tarihleri aynı kalır.",
+                    // The old wording ("only builds this session's summary")
+                    // stopped being true when results started feeding the
+                    // weak-point picker. What is still true — and is the whole
+                    // point — is that FSRS never sees them.
+                    "Yanıtların ayrı bir Egzersiz geçmişine yazılır ve \"Zayıf noktalar\" "
+                        + "seçimini besler. FSRS, tekrar tarihleri ve puanların değişmez.",
                     systemImage: "checkmark.shield"
                 )
                 .font(.footnote)
@@ -727,6 +737,18 @@ struct ExerciseView: View {
         currentRun = run
     }
 
+    /// Runs before the restore so a stale row can never be the one reopened.
+    /// Cascade delete takes the attempts with the run.
+    private func pruneExpiredHistory() {
+        let now = Date()
+        let expired = exerciseRuns.filter {
+            ExerciseHistory.isExpired(finishedAt: $0.finishedAt, now: now)
+        }
+        guard !expired.isEmpty else { return }
+        expired.forEach(context.delete)
+        try? context.save()
+    }
+
     private func restoreActiveRunIfNeeded() {
         guard session == nil,
               let run = exerciseRuns.first(where: { $0.finishedAt == nil }),
@@ -777,7 +799,7 @@ struct ExerciseView: View {
 
     private func apply(_ filter: AppNavigator.ExerciseTarget.Filter) {
         subjectFilter = filter.subject
-        topicFilter = filter.topic.map(TopicFilter.topic) ?? .all
+        topicFilter = filter.topic
     }
 
     /// Closes the current run and lands on the start screen with the requested

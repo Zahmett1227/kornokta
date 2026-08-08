@@ -14,7 +14,7 @@ struct SubjectPickerBar: View {
     @EnvironmentObject private var environment: AppEnvironment
 
     /// Loaded once per process; the bundled resource cannot change mid-run.
-    static let schema = try? SubjectTopicSchema.bundled()
+    static let schema = SubjectTopicSchema.shared
 
     /// The canonical form of a stored subject, or nil when it is blank or not
     /// a name the template knows. The one place capture, Settings and the

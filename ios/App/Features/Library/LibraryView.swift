@@ -82,7 +82,13 @@ struct LibraryView: View {
                 Group {
                     switch contentMode {
                     case .cards:
-                        if allCards.isEmpty { emptyState } else { list }
+                        // `.searchable` lives on this branch, not on the stack:
+                        // in map mode the field searched nothing, and a search
+                        // box that ignores what you type is worse than none.
+                        Group {
+                            if allCards.isEmpty { emptyState } else { list }
+                        }
+                        .searchable(text: $searchText, prompt: "Kartlarda ara")
                     case .map:
                         KnowledgeMapView(cards: allCards)
                     }
@@ -91,7 +97,6 @@ struct LibraryView: View {
             .background(Cizgi.paper.ignoresSafeArea())
             .rootTabBarInset()
             .navigationTitle("Bilgilerim")
-            .searchable(text: $searchText, prompt: "Kartlarda ara")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if contentMode == .cards {

@@ -37,6 +37,14 @@ public struct SubjectTopicSchema: Codable, Sendable, Equatable {
         try bundled(bundle: .module)
     }
 
+    /// The one copy every screen shares. Decoding the JSON per screen was not
+    /// the problem; owning it was — Bilgi Haritası used to reach into the
+    /// capture tab's picker for the template, which made a library screen
+    /// depend on a UI component in an unrelated feature. `nil` when the
+    /// resource cannot be read, which callers already handle by hiding the
+    /// subject/topic UI rather than crashing.
+    public static let shared: SubjectTopicSchema? = try? bundled()
+
     static func bundled(bundle: Bundle) throws -> SubjectTopicSchema {
         guard let url = bundle.url(forResource: "subject_topics", withExtension: "json") else {
             throw LoadError.missingResource

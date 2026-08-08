@@ -39,4 +39,11 @@ final class SubjectTopicSchemaTests: XCTestCase {
         XCTAssertNil(schema.canonicalSubject(matching: "   "))
         XCTAssertNil(schema.canonicalSubject(matching: nil))
     }
+
+    /// Every screen reads `shared`; if it ever stopped agreeing with
+    /// `bundled()` the picker, the filters and Bilgi Haritası would classify
+    /// against different lists.
+    func testSharedIsTheBundledTemplate() throws {
+        XCTAssertEqual(SubjectTopicSchema.shared, try SubjectTopicSchema.bundled())
+    }
 }

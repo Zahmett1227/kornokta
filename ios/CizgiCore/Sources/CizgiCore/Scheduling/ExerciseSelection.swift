@@ -63,6 +63,29 @@ public enum ExercisePracticeWeight {
     }
 }
 
+/// When a finished practice run stops being worth keeping.
+///
+/// `ExerciseAttempt` rows are written on every answer and read on the app's
+/// launch screen (Egzersiz is the default tab, and its weak-point picker walks
+/// the history). Nothing was ever deleting them, so the table only grew — the
+/// same "collect and forget" shape §7.3 already flags on the server side, but
+/// here it also gets slower the longer the app is used.
+///
+/// 90 days is comfortably past the 30-day window the scoring itself honours, so
+/// pruning can never change a weak-point ranking; it only drops rows that were
+/// already being ignored, plus the run summaries older than the three the start
+/// screen shows.
+public enum ExerciseHistory {
+    public static let retention: TimeInterval = 90 * 24 * 3600
+
+    /// An unfinished run is never expired, however old: it is the run the app
+    /// restores on launch, and deleting it would silently discard work.
+    public static func isExpired(finishedAt: Date?, now: Date) -> Bool {
+        guard let finishedAt else { return false }
+        return now.timeIntervalSince(finishedAt) > retention
+    }
+}
+
 /// The card-shaped facts the weak-point ranking needs, without SwiftData.
 public struct WeakPointCandidate: Equatable, Sendable {
     public let cardId: UUID

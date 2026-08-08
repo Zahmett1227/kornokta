@@ -190,7 +190,7 @@ struct CardEditorView: View {
     /// gets corrected.
     @ViewBuilder
     private var classificationSection: some View {
-        if let schema = SubjectPickerBar.schema {
+        if let schema = SubjectTopicSchema.shared {
             Section {
                 Picker("Ders", selection: subjectBinding) {
                     Text("Seçilmedi").tag("")

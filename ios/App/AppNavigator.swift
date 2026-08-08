@@ -1,4 +1,5 @@
 import SwiftUI
+import CizgiCore
 
 /// Cross-tab navigation state, separate from `AppEnvironment` because this is
 /// purely a UI concern (which tab is showing, how deep each tab's stack is),
@@ -8,7 +9,9 @@ final class AppNavigator: ObservableObject {
     struct ExerciseTarget: Equatable {
         struct Filter: Equatable {
             let subject: String
-            let topic: String?
+            /// A full `TopicFilter`, not a name: Bilgi Haritası can ask for the
+            /// "Konusuz" bucket, which no topic name can express.
+            let topic: TopicFilter
         }
 
         let id = UUID()
@@ -68,7 +71,7 @@ final class AppNavigator: ObservableObject {
     }
 
     /// Switches to Egzersiz and narrows it, e.g. "Bu dersten Egzersiz".
-    func openExercise(subject: String, topic: String? = nil) {
+    func openExercise(subject: String, topic: TopicFilter = .all) {
         show(ExerciseTarget(filter: .init(subject: subject, topic: topic)))
     }
 

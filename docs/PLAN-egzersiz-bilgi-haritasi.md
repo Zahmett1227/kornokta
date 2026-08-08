@@ -1,149 +1,208 @@
-# Egzersiz ve Bilgi Haritasi Gelistirme Plani
+# Egzersiz ve Bilgi Haritası geliştirme planı
 
 Tarih: 2026-08-08
-Branch: `codex/egzersiz-bilgi-haritasi-ui`
+Dal: `codex/egzersiz-bilgi-haritasi-ui`
 
-## Urun kararlari
+## Ürün kararları
 
-- Kok ozelligin adi her yerde **Egzersiz** kalir.
-- Egzersiz, alt navigasyonun ortasinda ve gorsel olarak en guclu hedeftir.
-- Uygulama ve genel ana sayfa eylemi Egzersiz'e acilir.
-- Egzersiz sonuclari kendi gecmisini olusturur; `Card` zamanlama alanlari,
-  `ReviewLog`, FSRS ve gunluk yeni kart kotasi degismez.
-- Kisisel bilgi grafiginin kullaniciya gorunen adi **Bilgi Haritasi**dir.
-- Bilgi Haritasi, `Bilgilerim` icindeki `Kartlar | Bilgi Haritasi` gorunumudur.
+- Kök özelliğin adı her yerde **Egzersiz** kalır.
+- Egzersiz, alt navigasyonun ortasında ve görsel olarak en güçlü hedeftir.
+- Uygulama ve genel ana sayfa eylemi Egzersiz'e açılır.
+- Egzersiz sonuçları kendi geçmişini oluşturur; `Card` zamanlama alanları,
+  `ReviewLog`, FSRS ve günlük yeni kart kotası değişmez.
+- Kişisel bilgi grafiğinin kullanıcıya görünen adı **Bilgi Haritası**dır.
+- Bilgi Haritası, `Bilgilerim` içindeki `Kartlar | Bilgi Haritası` görünümüdür.
 
 ## Uygulanan ilk dilim
 
-- [x] Bes kok hedefli ozel alt navigasyon
-- [x] Ortada yukseltilmis Egzersiz eylemi
-- [x] Egzersiz icin bagimsiz `NavigationStack`
+- [x] Beş kök hedefli özel alt navigasyon
+- [x] Ortada yükseltilmiş Egzersiz eylemi
+- [x] Egzersiz için bağımsız `NavigationStack`
 - [x] Aktif oturumda alt navigasyonun gizlenmesi
-- [x] Hizli 10 ve Zayif Noktalar baslangiclari
-- [x] Ders/konu ve 10/20/tumu oturum kurulumu
-- [x] Acik uclu kartlarda Biliyordum/Kararsizdim/Bilemedim sonucu
-- [x] Coktan secmeli kartlarda otomatik dogru/yanlis sonucu
-- [x] `ExerciseRun` ve `ExerciseAttempt` ile ayri kalici gecmis
-- [x] Uygulama yeniden acildiginda yarim kalan oturumu kurma
-- [x] Egzersiz yanlislarini Zayif Noktalar seciminde kullanma
-- [x] Mevcut ders/konu semasindan ilk Bilgi Haritasi
-- [x] Haritadan ders veya konu filtreli Egzersiz'e gecis
-- [x] Ortak hero, bolum basligi ve hizli eylem kartlari
-- [x] Ayarlarda gunluk ogrenme kontrollerini teknik kurulumun onune alma
+- [x] Hızlı 10 ve Zayıf Noktalar başlangıçları
+- [x] Ders/konu ve 10/20/tümü oturum kurulumu
+- [x] Açık uçlu kartlarda Biliyordum/Kararsızdım/Bilemedim sonucu
+- [x] Çoktan seçmeli kartlarda otomatik doğru/yanlış sonucu
+- [x] `ExerciseRun` ve `ExerciseAttempt` ile ayrı kalıcı geçmiş
+- [x] Uygulama yeniden açıldığında yarım kalan oturumu kurma
+- [x] Egzersiz yanlışlarını Zayıf Noktalar seçiminde kullanma
+- [x] Mevcut ders/konu şemasından ilk Bilgi Haritası
+- [x] Haritadan ders veya konu filtreli Egzersiz'e geçiş
+- [x] Ortak hero, bölüm başlığı ve hızlı eylem kartları
+- [x] Ayarlarda günlük öğrenme kontrollerini teknik kurulumun önüne alma
 
-## Inceleme turunda kapatilanlar (2026-08-08)
+## İnceleme turunda kapatılanlar (2026-08-08)
 
-Ilk dilim gozden gecirildi; asagidakiler ayni dalda duzeltildi.
+İlk dilim gözden geçirildi; aşağıdakiler aynı dalda düzeltildi.
 
-- **Aktif oturumdan cikis.** Oturum alt navigasyonu gizliyordu ama Egzersiz bir
-  sekme koku oldugu icin geri butonu da yok: kullanici kuyrugun son kartina
-  kadar ekranda kilitli kaliyordu. Yarim kalan kosu her aciliste geri
-  yuklendigi ve varsayilan sekme Egzersiz oldugu icin uygulamayi oldurmek de
-  cikis degildi. Artik sol ustte onay soran bir **Bitir** var
-  (`ExerciseSession.finishEarly()`), yanitlanan kartlarin ozeti korunuyor ve
-  kosu `finishedAt` ile kapatiliyor. Kural: alt navigasyonu gizleyen her ekran
-  gorunur bir cikis borclu.
-- **Alt navigasyonun derinlik mantigi.** `showsRootTabBar`, `NavigationPath.
-  isEmpty` uzerinden calisiyordu; ancak uygulamadaki her push view tabanli
-  `NavigationLink { ... }` ve bu, bagli `NavigationPath`i doldurmaz. Bar bu
-  yuzden her detay ekraninda kaliyordu. Cozum bir bayrak degil, **yerlestirme**:
-  bar artik her sekmenin `NavigationStack` *icindeki* kok icerigine
-  `rootTabBarInset()` ile bagli, push edilen ekran onu dogal olarak almiyor.
-- **Yerli sekme cubugu.** `.toolbar(.hidden, for: .tabBar)` TabView'in kendisine
-  uygulanmisti; o yerlesim kapsayan bir TabView'i hedefler. Modifier her
-  cocuga tasindi ve `.tabItem` etiketleri geri kondu: gizleme tutmazsa etiketli
-  bir cubuk kalir, bes bos oge degil.
-- **Oturum secimi rastgele degil, hep en yeni N karti veriyordu.** Havuz
-  `createdAt` azalan sirada geldigi icin `prefix` her "Hizli 10"da ayni on
-  karti sectiriyordu; karistirma yalniz *sirayi* rastgeleliyordu. Artik
-  `ExerciseSelection.pick` sirali olmayan modlarda once orneklem aliyor;
-  yalniz Zayif Noktalar prefix kullaniyor, cunku onun sirasi anlamli.
-- **Zayif nokta puani sonumlenmiyordu.** Yanlis +3, dogru 0 ve zaman penceresi
-  yoktu: bir kez kacirilan kart listeden hic dusemiyordu. Artik `knew` puani
-  **eksiltiyor**, her deneme 7 gunde bir yarilaniyor ve 30 gunden eski deneme
-  hic sayilmiyor (`ExercisePracticeWeight`). Siralama `WeakPointRanking`e
-  tasindi, yani `swift test` kapsaminda.
-- **Zayif Noktalar saglam kartlarla dolduruluyordu.** Siralama tek basina
-  "zayif mi" sorusunu yanitlayamaz; saglikli bir destenin de bir ilk elemani
-  vardir. `WeakPointRanking.weakOnly` yalniz aleyhine kanit olan karti aliyor
-  (taze pratik hatasi, FSRS lapse'i ya da dusuk guven). Kanit yoksa dugme
-  kapali ve alt yazisi bunu soyluyor.
-- **Harita hedefi devam eden oturumu gormezden geliyordu.** Filtre degisiyor,
-  kuyruk ayni kaliyordu: cipler "Farmakoloji" derken ekranda Patoloji kartlari.
-  Artik soruluyor — yeni secimle bastan basla (kosu duzgun kapanir) ya da bu
-  oturuma devam et.
-- **Tekrar ekranindaki Egzersiz baglantisi filtreleri siliyordu.**
-  `ExerciseTarget` artik `filter: nil` ile "beni sadece Egzersiz'e goturur"
-  diyebiliyor; filtreyi yalnizca gercekten daraltma isteyen Bilgi Haritasi
-  gonderiyor.
-- **"Konusuz" filtresi yeniden aciliste kayboluyordu.** `topicName` hem `.all`
-  hem `.none` icin `nil`; kosu bu yuzden her tekrar yuklemede "Tumu"ne
-  genisliyordu. `ExerciseRun` artik filtrenin kendisini sakliyor
-  (`TopicFilter.storageValue`, `topicFilterRaw`).
-- **`run.attempts` sirasizdi.** `uniquingKeysWith: { _, latest in latest }`
-  SwiftData iliskisinde "en son" anlamina gelmiyordu; once `answeredAt`
-  siralaniyor.
+### Bloklayıcılar
 
-## Siradaki Egzersiz asamalari
+- **Aktif oturumdan çıkış yoktu.** Oturum alt navigasyonu gizliyordu ama
+  Egzersiz bir sekme kökü olduğu için geri butonu da yok: kullanıcı kuyruğun
+  son kartına kadar ekranda kilitli kalıyordu. Yarım kalan koşu her açılışta
+  geri yüklendiği ve varsayılan sekme Egzersiz olduğu için uygulamayı öldürmek
+  de çıkış değildi. Artık sol üstte onay soran bir **Bitir** var
+  (`ExerciseSession.finishEarly()`); yanıtlananların özeti korunuyor ve koşu
+  `finishedAt` ile kapanıyor. **Kural: alt navigasyonu gizleyen her ekran
+  görünür bir çıkış borçludur** (`AppNavigator.isTabBarHidden`).
+- **Alt navigasyonun derinlik mantığı yanlıştı.** `showsRootTabBar`,
+  `NavigationPath.isEmpty` üzerinden çalışıyordu; ancak projedeki her push
+  view tabanlı `NavigationLink { ... }` ve o, bağlı `NavigationPath`i
+  **doldurmaz**. Bar bu yüzden her detay ekranında kalıyordu. Çözüm bir bayrak
+  değil, **yerleştirme**: bar artık her sekmenin `NavigationStack`'i
+  *içindeki* kök içeriğe `rootTabBarInset()` ile bağlı, push edilen ekran onu
+  doğal olarak almıyor.
+- **Yerli sekme çubuğu gizlenmemiş olabilirdi.**
+  `.toolbar(.hidden, for: .tabBar)` TabView'ın kendisine uygulanmıştı; o
+  yerleşim kapsayan bir TabView'ı hedefler. Modifier her çocuğa taşındı ve
+  `.tabItem` etiketleri geri kondu: gizleme yine de tutmazsa etiketli bir
+  çubuk kalır, beş boş öğe değil.
 
-### E1 - Oturum yonetimi
+### Mantık
 
-- Devam eden oturumu ana ekranda ayri kartla gosterme
-- ~~Oturumu bilincli olarak bitir/iptal etme~~ (yukaridaki turda geldi)
-- Yanlislar ve kararsizlardan tek dokunusla yeni Egzersiz
-- Son kullanilan kurulumun hatirlanmasi
+- **Oturum seçimi hep en yeni N kartı veriyordu.** Havuz `createdAt` azalan
+  sırada geldiği için `prefix` her "Hızlı 10"da aynı on kartı seçtiriyordu;
+  karıştırma yalnız *sırayı* rastgeleliyordu. `ExerciseSelection.pick` sıralı
+  olmayan modlarda önce örneklem alıyor; yalnız Zayıf Noktalar prefix
+  kullanıyor, çünkü onun sırası anlamlı.
+- **Zayıf nokta puanı sönümlenmiyordu.** Yanlış +3, doğru 0, zaman penceresi
+  yok: bir kez kaçırılan kart listeden hiç düşemiyordu. Artık doğru yanıt
+  puanı **eksiltiyor**, her deneme 7 günde bir yarılanıyor, 30 günden eskisi
+  sayılmıyor (`ExercisePracticeWeight`).
+- **Zayıf Noktalar sağlam kartlarla dolduruluyordu.** Sıralama tek başına
+  "zayıf mı" sorusunu yanıtlayamaz; sağlıklı bir destenin de bir ilk elemanı
+  vardır. `WeakPointRanking.weakOnly` yalnız aleyhine kanıt olan kartı alıyor
+  (taze pratik hatası, FSRS lapse'i ya da düşük güven). Kanıt yoksa düğme
+  kapalı ve alt yazısı bunu söylüyor.
+- **Harita hedefi devam eden oturumu görmezden geliyordu.** Filtre değişiyor,
+  kuyruk aynı kalıyordu. Artık soruluyor — yeni seçimle baştan başla (koşu
+  düzgün kapanır) ya da bu oturuma devam et.
+- **Tekrar ekranındaki bağlantı filtreleri siliyordu.** `ExerciseTarget` artık
+  `filter: nil` ile "beni sadece Egzersiz'e götür" diyebiliyor; filtreyi
+  yalnızca gerçekten daraltma isteyen Bilgi Haritası gönderiyor.
+- **"Konusuz" filtresi yeniden açılışta kayboluyordu.** `topicName` hem `.all`
+  hem `.none` için `nil` döndüğü için koşu her yüklemede "Tümü"ne
+  genişliyordu — farklı bir kart kümesi. `ExerciseRun` artık filtrenin
+  kendisini saklıyor (`TopicFilter.storageValue`, `topicFilterRaw`).
+- **`run.attempts` sırasızdı.** `uniquingKeysWith` içindeki "latest" SwiftData
+  ilişkisinde en son anlamına gelmiyordu; önce `answeredAt` sıralanıyor.
 
-### E2 - Sinav tarzi Egzersiz
+### Tasarım, veri ve tutarlılık
+
+- **Yükseltilmiş Egzersiz düğmesinin üstü tıklanamıyordu.** `.offset` pikseli
+  taşır, düzeni taşımaz: taşan kısım `contentShape`'in dışında kalıyor ve
+  `safeAreaInset`'in ayırdığı alanı aşıp üstteki içeriğin üzerine biniyordu.
+  Yükselme artık gerçek düzen (daha büyük ikon kuyusu + `alignment: .bottom`),
+  dokunma alanı görünenle birebir.
+- **Egzersiz sekmesi hep seçili görünüyordu.** Seçiliyken dolu amber disk,
+  değilken çerçeveli disk. Hâlâ birincil hedef, ama artık "burada değilsin"
+  diyebiliyor.
+- **Dynamic Type.** Kuyular `@ScaledMetric` ile büyüyor, etiketler kırpılmadan
+  küçülüyor, erişilebilirlik boyutlarında etiketler tamamen kalkıyor (ikon +
+  VoiceOver etiketi taşıyor). Dokunma hedefi en az 44 pt.
+- **Bilgi Haritası bugünkü destede boş görünüyordu.** Backfill tüm kartlara
+  ders verip konuları nil bıraktığı için kanonik-düğüm-only bir harita
+  yüzlerce kartı olan kullanıcıya boş ekran gösteriyordu. Artık **Konusuz**
+  kovası var (haritadan tek dokunuşla Egzersiz'e giden), ayrıca "tanınmayan
+  konu" ve "sınıflandırılmamış ders" sayıları. Tanınmayan ad hâlâ **kanonik
+  düğüm üretmiyor** — yalnızca sayılıyor.
+- **Harita sayıları birbirini tutmuyordu.** Tüm toplamlar tek bir
+  `KnowledgeMapSummary`den geliyor ve bir test her kartın tam olarak bir yerde
+  sayıldığını doğruluyor.
+- **`summaries` her render'da 3–4 kez hesaplanıyordu**, üstelik iç içe
+  `filter` ile. Tek geçişte sözlükle gruplama, render başına bir çağrı.
+- **Harita modunda arama kutusu hiçbir şey yapmıyordu.** `.searchable` artık
+  yalnız Kartlar görünümünde.
+- **Egzersiz geçmişi sınırsız büyüyordu**, üstelik açılış sekmesinde
+  okunuyordu. Biten koşular 90 gün sonra siliniyor (`ExerciseHistory`) —
+  puanlamanın onurlandırdığı 30 günlük pencerenin rahatça ötesinde, yani
+  temizlik hiçbir sıralamayı değiştiremez.
+- **Katman ihlali.** Bilgilerim, Yakala sekmesinin `SubjectPickerBar.schema`
+  statiğini okuyordu. Şema artık `SubjectTopicSchema.shared`.
+- **Ana sayfa düğmesinin sözleşmesi bayattı** ("back to Capture" diyordu,
+  `goHome()` Egzersiz'e gidiyor). Belge düzeltildi; düğme sekme köklerinde
+  değil yalnız push edilen ekranlarda (eksik olan `KnowledgeSubjectView`'a da
+  eklendi). `ConfirmationView`'daki artık işlevsiz
+  `.toolbar(.hidden, for: .tabBar)` silindi.
+- **Metinler doğruyu söylüyor.** "Puanlama yok" ve "yalnız bu oturumun özeti"
+  ifadeleri, puanlar kalıcılaşıp Zayıf Noktalar'ı beslemeye başladığında
+  doğruluğunu yitirmişti.
+
+### Bilinçli olarak yapılmayanlar
+
+- **Egzersiz geçmişi yedeğe girmiyor.** Pratik geçmişi zaten 90 gün sonra
+  siliniyor ve kaybı yalnız bir sezgiselin sıfırlanması demek — FSRS lapse'i
+  ve `lowConfidence` çalışmaya devam eder. Yedek biçimini v5'e çıkarmak bu
+  kazanç için makul değil. Karar değişirse `BackupExporter`'a iki dizi eklemek
+  yeterli.
+- **`goHome()` push edilen ekranı pop etmiyor.** Kökü, tüm push'ların view
+  tabanlı olması (yukarıya bak) ve düzeltmesi değer tabanlı navigasyona geçmek.
+  Bu turda kapsam dışı; alt navigasyonun doğruluğu artık buna bağlı değil.
+
+## Sıradaki Egzersiz aşamaları
+
+### E1 — Oturum yönetimi
+
+- Devam eden oturumu ana ekranda ayrı kartla gösterme
+- ~~Oturumu bilinçli olarak bitir/iptal etme~~ (yukarıdaki turda geldi)
+- Yanlışlar ve kararsızlardan tek dokunuşla yeni Egzersiz
+- Son kullanılan kurulumun hatırlanması
+
+### E2 — Sınav tarzı Egzersiz
 
 - 10/20/50/100 soru
-- Toplam sure veya soru basina sure
-- Cevaplari oturum sonunda acma
-- Soruyu isaretle ve geri don
-- Konu bazli sonuc dagilimi
+- Toplam süre veya soru başına süre
+- Cevapları oturum sonunda açma
+- Soruyu işaretle ve geri dön
+- Konu bazlı sonuç dağılımı
 
-Kok ekran ve navigasyon adi yine Egzersiz olacaktir; "Sinav tarzi" yalnizca
-bir oturum turudur.
+Kök ekran ve navigasyon adı yine Egzersiz olacaktır; "Sınav tarzı" yalnızca
+bir oturum türüdür.
 
-### E3 - Gelismis secim
+### E3 — Gelişmiş seçim
 
-- Son yanlislar
-- Son 7 gun yanlislari
-- Yavas yanitlanan kartlar
-- Ayni bilgi biriminden arka arkaya kart gelmesini azaltma
-- Kart turu ve dusuk guven filtresi
+- Son yanlışlar
+- Son 7 gün yanlışları
+- Yavaş yanıtlanan kartlar
+- Aynı bilgi biriminden arka arkaya kart gelmesini azaltma
+- Kart türü ve düşük güven filtresi
 
-## Siradaki Bilgi Haritasi asamalari
+## Sıradaki Bilgi Haritası aşamaları
 
-### H1 - Kavram katmani
+### H1 — Kavram katmanı
 
-- `ConceptNode`: kanonik ad, alternatif adlar, ders, konu, ozet
-- `ConceptAssignment`: kavram ile `KnowledgeUnit` baglantisi
-- Etiket ve kanonik iddialardan ilk kavramlari cikarma
-- Kavram birlestirme, yeniden adlandirma ve arama
+- `ConceptNode`: kanonik ad, alternatif adlar, ders, konu, özet
+- `ConceptAssignment`: kavram ile `KnowledgeUnit` bağlantısı
+- Etiket ve kanonik iddialardan ilk kavramları çıkarma
+- Kavram birleştirme, yeniden adlandırma ve arama
 
-`KnowledgeUnit` dogrudan grafik dugumu olmayacaktir. Ayni kavram farkli
-kaynak sayfalarindan gelebilecegi icin kalici kavram dugumu ayri tutulur.
+`KnowledgeUnit` doğrudan grafik düğümü olmayacaktır. Aynı kavram farklı kaynak
+sayfalarından gelebileceği için kalıcı kavram düğümü ayrı tutulur.
 
-### H2 - Iliski katmani
+### H2 — İlişki katmanı
 
 - `ConceptRelation`
-- On kosul, neden-sonuc, parcasidir, ayirt edilir, istisnasidir ve birlikte
-  gorulur iliskileri
-- Her iliskiden kaynak kartlara ve sayfaya geri donus
-- Dusuk guvenli otomatik iliskileri ayri gosterme
+- Ön koşul, neden-sonuç, parçasıdır, ayırt edilir, istisnasıdır ve birlikte
+  görülür ilişkileri
+- Her ilişkiden kaynak kartlara ve sayfaya geri dönüş
+- Düşük güvenli otomatik ilişkileri ayrı gösterme
 
-### H3 - Akilli harita
+### H3 — Akıllı harita
 
-- Kullanici tarafindan tetiklenen toplu kavram/iliski analizi
-- Eksik kapsama ve baglantisiz kavram tespiti
-- Karistirilan kavram ciftleri
-- Kavram, komsu kavram veya on kosul zincirinden Egzersiz olusturma
+- Kullanıcı tarafından tetiklenen toplu kavram/ilişki analizi
+- Eksik kapsama ve bağlantısız kavram tespiti
+- Karıştırılan kavram çiftleri
+- Kavram, komşu kavram veya ön koşul zincirinden Egzersiz oluşturma
 
-## Degismez kabul kosullari
+## Değişmez kabul koşulları
 
-- Egzersiz kaydi FSRS alanlarina ve `ReviewLog`a dokunmaz.
-- Aktif oturum uygulama kapanip acilinca ayni kart sirasi ve konumla devam eder.
-- Haritada bilinmeyen serbest metin ders/konular yeni kanonik dugum uretmez.
-- Her ders ve konu haritadan tek dokunusla Egzersiz'e aktarilabilir.
-- Derin ekranlarda ve aktif oturumda ozel alt navigasyon icerigin ustune binmez.
+- Egzersiz kaydı FSRS alanlarına ve `ReviewLog`a dokunmaz.
+- Aktif oturum uygulama kapanıp açılınca aynı kart sırası, konumu **ve
+  filtresiyle** devam eder.
+- Aktif oturumdan her zaman görünür bir çıkış vardır.
+- Haritada bilinmeyen serbest metin ders/konular yeni kanonik düğüm üretmez —
+  ama sayılırlar; ekrandaki satırların toplamı desteye eşittir.
+- Her ders ve konu haritadan tek dokunuşla Egzersiz'e aktarılabilir.
+- Derin ekranlarda ve aktif oturumda özel alt navigasyon içeriğin üstüne
+  binmez.
 - Dynamic Type, VoiceOver, koyu mod ve Reduce Motion desteklenir.

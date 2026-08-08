@@ -10,7 +10,7 @@ struct SubjectTopicFilterMenu: View {
     @Binding var subjectFilter: String?
     @Binding var topicFilter: TopicFilter
 
-    private var schema: SubjectTopicSchema? { SubjectPickerBar.schema }
+    private var schema: SubjectTopicSchema? { SubjectTopicSchema.shared }
 
     var isActive: Bool { subjectFilter != nil || topicFilter != .all }
 

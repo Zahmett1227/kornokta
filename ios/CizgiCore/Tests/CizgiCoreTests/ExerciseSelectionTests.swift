@@ -217,6 +217,23 @@ final class ExerciseSelectionTests: XCTestCase {
         XCTAssertEqual(weak.map(\.cardId), [card])
     }
 
+    // MARK: History retention
+
+    func testAnUnfinishedRunIsNeverPrunedHoweverOldItIs() {
+        let ancient = now.addingTimeInterval(-5 * 365 * 24 * 3600)
+        XCTAssertFalse(ExerciseHistory.isExpired(finishedAt: nil, now: now))
+        XCTAssertTrue(ExerciseHistory.isExpired(finishedAt: ancient, now: now))
+    }
+
+    /// Pruning must never be able to change a ranking, so the retention window
+    /// has to outlast the window the scoring itself honours.
+    func testRetentionOutlastsTheScoringWindow() {
+        XCTAssertGreaterThan(ExerciseHistory.retention, ExercisePracticeWeight.window)
+
+        let justInsideScoring = now.addingTimeInterval(-(ExercisePracticeWeight.window - 1))
+        XCTAssertFalse(ExerciseHistory.isExpired(finishedAt: justInsideScoring, now: now))
+    }
+
     // MARK: Ranking fallbacks
 
     func testWithoutPracticeHistoryFsrsSignalsDecideTheOrder() {

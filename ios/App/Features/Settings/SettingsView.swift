@@ -31,7 +31,7 @@ struct SettingsView: View {
                     // a name outside the template would silently mean "no
                     // topics at all". Same stored value as the capture screen's
                     // strip — changing it in either place changes both.
-                    if let names = SubjectPickerBar.schema?.subjectNames {
+                    if let names = SubjectTopicSchema.shared?.subjectNames {
                         Picker("Ders", selection: Binding(
                             get: { SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject) ?? "" },
                             set: { environment.settings.defaultSubject = $0; environment.settings.save() }
@@ -467,7 +467,7 @@ struct SettingsView: View {
         // set during the first launch, while the store is still empty, and a
         // restore happens afterwards. Normalizing here is what keeps a restored
         // card inside the same picker and filters as a captured one.
-        let schema = SubjectPickerBar.schema
+        let schema = SubjectTopicSchema.shared
         let subject = schema.map {
             SubjectBackfill.restoredSubject(existing: record.subject, schema: $0, fallback: "Patoloji")
         } ?? record.subject
