@@ -33,7 +33,9 @@ enum TopicBackfillMigration {
     // made every respiratory mapping fail validation (or the store was
     // empty), so a device that already ran v1 must not be skipped here.
     static let flagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v2"
+    private static let v1FlagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v1"
     private static let targetSubject = "Patoloji"
+    private static let respiratoryTopic = "Solunum Sistem Hastalıkları"
 
     static func runIfNeeded(container: ModelContainer, defaults: UserDefaults = .standard) {
         guard !defaults.bool(forKey: flagKey) else { return }
@@ -42,12 +44,25 @@ enum TopicBackfillMigration {
         // Not flagged done, so a later launch with the resource fixed retries.
         guard let schema = try? SubjectTopicSchema.bundled() else { return }
 
+        // v1's only defect was the respiratory topic's name — every other
+        // mapping already passed validation and got written. If v1 has run,
+        // revisiting those already-correct categories here would mean a
+        // card the user deliberately reset to "Konusuz" afterwards (still
+        // `unit.topic == nil`, indistinguishable from never-classified)
+        // gets silently overwritten with the hard-coded topic again. So
+        // once v1 has run, only the respiratory entries — the ones it
+        // could not possibly have written — are worth revisiting.
+        let v1AlreadyRan = defaults.bool(forKey: v1FlagKey)
+        let candidates = v1AlreadyRan
+            ? knownTopics.filter { $0.value == respiratoryTopic }
+            : knownTopics
+
         let context = ModelContext(container)
         do {
             let cards = try context.fetch(FetchDescriptor<Card>())
             var encounteredTargetDeck = false
             for card in cards {
-                guard let topic = knownTopics[card.id.uuidString.uppercased()] else { continue }
+                guard let topic = candidates[card.id.uuidString.uppercased()] else { continue }
                 // The known-id match alone means this is the target deck,
                 // regardless of whether the card below turns out already
                 // classified or otherwise ineligible.
