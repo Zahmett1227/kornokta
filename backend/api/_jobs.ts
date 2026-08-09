@@ -23,7 +23,7 @@
  */
 
 import { authorize } from "./_auth.js";
-import { MAX_IMAGE_BYTES, decodeImage } from "./_ocr.js";
+import { MAX_IMAGE_BYTES, decodeImage } from "./_image.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";

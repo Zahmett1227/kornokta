@@ -69,17 +69,9 @@ final class ProcessingQueue: ObservableObject {
         self.pipeline = pipeline
     }
 
-    /// Attaches or removes cloud OCR. Called when the backend URL or the
-    /// device token changes, so the next page uses the new setting rather than
-    /// waiting for a relaunch.
-    func setBackend(_ backend: (any BackendCalling)?) {
-        pipeline = pipeline.withBackend(backend)
-    }
-
-    /// Swaps the card generator. Called alongside `setBackend` when the
-    /// backend URL or device token changes, so real (§25 Faz 3) and mock
-    /// generation follow the same on/off switch as cloud OCR rather than a
-    /// second one.
+    /// Swaps the card generator. Called when the backend URL or device token
+    /// changes, so the next page uses the new setting rather than waiting for
+    /// a relaunch.
     func setCardGenerator(_ generator: any CardGenerating) {
         pipeline = pipeline.withGenerator(generator)
     }
@@ -342,24 +334,8 @@ final class ProcessingQueue: ObservableObject {
         }
     }
 
-    /// Runs one page. `selection` overrides the detector, which is how the
-    /// confirmation screen resumes a job after the user picks the passage.
-    func process(_ page: CapturedPage, selection: [String]? = nil) async {
-        await process(page, lineSelection: selection, selectionResult: nil)
-    }
-
-    /// Resumes a photo confirmation without reducing the user's selected
-    /// visual groups back to one flat list of OCR lines.
-    func process(_ page: CapturedPage, selection: MarkerSelectionResult) async {
-        await process(page, lineSelection: nil, selectionResult: selection)
-    }
-
-    private func process(
-        _ page: CapturedPage,
-        lineSelection: [String]?,
-        selectionResult: MarkerSelectionResult?,
-        forceResubmit: Bool = false
-    ) async {
+    /// Runs one page through the vision pipeline.
+    func process(_ page: CapturedPage, forceResubmit: Bool = false) async {
         let context = container.mainContext
         let imageURL = imageStore.url(forRelativePath: page.originalImagePath)
         let pageID = page.id
@@ -408,10 +384,6 @@ final class ProcessingQueue: ObservableObject {
             jobId: page.id.uuidString,
             imageURL: imageURL,
             subject: page.source?.subject,
-            snapshot: decodedSnapshot(for: page),
-            selectionOverride: lineSelection,
-            selectionResultOverride: selectionResult,
-            completedGroupIds: completedGroupIds(for: page),
             forceResubmit: forceResubmit
         )
 
@@ -465,21 +437,6 @@ final class ProcessingQueue: ObservableObject {
         // user chose stays chosen.
         guard page.processingState != .cancelled else { return }
 
-        // Keep the local OCR even when a later step failed (§21.2).
-        if let recognized = outcome.recognized, page.regions.isEmpty {
-            page.documentQualityScore = recognized.lines
-                .map(\.confidence)
-                .reduce(0, +) / Double(max(recognized.lines.count, 1))
-        }
-
-        // OCR completed before card generation, so a transient card/provider
-        // failure must not make the queue pay for a second OCR run on retry.
-        // The snapshot is cleared only from the successfully persisted ready
-        // path below.
-        if outcome.finalState != .ready, let snapshot = outcome.ocrSnapshot {
-            page.ocrSnapshotData = try? JSONEncoder().encode(snapshot)
-        }
-
         // Keep completed groups before returning a retryable failure. A later
         // retry receives their ids and generates only the unfinished groups.
         if outcome.finalState != .ready {
@@ -511,6 +468,8 @@ final class ProcessingQueue: ObservableObject {
                 )
             }
             page.processingState = .ready
+            // Cleared for hygiene on rows written before the ADR-005 trim; the
+            // vision flow itself never writes a snapshot.
             page.ocrSnapshotData = nil
             page.lastError = nil
             page.retryCount = 0
@@ -518,20 +477,6 @@ final class ProcessingQueue: ObservableObject {
             if !AppSettings.load().keepOriginalPage {
                 page.pendingOriginalImageDeletion = true
             }
-
-        case .confirmationRequired:
-            page.processingState = .confirmationRequired
-            // Not an error, but the reason has to survive: §19.2 requires the
-            // confirmation, and a confirmation with no reason attached is one
-            // the user cannot answer well. `lastError` is the field the queue
-            // and the confirmation screen already read. `confirmationReason`
-            // covers every stop reason (nothing marked, thin passage, no
-            // cards), not just the OCR-reconciliation one — falling back to
-            // `outcome.reconciliation?.reason` alone left this `nil` whenever
-            // the reason had nothing to do with OCR disagreement.
-            page.lastError = outcome.confirmationReason ?? outcome.reconciliation?.reason
-            page.confirmationFlags = outcome.reconciliation?.lines
-                .flatMap(\.criticalTokenFlags) ?? []
 
         case .temporaryFailure:
             page.retryCount += 1
@@ -599,11 +544,6 @@ final class ProcessingQueue: ObservableObject {
             selectionType: Self.persistedSelectionType(group.selectionType),
             requiresConfirmation: group.needsConfirmation
         )
-        region.appleOCRText = Self.localText(for: group, outcome: outcome)
-        region.googleOCRText = group.contextText
-        if outcome.ocrSnapshot?.userConfirmed == true {
-            region.confirmedAt = .now
-        }
         region.page = page
         context.insert(region)
 
@@ -670,34 +610,9 @@ final class ProcessingQueue: ObservableObject {
         }
     }
 
-    private func completedGroupIds(for page: CapturedPage) -> [String] {
-        page.regions.compactMap { region in
-            region.evidenceIds.isEmpty ? nil : region.evidenceIds.sorted().joined(separator: ":")
-        }
-    }
-
     private func hasPersistedGroup(_ group: AnnotationGroup, on page: CapturedPage) -> Bool {
         let key = group.evidenceIds.sorted().joined(separator: ":")
         return page.regions.contains { $0.evidenceIds.sorted().joined(separator: ":") == key }
-    }
-
-    private func decodedSnapshot(for page: CapturedPage) -> OCRSnapshot? {
-        guard let data = page.ocrSnapshotData else { return nil }
-        return try? JSONDecoder().decode(OCRSnapshot.self, from: data)
-    }
-
-    private static func localText(for group: AnnotationGroup, outcome: PipelineOutcome) -> String? {
-        let evidenceLineIds = Set(
-            outcome.selection.evidence
-                .filter { group.evidenceIds.contains($0.id) }
-                .flatMap(\.lineIds)
-        )
-        let text = outcome.recognized?.lines
-            .filter { evidenceLineIds.contains($0.id) }
-            .map(\.text)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return text?.isEmpty == false ? text : nil
     }
 
     private static func persistedSelectionType(_ type: AnnotationType) -> SelectionType {
@@ -825,7 +740,7 @@ final class ProcessingQueue: ObservableObject {
         page.nextAttemptAt = nil
         page.processingState = .captured
         try? container.mainContext.save()
-        await process(page, lineSelection: nil, selectionResult: nil, forceResubmit: true)
+        await process(page, forceResubmit: true)
         // A manual retry that fails transiently sets `nextAttemptAt` like any
         // other run, but nothing was honouring it: `scheduleRetryDrain` only ran
         // at the end of `processPending`, so "kendiliğinden yeniden denenecek"

@@ -11,17 +11,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "ocr": "tsx scripts/ocr.ts",
     "cards": "tsx scripts/cards.ts",
-    "handwriting": "tsx scripts/handwriting.ts",
     "serve": "tsx scripts/serve.ts",
     "token": "tsx scripts/token.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.8.0",
     "ajv": "^8.20.0",
-    "dotenv": "^17.4.2",
-    "google-auth-library": "^11.0.0"
+    "dotenv": "^17.4.2"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

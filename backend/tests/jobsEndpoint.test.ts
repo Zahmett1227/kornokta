@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MIN_TOKEN_LENGTH } from "../api/_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES } from "../api/_ocr.js";
+import { MAX_IMAGE_BYTES } from "../api/_image.js";
 import type { CardGeneratorLike } from "../api/_cards.js";
 import {
   MAX_POLL_IDS,
@@ -859,15 +859,13 @@ describe("POST /api/jobs — doğrulama", () => {
   it("desteklenmeyen tür için 415 verir", async () => {
     const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType: "image/gif" }), deps());
     expect(response.status).toBe(415);
-    expect(ACCEPTED_MIME_TYPES.has("image/gif")).toBe(false);
   });
 
-  it("OCR'ın kabul ettiği ama vision modelinin okuyamadığı türleri kapıda çevirir", async () => {
+  it("vision modelinin okuyamadığı türleri kapıda çevirir", async () => {
     // Kalıcı hatanın bedeli burada yüksek: iş kimliği = sayfa kimliği olduğu
     // için sağlayıcıdan dönecek 400, o sayfayı kilitleyen bir `retryable=false`
     // satırına dönüşürdü.
     for (const mimeType of ["application/pdf", "image/tiff"]) {
-      expect(ACCEPTED_MIME_TYPES.has(mimeType), mimeType).toBe(true);
       const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType }), deps());
       expect(response.status, mimeType).toBe(415);
     }
