@@ -56,7 +56,7 @@ export interface JobsDependencies {
     CostConfig,
     "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens" | "maxUsdPerCardGeneration"
   >;
-  supabase: Pick<SupabaseConfig, "staleAfterMs">;
+  supabase: Pick<SupabaseConfig, "staleAfterMs" | "resultRetentionMs">;
   deviceToken: string | undefined;
   /**
    * Continues work after the response has been sent. On Vercel this is
@@ -405,10 +405,45 @@ async function poll(request: Request, deps: JobsDependencies): Promise<Response>
     views.push(toJobView(row));
   }
 
+  // Rides the polls the phone is making anyway, like the staleness sweep
+  // above, because there is no cron on this plan (ADR-006). Throttled and in
+  // the background, so no poll ever waits on it or fails because of it.
+  deps.runInBackground(() => sweepFinishedResults(deps));
+
   // Unknown ids simply do not come back. The phone reads an absent job as "not
   // submitted yet" and submits it, which is the correct recovery whether the row
   // was never written or was cleaned up.
   return json({ jobs: views }, 200);
+}
+
+/**
+ * At most one purge attempt per store per interval. Keyed by the store object —
+ * a serverless instance keeps one store for its lifetime, so this throttles per
+ * instance; a fresh instance sweeping once immediately is harmless and is also
+ * what lets every test observe the sweep without waiting.
+ */
+const RESULT_SWEEP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const lastResultSweep = new WeakMap<JobStoreLike, number>();
+
+/**
+ * Deletes finished rows older than the configured retention (§7.3's text half;
+ * 60 days by the owner's decision — docs/PRIVACY.md). Failures are logged and
+ * dropped: an undeleted old row is a kept-too-long text, not a broken job, and
+ * the next poll after the interval will try again.
+ */
+async function sweepFinishedResults(deps: JobsDependencies): Promise<void> {
+  const now = deps.now?.() ?? Date.now();
+  const last = lastResultSweep.get(deps.store);
+  if (last !== undefined && now - last < RESULT_SWEEP_INTERVAL_MS) return;
+  lastResultSweep.set(deps.store, now);
+  try {
+    const cutoff = new Date(now - deps.supabase.resultRetentionMs).toISOString();
+    const removed = await deps.store.purgeFinished(cutoff);
+    // Count only, never content (§7.3).
+    if (removed > 0) deps.log?.({ event: "jobs.results_purged", removed });
+  } catch (error) {
+    deps.log?.({ event: "jobs.results_purge_failed", message: describe(error) });
+  }
 }
 
 function isStale(row: JobRow, deps: JobsDependencies): boolean {

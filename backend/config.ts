@@ -146,6 +146,15 @@ export interface SupabaseConfig {
    * still going to answer.
    */
   staleAfterMs: number;
+  /**
+   * How long a *finished* row (`ready` or `failed`) may keep its result text
+   * before a poll-time sweep deletes it (§7.3's text half; the owner chose 60
+   * days). The accepted trade-off is written in docs/PRIVACY.md: a phone that
+   * stays away longer than this re-submits the page and pays for a second
+   * generation. There is no cron on this plan, so the sweep rides the phone's
+   * own polls, throttled inside `_jobs.ts`.
+   */
+  resultRetentionMs: number;
 }
 
 export interface Config {
@@ -302,6 +311,10 @@ export function loadConfig(): Config {
       // was killed at the ceiling is reclaimed promptly while one that is simply
       // slow is left alone.
       staleAfterMs: numeric("SUPABASE_JOB_STALE_AFTER_MS", 330_000, 1),
+      // 60 days, the owner's decision (docs/PRIVACY.md). Long enough that a
+      // phone in normal use has collected every result many times over; the
+      // residual risk of a second paid generation is accepted.
+      resultRetentionMs: numeric("SUPABASE_RESULT_RETENTION_MS", 60 * 24 * 60 * 60 * 1000, 1),
     },
   };
 }

@@ -250,15 +250,17 @@ Document AI'ın listesinin bir alt kümesi): OpenAI ikisini de kabul etmiyor,
 dolayısıyla eskiden kapıdan geçip sağlayıcıdan 400 alıyor ve yukarıdaki kalıcı
 kilide dönüşüyorlardı.
 
-8. **Biten işlerin `result` satırı hiç silinmiyor (açık, kapatılmadı).** Codex
-   PR #30 incelemesinde buldu. §7.3'ün görüntü tarafı eksiksiz uygulanmış
-   durumda, ama `complete`'in `jobs.result`'a yazdığı kart metinleri +
-   `readText` için temizleyen bir yol yok: `ready` bir işe gelen yeniden
-   gönderim satırı olduğu gibi döndürür (ikinci üretim ücreti ödenmesin diye,
-   bilerek), `requeue` yalnız `failed` satırları temizler ve bu ADR gereği cron
-   yok. Yani metin süresiz kalıyor. Sızıntı değil (RLS açık, policy yok) ama
-   tutulmamış bir söz. **Kapatılmadı** çünkü iki makul çözümün ikisi de sahibin
-   kararını gerektiren bir ödünç taşıyor — zamana bağlı temizlik telefon o
-   pencerede açılmazsa **ikinci üretim ücreti** doğurabilir, ack ucu ise
-   sözleşmeye yeni bir uç ekler. Saklama süresi bu arada `docs/PRIVACY.md`'de
-   olduğu gibi yazıldı; elle temizlik her zaman mümkün.
+8. **Biten işlerin `result` satırı — kapatıldı (2026-08-09).** Codex PR #30
+   incelemesinde bulmuştu: §7.3'ün görüntü tarafı eksiksizdi ama `complete`'in
+   `jobs.result`'a yazdığı kart metinleri + `readText` için temizleyen bir yol
+   yoktu, metin süresiz kalıyordu. İki çözümün ödünçleri (zamana bağlı temizlik
+   → telefon pencerede açılmazsa ikinci üretim ücreti; ack ucu → sözleşmeye
+   yeni uç) sahibin önüne kondu; **karar: zamana bağlı temizlik, 60 gün.**
+   Uygulama, bu ADR'nin kurtarma süpürmeleriyle aynı desende: cron yok,
+   süpürme `GET /api/jobs` yoklamalarına biner (örnek başına 6 saatte bir,
+   arka planda, yoklamayı asla bekletmez/düşürmez). Silme koşullu — yalnız
+   `status=in.(ready,failed)` **ve** `finished_at` 60 günden eski satırlar;
+   canlı satıra hiçbir yaşta dokunulmaz ("her durum değişikliği onu haklı
+   çıkaran duruma koşullu" kuralının kendisi). Config:
+   `SUPABASE_RESULT_RETENTION_MS` (varsayılan 60 gün). Kabul edilen ödünç
+   `docs/PRIVACY.md`'de yazılı.

@@ -35,6 +35,12 @@ export interface SupabaseConfig {
    * would sit `processing` forever and the phone would poll it forever.
    */
   staleAfterMs: number;
+  /**
+   * How long a finished row (`ready`/`failed`) may keep its result text before
+   * the poll-time sweep deletes it (§7.3's text half — see docs/PRIVACY.md for
+   * the accepted trade-off).
+   */
+  resultRetentionMs: number;
 }
 
 export class SupabaseError extends Error {
@@ -153,6 +159,19 @@ export interface JobStoreLike {
    * a status-only condition would then kill the *new* attempt (Codex, PR #25 P2).
    */
   expire(id: string, startedAt: string | null, error: string): Promise<boolean>;
+  /**
+   * Deletes finished rows (`ready` or `failed`) whose `finished_at` is older
+   * than `cutoffIso`, and returns how many went.
+   *
+   * This is the text half of §7.3: the image is deleted the moment a job ends,
+   * but the result row — card text plus the page text the model read — used to
+   * live forever. The condition is what justifies the deletion: a terminal
+   * status *and* an age the owner chose (60 days, docs/PRIVACY.md). Live rows
+   * (`queued`/`processing`) are never touched, and a row a phone still wants is
+   * simply re-submitted as a fresh job — the accepted cost of a second
+   * generation after such a long absence.
+   */
+  purgeFinished(cutoffIso: string): Promise<number>;
   putImage(path: string, bytes: Uint8Array, mimeType: string): Promise<void>;
   getImage(path: string): Promise<Uint8Array>;
   deleteImage(path: string): Promise<void>;
@@ -458,6 +477,19 @@ export class SupabaseJobStore implements JobStoreLike {
       },
     );
     return SupabaseJobStore.rows(payload).length > 0;
+  }
+
+  async purgeFinished(cutoffIso: string): Promise<number> {
+    // `finished_at=lt.` naturally excludes rows where it is null, which is one
+    // more guard on top of the status filter: nothing that has not visibly
+    // finished can match. The timestamp is encoded for the same reason
+    // `expire` encodes `started_at` — a bare `+` in a query string is a space.
+    const payload = await this.callJson(
+      `${this.restBase}?status=in.(ready,failed)&finished_at=lt.${encodeURIComponent(cutoffIso)}&select=id`,
+      "DELETE",
+      { Prefer: "return=representation" },
+    );
+    return Array.isArray(payload) ? payload.length : 0;
   }
 
   async putImage(path: string, bytes: Uint8Array, mimeType: string): Promise<void> {

@@ -26,40 +26,30 @@ pasaj kırpıntısı" daraltması bu pivotla bilinçli olarak gevşetildi.
 |---|---|---|---|
 | OpenAI (vision) | **Tam sayfa fotoğrafı** + varsa kullanıcı ipucu | İşaretli içeriği okuma + kart üretimi | İstek süresince |
 | Supabase Storage (özel kova) | Tam sayfa fotoğrafı | Asenkron işin bekleme alanı | İş sonuçlanana kadar; terminal durumda silinir |
-| Supabase Postgres (`jobs`) | İş durumu + üretilen kart metinleri ve modelin okuduğu sayfa metni (`result`) | Telefonun sonucu yoklayıp alması | **Süresiz** — aşağıya bak. Görüntü içermez |
+| Supabase Postgres (`jobs`) | İş durumu + üretilen kart metinleri ve modelin okuduğu sayfa metni (`result`) | Telefonun sonucu yoklayıp alması | **En fazla 60 gün** (aşağıya bak). Görüntü içermez |
 | Google Document AI | Sayfa/kırpıntı görseli | OCR | **Faz 6'da ana akıştan çıktı** — kod geri dönüş için duruyor, çağrılmıyor |
 | Gemini | Belirsiz el yazısı kırpıntısı | İkinci görüş transkripsiyon | **Faz 6'da ana akıştan çıktı** — çağrılmıyor |
 
 Bu tablo her yeni entegrasyonda güncellenir.
 
-### Açık kalan: biten işlerin `result` satırı silinmiyor
+### Biten işlerin `result` satırı: 60 gün sonra silinir (karar: 2026-08-09)
 
-Görüntü için §7.3 tam olarak uygulanıyor (her terminal yol nesneyi siler), ama
-**metin için uygulanmıyor**. `complete`, üretilen kartların tamamını ve modelin
-sayfadan okuduğu metni (`readText`) `jobs.result` sütununa yazar; bu satırı
-temizleyen hiçbir yol yok:
+Görüntü için §7.3 her terminal yolda uygulanıyor; metin için karar uzun süre
+açıktı (Codex, PR #30). Uygulamanın sahibi **zamana bağlı temizlik + 60 gün**
+seçti ve uygulandı:
 
-- `ready` bir işe gelen yeniden gönderim, satırı olduğu gibi geri döndürür
-  (`backend/api/_jobs.ts` — ikinci üretim ücreti ödenmesin diye, bilerek);
-- `requeue` yalnız `failed` satırları temizler;
-- ADR-006 gereği cron yok, dolayısıyla zamana bağlı bir temizlik de yok.
+- Biten (`ready`/`failed`) bir satır, `finished_at` üzerinden **60 günden**
+  eskiyse telefonun yoklamalarına binen bir arka plan süpürmesiyle silinir
+  (`SUPABASE_RESULT_RETENTION_MS`, varsayılan 60 gün; süpürme örnek başına
+  6 saatte bir denenir). Cron yok — ADR-006'nın kurtarma süpürmeleriyle aynı
+  desen.
+- Canlı satırlar (`queued`/`processing`) yaşına bakılmaksızın **asla**
+  silinmez; onların kaderi bayatlık süpürmesinindir.
+- **Kabul edilen ödünç:** telefon 60 günden uzun süre hiç açılmazsa, alınmamış
+  bir sonuç kaybolur ve aynı sayfa yeniden gönderildiğinde ikinci kez üretim
+  ücreti ödenir. Günlük kullanılan tek kullanıcılık bir uygulamada bu risk
+  bilinçli olarak kabul edildi; ack ucu eklemek sözleşmeyi büyütecekti.
 
-Yani bir sayfanın kartları, telefon onları çoktan almış olsa bile Supabase'de
-süresiz durur. Bu bir sızıntı değil (RLS açık, policy yok, yalnız
-`service_role` erişir) ama §7.3'ün "yalnız iş süresince tut" ilkesinin metin
-tarafında tutulmamış bir sözüdür.
-
-**Neden hemen kapatılmadı:** her iki makul çözüm de bir ödünç istiyor ve bu
-uygulamanın sahibinin kararı:
-
-1. *Zamana bağlı temizlik* (Supabase `pg_cron` ile, ör. 7 günden eski `ready`
-   satırları sil). Basit; ama telefon o pencerede hiç açılmazsa iş kaydı yok
-   olur ve aynı sayfa yeniden gönderildiğinde **ikinci kez ücret ödenir**.
-2. *Telefon aldığını bildirince sil* (yeni bir onay/ack ucu). Ücret riski yok;
-   ama sözleşmeye yeni bir uç ekler ve telefon kartları kaydettiğini
-   söylemeden önce ölürse iş kaydı yine kaybolur.
-
-Karar verilene kadar doğru olan şey, saklama süresini olduğu gibi yazmaktır —
-bu bölüm onun için var. Elle temizlik her zaman mümkün: Supabase SQL
-düzenleyicisinde `delete from public.jobs where status = 'ready';` (telefonun
-almayı beklediği bir sayfa yokken).
+Elle temizlik hâlâ mümkün: Supabase SQL düzenleyicisinde
+`delete from public.jobs where status = 'ready';` (telefonun almayı beklediği
+bir sayfa yokken).

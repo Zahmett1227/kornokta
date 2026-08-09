@@ -19,6 +19,7 @@ const CONFIG: SupabaseConfig = {
   bucket: "page-uploads",
   timeoutMs: 1_000,
   staleAfterMs: 330_000,
+  resultRetentionMs: 60 * 24 * 60 * 60 * 1000,
 };
 
 const ROW_JSON =
@@ -127,5 +128,33 @@ describe("SupabaseJobStore getImage", () => {
     const error = await store.getImage("pages/x").catch((caught) => caught as SupabaseError);
 
     expect((error as SupabaseError).transient).toBe(false);
+  });
+});
+
+describe("SupabaseJobStore purgeFinished", () => {
+  it("yalnız biten ve süresi geçmiş satırları hedefleyen filtreyle DELETE atar", async () => {
+    const { transport, seen } = stubTransport(
+      200,
+      `[{"id":"3f2504e0-4f89-11d3-9a0c-0305e82c3301"},{"id":"6ba7b810-9dad-11d1-80b4-00c04fd430c8"}]`,
+    );
+    const store = new SupabaseJobStore(CONFIG, "key", transport);
+    const cutoff = "2026-06-07T12:00:00.000Z";
+
+    const removed = await store.purgeFinished(cutoff);
+
+    expect(removed).toBe(2);
+    expect(seen[0]?.method).toBe("DELETE");
+    // The status condition is what keeps live rows (`queued`/`processing`)
+    // out of reach no matter how old they are; `finished_at=lt.` additionally
+    // excludes null, so nothing that has not visibly finished can match.
+    expect(seen[0]?.url).toContain("status=in.(ready,failed)");
+    expect(seen[0]?.url).toContain(`finished_at=lt.${encodeURIComponent(cutoff)}`);
+  });
+
+  it("hiçbir satır silinmediyse 0 döner", async () => {
+    const { transport } = stubTransport(200, "[]");
+    const store = new SupabaseJobStore(CONFIG, "key", transport);
+
+    expect(await store.purgeFinished("2026-06-07T12:00:00.000Z")).toBe(0);
   });
 });
