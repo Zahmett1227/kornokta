@@ -82,11 +82,10 @@ struct QueueView: View {
         let state = page.processingState
 
         // Faz 6 (docs/FAZ6-PLAN.md): pages never stop at `.confirmationRequired`
-        // any more, so every row opens the read-only page detail. `ConfirmationView`
-        // stays on disk for the rollback path but is no longer navigated to.
-        NavigationLink {
-            PageDetailView(page: page)
-        } label: {
+        // any more, so every row opens the read-only page detail. The
+        // destination is registered at the Capture root (`CaptureView`), once
+        // per stack.
+        NavigationLink(value: page) {
             HStack(spacing: 12) {
                 Image(systemName: state.systemImage)
                     .foregroundStyle(state.tint)
@@ -150,7 +149,9 @@ struct PageDetailView: View {
                 Label(page.processingState.label, systemImage: page.processingState.systemImage)
                     .foregroundStyle(page.processingState.tint)
                 LabeledContent("Çekim", value: page.captureDate.formatted())
-                LabeledContent("Kalite", value: String(format: "%.2f", page.documentQualityScore))
+                // No "Kalite" row: the score came from the pre-Faz-6 local OCR
+                // pass and the vision flow never fills it, so it always read
+                // 0.00 — a number that looked like an assessment and wasn't.
                 if page.retryCount > 0 {
                     LabeledContent("Deneme", value: "\(page.retryCount)")
                 }

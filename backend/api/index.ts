@@ -8,46 +8,18 @@
  * stored, echoed or logged (§0.7, §7.3).
  */
 
-import { GoogleAuth } from "google-auth-library";
 import { waitUntil } from "@vercel/functions";
 
 import { loadConfig } from "../config.js";
-import { DocumentAIRecognizer, googleAuthTokenSource } from "../providers/documentAI.js";
-import { googleAuthOptions } from "../providers/googleAuth.js";
 import { OpenAICardGenerator } from "../providers/openai.js";
 import { SupabaseJobStore } from "../providers/supabaseJobs.js";
-import { handleOcrRequest, type Dependencies } from "./_ocr.js";
 import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
 import { handleJobsRequest, type JobsDependencies } from "./_jobs.js";
 
 /**
- * Built once per process, not per request: constructing `GoogleAuth` reads the
- * key file and mints a token, and doing that on every request would add a
- * round trip to each page and re-read the key from disk each time.
+ * Built once per process, not per request, so the config is parsed and the
+ * generator constructed exactly once per instance.
  */
-let cached: Dependencies | null = null;
-
-export function buildDependencies(): Dependencies {
-  if (cached) return cached;
-
-  const config = loadConfig();
-  // Options rather than a literal, because the credential is a file path
-  // locally and inline JSON on a host — and neither form may be logged.
-  const auth = new GoogleAuth(googleAuthOptions());
-
-  cached = {
-    recognizer: new DocumentAIRecognizer(config.documentAI, googleAuthTokenSource(auth)),
-    documentAI: config.documentAI,
-    deviceToken: process.env.DEVICE_TOKEN,
-    // Structured single-line JSON so a hosting platform's log viewer can
-    // filter it. Content never reaches here — `handleOcrRequest` only ever
-    // passes ids, counts and durations (§7.3).
-    log: (entry) => console.log(JSON.stringify(entry)),
-  };
-  return cached;
-}
-
-/** Built once per process; separate from `cached` because it needs a different key (`OPENAI_API_KEY`). */
 let cachedCards: CardsDependencies | null = null;
 
 export function buildCardsDependencies(): CardsDependencies {
@@ -142,7 +114,6 @@ export function buildJobsDependencies(): JobsDependencies {
 
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
-  cached = null;
   cachedCards = null;
   cachedJobs = null;
 }
@@ -187,20 +158,8 @@ export async function handler(request: Request): Promise<Response> {
     });
   }
 
-  if (url.pathname === "/api/ocr" || url.pathname === "/ocr") {
-    let dependencies: Dependencies;
-    try {
-      dependencies = buildDependencies();
-    } catch (error) {
-      // A missing env var is the server's problem, not the caller's, and the
-      // message names the variable so it is fixable (§0.6).
-      return new Response(
-        JSON.stringify({ error: (error as Error).message, retryable: false }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    return handleOcrRequest(request, dependencies);
-  }
+  // `/api/ocr` was removed with the deterministic OCR pipeline (ADR-005 trim,
+  // 2026-08-09); an old client calling it now gets the plain 404 below.
 
   // Faz 6 (docs/FAZ6-PLAN.md §5.1) renamed the main route to `/api/cards-vision`;
   // the legacy `/api/cards` paths stay mapped to the same handler so an older

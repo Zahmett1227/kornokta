@@ -2,13 +2,16 @@ import SwiftUI
 import SwiftData
 import CizgiCore
 
-/// Egzersiz modu — free practice over the whole deck, independent of FSRS.
+/// Egzersiz modu — free practice over the whole deck.
 ///
 /// Same question → "Cevabı göster" → answer rhythm as `ReviewView`, and the
-/// same card-edit affordance. Only an `ExerciseRun`/`ExerciseAttempt` history is
-/// written: no `ReviewLog`, scheduling update or daily new-card ledger entry.
-/// Going over a subject before an exam must not disturb a spaced-repetition
-/// history that took months to build.
+/// same card-edit affordance. An `ExerciseRun`/`ExerciseAttempt` history is
+/// written; `ReviewLog` and the daily new-card ledger are never touched. Since
+/// docs/ADR-007 an answer *may* also adjust a card's FSRS state, but only
+/// through the guarded `EarlyPractice` bridge in `applyEarlyPractice` below —
+/// partial credit early, soft lapse on an early miss, a real lapse only close
+/// to due; due cards and "Kararsızdım" never. Anything beyond that would
+/// disturb a spaced-repetition history that took months to build.
 ///
 /// The queue itself (shuffle, position, finish) lives in `ExerciseSession` so
 /// `swift test` covers it; this file is the shell.
@@ -182,7 +185,7 @@ struct ExerciseView: View {
             Button("Bitir", role: .destructive) { finishEarly() }
             Button("Devam et", role: .cancel) {}
         } message: {
-            Text("Yanıtladığın kartların özeti kalır. Tekrar planın zaten değişmiyor.")
+            Text("Yanıtladığın kartların özeti kalır; verdiğin yanıtların etkisi (ADR-007) geri alınmaz.")
         }
         .confirmationDialog(
             "Devam eden bir Egzersiz var",
@@ -312,12 +315,15 @@ struct ExerciseView: View {
                 }
 
                 Label(
-                    // The old wording ("only builds this session's summary")
-                    // stopped being true when results started feeding the
-                    // weak-point picker. What is still true — and is the whole
-                    // point — is that FSRS never sees them.
+                    // Rewritten twice, both times because the screen promised
+                    // more independence than the code delivered (Codex, PR #36:
+                    // the ADR-007 bridge really can adjust scheduling). Say
+                    // what actually happens — a false "nothing changes" is a
+                    // guarantee the user opts in under.
                     "Yanıtların ayrı bir Egzersiz geçmişine yazılır ve \"Zayıf noktalar\" "
-                        + "seçimini besler. FSRS, tekrar tarihleri ve puanların değişmez.",
+                        + "seçimini besler. Erken doğrular kartı sessizce güçlendirebilir, "
+                        + "erken yanlışlar kartı öne çekebilir (ADR-007); tekrar geçmişin "
+                        + "(ReviewLog) hiç değişmez.",
                     systemImage: "checkmark.shield"
                 )
                 .font(.footnote)
@@ -327,7 +333,7 @@ struct ExerciseView: View {
                     VStack(alignment: .leading, spacing: Cizgi.Space.md) {
                         CizgiSectionTitle(
                             "Son Egzersizler",
-                            subtitle: "FSRS'den bağımsız çalışma geçmişin."
+                            subtitle: "Tekrar geçmişinden ayrı tutulan çalışma kayıtların."
                         )
                         ForEach(completedRuns.prefix(3)) { run in
                             runHistoryCard(run)
@@ -683,6 +689,14 @@ struct ExerciseView: View {
             context.insert(attempt)
         }
 
+        // The guarded FSRS bridge (docs/ADR-007): a practice answer may earn
+        // partial stability credit, pull a missed card forward, or — close
+        // enough to due — count as a real lapse. All policy lives in
+        // `EarlyPractice`; the card is only ever touched with what it returns.
+        if let card = allCards.first(where: { $0.id == cardId }) {
+            applyEarlyPractice(result: result, to: card, at: answeredAt)
+        }
+
         working.record(result)
         session = working
         currentRun?.position = working.position
@@ -691,6 +705,35 @@ struct ExerciseView: View {
         }
         try? context.save()
         resetCardState()
+    }
+
+    /// Applies exactly what `EarlyPractice.update` allows, nothing more. The
+    /// save rides `recordAndAdvance`'s existing `context.save()`.
+    private func applyEarlyPractice(result: ExerciseResult, to card: Card, at now: Date) {
+        let update = EarlyPractice.update(
+            result: result,
+            state: SchedulingState(
+                stability: card.stability,
+                difficulty: card.difficulty,
+                reviewCount: card.reviewCount,
+                lapseCount: card.lapseCount,
+                lastReviewedAt: card.lastReviewedAt
+            ),
+            dueDate: card.dueDate,
+            lastPracticedAt: card.lastPracticedAt,
+            scheduler: environment.scheduler,
+            now: now
+        )
+        guard update.touchesCard else { return }
+        if let stability = update.stability { card.stability = stability }
+        if let difficulty = update.difficulty { card.difficulty = difficulty }
+        if let dueDate = update.dueDate { card.dueDate = dueDate }
+        if let lastReviewedAt = update.lastReviewedAt { card.lastReviewedAt = lastReviewedAt }
+        if let lastPracticedAt = update.lastPracticedAt { card.lastPracticedAt = lastPracticedAt }
+        card.reviewCount += update.reviewCountDelta
+        card.lapseCount += update.lapseCountDelta
+        card.softLapseCount += update.softLapseCountDelta
+        card.updatedAt = now
     }
 
     private func resultButton(_ title: String, result: ExerciseResult, tint: Color) -> some View {

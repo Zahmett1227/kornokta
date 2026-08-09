@@ -97,6 +97,16 @@ struct LibraryView: View {
             .background(Cizgi.paper.ignoresSafeArea())
             .rootTabBarInset()
             .navigationTitle("Bilgilerim")
+            // Value-based pushes so `navigator.libraryPath` really tracks depth
+            // and `goHome()` really pops. Registered here, at the stack root,
+            // once per value type — the links live in the card list and in
+            // KnowledgeMapView.
+            .navigationDestination(for: Card.self) { card in
+                CardDetailView(card: card)
+            }
+            .navigationDestination(for: KnowledgeMapSubjectSummary.self) { summary in
+                KnowledgeSubjectView(summary: summary)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if contentMode == .cards {
@@ -199,7 +209,7 @@ struct LibraryView: View {
     }
 
     private func row(_ card: Card) -> some View {
-        NavigationLink { CardDetailView(card: card) } label: {
+        NavigationLink(value: card) {
             CardRow(card: card)
         }
         .listRowBackground(Cizgi.surface)

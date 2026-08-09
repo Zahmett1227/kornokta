@@ -287,6 +287,16 @@ public final class Card {
     public var difficulty: Double
     public var reviewCount: Int
     public var lapseCount: Int
+    /// Early practice misses (docs/ADR-007): the card was answered wrong in
+    /// Egzersiz well before it was due. Kept apart from `lapseCount` on
+    /// purpose — failing a self-test taken too soon is not evidence of
+    /// forgetting, so it must never feed the FSRS failure update. Defaulted so
+    /// existing decks migrate with nothing to decide.
+    public var softLapseCount: Int = 0
+    /// When Egzersiz last touched this card's FSRS state (docs/ADR-007).
+    /// Arms `EarlyPractice`'s one-day practice freeze, without which repeated
+    /// same-evening passes would compound partial credit.
+    public var lastPracticedAt: Date?
     public var lastReviewedAt: Date?
 
     public var knowledgeUnit: KnowledgeUnit?
@@ -359,6 +369,7 @@ public final class Card {
         self.difficulty = 0
         self.reviewCount = 0
         self.lapseCount = 0
+        self.softLapseCount = 0
         self.reviews = []
         self.lowConfidence = lowConfidence
         if let options, case .valid = MultipleChoice.validate(options) {

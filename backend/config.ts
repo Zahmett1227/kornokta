@@ -7,56 +7,25 @@
  * one place to look when a value needs changing and exactly one place that can
  * be wrong.
  *
- * Credentials are deliberately absent from this file's return value. They are
- * resolved by the Google auth library from `GOOGLE_APPLICATION_CREDENTIALS`,
- * so a key never passes through our own code and cannot end up in a log line
- * or an error message (§0.7, §7.3).
+ * Credentials are deliberately absent from this file's return value; each one
+ * is read at the composition root and handed straight to its consumer, so a
+ * key never passes through this module and cannot end up in a log line or an
+ * error message (§0.7, §7.3).
+ *
+ * The Document AI and Gemini sections that used to live here left with the
+ * deterministic OCR pipeline (ADR-005 trim, 2026-08-09).
  */
 
-export interface DocumentAIConfig {
-  /** Google Cloud project id, e.g. 'kornokta'. Not a secret. */
-  projectId: string;
-  /** Processor location: 'eu', 'us', ... Decides which endpoint host is used. */
-  location: string;
-  /** Processor id from the Document AI console. Not a secret. */
-  processorId: string;
-  /**
-   * Language hints passed to the OCR engine. Turkish is first because that is
-   * what the source material is; Apple Vision cannot do Turkish at all, which
-   * is why this provider exists (docs/ADR-002-birincil-ocr-secimi.md).
-   */
-  languageHints: string[];
-  /** Per-request timeout in milliseconds. */
-  timeoutMs: number;
-  /**
-   * Requests Document AI's paid font-style add-on. Disabled by default until
-   * the configured Enterprise OCR processor version and billing impact have
-   * been verified in the owning Google project.
-   */
-  computeStyleInfo?: boolean;
-}
-
 export interface CostConfig {
-  /**
-   * Price reference from ANA-PLAN §10.2 (1 Aug 2026): ~1.50 USD per 1000
-   * pages. Kept configurable because the number in the spec is explicitly a
-   * reference, not a contract.
-   */
-  usdPer1000Pages: number;
-  /** Refuse to start a run that would exceed this. 0 disables the check. */
-  maxUsdPerRun: number;
   /**
    * Per-token pricing for cost estimation (§20.3, §16.8 `estimatedCostUSD`).
    * Default 0 rather than a guessed figure: no verified price exists for a
    * model this spec names ahead of its own release, and a fabricated number
    * would look authoritative in a cost log. Fill in from the provider's own
-   * pricing page once known — same "reference, not contract" caveat as
-   * `usdPer1000Pages` above.
+   * pricing page once known — a reference, not a contract.
    */
   openaiUsdPerMillionInputTokens: number;
   openaiUsdPerMillionOutputTokens: number;
-  geminiUsdPerMillionInputTokens: number;
-  geminiUsdPerMillionOutputTokens: number;
   /** Refuse to start a card-generation call that would exceed this. 0 disables the check. */
   maxUsdPerCardGeneration: number;
 }
@@ -109,25 +78,11 @@ export interface OpenAIConfig {
 export const MULTIPLE_CHOICE_MODES = ["off", "mixed", "all"] as const;
 export type MultipleChoiceMode = (typeof MULTIPLE_CHOICE_MODES)[number];
 
-export interface GeminiConfig {
-  /** Handwriting second-opinion model (§11.1); only called for uncertain spans (§10.4). */
-  model: string;
-  /**
-   * Higher than the visible §15.3 payload (text + a few uncertain spans)
-   * would suggest on its own. Confirmed live: at 700 a real call hit
-   * `MAX_TOKENS` before producing any output — this model spends part of its
-   * output budget on its own internal reasoning before the JSON, so the
-   * ceiling has to cover that too, not just the answer.
-   */
-  maxOutputTokens: number;
-  timeoutMs: number;
-}
-
 /**
  * Asynchronous job queue (docs/ADR-006). Optional: leave `SUPABASE_URL` unset
- * and `/api/ocr` and `/api/cards-vision` carry on exactly as before — only
- * `/api/jobs` refuses, and it says which variable is missing. That is why `url`
- * is `optional` here rather than `required`: a missing value must not make
+ * and `/api/cards-vision` carries on exactly as before — only `/api/jobs`
+ * refuses, and it says which variable is missing. That is why `url` is
+ * `optional` here rather than `required`: a missing value must not make
  * `loadConfig()` throw for endpoints that have nothing to do with it.
  *
  * The service-role key is deliberately absent, like every other credential in
@@ -146,27 +101,24 @@ export interface SupabaseConfig {
    * still going to answer.
    */
   staleAfterMs: number;
+  /**
+   * How long a *finished* row (`ready` or `failed`) may keep its result text
+   * before a poll-time sweep deletes it (§7.3's text half; the owner chose 60
+   * days). The accepted trade-off is written in docs/PRIVACY.md: a phone that
+   * stays away longer than this re-submits the page and pays for a second
+   * generation. There is no cron on this plan, so the sweep rides the phone's
+   * own polls, throttled inside `_jobs.ts`.
+   */
+  resultRetentionMs: number;
 }
 
 export interface Config {
-  documentAI: DocumentAIConfig;
   openai: OpenAIConfig;
-  gemini: GeminiConfig;
   cost: CostConfig;
   supabase: SupabaseConfig;
 }
 
 class ConfigError extends Error {}
-
-function required(name: string): string {
-  const value = process.env[name]?.trim();
-  if (!value) {
-    throw new ConfigError(
-      `Eksik ortam değişkeni: ${name}. backend/.env.example dosyasına bak.`,
-    );
-  }
-  return value;
-}
 
 function optional(name: string, fallback: string): string {
   const value = process.env[name]?.trim();
@@ -215,14 +167,6 @@ function numeric(name: string, fallback: number, min = 0): number {
   return value;
 }
 
-function boolean(name: string, fallback: boolean): boolean {
-  const raw = process.env[name]?.trim().toLowerCase();
-  if (!raw) return fallback;
-  if (["1", "true", "yes", "on"].includes(raw)) return true;
-  if (["0", "false", "no", "off"].includes(raw)) return false;
-  throw new ConfigError(`${name} true/false olmalı, alınan: ${raw}`);
-}
-
 /**
  * Reads configuration from the environment.
  *
@@ -231,17 +175,6 @@ function boolean(name: string, fallback: boolean): boolean {
  */
 export function loadConfig(): Config {
   return {
-    documentAI: {
-      projectId: required("GOOGLE_PROJECT_ID"),
-      location: optional("DOCUMENTAI_LOCATION", "eu"),
-      processorId: required("DOCUMENTAI_PROCESSOR_ID"),
-      languageHints: optional("DOCUMENTAI_LANGUAGE_HINTS", "tr,en")
-        .split(",")
-        .map((hint) => hint.trim())
-        .filter(Boolean),
-      timeoutMs: numeric("DOCUMENTAI_TIMEOUT_MS", 60_000, 1),
-      computeStyleInfo: boolean("DOCUMENTAI_COMPUTE_STYLE_INFO", false),
-    },
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
       // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4). The vision call has a hard 60 s
@@ -280,18 +213,9 @@ export function loadConfig(): Config {
       // retryable error instead of Vercel hard-killing the function first.
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 290_000, 1),
     },
-    gemini: {
-      model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
-      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096, 1),
-      timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
-    },
     cost: {
-      usdPer1000Pages: numeric("DOCUMENTAI_USD_PER_1000_PAGES", 1.5),
-      maxUsdPerRun: numeric("MAX_USD_PER_RUN", 0),
       openaiUsdPerMillionInputTokens: numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0),
       openaiUsdPerMillionOutputTokens: numeric("OPENAI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
-      geminiUsdPerMillionInputTokens: numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0),
-      geminiUsdPerMillionOutputTokens: numeric("GEMINI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
       maxUsdPerCardGeneration: numeric("MAX_USD_PER_CARD_GENERATION", 0),
     },
     supabase: {
@@ -302,6 +226,10 @@ export function loadConfig(): Config {
       // was killed at the ceiling is reclaimed promptly while one that is simply
       // slow is left alone.
       staleAfterMs: numeric("SUPABASE_JOB_STALE_AFTER_MS", 330_000, 1),
+      // 60 days, the owner's decision (docs/PRIVACY.md). Long enough that a
+      // phone in normal use has collected every result many times over; the
+      // residual risk of a second paid generation is accepted.
+      resultRetentionMs: numeric("SUPABASE_RESULT_RETENTION_MS", 60 * 24 * 60 * 60 * 1000, 1),
     },
   };
 }

@@ -80,11 +80,20 @@ struct CaptureView: View {
             .background(Cizgi.paper.ignoresSafeArea())
             .rootTabBarInset()
             .navigationTitle("Yakala")
+            // Value-based on purpose (both links here and the page rows inside
+            // QueueView): only a value push appends to `navigator.capturePath`,
+            // which is what lets `goHome()` actually pop this stack.
+            .navigationDestination(for: AppNavigator.CaptureRoute.self) { route in
+                switch route {
+                case .queue: QueueView()
+                }
+            }
+            .navigationDestination(for: CapturedPage.self) { page in
+                PageDetailView(page: page)
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
-                    NavigationLink {
-                        QueueView()
-                    } label: {
+                    NavigationLink(value: AppNavigator.CaptureRoute.queue) {
                         Label("Kuyruk", systemImage: "tray.full")
                     }
                 }
@@ -256,9 +265,7 @@ struct CaptureView: View {
                             .font(.subheadline)
                             .foregroundStyle(Cizgi.success)
                     }
-                    NavigationLink {
-                        QueueView()
-                    } label: {
+                    NavigationLink(value: AppNavigator.CaptureRoute.queue) {
                         Text("Kuyruğu aç")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(Cizgi.accent)

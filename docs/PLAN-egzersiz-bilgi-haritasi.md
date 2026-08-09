@@ -196,7 +196,10 @@ sayfalarından gelebileceği için kalıcı kavram düğümü ayrı tutulur.
 
 ## Değişmez kabul koşulları
 
-- Egzersiz kaydı FSRS alanlarına ve `ReviewLog`a dokunmaz.
+- Egzersiz kaydı FSRS alanlarına **yalnız `EarlyPractice` köprüsü üzerinden**
+  dokunur (erken kısmi kredi / soft lapse / vadeye yakın gerçek lapse —
+  docs/ADR-007, 2026-08-09'da bilinçli değişiklik); `ReviewLog`a asla yazmaz
+  ve vadesi gelmiş kartı asla notlamaz.
 - Aktif oturum uygulama kapanıp açılınca aynı kart sırası, konumu **ve
   filtresiyle** devam eder.
 - Aktif oturumdan her zaman görünür bir çıkış vardır.

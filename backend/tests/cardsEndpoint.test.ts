@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MIN_TOKEN_LENGTH } from "../api/_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES } from "../api/_ocr.js";
+import { MAX_IMAGE_BYTES } from "../api/_image.js";
 import {
   VISION_MIME_TYPES,
   handleCardsRequest,
@@ -152,12 +152,11 @@ describe("POST /api/cards-vision", () => {
     });
 
     it("rejects the OCR-only types the vision model cannot read", async () => {
-      // `ACCEPTED_MIME_TYPES` is Document AI's list and includes both of these.
-      // OpenAI's `input_image` takes neither, so letting them through only
-      // moved the rejection to the provider — where, on the job queue, it
-      // became a permanent failure on a job id that equals the page id.
+      // Document AI accepted both of these, so before the gate they reached
+      // OpenAI's `input_image`, which takes neither — and on the job queue the
+      // provider's 400 became a permanent failure on a job id that equals the
+      // page id.
       for (const mimeType of ["application/pdf", "image/tiff"]) {
-        expect(ACCEPTED_MIME_TYPES.has(mimeType), mimeType).toBe(true);
         const response = await handleCardsRequest(post({ ...VALID_BODY, mimeType }), deps());
         expect(response.status, mimeType).toBe(415);
       }

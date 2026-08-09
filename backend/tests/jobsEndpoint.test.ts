@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { MIN_TOKEN_LENGTH } from "../api/_auth.js";
-import { ACCEPTED_MIME_TYPES, MAX_IMAGE_BYTES } from "../api/_ocr.js";
+import { MAX_IMAGE_BYTES } from "../api/_image.js";
 import type { CardGeneratorLike } from "../api/_cards.js";
 import {
   MAX_POLL_IDS,
@@ -23,6 +23,7 @@ const OTHER_JOB_ID = "6BA7B810-9DAD-11D1-80B4-00C04FD430C8";
 
 const NOW = Date.parse("2026-08-06T12:00:00.000Z");
 const STALE_AFTER_MS = 330_000;
+const RESULT_RETENTION_MS = 60 * 24 * 60 * 60 * 1000;
 
 function validOutput(overrides: Partial<LlmOutput> = {}): LlmOutput {
   return {
@@ -163,6 +164,23 @@ function stubStore(seed: JobRow[] = []) {
       calls.push(`deleteImage:${path}`);
       images.delete(path);
     },
+    async purgeFinished(cutoffIso) {
+      calls.push(`purgeFinished:${cutoffIso}`);
+      let removed = 0;
+      for (const [id, row] of rows) {
+        // Mirrors the real filter: terminal status AND a finished_at older
+        // than the cutoff. Rows without a finished_at can never match.
+        if (
+          (row.status === "ready" || row.status === "failed") &&
+          row.finishedAt !== null &&
+          row.finishedAt < cutoffIso
+        ) {
+          rows.delete(id);
+          removed += 1;
+        }
+      }
+      return removed;
+    },
   };
 
   return { store, rows, images, calls };
@@ -198,7 +216,7 @@ function deps(
     generator: stubGenerator(validOutput()).generator,
     openai: { maxCardsPerKnowledgeUnit: 12, maxOutputTokens: 8192, multipleChoiceMode: "mixed" },
     cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
-    supabase: { staleAfterMs: STALE_AFTER_MS },
+    supabase: { staleAfterMs: STALE_AFTER_MS, resultRetentionMs: RESULT_RETENTION_MS },
     deviceToken: TOKEN,
     runInBackground: (work) => {
       pending.push(work());
@@ -841,15 +859,13 @@ describe("POST /api/jobs — doğrulama", () => {
   it("desteklenmeyen tür için 415 verir", async () => {
     const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType: "image/gif" }), deps());
     expect(response.status).toBe(415);
-    expect(ACCEPTED_MIME_TYPES.has("image/gif")).toBe(false);
   });
 
-  it("OCR'ın kabul ettiği ama vision modelinin okuyamadığı türleri kapıda çevirir", async () => {
+  it("vision modelinin okuyamadığı türleri kapıda çevirir", async () => {
     // Kalıcı hatanın bedeli burada yüksek: iş kimliği = sayfa kimliği olduğu
     // için sağlayıcıdan dönecek 400, o sayfayı kilitleyen bir `retryable=false`
     // satırına dönüşürdü.
     for (const mimeType of ["application/pdf", "image/tiff"]) {
-      expect(ACCEPTED_MIME_TYPES.has(mimeType), mimeType).toBe(true);
       const response = await handleJobsRequest(post({ ...VALID_BODY, mimeType }), deps());
       expect(response.status, mimeType).toBe(415);
     }
@@ -1010,6 +1026,81 @@ describe("GET /api/jobs", () => {
   it("token olmadan 401 verir", async () => {
     const response = await handleJobsRequest(get(JOB_ID, null), deps());
     expect(response.status).toBe(401);
+  });
+});
+
+describe("GET /api/jobs — sonuç saklama süpürmesi (§7.3)", () => {
+  const OLD = new Date(NOW - RESULT_RETENTION_MS - 1000).toISOString();
+  const FRESH = new Date(NOW - 1000).toISOString();
+
+  it("saklama süresini aşmış biten işleri yoklama sırasında siler", async () => {
+    const store = stubStore([
+      row({ status: "ready", result: { ok: true }, imagePath: null, finishedAt: OLD }),
+      row({ id: OTHER_JOB_ID, status: "queued" }),
+    ]);
+    const d = deps({ store: store.store });
+
+    await handleJobsRequest(get(OTHER_JOB_ID), d);
+    await d.settled();
+
+    expect(store.rows.has(JOB_ID)).toBe(false);
+    // The cutoff is now minus the configured retention, nothing else.
+    const expectedCutoff = new Date(NOW - RESULT_RETENTION_MS).toISOString();
+    expect(store.calls).toContain(`purgeFinished:${expectedCutoff}`);
+    expect(d.logged).toContainEqual({ event: "jobs.results_purged", removed: 1 });
+  });
+
+  it("süresi dolmamış biten işlere dokunmaz", async () => {
+    const store = stubStore([
+      row({ status: "ready", result: { ok: true }, imagePath: null, finishedAt: FRESH }),
+    ]);
+    const d = deps({ store: store.store });
+
+    await handleJobsRequest(get(JOB_ID), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)?.status).toBe("ready");
+  });
+
+  it("canlı işleri yaşına bakmadan bırakır", async () => {
+    // A queued/processing row can be arbitrarily old (a phone away for months);
+    // the sweep's status condition must leave it for the staleness path.
+    const store = stubStore([
+      row({ status: "queued", createdAt: OLD, updatedAt: OLD }),
+    ]);
+    const d = deps({ store: store.store });
+
+    await handleJobsRequest(get(JOB_ID), d);
+    await d.settled();
+
+    expect(store.rows.has(JOB_ID)).toBe(true);
+  });
+
+  it("aynı depo için süpürmeyi aralıkla sınırlar", async () => {
+    const store = stubStore([row({ id: OTHER_JOB_ID, status: "queued" })]);
+    const d = deps({ store: store.store });
+
+    await handleJobsRequest(get(OTHER_JOB_ID), d);
+    await d.settled();
+    await handleJobsRequest(get(OTHER_JOB_ID), d);
+    await d.settled();
+
+    const purges = store.calls.filter((call) => call.startsWith("purgeFinished:"));
+    expect(purges).toHaveLength(1);
+  });
+
+  it("süpürme hatası yoklamayı düşürmez", async () => {
+    const store = stubStore([row({ status: "queued" })]);
+    store.store.purgeFinished = async () => {
+      throw new SupabaseError("Supabase 500: bakım", 500, true);
+    };
+    const d = deps({ store: store.store });
+
+    const response = await handleJobsRequest(get(JOB_ID), d);
+    await d.settled();
+
+    expect(response.status).toBe(200);
+    expect(d.logged.some((entry) => entry.event === "jobs.results_purge_failed")).toBe(true);
   });
 });
 

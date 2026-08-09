@@ -1,3 +1,9 @@
+> **Not (2026-08-09):** Bu plan tarihsel bir uygulama kaydıdır. Plandaki
+> "korunan modüller diskte duruyor / kod silinmez" ifadeleri o günün
+> durumuydu; deterministik hat (backend OCR/uzlaştırma/Gemini, iOS işaret
+> tespiti/grounding/onay) 2026-08-09 tıraşında **koddan silindi** (ADR-005
+> notu). Geri dönüş = tıraş commit'inin revert'i.
+
 # Faz 6 — Vision-öncelikli kişisel yeniden tasarım (B)
 
 **Durum (2026-08-07): kod tarafı tamam ve `main`'de** (PR #15–#27). B1, B2, B3,

@@ -1,19 +1,5 @@
 import XCTest
-import CoreGraphics
 @testable import CizgiCore
-
-/// Deterministic stand-in for Vision. The Faz 6 vision pipeline no longer runs
-/// local OCR, but `CapturePipeline.init` still takes a recognizer (retained
-/// seam), so tests need one to construct the pipeline.
-struct StubRecognizer: TextRecognizing {
-    var lines: [RecognizedLine]
-    var error: TextRecognitionError?
-
-    func recognize(imageAt url: URL) async throws -> RecognizedPage {
-        if let error { throw error }
-        return RecognizedPage(lines: lines, elapsed: 0.05)
-    }
-}
 
 /// Holds a concrete `CardGenerationError` rather than `any Error`, because
 /// `CardGenerating` is Sendable and `Error` is not.
@@ -92,7 +78,7 @@ final class CapturePipelineTests: XCTestCase {
     }
 
     private func pipeline(generator: any CardGenerating) -> CapturePipeline {
-        CapturePipeline(recognizer: StubRecognizer(lines: []), generator: generator)
+        CapturePipeline(generator: generator)
     }
 
     func testMarkedPageBecomesReadyWithActiveCards() async {

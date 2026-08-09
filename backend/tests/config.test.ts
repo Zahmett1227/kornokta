@@ -3,13 +3,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ConfigError, loadConfig } from "../config.js";
 
 const KEYS = [
-  "GOOGLE_PROJECT_ID",
-  "DOCUMENTAI_LOCATION",
-  "DOCUMENTAI_PROCESSOR_ID",
-  "DOCUMENTAI_LANGUAGE_HINTS",
-  "DOCUMENTAI_TIMEOUT_MS",
-  "DOCUMENTAI_USD_PER_1000_PAGES",
-  "MAX_USD_PER_RUN",
   "OPENAI_MODEL",
   "OPENAI_REASONING_EFFORT",
   "OPENAI_IMAGE_DETAIL",
@@ -18,33 +11,22 @@ const KEYS = [
   "OPENAI_TIMEOUT_MS",
   "OPENAI_USD_PER_MILLION_INPUT_TOKENS",
   "OPENAI_USD_PER_MILLION_OUTPUT_TOKENS",
-  "GEMINI_MODEL",
-  "GEMINI_MAX_OUTPUT_TOKENS",
-  "GEMINI_TIMEOUT_MS",
-  "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
-  "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
   "MAX_USD_PER_CARD_GENERATION",
   "SUPABASE_URL",
   "SUPABASE_BUCKET",
   "SUPABASE_TIMEOUT_MS",
   "SUPABASE_JOB_STALE_AFTER_MS",
+  "SUPABASE_RESULT_RETENTION_MS",
 ];
 
 /** Read directly at the composition root, never through `loadConfig()` (§0.7). */
-const CREDENTIAL_KEYS = [
-  "GOOGLE_APPLICATION_CREDENTIALS",
-  "OPENAI_API_KEY",
-  "GEMINI_API_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-];
+const CREDENTIAL_KEYS = ["OPENAI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
 let saved: Record<string, string | undefined> = {};
 
 beforeEach(() => {
   saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
   for (const key of KEYS) delete process.env[key];
-  process.env.GOOGLE_PROJECT_ID = "kornokta";
-  process.env.DOCUMENTAI_PROCESSOR_ID = "6213367b4c106c7e";
 });
 
 afterEach(() => {
@@ -55,43 +37,10 @@ afterEach(() => {
 });
 
 describe("loadConfig", () => {
-  it("reads the required values", () => {
-    const config = loadConfig();
-    expect(config.documentAI.projectId).toBe("kornokta");
-    expect(config.documentAI.processorId).toBe("6213367b4c106c7e");
-  });
-
-  it("defaults the location to eu", () => {
-    expect(loadConfig().documentAI.location).toBe("eu");
-    process.env.DOCUMENTAI_LOCATION = "us";
-    expect(loadConfig().documentAI.location).toBe("us");
-  });
-
-  it("puts Turkish first in the default language hints", () => {
-    // Not cosmetic: it is the language the source material is in and the one
-    // Apple Vision cannot do (docs/FAZ0-BULGULAR.md).
-    expect(loadConfig().documentAI.languageHints[0]).toBe("tr");
-  });
-
-  it("splits and trims language hints", () => {
-    process.env.DOCUMENTAI_LANGUAGE_HINTS = " tr , en ,, de ";
-    expect(loadConfig().documentAI.languageHints).toEqual(["tr", "en", "de"]);
-  });
-
-  it("names the variable that is missing", () => {
-    delete process.env.GOOGLE_PROJECT_ID;
-    expect(() => loadConfig()).toThrow(ConfigError);
-    expect(() => loadConfig()).toThrow(/GOOGLE_PROJECT_ID/);
-  });
-
-  it("treats a blank value as missing", () => {
-    process.env.DOCUMENTAI_PROCESSOR_ID = "   ";
-    expect(() => loadConfig()).toThrow(/DOCUMENTAI_PROCESSOR_ID/);
-  });
-
   it("rejects a non-numeric number rather than silently using NaN", () => {
-    process.env.DOCUMENTAI_TIMEOUT_MS = "çok";
-    expect(() => loadConfig()).toThrow(/DOCUMENTAI_TIMEOUT_MS/);
+    process.env.OPENAI_TIMEOUT_MS = "çok";
+    expect(() => loadConfig()).toThrow(ConfigError);
+    expect(() => loadConfig()).toThrow(/OPENAI_TIMEOUT_MS/);
   });
 
   it("refuses a zero or negative staleness window instead of reclaiming live workers", () => {
@@ -113,28 +62,19 @@ describe("loadConfig", () => {
     expect(() => loadConfig()).toThrow(/OPENAI_MAX_OUTPUT_TOKENS/);
   });
 
+  it("refuses a non-positive result retention window", () => {
+    // At 0 every finished row would be eligible for deletion the moment it was
+    // written, racing the phone that was about to collect it.
+    process.env.SUPABASE_RESULT_RETENTION_MS = "0";
+    expect(() => loadConfig()).toThrow(/SUPABASE_RESULT_RETENTION_MS/);
+  });
+
   it("still allows 0 for the cost ceilings, where it documents 'disabled'", () => {
     process.env.MAX_USD_PER_CARD_GENERATION = "0";
     expect(loadConfig().cost.maxUsdPerCardGeneration).toBe(0);
     // Negative is still a typo, not a setting.
     process.env.MAX_USD_PER_CARD_GENERATION = "-1";
     expect(() => loadConfig()).toThrow(/MAX_USD_PER_CARD_GENERATION/);
-  });
-
-  it("carries the §10.2 price reference as a changeable default", () => {
-    expect(loadConfig().cost.usdPer1000Pages).toBe(1.5);
-    process.env.DOCUMENTAI_USD_PER_1000_PAGES = "2.25";
-    expect(loadConfig().cost.usdPer1000Pages).toBe(2.25);
-  });
-
-  it("does not read credentials into config", () => {
-    // §0.7: the key is resolved by the Google library from
-    // GOOGLE_APPLICATION_CREDENTIALS and never passes through our own code,
-    // so it cannot reach a log line or an error message.
-    process.env.GOOGLE_APPLICATION_CREDENTIALS = "/gizli/key.json";
-    const serialized = JSON.stringify(loadConfig());
-    expect(serialized).not.toContain("gizli");
-    expect(serialized).not.toContain("key.json");
   });
 
   it("defaults the OpenAI card-generation settings from §11.3", () => {
@@ -155,31 +95,21 @@ describe("loadConfig", () => {
     expect(loadConfig().openai.model).toBe("gpt-5.6-sol-2026-09-01");
   });
 
-  it("defaults the Gemini handwriting fallback settings", () => {
-    expect(loadConfig().gemini.model).toBe("gemini-3.5-flash");
-    // Not 700: a live call at 700 hit MAX_TOKENS before producing any output
-    // (the model spends part of its budget on internal reasoning), so the
-    // default has headroom above what the visible §15.3 payload needs.
-    expect(loadConfig().gemini.maxOutputTokens).toBe(4096);
-  });
-
   it("defaults per-token cost to 0 rather than a guessed price", () => {
-    // No verified OpenAI/Gemini price exists for a model ANA-PLAN names ahead
-    // of its own release; a fabricated number would look authoritative in a
-    // cost log (§20.3).
+    // No verified OpenAI price exists for a model ANA-PLAN names ahead of its
+    // own release; a fabricated number would look authoritative in a cost log
+    // (§20.3).
     const { cost } = loadConfig();
     expect(cost.openaiUsdPerMillionInputTokens).toBe(0);
     expect(cost.openaiUsdPerMillionOutputTokens).toBe(0);
-    expect(cost.geminiUsdPerMillionInputTokens).toBe(0);
-    expect(cost.geminiUsdPerMillionOutputTokens).toBe(0);
     expect(cost.maxUsdPerCardGeneration).toBe(0);
   });
 
   it("leaves the job queue off until SUPABASE_URL is set (docs/ADR-006)", () => {
-    // Optional on purpose: with no URL, `/api/ocr` and `/api/cards-vision` must
-    // keep working exactly as before and only `/api/jobs` refuse. A `required()`
-    // here would make `loadConfig()` throw for endpoints that have nothing to
-    // do with the queue.
+    // Optional on purpose: with no URL, `/api/cards-vision` must keep working
+    // exactly as before and only `/api/jobs` refuse. A `required()` here would
+    // make `loadConfig()` throw for endpoints that have nothing to do with the
+    // queue.
     expect(loadConfig().supabase.url).toBe("");
     process.env.SUPABASE_URL = "https://abcd.supabase.co";
     expect(loadConfig().supabase.url).toBe("https://abcd.supabase.co");
@@ -192,6 +122,10 @@ describe("loadConfig", () => {
     expect(loadConfig().supabase.bucket).toBe("page-uploads");
   });
 
+  it("keeps finished results for 60 days by default (docs/PRIVACY.md)", () => {
+    expect(loadConfig().supabase.resultRetentionMs).toBe(60 * 24 * 60 * 60 * 1000);
+  });
+
   it("never reads SUPABASE_SERVICE_ROLE_KEY into config", () => {
     // Same rule as every other credential (§0.7). This one matters most: it
     // bypasses row-level security entirely.
@@ -201,15 +135,13 @@ describe("loadConfig", () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   });
 
-  it("never reads OPENAI_API_KEY or GEMINI_API_KEY into config", () => {
-    // Same rule as GOOGLE_APPLICATION_CREDENTIALS above (§0.7): a provider key
-    // is read directly at the composition root, never through this module.
+  it("never reads OPENAI_API_KEY into config", () => {
+    // A provider key is read directly at the composition root, never through
+    // this module (§0.7).
     process.env.OPENAI_API_KEY = "sk-gizli-openai";
-    process.env.GEMINI_API_KEY = "gizli-gemini";
     const serialized = JSON.stringify(loadConfig());
     expect(serialized).not.toContain("gizli");
     delete process.env.OPENAI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
   });
 });
 

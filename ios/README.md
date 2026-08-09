@@ -28,31 +28,30 @@ sorulur. Ne kadarının beş şıklı olacağı Ayarlar → "Beş şıklı kart"
 **Yeni dosya eklendiyse `cd ios && xcodegen generate` şart** — `.xcodeproj`
 bilinçli olarak commit edilmiyor.
 
-## Apple Vision Türkçe okumuyor — bilerek
+## Cihazda OCR yok — bilerek
 
-`docs/ADR-002-birincil-ocr-secimi.md`: Apple Vision Türkçe metin tanımayı
-desteklemiyor (ölçüldü — `ı ş ğ İ` sıfır kez). Faz 6'dan beri uygulama cihazda
-hiç OCR yapmıyor; sayfayı okuyan tek şey vision modeli. Vision/Document AI
-kodu geri dönüş için duruyor ve bu kural onun için hâlâ geçerli: Apple'ın
-metni hiçbir zaman karta gitmez.
+Faz 6'dan beri uygulama cihazda hiç OCR yapmıyor; sayfayı okuyan tek şey
+backend'deki vision modeli. Apple Vision zaten Türkçe metin tanımayı
+desteklemiyordu (ölçüldü — `docs/ADR-002`, tarihsel); eski OCR/işaret-tespiti
+katmanı 2026-08-09 tıraşında koddan silindi.
 
 ## Yapı
 
 ```
 ios/
 ├── CizgiCore/          Swift paketi — mantık, Xcode'suz test edilebilir
-│   ├── Models/             SwiftData modelleri (§16)
-│   ├── Queue/              Durum makinesi ve işlem hattı (§17)
-│   ├── OCR/                TextRecognizing + Vision uygulaması — önizleme/geometri (§10.1)
-│   ├── Backend/             BackendClient, DeviceTokenStore (Keychain), UploadImageEncoder
-│   ├── MarkerDetection/     İşaret tespiti — evals/spikes/marker_detection'ın Swift portu (§9)
+│   ├── Models/             SwiftData modelleri (§16), ders/konu şeması, Bilgi Haritası
+│   ├── Annotation/         AnnotationGroup — persist'in konuştuğu grup sözleşmesi
+│   ├── Queue/              Durum makinesi ve vision işlem hattı (§17)
+│   ├── Backend/             BackendConfiguration, DeviceTokenStore (Keychain), UploadImageEncoder
 │   ├── Providers/          Kart üretimi protokolü: sahte + gerçek backend sağlayıcı
-│   ├── Scheduling/         FSRS-6 + oturum kurgusu (ReviewSession, ReviewPace, hatırlatıcı planı)
-│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle, algısal hash
+│   ├── Scheduling/         FSRS-6 + oturum kurgusu + Egzersiz (ExerciseSession,
+│   │                       EarlyPractice — ADR-007 köprüsü, ReviewSession, ReviewPace)
+│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle (v5), algısal hash
 ├── App/                SwiftUI uygulaması
-│   └── Features/Capture, ProcessingQueue, Review, Library, Settings
-│                       (Confirmation/ ana akıştan çıktı, kod duruyor)
-├── spikes/AppleVisionSpike/   Ölçüm aracı — --input bir klasörü özyinelemeli tarar
+│   └── Features/Capture, ProcessingQueue, Review (Tekrar + Egzersiz),
+│                Library (Bilgilerim + Bilgi Haritası), Settings
+├── spikes/AppleVisionSpike/   Tarihsel ölçüm aracı (bağımsız paket)
 └── project.yml         XcodeGen spec
 ```
 
@@ -64,10 +63,11 @@ swift test
 ```
 
 Kapsam: durum makinesi, işlem hattı, tekrar oturumu (kuyruk/öğrenme adımı/geri
-alma/günlük hak), kart düzenleme ve kaynak çözümleme kuralları, yedek al/geri
-yükle, algısal hash, hatırlatıcı planı, görüntü deposu, backend istemcisi,
-FSRS-6 ve işaret tespiti (ikisi de paylaşılan Python vakalarına karşı
-sabitlenmiş). Kamera ve SwiftUI dışarıda kalır — onlar cihazda denenir.
+alma/günlük hak), Egzersiz oturumu ve `EarlyPractice` köprüsü, kart düzenleme
+ve kaynak çözümleme kuralları, yedek al/geri yükle, algısal hash, hatırlatıcı
+planı, görüntü deposu, backend sağlayıcısı, beş şıklı kart kuralları ve FSRS-6
+(paylaşılan Python vakalarına karşı sabitlenmiş). Kamera ve SwiftUI dışarıda
+kalır — onlar cihazda denenir.
 
 Paket **yalnız bir Mac'te derlenir** (CoreGraphics, SwiftData). Linux'ta
 Foundation'a bağlı dosyalar izole bir pakete alınıp gerçekten koşturulabilir;

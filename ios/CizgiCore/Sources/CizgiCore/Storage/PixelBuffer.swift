@@ -131,31 +131,6 @@ public struct PixelBuffer: Sendable {
     }
 }
 
-/// A rectangle clamped to the image.
-///
-/// Returns nil when the requested rectangle lies wholly outside it. Clamping
-/// alone is not enough: a negative upper bound would be read as an offset from
-/// the far edge and select a large unrelated region — a bug the reference
-/// implementation hit and fixed.
-public struct PixelRegion: Sendable, Equatable {
-    public let x: Int
-    public let y: Int
-    public let width: Int
-    public let height: Int
-
-    public init?(x: Int, y: Int, width: Int, height: Int, in buffer: PixelBuffer) {
-        let x0 = max(0, x)
-        let y0 = max(0, y)
-        let x1 = min(buffer.width, x + width)
-        let y1 = min(buffer.height, y + height)
-        guard x1 > x0, y1 > y0 else { return nil }
-        self.x = x0
-        self.y = y0
-        self.width = x1 - x0
-        self.height = y1 - y0
-    }
-}
-
 extension CGColor {
     /// A colour explicitly tagged with `PixelBuffer.pixelColorSpace`, rather
     /// than the untagged convenience initializers (`CGColor(red:green:blue:alpha:)`,
