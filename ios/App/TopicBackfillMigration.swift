@@ -29,7 +29,10 @@ import CizgiCore
 /// move anything.
 @MainActor
 enum TopicBackfillMigration {
-    static let flagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v1"
+    // v2: v1 set this flag unconditionally even when the topic-name typo
+    // made every respiratory mapping fail validation (or the store was
+    // empty), so a device that already ran v1 must not be skipped here.
+    static let flagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v2"
     private static let targetSubject = "Patoloji"
 
     static func runIfNeeded(container: ModelContainer, defaults: UserDefaults = .standard) {
