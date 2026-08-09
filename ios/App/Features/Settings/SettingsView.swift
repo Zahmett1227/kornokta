@@ -372,7 +372,8 @@ struct SettingsView: View {
                     lowConfidence: card.lowConfidence,
                     // Alongside `subject`: without it a restored deck lands
                     // entirely in "Konusuz" and no topic filter reproduces it.
-                    topic: card.knowledgeUnit?.topic
+                    topic: card.knowledgeUnit?.topic,
+                    softLapseCount: card.softLapseCount
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -459,6 +460,7 @@ struct SettingsView: View {
         card.difficulty = record.difficulty
         card.reviewCount = record.reviewCount
         card.lapseCount = record.lapseCount
+        card.softLapseCount = record.softLapseCount
         card.lastReviewedAt = record.lastReviewedAt
         card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
 

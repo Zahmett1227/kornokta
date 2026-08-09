@@ -683,6 +683,14 @@ struct ExerciseView: View {
             context.insert(attempt)
         }
 
+        // The guarded FSRS bridge (docs/ADR-007): a practice answer may earn
+        // partial stability credit, pull a missed card forward, or — close
+        // enough to due — count as a real lapse. All policy lives in
+        // `EarlyPractice`; the card is only ever touched with what it returns.
+        if let card = allCards.first(where: { $0.id == cardId }) {
+            applyEarlyPractice(result: result, to: card, at: answeredAt)
+        }
+
         working.record(result)
         session = working
         currentRun?.position = working.position
@@ -691,6 +699,33 @@ struct ExerciseView: View {
         }
         try? context.save()
         resetCardState()
+    }
+
+    /// Applies exactly what `EarlyPractice.update` allows, nothing more. The
+    /// save rides `recordAndAdvance`'s existing `context.save()`.
+    private func applyEarlyPractice(result: ExerciseResult, to card: Card, at now: Date) {
+        let update = EarlyPractice.update(
+            result: result,
+            state: SchedulingState(
+                stability: card.stability,
+                difficulty: card.difficulty,
+                reviewCount: card.reviewCount,
+                lapseCount: card.lapseCount,
+                lastReviewedAt: card.lastReviewedAt
+            ),
+            dueDate: card.dueDate,
+            scheduler: environment.scheduler,
+            now: now
+        )
+        guard update.touchesCard else { return }
+        if let stability = update.stability { card.stability = stability }
+        if let difficulty = update.difficulty { card.difficulty = difficulty }
+        if let dueDate = update.dueDate { card.dueDate = dueDate }
+        if let lastReviewedAt = update.lastReviewedAt { card.lastReviewedAt = lastReviewedAt }
+        card.reviewCount += update.reviewCountDelta
+        card.lapseCount += update.lapseCountDelta
+        card.softLapseCount += update.softLapseCountDelta
+        card.updatedAt = now
     }
 
     private func resultButton(_ title: String, result: ExerciseResult, tint: Color) -> some View {

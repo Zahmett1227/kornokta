@@ -24,7 +24,7 @@ public enum BackupExporter {
     /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2).
     /// Older files still restore: every field added after version 1 is decoded
     /// with `decodeIfPresent`.
-    public static let formatVersion = 4
+    public static let formatVersion = 5
 
     /// One graded review, as recorded at the time (§16.7).
     public struct ReviewRecord: Codable, Sendable, Equatable {
@@ -100,6 +100,10 @@ public enum BackupExporter {
         /// without it every restored card falls into the "Konusuz" bucket and
         /// the topic filters no longer reproduce the deck that was backed up.
         public let topic: String?
+        // --- added in version 5 ---
+        /// Early practice misses (docs/ADR-007). Scheduling state like
+        /// `lapseCount`, so it travels with the card.
+        public let softLapseCount: Int
 
         public init(
             id: UUID,
@@ -123,7 +127,8 @@ public enum BackupExporter {
             reviews: [ReviewRecord] = [],
             options: [CardOption]? = nil,
             lowConfidence: Bool = false,
-            topic: String? = nil
+            topic: String? = nil,
+            softLapseCount: Int = 0
         ) {
             self.id = id
             self.type = type
@@ -147,6 +152,7 @@ public enum BackupExporter {
             self.options = options
             self.lowConfidence = lowConfidence
             self.topic = topic
+            self.softLapseCount = softLapseCount
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -176,6 +182,7 @@ public enum BackupExporter {
             options = try values.decodeIfPresent([CardOption].self, forKey: .options)
             lowConfidence = try values.decodeIfPresent(Bool.self, forKey: .lowConfidence) ?? false
             topic = try values.decodeIfPresent(String.self, forKey: .topic)
+            softLapseCount = try values.decodeIfPresent(Int.self, forKey: .softLapseCount) ?? 0
         }
     }
 

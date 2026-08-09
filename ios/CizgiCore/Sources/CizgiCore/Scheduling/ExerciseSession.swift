@@ -1,7 +1,10 @@
 import Foundation
 
 /// A self-contained practice result. These values are intentionally not review
-/// ratings: recording one must never alter FSRS scheduling state.
+/// ratings: the session itself never grades. What a practice answer *may* do
+/// to FSRS state is decided in one place, `EarlyPractice` (docs/ADR-007) —
+/// partial credit early, soft lapse on an early miss, a real lapse only close
+/// to due — and applied by the caller, never from here.
 public enum ExerciseResult: String, Codable, CaseIterable, Sendable {
     case knew
     case unsure
@@ -28,13 +31,13 @@ public struct ExerciseSummary: Equatable, Sendable {
     }
 }
 
-/// A free-practice run over a set of cards, independent of FSRS.
+/// A free-practice run over a set of cards.
 ///
 /// Deliberately *not* a `ReviewSession`: nothing here grades, requeues, writes
 /// a `ReviewLog` or touches a card's scheduling state. It is a shuffled walk
-/// with a position — question, answer, next — for going over a subject before
-/// an exam without disturbing the spaced-repetition history that took months
-/// to build.
+/// with a position — question, answer, next. (Since docs/ADR-007 a practice
+/// answer *can* reach FSRS, but only through the guarded `EarlyPractice`
+/// policy applied by the recording caller — the session stays pure.)
 ///
 /// The shuffle takes an injected generator so the order is testable; production
 /// passes `SystemRandomNumberGenerator`.
