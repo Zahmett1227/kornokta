@@ -41,12 +41,6 @@ enum TopicBackfillMigration {
     // (a card unseen because it didn't exist yet is simply not in the set).
     private static let seenIdsKey = "cizgi.migration.topicBackfill.deck2026_08_08.v2.seenIds"
     private static let targetSubject = "Patoloji"
-    // The one topic v1's typo made it impossible to ever write correctly —
-    // every other mapping already passed validation under v1. Used below to
-    // tell a genuinely unmigrated card apart from a v1 success the user
-    // later reset to Konusuz, on the first v2 launch, before `seenIds` has
-    // any history to consult.
-    private static let respiratoryTopic = "Solunum Sistem Hastalıkları"
 
     static func runIfNeeded(container: ModelContainer, defaults: UserDefaults = .standard) {
         guard !defaults.bool(forKey: flagKey) else { return }
@@ -60,21 +54,6 @@ enum TopicBackfillMigration {
         let context = ModelContext(container)
         do {
             let cards = try context.fetch(FetchDescriptor<Card>())
-
-            // Ground truth from the store itself, not a flag: if any
-            // non-respiratory known card already carries a topic, v1 must
-            // have run with this deck present and classified that whole
-            // group correctly (their mapping was never wrong). A nil
-            // topic elsewhere in that group is then not "unmigrated" — it
-            // can only be the user deliberately picking Konusuz again —
-            // and must be left alone even before `seenIds` has recorded it.
-            let nonRespiratoryGroupAlreadyWritten = cards.contains { card in
-                guard let topic = knownTopics[card.id.uuidString.uppercased()],
-                      topic != respiratoryTopic
-                else { return false }
-                return card.knowledgeUnit?.topic != nil
-            }
-
             for card in cards {
                 let id = card.id.uuidString.uppercased()
                 guard let topic = knownTopics[id], !seenIds.contains(id) else { continue }
@@ -82,10 +61,24 @@ enum TopicBackfillMigration {
                 // recorded before the eligibility checks below so a card
                 // that's already classified (by v1, or by the user) is
                 // marked seen without being touched, and never revisited.
+                //
+                // This still has one narrow, deliberately accepted gap: a
+                // card v1 classified and the user reset to Konusuz strictly
+                // between v1 running and v2's very first launch looks
+                // identical to a never-classified one here, because v1 kept
+                // no history of what it wrote. An additional "does any
+                // sibling in this topic already carry it" check was tried
+                // and reverted — restore is additive (`SettingsView.
+                // restore`/`BackupRestorer.plan` only inserts ids missing
+                // from the store), so a single already-classified card
+                // proves nothing about others restored later, and that
+                // inference silently broke every such restore. The reverted
+                // gap is a one-time, self-correcting mislabel (re-open
+                // CardEditorView and pick Konusuz again); the restore
+                // breakage was permanent and far more likely to actually
+                // happen. Not fixing this is a deliberate choice, not an
+                // oversight.
                 seenIds.insert(id)
-                if topic != respiratoryTopic, nonRespiratoryGroupAlreadyWritten {
-                    continue
-                }
                 guard schema.isValidTopic(topic, subject: targetSubject),
                       let unit = card.knowledgeUnit,
                       unit.subject == targetSubject,
