@@ -121,5 +121,10 @@ Ayrıntılı dosya bazlı döküm [`FAZ6-PLAN.md`](FAZ6-PLAN.md)'dedir. Özet:
   modelinin (a) yoğun-işaretli sayfada "sadece önemsenen kısmı" seçmesi ve (b)
   Türkçe el yazısı notları doğru okuması, gerçek sayfalarla iteratif olarak
   ölçülmelidir (FAZ6-PLAN §B3). Bu ADR o ölçümün yerine geçmez.
-- Geri dönüş mümkün: eski deterministik akış kodu silinmediği için, istenirse
-  "güvenli mod" bir config bayrağıyla geri getirilebilir (FAZ6-PLAN'da opsiyonel).
+- ~~Geri dönüş mümkün: eski deterministik akış kodu silinmediği için, istenirse
+  "güvenli mod" bir config bayrağıyla geri getirilebilir (FAZ6-PLAN'da opsiyonel).~~
+  **Güncelleme (2026-08-09):** kullanıcı kararıyla ölü kod tıraşlandı —
+  deterministik hattın kodu (backend OCR/uzlaştırma/Gemini, iOS işaret
+  tespiti/grounding/onay ekranı) artık repoda değil. Geri dönüş hâlâ mümkün
+  ama bir bayrak değil: tıraş commit'inin (`git log`'da "Ölü kodu tıraşla")
+  revert'i. Bu ADR'nin karar ve gerekçe kaydı değişmeden geçerli.

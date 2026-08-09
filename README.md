@@ -28,7 +28,7 @@ adım oranın tek kaynağıdır; buradaki tablo yalnız kaba bir özettir.
 |---|---|---|
 | **Faz 0** | Risk azaltma — OCR/işaret ölçüm altyapısı, Apple Vision'ın Türkçe desteklemediğinin kanıtlanması | ✅ Tamam |
 | **Faz 1** | Yerel uygulama iskeleti — SwiftData, kuyruk, durum makinesi, sahte kart üretimi | ✅ Tamam |
-| **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod tamam — ama **Faz 6'da ana akıştan çıktı**; kod geri dönüş için duruyor, çağrılmıyor. Bkz. `docs/FAZ2-PLAN.md` |
+| **Faz 2** | Bulut OCR (Google Document AI), işaret tespiti, uzlaştırma, onay ekranı | ✅ Kod tamamdı — Faz 6'da ana akıştan çıktı, **2026-08-09 tıraşında koddan silindi** (geri dönüş = tıraş commit'inin revert'i). Tarihsel kayıt: `docs/FAZ2-PLAN.md`, `docs/HISTORY.md` |
 | **Faz 3** | AI kart üretimi (OpenAI Structured Outputs) | ✅ Tamam; kart yolu Faz 6'da v2'ye (vision) revize edildi. Bkz. `docs/FAZ3-PLAN.md` |
 | **Faz 4** | FSRS tekrar motoru | ✅ Gerçek FSRS-6 (Python referansı + Swift portu). Bildirimler, günlük yeni kart limiti ve süre bütçeli hızlı oturum dahil. Bkz. `docs/FAZ4-PLAN.md` |
 | **Faz 5** | Sertleştirme | ✅ Tamam; kabul listesi kullanıcının iPhone'unda 2026-08-07'de koşuldu. Bkz. `docs/FAZ5-DURUM.md` |
@@ -38,8 +38,7 @@ adım oranın tek kaynağıdır; buradaki tablo yalnız kaba bir özettir.
 
 Backend gerçek bir Vercel dağıtımında canlı; kart üretimi `POST /api/jobs` →
 Supabase iş kuyruğu → OpenAI vision üzerinden asenkron çalışıyor ve gerçek
-cihazla uçtan uca doğrulandı. Test durumunun güncel sayıları ve hangi ortamda
-koşulduğu [`CLAUDE.md`](CLAUDE.md) "Test durumu" bölümünde.
+cihazla uçtan uca doğrulandı. Test sayılarının tek kaynağı CI'dır; durum özeti [`CLAUDE.md`](CLAUDE.md)'de.
 
 ## Repo yapısı
 
@@ -47,7 +46,7 @@ Ana plan §26'daki yapı izlenir:
 
 ```text
 ├── ios/          # SwiftUI uygulaması — CizgiCore (mantık) + App (arayüz)
-├── backend/      # Vercel Functions — Google Document AI proxy'si, dağıtık
+├── backend/      # Vercel Functions — OpenAI vision kart üretimi + Supabase iş kuyruğu
 ├── evals/        # Altın test seti, OCR/işaret metrikleri, spike'lar
 │   ├── gold-manifest.json         # Altın set manifesti
 │   ├── gold-manifest.schema.json  # Manifest JSON şeması
@@ -55,8 +54,8 @@ Ana plan §26'daki yapı izlenir:
 │   ├── ocr_eval/                  # Metrikler, kritik token, doğrulayıcı, raporlar
 │   ├── card_quality/               # §23.3 kart kalite rubriği + toplama aracı (Faz 3 çıkış kapısı)
 │   ├── fsrs/                       # FSRS-6 referans algoritması (Faz 4)
-│   ├── spikes/                    # marker_detection (işaret tespiti referansı)
-│   └── tests/                     # pytest birim testleri (503 test)
+│   ├── spikes/                    # marker_detection (tarihsel işaret tespiti referansı)
+│   └── tests/                     # pytest birim testleri
 └── docs/         # Mimari, gizlilik, faz planları, kurulum rehberleri
 ```
 
@@ -64,20 +63,20 @@ Ana plan §26'daki yapı izlenir:
 
 ```bash
 pip install -r evals/requirements.txt
-python -m pytest evals                                    # 503 test
+python -m pytest evals
 python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
 ```
 
 ## iOS mantığını test etme
 
 ```bash
-cd ios/CizgiCore && swift test                             # 136 test (hepsi Mac'te doğrulandı)
+cd ios/CizgiCore && swift test                             # yalnız bir Mac'te / CI
 ```
 
 ## Backend'i çalıştırma
 
 ```bash
-cd backend && npm install && npm test                      # 419 test
+cd backend && npm install && npm test
 npm run serve                                               # yerel sunucu, 127.0.0.1:8787
 ```
 
