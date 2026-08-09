@@ -29,13 +29,13 @@ public struct KnowledgeMapCard: Equatable, Sendable {
 
 /// A group of cards that is *not* a canonical node — the "Konusuz" bucket, or
 /// cards carrying a topic name the schema does not know.
-public struct KnowledgeMapBucket: Equatable, Sendable {
+public struct KnowledgeMapBucket: Equatable, Hashable, Sendable {
     public let cardCount: Int
     public let activeCount: Int
     public let weakCardCount: Int
 }
 
-public struct KnowledgeMapTopicSummary: Identifiable, Equatable, Sendable {
+public struct KnowledgeMapTopicSummary: Identifiable, Equatable, Hashable, Sendable {
     public var id: String { "\(subject)\u{1F}\(topic)" }
     public let subject: String
     public let topic: String
@@ -45,7 +45,7 @@ public struct KnowledgeMapTopicSummary: Identifiable, Equatable, Sendable {
     public let weakCardCount: Int
 }
 
-public struct KnowledgeMapSubjectSummary: Identifiable, Equatable, Sendable {
+public struct KnowledgeMapSubjectSummary: Identifiable, Equatable, Hashable, Sendable {
     public var id: String { subject }
     public let subject: String
     public let cardCount: Int

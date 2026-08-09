@@ -34,9 +34,10 @@ struct RootView: View {
         //    deserves: a labelled bar, never five blank items.
         // 2. The replacement is attached per tab root (`rootTabBarInset`),
         //    *inside* each NavigationStack. A pushed screen is then simply a
-        //    different view and loses the bar with no bookkeeping — no depth
-        //    flag and no `NavigationPath.isEmpty` check, neither of which this
-        //    app can answer correctly (see `AppNavigator`).
+        //    different view and loses the bar with no bookkeeping. Pushes are
+        //    value-based now, so `NavigationPath.isEmpty` would also be
+        //    correct — but placement needs no flag to keep in sync at all,
+        //    which is why it stays.
         TabView(selection: $navigator.selectedTab) {
             CaptureView()
                 .tabItem { Label("Yakala", systemImage: "camera") }
@@ -116,12 +117,9 @@ struct RootView: View {
 /// Must be applied *inside* the tab's `NavigationStack`, to the root screen
 /// only. That placement is what makes depth handling free: a pushed detail
 /// screen is a different view, so it never receives the inset and the bar goes
-/// away on its own. Deriving the same thing from `NavigationPath.isEmpty` does
-/// not work here — every push in this app is a view-based `NavigationLink`,
-/// which leaves the bound path empty, so the bar would have stayed on every
-/// detail screen (the exact overlap `ConfirmationView` once had to work around,
-/// and whose `.toolbar(.hidden, for: .tabBar)` no longer applies to a bar that
-/// is not the TabView's).
+/// away on its own — no flag to keep in sync. (Since the value-based
+/// navigation refactor the bound paths do track depth, so `isEmpty` would work
+/// too; placement simply needs no bookkeeping at all.)
 struct RootTabBarInset: ViewModifier {
     @EnvironmentObject private var navigator: AppNavigator
 

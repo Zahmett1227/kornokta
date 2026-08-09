@@ -27,6 +27,13 @@ final class AppNavigator: ObservableObject {
         case capture, review, exercise, library, settings
     }
 
+    /// Value-based routes for the Capture tab's stack. An enum rather than
+    /// pushing a model object because the queue screen has no model of its
+    /// own; `PageDetailView` pushes the `CapturedPage` itself.
+    enum CaptureRoute: Hashable {
+        case queue
+    }
+
     /// Egzersiz is the product's daily working surface, so launches and the
     /// global home action both land here. Capture remains one tap away.
     @Published var selectedTab: RootTab = .exercise
@@ -46,10 +53,11 @@ final class AppNavigator: ObservableObject {
     // Capture, Exercise and Library own child navigation. Keeping independent
     // paths means switching tabs never destroys another tab's place.
     //
-    // Caveat worth knowing before relying on these: every push in the app is a
-    // view-based `NavigationLink { destination }`, which does not append to a
-    // bound `NavigationPath`. Resetting them below is therefore best-effort,
-    // and nothing that has to be *correct* may be derived from `isEmpty`.
+    // Every push in the app is value-based (`NavigationLink(value:)` +
+    // `navigationDestination`), so these paths genuinely track depth and
+    // resetting them below really pops to the root. Keep it that way: a
+    // view-based `NavigationLink { destination }` would not append to the
+    // bound path, silently breaking `goHome()` for its screen.
     @Published var capturePath = NavigationPath()
     @Published var exercisePath = NavigationPath()
     @Published var libraryPath = NavigationPath()

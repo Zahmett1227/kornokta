@@ -67,9 +67,9 @@ struct KnowledgeMapView: View {
 
                     LazyVStack(spacing: Cizgi.Space.md) {
                         ForEach(map.subjects) { summary in
-                            NavigationLink {
-                                KnowledgeSubjectView(summary: summary)
-                            } label: {
+                            // Value push; the destination is registered at the
+                            // Library stack root (`LibraryView`).
+                            NavigationLink(value: summary) {
                                 subjectCard(summary)
                             }
                             .buttonStyle(.plain)
@@ -146,7 +146,7 @@ struct KnowledgeMapView: View {
     }
 }
 
-private struct KnowledgeSubjectView: View {
+struct KnowledgeSubjectView: View {
     @EnvironmentObject private var navigator: AppNavigator
     let summary: KnowledgeMapSubjectSummary
 
