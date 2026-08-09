@@ -104,6 +104,9 @@ public enum BackupExporter {
         /// Early practice misses (docs/ADR-007). Scheduling state like
         /// `lapseCount`, so it travels with the card.
         public let softLapseCount: Int
+        /// When Egzersiz last touched FSRS state (docs/ADR-007) — restoring
+        /// without it would disarm the one-day practice freeze.
+        public let lastPracticedAt: Date?
 
         public init(
             id: UUID,
@@ -128,7 +131,8 @@ public enum BackupExporter {
             options: [CardOption]? = nil,
             lowConfidence: Bool = false,
             topic: String? = nil,
-            softLapseCount: Int = 0
+            softLapseCount: Int = 0,
+            lastPracticedAt: Date? = nil
         ) {
             self.id = id
             self.type = type
@@ -153,6 +157,7 @@ public enum BackupExporter {
             self.lowConfidence = lowConfidence
             self.topic = topic
             self.softLapseCount = softLapseCount
+            self.lastPracticedAt = lastPracticedAt
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -183,6 +188,7 @@ public enum BackupExporter {
             lowConfidence = try values.decodeIfPresent(Bool.self, forKey: .lowConfidence) ?? false
             topic = try values.decodeIfPresent(String.self, forKey: .topic)
             softLapseCount = try values.decodeIfPresent(Int.self, forKey: .softLapseCount) ?? 0
+            lastPracticedAt = try values.decodeIfPresent(Date.self, forKey: .lastPracticedAt)
         }
     }
 

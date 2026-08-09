@@ -15,12 +15,6 @@ private struct StubScheduler: ReviewScheduling {
 }
 
 final class EarlyPracticeTests: XCTestCase {
-    private let calendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Europe/Istanbul")!
-        return calendar
-    }()
-
     private let day: TimeInterval = 86_400
     /// Reviewed 10 days ago, due 10 days from now → a 20-day interval at 50%.
     private var lastReviewed: Date { Date(timeIntervalSince1970: 1_700_000_000) }
@@ -52,15 +46,17 @@ final class EarlyPracticeTests: XCTestCase {
         _ result: ExerciseResult,
         at now: Date,
         state: SchedulingState? = nil,
+        dueDate: Date? = nil,
+        lastPracticedAt: Date? = nil,
         scheduler: StubScheduler? = nil
     ) -> EarlyPracticeUpdate {
         EarlyPractice.update(
             result: result,
             state: state ?? self.state(),
-            dueDate: due,
+            dueDate: dueDate ?? due,
+            lastPracticedAt: lastPracticedAt,
             scheduler: scheduler ?? self.scheduler(),
-            now: now,
-            calendar: calendar
+            now: now
         )
     }
 
@@ -86,23 +82,44 @@ final class EarlyPracticeTests: XCTestCase {
         XCTAssertFalse(update.touchesCard)
     }
 
-    func testSameCalendarDayAsTheRealReviewIsFrozen() {
-        let sameDay = calendar.date(byAdding: .hour, value: 3, to: lastReviewed)!
-        let update = update(.knew, at: sameDay)
-        XCTAssertEqual(update.kind, .sameDayFrozen)
+    func testWithinADayOfTheRealReviewIsFrozen() {
+        let update = update(.knew, at: lastReviewed.addingTimeInterval(3 * 3_600))
+        XCTAssertEqual(update.kind, .reviewFrozen)
         XCTAssertFalse(update.touchesCard)
+    }
+
+    func testTheReviewFreezeIsAContinuousDayNotACalendarDay() {
+        // A 23:50 review followed by a 00:10 practice is 20 minutes of
+        // "retention" — a calendar-day check would unfreeze it (§18.1's
+        // timezone objection); the continuous window must not.
+        XCTAssertEqual(update(.knew, at: lastReviewed.addingTimeInterval(20 * 3_600)).kind, .reviewFrozen)
+        // And a genuinely next-day practice (25 h) is allowed through.
+        XCTAssertEqual(update(.knew, at: lastReviewed.addingTimeInterval(25 * 3_600)).kind, .partialCredit)
+    }
+
+    func testWithinADayOfTheLastPracticeIsFrozen() {
+        // Running "Hızlı 10" three times in one evening must not compound
+        // partial credit: after the first FSRS-touching pass, the card is
+        // frozen for a day.
+        let now = lastReviewed.addingTimeInterval(10 * day)
+        let update = update(.knew, at: now, lastPracticedAt: now.addingTimeInterval(-2 * 3_600))
+        XCTAssertEqual(update.kind, .practiceFrozen)
+        XCTAssertFalse(update.touchesCard)
+    }
+
+    func testPracticeAgainAfterADayEarnsCreditAgain() {
+        let now = lastReviewed.addingTimeInterval(10 * day)
+        let update = update(.knew, at: now, lastPracticedAt: now.addingTimeInterval(-25 * 3_600))
+        XCTAssertEqual(update.kind, .partialCredit)
     }
 
     func testMalformedIntervalDoesNothingRatherThanDividingByIt() {
         let broken = SchedulingState(
             stability: 10, difficulty: 5, reviewCount: 3, lapseCount: 0,
-            // Reviewed *after* the due date — clock change or hand-edited data.
-            lastReviewedAt: due.addingTimeInterval(day)
+            // Reviewed *after* "now" — clock change or hand-edited data.
+            lastReviewedAt: due.addingTimeInterval(-1)
         )
-        let result = EarlyPractice.update(
-            result: .missed, state: broken, dueDate: due,
-            scheduler: scheduler(), now: due.addingTimeInterval(-1), calendar: calendar
-        )
+        let result = update(.missed, at: due.addingTimeInterval(-2), state: broken)
         XCTAssertEqual(result.kind, .none)
     }
 
@@ -111,7 +128,8 @@ final class EarlyPracticeTests: XCTestCase {
     func testEarlyCorrectEarnsAFractionOfTheGoodGain() {
         // 50% of the interval → weight 0.65. Gain over current stability is
         // 18 − 10 = 8 → new stability 10 + 8 × 0.65.
-        let update = update(.knew, at: lastReviewed.addingTimeInterval(10 * day))
+        let now = lastReviewed.addingTimeInterval(10 * day)
+        let update = update(.knew, at: now)
         XCTAssertEqual(update.kind, .partialCredit)
         XCTAssertEqual(update.stability ?? 0, 10 + 8 * 0.65, accuracy: 0.0001)
         // The due date is never pushed out from practice, and difficulty and
@@ -120,6 +138,8 @@ final class EarlyPracticeTests: XCTestCase {
         XCTAssertNil(update.difficulty)
         XCTAssertEqual(update.reviewCountDelta, 0)
         XCTAssertNil(update.lastReviewedAt)
+        // Arms the practice freeze for the next day.
+        XCTAssertEqual(update.lastPracticedAt, now)
     }
 
     func testTheEarlierTheAnswerTheSmallerTheCredit() {
@@ -155,21 +175,50 @@ final class EarlyPracticeTests: XCTestCase {
         XCTAssertEqual(update.dueDate, now.addingTimeInterval(day))
         XCTAssertNil(update.stability)
         XCTAssertNil(update.difficulty)
+        XCTAssertEqual(update.lastPracticedAt, now)
     }
 
     func testSoftLapseNeverPushesAnAlreadyCloseDueDateOut() {
-        // A two-day interval, missed at 1.4 days (ratio 0.7, a different
-        // calendar day than the review): the card is already due in 0.6 days,
-        // *sooner* than the one-day pull-forward — min(due, now+1d) must keep
-        // the earlier of the two, or a soft lapse would postpone the review.
-        let shortDue = lastReviewed.addingTimeInterval(2 * day)
-        let now = lastReviewed.addingTimeInterval(1.4 * day)
-        let update = EarlyPractice.update(
-            result: .missed, state: state(), dueDate: shortDue,
-            scheduler: scheduler(), now: now, calendar: calendar
-        )
+        // A four-day interval, missed at 2.8 days (ratio 0.7): the card is
+        // already due in 1.2 days... use a due date *sooner* than now+1d to
+        // pin min(due, now+1d) keeping the earlier of the two: interval 40 h,
+        // missed at 26 h (ratio 0.65), due in 14 h < 24 h.
+        let shortDue = lastReviewed.addingTimeInterval(40 * 3_600)
+        let now = lastReviewed.addingTimeInterval(26 * 3_600)
+        let update = update(.missed, at: now, dueDate: shortDue)
         XCTAssertEqual(update.kind, .softLapse)
         XCTAssertEqual(update.dueDate, shortDue)
+    }
+
+    func testAfterASoftLapseTheCardCannotBeReclassifiedByASecondMiss() {
+        // The soft lapse pulled the due date to now+1d. A second miss the same
+        // evening must not recompute the progress ratio against that mutated
+        // due date and escalate to a real lapse (review of PR #36): within the
+        // freeze window it is frozen, and past the window the card is due.
+        let firstMissAt = lastReviewed.addingTimeInterval(10 * day)
+        let first = update(.missed, at: firstMissAt)
+        XCTAssertEqual(first.kind, .softLapse)
+        let pulledDue = first.dueDate ?? due
+
+        // Same evening, 3 h later: frozen.
+        let secondSameEvening = update(
+            .missed,
+            at: firstMissAt.addingTimeInterval(3 * 3_600),
+            dueDate: pulledDue,
+            lastPracticedAt: first.lastPracticedAt
+        )
+        XCTAssertEqual(secondSameEvening.kind, .practiceFrozen)
+        XCTAssertFalse(secondSameEvening.touchesCard)
+
+        // 25 h later: the pulled-forward due date (now+24 h) has passed, so
+        // the card belongs to the review session — still no ratio maths.
+        let nextDay = update(
+            .missed,
+            at: firstMissAt.addingTimeInterval(25 * 3_600),
+            dueDate: pulledDue,
+            lastPracticedAt: first.lastPracticedAt
+        )
+        XCTAssertEqual(nextDay.kind, .leftForReview)
     }
 
     // MARK: Vadeye yakın yanlış — gerçek lapse
@@ -186,6 +235,7 @@ final class EarlyPracticeTests: XCTestCase {
         XCTAssertEqual(update.lapseCountDelta, 1)
         XCTAssertEqual(update.reviewCountDelta, 1)
         XCTAssertEqual(update.lastReviewedAt, now)
+        XCTAssertEqual(update.lastPracticedAt, now)
         XCTAssertEqual(update.softLapseCountDelta, 0)
     }
 

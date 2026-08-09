@@ -287,6 +287,11 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 2. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote`, TextRegion'ın
    OCR-dönemi alanları vb.). Bilerek ertelendi: §10.4 "mevcut kartlar
    korunmalı" — SwiftData şemasına dokunmak ayrı, dikkatli bir iş.
+3. **`TopicBackfillMigration` sonlanma koşulu** (PR #36 incelemesinin bulgusu,
+   kod `main`'den geliyor): bayrak ancak 203 eşlenmiş kimliğin **hepsi**
+   görülünce yazılıyor; v2'den önce silinmiş tek bir kart, migration'ın her
+   açılışta tüm desteyi taramasına yol açar. Maliyet bugün küçük (tek fetch)
+   ama sınırsız; bir tamamlanma/yaş koşulu eklenmeli.
 
 ### Aday sonraki özellikler
 
