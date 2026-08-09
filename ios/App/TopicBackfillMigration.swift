@@ -29,13 +29,18 @@ import CizgiCore
 /// move anything.
 @MainActor
 enum TopicBackfillMigration {
-    // v2: v1 set this flag unconditionally even when the topic-name typo
-    // made every respiratory mapping fail validation (or the store was
-    // empty), so a device that already ran v1 must not be skipped here.
     static let flagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v2"
-    private static let v1FlagKey = "cizgi.migration.topicBackfill.deck2026_08_08.v1"
+    // Per-card observation history, not a single "did this whole migration
+    // run" boolean: v1 already wrote most of the 203 mappings correctly
+    // (only the respiratory topic's name was wrong), and a global flag
+    // can't tell "never classified" apart from "classified, then the user
+    // deliberately picked Konusuz again" — both look like `topic == nil`.
+    // Recording each card the moment it's first observed, whatever its
+    // state then, makes both cases distinguishable on every later launch
+    // and also survives a fresh install that restores the backup later
+    // (a card unseen because it didn't exist yet is simply not in the set).
+    private static let seenIdsKey = "cizgi.migration.topicBackfill.deck2026_08_08.v2.seenIds"
     private static let targetSubject = "Patoloji"
-    private static let respiratoryTopic = "Solunum Sistem Hastalıkları"
 
     static func runIfNeeded(container: ModelContainer, defaults: UserDefaults = .standard) {
         guard !defaults.bool(forKey: flagKey) else { return }
@@ -44,29 +49,19 @@ enum TopicBackfillMigration {
         // Not flagged done, so a later launch with the resource fixed retries.
         guard let schema = try? SubjectTopicSchema.bundled() else { return }
 
-        // v1's only defect was the respiratory topic's name — every other
-        // mapping already passed validation and got written. If v1 has run,
-        // revisiting those already-correct categories here would mean a
-        // card the user deliberately reset to "Konusuz" afterwards (still
-        // `unit.topic == nil`, indistinguishable from never-classified)
-        // gets silently overwritten with the hard-coded topic again. So
-        // once v1 has run, only the respiratory entries — the ones it
-        // could not possibly have written — are worth revisiting.
-        let v1AlreadyRan = defaults.bool(forKey: v1FlagKey)
-        let candidates = v1AlreadyRan
-            ? knownTopics.filter { $0.value == respiratoryTopic }
-            : knownTopics
+        var seenIds = Set(defaults.stringArray(forKey: seenIdsKey) ?? [])
 
         let context = ModelContext(container)
         do {
             let cards = try context.fetch(FetchDescriptor<Card>())
-            var encounteredTargetDeck = false
             for card in cards {
-                guard let topic = candidates[card.id.uuidString.uppercased()] else { continue }
-                // The known-id match alone means this is the target deck,
-                // regardless of whether the card below turns out already
-                // classified or otherwise ineligible.
-                encounteredTargetDeck = true
+                let id = card.id.uuidString.uppercased()
+                guard let topic = knownTopics[id], !seenIds.contains(id) else { continue }
+                // First observation of this card, regardless of outcome —
+                // recorded before the eligibility checks below so a card
+                // that's already classified (by v1, or by the user) is
+                // marked seen without being touched, and never revisited.
+                seenIds.insert(id)
                 guard schema.isValidTopic(topic, subject: targetSubject),
                       let unit = card.knowledgeUnit,
                       unit.subject == targetSubject,
@@ -75,11 +70,12 @@ enum TopicBackfillMigration {
                 reclassify(card: card, to: topic, in: context)
             }
             try context.save()
-            // A fresh install sees an empty store before the user restores
-            // their backup; marking done here would skip the backfill on
-            // that restore forever. Only mark done once the target deck's
-            // cards have actually been seen.
-            if encounteredTargetDeck {
+            defaults.set(Array(seenIds), forKey: seenIdsKey)
+            // Only the full set, not "we saw at least one card this run":
+            // a fresh install sees an empty store before the user restores
+            // their backup, and a partial restore or a still-queued import
+            // must not stop future launches from picking up the rest.
+            if seenIds.count == knownTopics.count {
                 defaults.set(true, forKey: flagKey)
             }
         } catch {
