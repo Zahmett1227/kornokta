@@ -45,6 +45,13 @@ struct CaptureView: View {
     @State private var cropSpreads: [Int] = []
     /// How far through `cropSpreads` the user is.
     @State private var cropCursor = 0
+    /// Pages the scanner handed back, parked until its cover has actually
+    /// finished dismissing — see the `onDismiss` hand-offs below.
+    @State private var scannedAwaitingDismissal: [Data]?
+    /// The finished batch, parked until the crop cover has finished
+    /// dismissing. Left `nil` by a cancel, which is how `onDismiss` tells a
+    /// completed run from an abandoned one.
+    @State private var croppedAwaitingDismissal: [Data]?
     #endif
 
     private var duplicateCount: Int { pendingDuplicates.count }
@@ -108,14 +115,24 @@ struct CaptureView: View {
                 }
             }
             #if os(iOS)
-            .fullScreenCover(isPresented: $isScanning) {
+            // The scanned pages are acted on from `onDismiss`, not from
+            // `onFinish`. What may follow is another full-screen cover (the
+            // crop step), and SwiftUI can drop a presentation that starts while
+            // this one is still animating away — a runloop hop defers the state
+            // change by one cycle, which is not the same thing as waiting for
+            // the transition to end (Codex, PR #37).
+            .fullScreenCover(isPresented: $isScanning, onDismiss: {
+                guard let pages = scannedAwaitingDismissal else { return }
+                scannedAwaitingDismissal = nil
+                handleScanned(pages)
+            }) {
                 DocumentScanner(
                     onFinish: { pages in
+                        scannedAwaitingDismissal = pages
                         isScanning = false
                         // Belongs to the previous import; leaving it up would
                         // pin an old warning to a fresh capture.
                         importFailedCount = 0
-                        handleScanned(pages)
                     },
                     onCancel: { isScanning = false },
                     onError: { error in
@@ -132,7 +149,15 @@ struct CaptureView: View {
             .fullScreenCover(isPresented: Binding(
                 get: { cropCursor < cropSpreads.count },
                 set: { if !$0 { clearCrop() } }
-            )) {
+            ), onDismiss: {
+                // Same reason as the scanner above: the duplicate question is a
+                // confirmation dialog, and one raised while this cover is still
+                // dismissing is swallowed — the batch would then be neither
+                // stored nor refused, with nothing on screen saying so.
+                guard let images = croppedAwaitingDismissal else { return }
+                croppedAwaitingDismissal = nil
+                checkDuplicates(images)
+            }) {
                 if let image = currentCropImage {
                     PageCropView(
                         image: image,
@@ -330,11 +355,12 @@ struct CaptureView: View {
         // would then never recognise each other.
         let spreads = images.indices.filter { PageSplit.isLikelySpread(images[$0]) }
         guard spreads.isEmpty else {
-            afterCurrentPresentation {
-                cropImages = images
-                cropSpreads = spreads
-                cropCursor = 0
-            }
+            // Safe to present directly: every caller reaches here with nothing
+            // on screen — the scanner via its `onDismiss`, the gallery after
+            // `PhotosPicker` has long since closed.
+            cropImages = images
+            cropSpreads = spreads
+            cropCursor = 0
             return
         }
         #endif
@@ -342,19 +368,6 @@ struct CaptureView: View {
     }
 
     #if os(iOS)
-    /// Presenting one thing while another is dismissing loses the new one: both
-    /// land in the same SwiftUI transaction and only the dismissal survives.
-    /// The two hand-offs the crop step introduced cross that boundary — scanner
-    /// → crop step, and crop step → duplicate question — so both go through
-    /// here instead of being written as a direct state change. The paths that
-    /// already worked before this step existed are left exactly as they were.
-    private func afterCurrentPresentation(_ work: @escaping () -> Void) {
-        // The plain queue hop rather than a `Task`: what is needed here is
-        // "after SwiftUI commits this transaction", which is a runloop
-        // guarantee, not an asynchronous one.
-        DispatchQueue.main.async(execute: work)
-    }
-
     /// Shown when a page in the crop queue cannot be decoded for display —
     /// bytes `PageSplit.isLikelySpread` read a header out of but no decoder
     /// will draw. The page travels on untouched; the provider's answer is more
@@ -415,9 +428,10 @@ struct CaptureView: View {
         cropCursor += 1
         guard cropCursor >= cropSpreads.count else { return }
 
-        let images = cropImages
+        // Parked rather than used here: `clearCrop()` starts the dismissal, and
+        // the batch is picked up again by the cover's `onDismiss`.
+        croppedAwaitingDismissal = cropImages
         clearCrop()
-        afterCurrentPresentation { checkDuplicates(images) }
     }
 
     private func clearCrop() {
@@ -430,6 +444,9 @@ struct CaptureView: View {
     /// question's "Vazgeç", and possible for the same reason: none of it has
     /// been written to disk yet.
     private func cancelCropping() {
+        // Cleared, not set: its absence is what tells `onDismiss` this was an
+        // abandoned run rather than a finished one.
+        croppedAwaitingDismissal = nil
         clearCrop()
         lastCapturedIds = []
     }
