@@ -45,8 +45,10 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 
 1. **Yakala:** işaretli sayfa fotoğrafı — kameradan ya da galeriden (galeriden
    gelen her fotoğraf tek noktada JPEG'e ve düz yöne normalize edilir,
-   `ImportedImage`) → dHash ile "bu sayfayı daha önce çektin mi?" sorusu
-   (reddetmez, **sorar**) → bayt diske yazıldıktan sonra kuyruğa girer.
+   `ImportedImage`) → **çift sayfa mı?** (`PageSplit`, en/boy oranı; evetse tek
+   dokunuşluk "Sol/Sağ/Tümü" adımı) → dHash ile "bu sayfayı daha önce çektin
+   mi?" sorusu (reddetmez, **sorar**) → bayt diske yazıldıktan sonra kuyruğa
+   girer.
 2. **Kuyruk:** `ProcessingQueue` sayfaları 3'lü paralel işler; işlem sürerken
    ekran kilidini ve bir arka plan assertion'ını tutar, geçici hataları
    `nextAttemptAt`'e uyarak kendiliğinden tekrar dener.
@@ -121,6 +123,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Ölü kod tıraşı (deterministik hat silindi) | ✅ Bu dalda; ADR-005'e not düşüldü |
 | Değer tabanlı navigasyon refaktörü | ✅ Bu dalda; **cihaz doğrulaması açık** |
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ Bu dalda; **cihaz doğrulaması açık** |
+| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ Bu dalda; **cihaz doğrulaması açık** |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -250,22 +253,28 @@ biten koşu "Son Egzersizler"e düşüyor.
    - *Olmazsa:* tüm işler düşer. **B planı:** `buildModelResponseSchema`'dan
      enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek.
    - Aynı çekim **A6'yı da açar** (aşağıda).
-2. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
+2. **Çift sayfa kadraj düzeltmesi (`PageSplit`):** açık kitap çek —
+   "Fotoğrafa iki sayfa girmiş" adımı çıkmalı, "Sol/Sağ" seçince karşı yarı
+   kararmalı, çizgi sürüklenebilmeli, "Devam"dan sonra kart detayındaki
+   "Kaynağı göster"de **yalnız seçilen sayfa** durmalı. Tek sayfa çektiğinde bu
+   adım **hiç çıkmamalı** (oran eşiği `spreadAspectThreshold = 1.05`). Çoklu
+   çekimde her çift sayfa için sırayla sorulmalı ("2 / 3" sayacı).
+3. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
    sayfa detayı ve Bilgilerim → kart / Bilgi Haritası → ders push'ları
    çalışıyor mu; derin ekranda alt bar kayboluyor mu; ev düğmesi derin
    ekrandan gerçekten köke dönüyor mu.
-3. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
+4. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
    yanlış yapınca kartın vadesinin en fazla yarına çekildiğini (Bilgilerim →
    kart detayı), vadesi gelmiş kartın Egzersiz'den etkilenmediğini gör.
-4. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
+5. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
    Egzersiz başlamalı (`TopicFilter.none` yolu).
-5. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
-6. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
+6. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
+7. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
    diyaloğu çıkmalı.
-7. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
+8. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
    kalkıp yalnız ikonlar kalmalı.
-8. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
-9. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
+9. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
+10. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

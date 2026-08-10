@@ -3,6 +3,7 @@ import SwiftData
 import CizgiCore
 #if os(iOS)
 import PhotosUI
+import UIKit
 #endif
 
 /// The capture tab (ANA-PLAN §6.2).
@@ -36,6 +37,14 @@ struct CaptureView: View {
     @State private var pickedItems: [PhotosPickerItem] = []
     /// How many picked photos could not be read, from the last import.
     @State private var importFailedCount = 0
+    /// The batch waiting on the "which page did you mean?" step (`PageSplit`).
+    /// Nothing here is on disk yet, so cancelling really does discard it.
+    @State private var cropImages: [Data] = []
+    /// Indices into `cropImages` that look like an open-book spread — the only
+    /// pages the step is shown for.
+    @State private var cropSpreads: [Int] = []
+    /// How far through `cropSpreads` the user is.
+    @State private var cropCursor = 0
     #endif
 
     private var duplicateCount: Int { pendingDuplicates.count }
@@ -115,6 +124,26 @@ struct CaptureView: View {
                     }
                 )
                 .ignoresSafeArea()
+            }
+            // Deliberately not `.id(cropCursor)`: across a batch the pages come
+            // from the same book, so carrying the previous answer and the
+            // dragged line over is right — page two of a spread run almost
+            // always wants the same side and the same gutter position.
+            .fullScreenCover(isPresented: Binding(
+                get: { cropCursor < cropSpreads.count },
+                set: { if !$0 { clearCrop() } }
+            )) {
+                if let image = currentCropImage {
+                    PageCropView(
+                        image: image,
+                        position: cropCursor + 1,
+                        total: cropSpreads.count,
+                        onConfirm: applyCrop,
+                        onCancel: cancelCropping
+                    )
+                } else {
+                    undecodablePageNotice
+                }
             }
             #endif
             .alert("Hata", isPresented: .constant(errorMessage != nil)) {
@@ -291,7 +320,122 @@ struct CaptureView: View {
     }
     #endif
 
+    /// Everything a fresh batch goes through, in order: framing first, then
+    /// the duplicate question, then disk.
     private func handleScanned(_ images: [Data]) {
+        #if os(iOS)
+        // Framing has to come first because the perceptual hash is stored with
+        // the page: hashing a spread would file a fingerprint for an image that
+        // is about to stop existing, and the same page cropped and uncropped
+        // would then never recognise each other.
+        let spreads = images.indices.filter { PageSplit.isLikelySpread(images[$0]) }
+        guard spreads.isEmpty else {
+            afterCurrentPresentation {
+                cropImages = images
+                cropSpreads = spreads
+                cropCursor = 0
+            }
+            return
+        }
+        #endif
+        checkDuplicates(images)
+    }
+
+    #if os(iOS)
+    /// Presenting one thing while another is dismissing loses the new one: both
+    /// land in the same SwiftUI transaction and only the dismissal survives.
+    /// The two hand-offs the crop step introduced cross that boundary — scanner
+    /// → crop step, and crop step → duplicate question — so both go through
+    /// here instead of being written as a direct state change. The paths that
+    /// already worked before this step existed are left exactly as they were.
+    private func afterCurrentPresentation(_ work: @escaping () -> Void) {
+        // The plain queue hop rather than a `Task`: what is needed here is
+        // "after SwiftUI commits this transaction", which is a runloop
+        // guarantee, not an asynchronous one.
+        DispatchQueue.main.async(execute: work)
+    }
+
+    /// Shown when a page in the crop queue cannot be decoded for display —
+    /// bytes `PageSplit.isLikelySpread` read a header out of but no decoder
+    /// will draw. The page travels on untouched; the provider's answer is more
+    /// useful than a local refusal.
+    ///
+    /// A button rather than an automatic skip on `onAppear`: if the page after
+    /// this one were undecodable too, SwiftUI would keep the same view and
+    /// never fire `onAppear` again, leaving a blank cover with no way out.
+    private var undecodablePageNotice: some View {
+        VStack(spacing: Cizgi.Space.lg) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.largeTitle)
+                .foregroundStyle(Cizgi.warning)
+            Text("Bu sayfa önizlenemedi")
+                .font(.headline)
+                .foregroundStyle(Cizgi.ink)
+            Text("Fotoğraf olduğu gibi gönderilecek.")
+                .font(.subheadline)
+                .foregroundStyle(Cizgi.muted)
+                .multilineTextAlignment(.center)
+            Button("Devam") {
+                applyCrop(.whole, splitRatio: PageSplit.defaultSplitRatio)
+            }
+            .buttonStyle(CizgiPrimaryButtonStyle())
+            Button("Vazgeç", role: .cancel, action: cancelCropping)
+                .font(.subheadline)
+                .foregroundStyle(Cizgi.muted)
+        }
+        .padding(Cizgi.Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Cizgi.paper.ignoresSafeArea())
+    }
+
+    /// The page the crop step is currently asking about.
+    private var currentCropImage: UIImage? {
+        guard cropCursor < cropSpreads.count else { return nil }
+        let index = cropSpreads[cropCursor]
+        guard cropImages.indices.contains(index) else { return nil }
+        return UIImage(data: cropImages[index])
+    }
+
+    private func applyCrop(_ selection: PageSplit.Selection, splitRatio: Double) {
+        guard cropCursor < cropSpreads.count else { return }
+        let index = cropSpreads[cropCursor]
+        if selection != .whole, cropImages.indices.contains(index) {
+            // A crop that fails leaves the page whole rather than dropping it:
+            // an uncropped page still makes cards, a missing one makes nothing
+            // and nobody was told (§21.2).
+            if let cropped = try? PageSplit.crop(
+                cropImages[index],
+                selection: selection,
+                splitRatio: splitRatio
+            ) {
+                cropImages[index] = cropped
+            }
+        }
+
+        cropCursor += 1
+        guard cropCursor >= cropSpreads.count else { return }
+
+        let images = cropImages
+        clearCrop()
+        afterCurrentPresentation { checkDuplicates(images) }
+    }
+
+    private func clearCrop() {
+        cropImages = []
+        cropSpreads = []
+        cropCursor = 0
+    }
+
+    /// Discards the whole batch — the same contract as the duplicate
+    /// question's "Vazgeç", and possible for the same reason: none of it has
+    /// been written to disk yet.
+    private func cancelCropping() {
+        clearCrop()
+        lastCapturedIds = []
+    }
+    #endif
+
+    private func checkDuplicates(_ images: [Data]) {
         // A page you have already captured is easy to shoot twice — a blurry
         // first attempt, or simply losing your place in the book — and until now
         // nothing noticed, so it produced a duplicate set of cards and a second
