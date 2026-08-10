@@ -259,6 +259,14 @@ biten koşu "Son Egzersizler"e düşüyor.
    "Kaynağı göster"de **yalnız seçilen sayfa** durmalı. Tek sayfa çektiğinde bu
    adım **hiç çıkmamalı** (oran eşiği `spreadAspectThreshold = 1.05`). Çoklu
    çekimde her çift sayfa için sırayla sorulmalı ("2 / 3" sayacı).
+   - **Aynı testi galeriden de yap.** Bilinen artık risk (PR #37, Codex): iOS
+     `PhotosPicker` bir kapanma-tamamlanma geri çağrısı sunmuyor, dolayısıyla
+     küçük ve yerel bir fotoğraf picker kapanırken yüklenip biterse kadraj
+     cover'ının sunumu SwiftUI tarafından düşürülebilir. Bu olursa **sessiz
+     değil**: yakalama ekranında "N sayfa kadraj seçimi bekliyor" kartı
+     çıkar, tek dokunuşla açılır. *Bu kartı gördüysen not et* — yapısal
+     çözüm (kadraj adımını modal cover yerine görünüm hiyerarşisi içinde tam
+     ekran katman yapmak) o zaman gerekçelenir; görmediysen gerek yok.
 3. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
    sayfa detayı ve Bilgilerim → kart / Bilgi Haritası → ders push'ları
    çalışıyor mu; derin ekranda alt bar kayboluyor mu; ev düğmesi derin
