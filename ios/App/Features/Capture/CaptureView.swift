@@ -45,6 +45,9 @@ struct CaptureView: View {
     @State private var cropSpreads: [Int] = []
     /// How far through `cropSpreads` the user is.
     @State private var cropCursor = 0
+    /// Owned rather than derived from `cropSpreads`, so the step can be asked
+    /// for again if a presentation is lost — see `pendingFramingNotice`.
+    @State private var isCropPresented = false
     /// Pages the scanner handed back, parked until its cover has actually
     /// finished dismissing — see the `onDismiss` hand-offs below.
     @State private var scannedAwaitingDismissal: [Data]?
@@ -55,6 +58,22 @@ struct CaptureView: View {
     #endif
 
     private var duplicateCount: Int { pendingDuplicates.count }
+
+    /// One batch at a time, from the shutter to the moment it reaches disk.
+    ///
+    /// Both entry points write the *same* state — `cropImages`/`cropSpreads`
+    /// for framing, `pendingImages` for the duplicate question — so a second
+    /// capture begun while the first is still being loaded, framed or asked
+    /// about would overwrite it and lose it without a word. The gallery
+    /// importer made that reachable in practice: an iCloud-backed load can run
+    /// for seconds while the camera button sits there, enabled (Codex, PR #37).
+    private var isBatchInFlight: Bool {
+        #if os(iOS)
+        return importer.isLoading || !cropSpreads.isEmpty || !pendingImages.isEmpty
+        #else
+        return !pendingImages.isEmpty
+        #endif
+    }
 
     private var inFlight: [CapturedPage] {
         pages.filter { !$0.processingState.isTerminal }
@@ -70,6 +89,9 @@ struct CaptureView: View {
                 VStack(spacing: Cizgi.Space.xl) {
                     hero
                     SubjectPickerBar()
+                    #if os(iOS)
+                    pendingFramingNotice
+                    #endif
                     captureButton
                     importButton
                     if !lastCapturedIds.isEmpty {
@@ -146,10 +168,7 @@ struct CaptureView: View {
             // from the same book, so carrying the previous answer and the
             // dragged line over is right — page two of a spread run almost
             // always wants the same side and the same gutter position.
-            .fullScreenCover(isPresented: Binding(
-                get: { cropCursor < cropSpreads.count },
-                set: { if !$0 { clearCrop() } }
-            ), onDismiss: {
+            .fullScreenCover(isPresented: $isCropPresented, onDismiss: {
                 // Same reason as the scanner above: the duplicate question is a
                 // confirmation dialog, and one raised while this cover is still
                 // dismissing is swallowed — the batch would then be neither
@@ -252,6 +271,7 @@ struct CaptureView: View {
                 Label("İşaretli sayfayı çek", systemImage: "camera.fill")
             }
             .buttonStyle(CizgiPrimaryButtonStyle())
+            .disabled(isBatchInFlight)
             #else
             Text("Kamera yalnız iOS'ta kullanılabilir.")
                 .font(.footnote)
@@ -286,6 +306,7 @@ struct CaptureView: View {
                 Label("Galeriden ekle", systemImage: "photo.on.rectangle")
             }
             .buttonStyle(CizgiSecondaryButtonStyle())
+            .disabled(isBatchInFlight)
             .onChange(of: pickedItems) { _, items in
                 guard !items.isEmpty else { return }
                 // Cleared before the work starts, so a cancelled or repeated
@@ -361,6 +382,7 @@ struct CaptureView: View {
             cropImages = images
             cropSpreads = spreads
             cropCursor = 0
+            isCropPresented = true
             return
         }
         #endif
@@ -368,6 +390,48 @@ struct CaptureView: View {
     }
 
     #if os(iOS)
+    /// The safety net for a crop step that was asked for but never appeared.
+    ///
+    /// Presenting a cover while another presentation is still animating away is
+    /// something SwiftUI may quietly drop, and the gallery path cannot rule it
+    /// out: `PhotosPicker` offers no dismissal completion to hand off from, and
+    /// a small, already-JPEG photo can finish loading before the picker has
+    /// finished closing (Codex, PR #37). Rather than guess at the timing, the
+    /// parked batch is made visible: this sits on the capture screen, so it is
+    /// only ever seen when the cover is genuinely not on top of it — which is
+    /// exactly the failure it exists for. One tap asks again; nothing is lost,
+    /// and nothing is silent.
+    @ViewBuilder
+    private var pendingFramingNotice: some View {
+        if !cropSpreads.isEmpty {
+            CardSurface {
+                VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+                    Label(
+                        cropSpreads.count == 1
+                            ? "1 sayfa kadraj seçimi bekliyor"
+                            : "\(cropSpreads.count) sayfa kadraj seçimi bekliyor",
+                        systemImage: "crop"
+                    )
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Cizgi.ink)
+                    Text("Sayfalar henüz kaydedilmedi. Hangi sayfayı okuyacağımızı seç.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                    HStack(spacing: Cizgi.Space.lg) {
+                        Button("Kadraj adımını aç", action: retryCropPresentation)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Cizgi.accent)
+                        // Destructive in the real sense: these bytes exist
+                        // nowhere else yet, so this throws the batch away.
+                        Button("Vazgeç", role: .destructive, action: cancelCropping)
+                            .font(.subheadline)
+                            .foregroundStyle(Cizgi.danger)
+                    }
+                }
+            }
+        }
+    }
+
     /// Shown when a page in the crop queue cannot be decoded for display —
     /// bytes `PageSplit.isLikelySpread` read a header out of but no decoder
     /// will draw. The page travels on untouched; the provider's answer is more
@@ -438,6 +502,19 @@ struct CaptureView: View {
         cropImages = []
         cropSpreads = []
         cropCursor = 0
+        isCropPresented = false
+    }
+
+    /// Asks for the crop step again after a presentation that did not take.
+    ///
+    /// The hop is safe in a way the ones this file used to have were not: it
+    /// runs from a button on a screen the user is looking at, so there is no
+    /// other presentation in flight to collide with — the flag has to go false
+    /// before it can go true again, and SwiftUI needs the two in separate
+    /// transactions to notice.
+    private func retryCropPresentation() {
+        isCropPresented = false
+        DispatchQueue.main.async { isCropPresented = true }
     }
 
     /// Discards the whole batch — the same contract as the duplicate
