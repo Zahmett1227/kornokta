@@ -311,6 +311,16 @@ struct CardDetailView: View {
                 } header: { sectionHeader("Şıklar") }
             }
 
+            // §10.4's surviving idea (2026-08-11): only on cards the model
+            // itself doubted — the one moment an independent re-read helps.
+            if card.lowConfidence {
+                Section {
+                    SecondOpinionSection(card: card)
+                } header: {
+                    sectionHeader("İkinci görüş")
+                }
+            }
+
             Section {
                 LabeledContent("Ders", value: card.knowledgeUnit?.subject ?? "Seçilmedi")
                 LabeledContent("Konu", value: card.knowledgeUnit?.topic ?? "Konusuz")

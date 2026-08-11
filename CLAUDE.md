@@ -64,7 +64,17 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 5. **Kartların bir kısmı beş şıklı** olabilir (§13.3, Ayarlar'daki mod). FSRS
    eşlemesi asimetrik: yanlış şık = Unuttum; doğru şıkta Zor/İyi/Kolay.
 6. **Şüpheli kartlar bloklanmaz, işaretlenir:** `lowConfidence` kartlar
-   Bilgilerim'de "Gözden geçir" bölümünde listelenir.
+   Bilgilerim'de "Gözden geçir" bölümünde listelenir. Böyle bir kartın
+   detayında **"İkinci görüş iste"** düğmesi var (2026-08-11): telefondaki
+   orijinal sayfa + kart `/api/second-opinion`'a gider, **Gemini** (bilinçli
+   olarak kartı üreten OpenAI'den bağımsız aile; §10.4'ün pivotu sağ çıkan
+   fikri) bölgeyi yeniden okuyup `supports|contradicts|unclear` verdikti döner.
+   Yalnız istek üzerine harcar; cevabın metni kaydedilmez (ekrandan çıkınca
+   gider) ama maliyeti kaydedilir (`ModelRun`, `purpose: "second_opinion"` —
+   Kullanım ekranı Gemini'yi de sayar),
+   `GEMINI_API_KEY` yoksa/Gemini çökse yalnız bu düğme etkilenir. Kota/kredi
+   biterse hata mesajı bunu **adıyla** söyler; OpenAI 429 `insufficient_quota`
+   da öyle (sahibinin şartı — "sorunu arayıp arayıp durmayalım").
 7. **Egzersiz** (varsayılan açılış sekmesi) FSRS'ten ayrı puanlanır
    (`ExerciseRun`/`ExerciseAttempt`, 90 gün saklanır, yedeğe girmez) ama
    FSRS'i **korumalı köprüyle** besler (ADR-007): erken doğru → kısmi
@@ -124,6 +134,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
+| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -143,7 +154,10 @@ CI'daki macOS işi ya da bir Mac derlemesi.
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), Root Directory
 `backend`. Gerekli env değişkenleri `.env.example`'da; iş kuyruğu için
-`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` şart. Supabase'de `jobs` tablosu +
+`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` şart. İkinci görüş düğmesi için
+`GEMINI_API_KEY` (anahtar: aistudio.google.com, `docs/OPENAI-GEMINI-KURULUM.md`)
+Vercel'e girilmeli — girilmezse yalnız o düğme "eksik ortam değişkeni" der,
+başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `page-uploads` özel kovası; ikisinde de RLS açık ve **policy yok** (yalnız
 `service_role` geçer).
 
@@ -282,7 +296,14 @@ biten koşu "Son Egzersizler"e düşüyor.
 8. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
    kalkıp yalnız ikonlar kalmalı.
 9. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
-10. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
+10. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
+    "Gözden geçir"deki bir kartın detayında düğmeye bas — verdikt + "İkinci
+    okuma (Gemini)" metni gelmeli; anahtarı bilerek silip denersen hata
+    mesajı `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da benzer
+    şekilde uygulanır: Gemini `responseSchema`'yı reddederse B planı şemayı
+    bırakıp yalnız prompt + sunucu doğrulamasına güvenmek
+    (`providers/gemini.ts` RESPONSE_SCHEMA).
+11. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

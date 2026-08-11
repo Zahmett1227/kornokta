@@ -1,15 +1,18 @@
 # Çizgi backend
 
-Sağlayıcı proxy'si (ANA-PLAN §7). Tek sağlayıcı var: **OpenAI** — işaretli
+Sağlayıcı proxy'si (ANA-PLAN §7). Ana sağlayıcı **OpenAI** — işaretli
 sayfa fotoğrafını vision modeliyle okuyup kartları üretir (Faz 6, ADR-005).
 Kart üretimi normalde asenkron bir iş kuyruğu üzerinden yürür (`/api/jobs`,
-ADR-006); `/api/cards-vision` senkron ikinci kapı olarak duruyor.
+ADR-006); `/api/cards-vision` senkron ikinci kapı olarak duruyor. Üçüncü,
+küçük ve isteğe bağlı kapı **Gemini**: `/api/second-opinion`, `lowConfidence`
+bir kart için kullanıcının istediği bağımsız ikinci okuma (aşağıda).
 
-> Google Document AI / Gemini / OCR-uzlaştırma katmanı **2026-08-09 tıraşında
-> silindi** (ADR-005'in "kod diskte duruyor" notu artık geçerli değil; geri
-> dönüş = o commit'in revert'i). Eski kurulum belgeleri
-> (`docs/GOOGLE-CLOUD-KURULUM.md`, `docs/OPENAI-GEMINI-KURULUM.md`'nin Gemini
-> yarısı) yalnız tarihsel kayıttır.
+> Google Document AI / OCR-uzlaştırma katmanı **2026-08-09 tıraşında silindi**
+> (ADR-005'in "kod diskte duruyor" notu artık geçerli değil; geri dönüş = o
+> commit'in revert'i). Eski kurulum belgesi `docs/GOOGLE-CLOUD-KURULUM.md`
+> yalnız tarihsel kayıttır. Gemini ise 2026-08-11'de çok daha dar bir rolle
+> geri döndü — anahtar edinme adımları için `docs/OPENAI-GEMINI-KURULUM.md`
+> hâlâ geçerli.
 
 ## Neden var
 
@@ -26,7 +29,8 @@ cp .env.example .env
 
 `.env` içinde doldurulacaklar: `OPENAI_API_KEY`, `DEVICE_TOKEN`
 (`npm run token` üretir), iş kuyruğu için `SUPABASE_URL` +
-`SUPABASE_SERVICE_ROLE_KEY`. Diğer değerler hazır geliyor ve gizli değil.
+`SUPABASE_SERVICE_ROLE_KEY`, ikinci görüş için (isteğe bağlı)
+`GEMINI_API_KEY`. Diğer değerler hazır geliyor ve gizli değil.
 
 ## Test
 
@@ -103,6 +107,29 @@ depoya girmez, yalnız yerel `.env` ve Vercel proje ayarları. `SUPABASE_URL`
 boşsa diğer uçlar hiç etkilenmez, yalnız `/api/jobs` hangi değişkenin eksik
 olduğunu söyleyerek reddeder.
 
+## İkinci görüş — `POST /api/second-opinion` (2026-08-11)
+
+"Gözden geçir"deki `lowConfidence` bir kart için telefonun **istek üzerine**
+çağırdığı uç: kartın kaynak sayfası (telefonda saklanan orijinal; sunucunun
+kopyası çoktan silinmiş olur) + kartın kendisi gönderilir, **Gemini** —
+bilinçli olarak kartı üreten sağlayıcıdan farklı bir model ailesi, çünkü
+ikinci görüşün değeri bağımsızlığında — ilgili bölgeyi yeniden okur ve
+`supports | contradicts | unclear` verdiktiyle bağımsız transkripsiyonu
+döndürür. Kart üretmez (prompt v2.0 yasaklar, şemada yeri yok); cevap hiçbir
+yere kaydedilmez, telefon o an gösterir.
+
+Gövde: `{ requestId, mimeType, imageBase64, card: { front, back,
+explanation? } }`. Cevap: `{ requestId, verdict, reading, note?, usage,
+promptVersion }`.
+
+Gereken tek ortam değişkeni `GEMINI_API_KEY`; boşsa yalnız bu uç hangi
+değişkenin eksik olduğunu söyleyerek reddeder, kart üretimi hiç etkilenmez
+(`SUPABASE_URL`/`/api/jobs` ilişkisinin aynısı). **Kota/kredi biterse hata
+mesajı bunu açıkça söyler** ("kota/kredi tükenmiş görünüyor …
+aistudio.google.com'dan kontrol et") — OpenAI tarafında da `insufficient_quota`
+aynı netlikte raporlanır; ikisi de sahibinin şartı (2026-08-11): bir 429'un
+"model meşgul" mü "bakiye bitti" mi olduğu asla aranarak bulunmasın.
+
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
 PostgREST `insert`'i reddeder ve her çekim patlar. Migration'lar sırayla
@@ -123,8 +150,10 @@ ADR-006'da yazılı.
 | `api/_image.ts` | Görüntü alım yardımcıları (boyut sınırı, katı base64 çözümü) |
 | `api/_cards.ts` | `POST /api/cards-vision` — senkron kart üretimi; saf handler, testte doğrudan çağrılıyor |
 | `api/_jobs.ts` | `POST/GET /api/jobs` — asenkron iş kuyruğu (ADR-006) + saklama süpürmesi |
-| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`, `OPENAI_API_KEY` ve Supabase anahtarına dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
+| `api/_secondOpinion.ts` | `POST /api/second-opinion` — lowConfidence kart için istek üzerine Gemini ikinci okuması |
+| `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ve Supabase anahtarına dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
 | `providers/openai.ts` | OpenAI Responses API sağlayıcısı — vision kart üretimi (§11.2, §14) |
+| `providers/gemini.ts` | Gemini generateContent sağlayıcısı — ikinci görüş (§10.4'ün Faz 6 hali); kota/kredi bitişini adıyla raporlar |
 | `providers/cardGate.ts` | Kart üretimi sonrası deterministik sağlık kapısı (Faz 6'da auto-accept + `lowConfidence` işaretleme) |
 | `providers/multipleChoice.ts` | Beş şıklı kartın yapısal doğrulaması (§13.3) |
 | `providers/subjectTopics.ts` | Ders/konu şeması + konu sanitizasyonu (şema v2.2) |

@@ -12,6 +12,11 @@ const KEYS = [
   "OPENAI_USD_PER_MILLION_INPUT_TOKENS",
   "OPENAI_USD_PER_MILLION_OUTPUT_TOKENS",
   "MAX_USD_PER_CARD_GENERATION",
+  "GEMINI_MODEL",
+  "GEMINI_MAX_OUTPUT_TOKENS",
+  "GEMINI_TIMEOUT_MS",
+  "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
+  "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
   "SUPABASE_URL",
   "SUPABASE_BUCKET",
   "SUPABASE_TIMEOUT_MS",
@@ -20,7 +25,7 @@ const KEYS = [
 ];
 
 /** Read directly at the composition root, never through `loadConfig()` (§0.7). */
-const CREDENTIAL_KEYS = ["OPENAI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
+const CREDENTIAL_KEYS = ["OPENAI_API_KEY", "GEMINI_API_KEY", "SUPABASE_SERVICE_ROLE_KEY"];
 
 let saved: Record<string, string | undefined> = {};
 
@@ -143,6 +148,32 @@ describe("loadConfig", () => {
     expect(serialized).not.toContain("gizli");
     delete process.env.OPENAI_API_KEY;
   });
+
+  it("never reads GEMINI_API_KEY into config", () => {
+    process.env.GEMINI_API_KEY = "g-gizli-gemini";
+    const serialized = JSON.stringify(loadConfig());
+    expect(serialized).not.toContain("gizli");
+    delete process.env.GEMINI_API_KEY;
+  });
+
+  it("defaults the Gemini second-opinion settings (2026-08-11)", () => {
+    const { gemini, cost } = loadConfig();
+    // Flash tier on purpose: one region's transcription+comparison, not card
+    // generation (config.ts notes).
+    expect(gemini.model).toBe("gemini-3.5-flash");
+    // Generous next to the short visible answer — hidden thinking tokens are
+    // spent from this same budget (the status:"incomplete" lesson).
+    expect(gemini.maxOutputTokens).toBe(4096);
+    expect(gemini.timeoutMs).toBe(60_000);
+    // Same rule as the OpenAI pair: 0 until a verified price is filled in.
+    expect(cost.geminiUsdPerMillionInputTokens).toBe(0);
+    expect(cost.geminiUsdPerMillionOutputTokens).toBe(0);
+  });
+
+  it("lets the Gemini model be swapped without a code change (§0.6)", () => {
+    process.env.GEMINI_MODEL = "gemini-3.5-pro";
+    expect(loadConfig().gemini.model).toBe("gemini-3.5-pro");
+  });
 });
 
 describe(".env.example", () => {
@@ -175,7 +206,7 @@ describe(".env.example", () => {
       fileURLToPath(new URL("../.env.example", import.meta.url)),
       "utf-8",
     );
-    const { openai } = loadConfig();
+    const { openai, gemini } = loadConfig();
     const pinned: Record<string, string | number> = {
       OPENAI_MODEL: openai.model,
       OPENAI_REASONING_EFFORT: openai.reasoningEffort,
@@ -183,6 +214,11 @@ describe(".env.example", () => {
       OPENAI_MAX_OUTPUT_TOKENS: openai.maxOutputTokens,
       OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT: openai.maxCardsPerKnowledgeUnit,
       OPENAI_TIMEOUT_MS: openai.timeoutMs,
+      // Same drift risk for the Gemini block: these are values a reader
+      // copies verbatim into a real .env / Vercel.
+      GEMINI_MODEL: gemini.model,
+      GEMINI_MAX_OUTPUT_TOKENS: gemini.maxOutputTokens,
+      GEMINI_TIMEOUT_MS: gemini.timeoutMs,
     };
     const lines = template.split("\n");
     for (const [key, value] of Object.entries(pinned)) {

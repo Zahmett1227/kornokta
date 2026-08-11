@@ -69,6 +69,17 @@ describe("prompt contracts (§15)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("en fazla üç aday");
   });
 
+  it("handwriting prompt v2 casts an independent reader with a three-way verdict (2026-08-11)", () => {
+    expect(HANDWRITING_SECOND_OPINION_PROMPT_VERSION).toBe("2.0");
+    expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("bağımsız");
+    for (const verdict of ["supports", "contradicts", "unclear"]) {
+      expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain(`"${verdict}"`);
+    }
+    // The v1 criticality rule survives the pivot: these are the exact
+    // misreadings a medical card cannot afford.
+    expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("hipo/hiper");
+  });
+
   it("card prompt is at v2.5 (per-card topic assignment)", () => {
     expect(CARD_PROMPT_VERSION).toBe("2.5");
   });
