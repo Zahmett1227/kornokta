@@ -13,6 +13,7 @@
 ```text
 kamera ─┐
 galeri ─┴→ yerel düzeltme + JPEG (galeride: yön + format normalize)
+        → çift sayfa mı? (PageSplit, en/boy oranı) → evetse "Sol/Sağ/Tümü" adımı
         → dHash ile yinelenen sayfa sorusu → diske yaz
   → ProcessingQueue (3'lü paralel, ekran kilidi + arka plan assertion)
   → POST /api/jobs  ─ sayfa Supabase Storage'a yazılır, satır 'queued', 202 döner
@@ -30,6 +31,17 @@ galeri ─┴→ yerel düzeltme + JPEG (galeride: yön + format normalize)
 
 Omurga ilkeleri:
 
+- **Kadraj düzeltmesi diskten önce.** `VNDocumentCameraViewController` önizlemeyi
+  tam ekran gösterirken sensörün 4:3 karesini çekiyor (kenarlar ekranda hiç
+  görünmüyor) ve açık kitabı tek belge sayıp iki sayfayı birlikte kırpıyor.
+  `PageSplit` bunu en/boy oranından tanıyıp tek dokunuşluk bir "Sol/Sağ/Tümü"
+  adımı açar. Sıra bilinçli: **kırpma dHash'ten önce** — algısal parmak izi
+  sayfayla birlikte saklandığı için, birazdan yok olacak bir görüntünün izini
+  dosyalamak aynı sayfanın kırpılmış ve kırpılmamış hâlini birbirine yabancı
+  yapardı. Modele "yalnız sol sayfayı oku" demek yerine kırpmanın sebebi:
+  yükleme bütçesi (`UploadImageEncoder.defaultMaxPixelSize`) tüm görüntüye
+  harcanıyor, yani çift sayfa asıl sayfanın çözünürlüğünü yarıya indiriyor ve
+  kimsenin sormadığı bir sayfayı okumanın ücreti ödeniyor.
 - **İş kimliği = sayfa kimliği.** Uygulama beklerken öldürülse bile bir sonraki
   açılış biten işi bulup alır; aynı sayfa iki kez üretilmez, ikinci ücret yok.
 - **Her durum değişikliği koşullu.** `claim`/`complete`/`fail`/`expire`/
