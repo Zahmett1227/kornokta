@@ -70,7 +70,10 @@ public enum UploadImageEncoder {
         )
     }
 
-    static func prepare(
+    /// Public since the second-opinion button (2026-08-11): that path re-reads
+    /// the stored original through `ImageStore` and already holds `Data`, so
+    /// the URL-taking variant above would mean an extra disk round trip.
+    public static func prepare(
         original: Data,
         mimeType: String,
         maxPixelSize: Int = defaultMaxPixelSize,

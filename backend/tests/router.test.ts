@@ -66,4 +66,18 @@ describe("handler", () => {
     const response = await handler(new Request("http://127.0.0.1:8787/api/cards", { method: "POST" }));
     expect(response.status).not.toBe(404);
   });
+
+  it("routes /api/second-opinion, and its missing GEMINI_API_KEY names itself (2026-08-11)", async () => {
+    // Same isolation contract as /api/jobs with Supabase: the route must be
+    // wired, and with no key configured the refusal must say which variable —
+    // not fall through to 404 and not break any other route.
+    const response = await handler(
+      new Request("http://127.0.0.1:8787/api/second-opinion", { method: "POST" }),
+    );
+    expect(response.status).not.toBe(404);
+    if (!process.env.GEMINI_API_KEY) {
+      expect(response.status).toBe(500);
+      expect(((await response.json()) as { error: string }).error).toContain("GEMINI_API_KEY");
+    }
+  });
 });

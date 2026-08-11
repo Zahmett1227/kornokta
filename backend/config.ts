@@ -13,7 +13,11 @@
  * error message (§0.7, §7.3).
  *
  * The Document AI and Gemini sections that used to live here left with the
- * deterministic OCR pipeline (ADR-005 trim, 2026-08-09).
+ * deterministic OCR pipeline (ADR-005 trim, 2026-08-09). Gemini returned on
+ * 2026-08-11 in a much smaller role: the on-demand second opinion for
+ * `lowConfidence` cards (`/api/second-opinion`) — deliberately a *different*
+ * provider family than the one that generated the card, because an
+ * independent reader is the point (§10.4's original rationale).
  */
 
 export interface CostConfig {
@@ -28,6 +32,9 @@ export interface CostConfig {
   openaiUsdPerMillionOutputTokens: number;
   /** Refuse to start a card-generation call that would exceed this. 0 disables the check. */
   maxUsdPerCardGeneration: number;
+  /** Same convention as the OpenAI pair: 0 until a verified price is filled in (§20.3). */
+  geminiUsdPerMillionInputTokens: number;
+  geminiUsdPerMillionOutputTokens: number;
 }
 
 export interface OpenAIConfig {
@@ -112,8 +119,41 @@ export interface SupabaseConfig {
   resultRetentionMs: number;
 }
 
+/**
+ * Gemini second-opinion provider (`/api/second-opinion`).
+ *
+ * Small on purpose: this call transcribes one doubtful region and compares it
+ * against one card. It is user-initiated (a button in "Gözden geçir"), never
+ * part of the capture pipeline, so a missing key or a Gemini outage must not
+ * be able to break card generation — the route fails alone, like `/api/jobs`
+ * does when Supabase is unconfigured.
+ *
+ * The API key is deliberately absent, like every credential here (§0.7); it
+ * is read at the composition root.
+ */
+export interface GeminiConfig {
+  /** Model id, never hardcoded at the call site (§0.6). */
+  model: string;
+  /**
+   * Generous next to the short verdict+reading the schema asks for, for the
+   * same reason OPENAI_MAX_OUTPUT_TOKENS is: a reasoning-capable model spends
+   * hidden thinking tokens from this same budget, and a ceiling sized to the
+   * visible answer truncates the response (the `status:"incomplete"` lesson,
+   * config.ts OpenAI notes). Output this short costs cents either way.
+   */
+  maxOutputTokens: number;
+  /**
+   * One synchronous read of one region — nothing like the multi-minute
+   * full-page card generation, so this stays well under `vercel.json`'s
+   * ceiling. The user is holding the phone waiting; past a minute the answer
+   * is "try again", not "keep holding".
+   */
+  timeoutMs: number;
+}
+
 export interface Config {
   openai: OpenAIConfig;
+  gemini: GeminiConfig;
   cost: CostConfig;
   supabase: SupabaseConfig;
 }
@@ -213,10 +253,17 @@ export function loadConfig(): Config {
       // retryable error instead of Vercel hard-killing the function first.
       timeoutMs: numeric("OPENAI_TIMEOUT_MS", 290_000, 1),
     },
+    gemini: {
+      model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
+      maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096, 1),
+      timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
+    },
     cost: {
       openaiUsdPerMillionInputTokens: numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0),
       openaiUsdPerMillionOutputTokens: numeric("OPENAI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
       maxUsdPerCardGeneration: numeric("MAX_USD_PER_CARD_GENERATION", 0),
+      geminiUsdPerMillionInputTokens: numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0),
+      geminiUsdPerMillionOutputTokens: numeric("GEMINI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
     },
     supabase: {
       url: optional("SUPABASE_URL", ""),

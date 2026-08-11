@@ -344,8 +344,26 @@ export class OpenAICardGenerator {
     );
 
     if (response.status < 200 || response.status >= 300) {
-      const detail =
-        (response.body as { error?: { message?: string } } | undefined)?.error?.message ?? "ayrıntı yok";
+      const errorBody = (
+        response.body as { error?: { message?: string; code?: string; type?: string } } | undefined
+      )?.error;
+      const detail = errorBody?.message ?? "ayrıntı yok";
+      // OpenAI reports an exhausted balance as a bare 429 `insufficient_quota`
+      // — the same status as an ordinary rate limit — and an undifferentiated
+      // "OpenAI 429" reads as "the model is busy" while the real fix (topping
+      // up) goes unfound (owner's requirement, 2026-08-11; the Gemini provider
+      // does the same for its 429). Still transient on purpose: while the
+      // balance is empty each retry fails fast and free, and the first retry
+      // after a top-up succeeds without the `force` escape a permanent job
+      // failure would demand (_jobs.ts re-submit guard).
+      if (errorBody?.code === "insufficient_quota" || errorBody?.type === "insufficient_quota") {
+        throw new OpenAIError(
+          "OpenAI kredisi/kotası tükendi (insufficient_quota): platform.openai.com → Billing'den " +
+            `bakiyeyi kontrol et. Sağlayıcı mesajı: ${detail}`,
+          response.status,
+          true,
+        );
+      }
       throw new OpenAIError(`OpenAI ${response.status}: ${detail}`, response.status, isTransientStatus(response.status));
     }
 

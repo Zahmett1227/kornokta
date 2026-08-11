@@ -1,5 +1,12 @@
 # OpenAI ve Gemini anahtar kurulumu — basit adımlar
 
+> **Güncelleme (2026-08-11):** Gemini'nin buradaki orijinal rolü (deterministik
+> hattın el yazısı ikinci görüşü) 2026-08-09 tıraşıyla silindi, ama fikir
+> Faz 6'ya taşındı: aynı anahtar artık `/api/second-opinion`'ı besliyor —
+> "Gözden geçir"deki `lowConfidence` kart için istek üzerine bağımsız ikinci
+> okuma. Anahtar edinme adımları (aşağıda, bölüm 2) aynen geçerli; ortam
+> değişkeni yine `GEMINI_API_KEY`, ayrıntı `backend/.env.example`'da.
+
 Faz 3'ün (AI kart üretimi) çalışması için iki yeni anahtar gerekiyor: OpenAI
 (kart üretimi, §11.2) ve Gemini (el yazısı ikinci görüşü, §10.4 — yalnız
 belirsiz durumlarda çağrılıyor, çoğu zaman hiç kullanılmayacak).

@@ -2,7 +2,8 @@
  * Composition root: builds the real dependencies from the environment and
  * exposes a plain fetch handler.
  *
- * This is the only file that touches `DEVICE_TOKEN` or `OPENAI_API_KEY`.
+ * This is the only file that touches `DEVICE_TOKEN`, `OPENAI_API_KEY` or
+ * `GEMINI_API_KEY`.
  * `config.ts` deliberately carries no credential (a test asserts it), so each
  * secret is read here and handed straight to its consumer without being
  * stored, echoed or logged (§0.7, §7.3).
@@ -11,10 +12,12 @@
 import { waitUntil } from "@vercel/functions";
 
 import { loadConfig } from "../config.js";
+import { GeminiSecondOpinion } from "../providers/gemini.js";
 import { OpenAICardGenerator } from "../providers/openai.js";
 import { SupabaseJobStore } from "../providers/supabaseJobs.js";
 import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
 import { handleJobsRequest, type JobsDependencies } from "./_jobs.js";
+import { handleSecondOpinionRequest, type SecondOpinionDependencies } from "./_secondOpinion.js";
 
 /**
  * Built once per process, not per request, so the config is parsed and the
@@ -112,10 +115,35 @@ export function buildJobsDependencies(): JobsDependencies {
   return cachedJobs;
 }
 
+/**
+ * Built once per process; needs only `GEMINI_API_KEY`. Missing means this one
+ * route refuses with the variable's name — card generation never notices,
+ * the same isolation `/api/jobs` has from a missing Supabase configuration.
+ */
+let cachedSecondOpinion: SecondOpinionDependencies | null = null;
+
+export function buildSecondOpinionDependencies(): SecondOpinionDependencies {
+  if (cachedSecondOpinion) return cachedSecondOpinion;
+
+  const config = loadConfig();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Eksik ortam değişkeni: GEMINI_API_KEY. backend/.env.example dosyasına bak.");
+  }
+
+  cachedSecondOpinion = {
+    provider: new GeminiSecondOpinion(config.gemini, apiKey, config.cost),
+    deviceToken: process.env.DEVICE_TOKEN,
+    log: (entry) => console.log(JSON.stringify(entry)),
+  };
+  return cachedSecondOpinion;
+}
+
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
   cachedCards = null;
   cachedJobs = null;
+  cachedSecondOpinion = null;
 }
 
 /**
@@ -196,6 +224,22 @@ export async function handler(request: Request): Promise<Response> {
       );
     }
     return handleJobsRequest(request, dependencies);
+  }
+
+  // 2026-08-11: on-demand Gemini second opinion for a `lowConfidence` card.
+  // A third independent door, like `/api/jobs` next to `/api/cards-vision`:
+  // its missing key breaks only itself.
+  if (url.pathname === "/api/second-opinion" || url.pathname === "/second-opinion") {
+    let dependencies: SecondOpinionDependencies;
+    try {
+      dependencies = buildSecondOpinionDependencies();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: (error as Error).message, retryable: false }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleSecondOpinionRequest(request, dependencies);
   }
 
   return new Response(JSON.stringify({ error: "Bulunamadı.", retryable: false }), {

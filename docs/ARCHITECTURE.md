@@ -76,11 +76,16 @@ Bilgi Haritası).
   galeri), dayanıklı işleme kuyruğu, kart üretimi istemcisi, gerçek FSRS-6
   tekrarı, Egzersiz modu + Bilgi Haritası, yedekleme (v5). Ana veri kaynağı
   telefondaki SwiftData'dır.
-- **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarını saklar,
+- **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar,
   OpenAI vision ile kart üretir ve bunu asenkron iş kuyruğu üzerinden yürütür
-  (`/api/jobs`); `/api/cards-vision` senkron ikinci kapı. Kalıcı veri kaynağı
-  değildir — Supabase yalnız bir **iş kuyruğu ve geçici görüntü kovasıdır**:
-  görüntü iş bitince, sonuç metni 60 gün sonra silinir.
+  (`/api/jobs`); `/api/cards-vision` senkron ikinci kapı. Üçüncü, isteğe bağlı
+  kapı `/api/second-opinion` (2026-08-11): `lowConfidence` bir kart için
+  kullanıcının istediği anda **Gemini'ye** — bilinçli olarak kartı üretenden
+  bağımsız bir model ailesine — sayfayı yeniden okutup
+  `supports|contradicts|unclear` verdikti alır; sonuç kaydedilmez, telefon o an
+  gösterir. Kalıcı veri kaynağı değildir — Supabase yalnız bir **iş kuyruğu ve
+  geçici görüntü kovasıdır**: görüntü iş bitince, sonuç metni 60 gün sonra
+  silinir.
 - **Evals** (`evals/`): FSRS-6 referans algoritması (Swift portunun kilidi),
   sözleşme senkron testleri (kart tipi enum'ları, ders/konu şeması, FSRS
   ağırlıkları), Türkçe normalizasyon referansı ve tarihsel OCR/işaret-tespiti

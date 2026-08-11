@@ -389,6 +389,25 @@ describe("OpenAICardGenerator", () => {
     }
   });
 
+  it("names the exhausted balance on 429 insufficient_quota, per the owner's requirement", async () => {
+    // OpenAI reports an empty balance as a bare 429 — the same status as an
+    // ordinary rate limit. The message must say "kredi/kota" and point at
+    // Billing so the real fix is never hunted for ("sorunu arayıp arayıp
+    // durmayalım", 2026-08-11). The Gemini provider does the same for its 429.
+    const { transport } = stubTransport(429, {
+      error: { message: "You exceeded your current quota.", code: "insufficient_quota", type: "insufficient_quota" },
+    });
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    const error = await generator.generateCards(REQUEST).catch((caught) => caught as OpenAIError);
+    expect(error).toBeInstanceOf(OpenAIError);
+    expect((error as OpenAIError).message).toMatch(/kredisi|kotası/);
+    expect((error as OpenAIError).message).toContain("Billing");
+    // Still transient: a permanent failure would lock the page behind the
+    // `force` re-submit guard (_jobs.ts); after a top-up the next retry
+    // succeeds on its own.
+    expect((error as OpenAIError).transient).toBe(true);
+  });
+
   it("carries OpenAI's own error message so a misconfiguration is diagnosable", async () => {
     const { transport } = stubTransport(401, { error: { message: "Invalid API key provided" } });
     const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);

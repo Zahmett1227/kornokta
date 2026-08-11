@@ -108,6 +108,24 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    /// Client for the "İkinci görüş iste" button (Gemini re-read of a
+    /// `lowConfidence` card, backend `/api/second-opinion`).
+    ///
+    /// Built per use rather than held: the button lives on a detail screen the
+    /// user reaches rarely, and resolving here means an edited URL or token is
+    /// always current without this type joining `backendChanged()`'s rebuild
+    /// list. Nil while the backend is unconfigured — the caller explains
+    /// instead of failing.
+    func makeSecondOpinionProvider() -> SecondOpinionProvider? {
+        guard let configuration = Self.resolvedBackendConfiguration(settings: settings, tokens: tokenStore)
+        else { return nil }
+        let tokens = tokenStore
+        return SecondOpinionProvider(
+            configuration: configuration,
+            tokenProvider: { tokens.read() }
+        )
+    }
+
     /// Re-reads the settings and rebuilds the cloud client. Called when the
     /// user edits the backend URL or the token.
     func backendChanged() {
