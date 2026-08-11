@@ -108,7 +108,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   Eski dosyalar `decodeIfPresent` ile okunur; geri yükleme yalnızca ekler ve
   eski ders adlarını normalize eder.
 
-## Şu an neredeyiz (2026-08-09)
+## Şu an neredeyiz (2026-08-11)
 
 | İş | Durum |
 |---|---|
@@ -119,11 +119,11 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Ders/konu sınıflandırması + Egzersiz modu | ✅ Tamam (PR #32); `jobs.subject` kolonu canlıda |
 | Egzersiz merkeze + Bilgi Haritası | ✅ `main`'de (PR #33); üç P0 cihazda doğrulandı |
 | Konu backfill (204 Patoloji kartı) | ✅ `main`'de (PR #34/#35) |
-| `jobs.result` 60 günlük saklama süpürmesi | ✅ Bu dalda (karar: docs/PRIVACY.md) |
-| Ölü kod tıraşı (deterministik hat silindi) | ✅ Bu dalda; ADR-005'e not düşüldü |
-| Değer tabanlı navigasyon refaktörü | ✅ Bu dalda; **cihaz doğrulaması açık** |
-| Egzersiz→FSRS köprüsü (ADR-007) | ✅ Bu dalda; **cihaz doğrulaması açık** |
-| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ Bu dalda; **cihaz doğrulaması açık** |
+| `jobs.result` 60 günlük saklama süpürmesi | ✅ `main`'de (PR #36); karar: docs/PRIVACY.md |
+| Ölü kod tıraşı (deterministik hat silindi) | ✅ `main`'de (PR #36); ADR-005'e not düşüldü |
+| Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
+| Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
+| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
