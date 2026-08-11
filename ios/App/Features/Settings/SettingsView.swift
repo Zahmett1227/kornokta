@@ -233,8 +233,8 @@ struct SettingsView: View {
             } footer: {
                 Text(cost > 0
                      ? "Sunucudaki fiyat ayarlarından hesaplanır."
-                     : "Maliyet için sunucuda OPENAI_USD_PER_MILLION_* değerleri "
-                       + "ayarlanmalı; uydurma bir fiyat gösterilmiyor.")
+                     : "Maliyet için sunucuda OPENAI_/GEMINI_USD_PER_MILLION_* "
+                       + "değerleri ayarlanmalı; uydurma bir fiyat gösterilmiyor.")
             }
         }
     }

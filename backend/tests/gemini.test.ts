@@ -126,7 +126,11 @@ describe("GeminiSecondOpinion", () => {
     expect(result.verdict).toBe("contradicts");
     expect(result.reading).toContain("hipokalemi");
     expect(result.note).toBe("Önek ters okunmuş.");
+    // Provider and model ride along so the phone's ModelRun accounting
+    // (Ayarlar → Kullanım) counts this call like every other paid one.
     expect(result.usage).toEqual({
+      provider: "gemini",
+      model: "gemini-3.5-flash",
       inputTokens: 1000,
       outputTokens: 200,
       estimatedCostUSD: estimateGeminiCostUSD(1000, 200, COST),
@@ -202,6 +206,20 @@ describe("GeminiSecondOpinion", () => {
     const error = await provider.secondOpinion(REQUEST).catch((caught) => caught as GeminiError);
     expect((error as GeminiError).message).toMatch(/GEMINI_MAX_OUTPUT_TOKENS/);
     expect((error as GeminiError).transient).toBe(true);
+  });
+
+  it("rejects any candidate that did not stop cleanly, even with schema-valid JSON left behind", async () => {
+    // SAFETY/RECITATION/BLOCKLIST can terminate a candidate that still carries
+    // parseable JSON; showing it would present a policy-terminated fragment as
+    // a trustworthy medical verdict (Codex, PR #39).
+    for (const finishReason of ["SAFETY", "RECITATION", "BLOCKLIST"]) {
+      const { transport } = stubTransport(200, envelope(OPINION, undefined, finishReason));
+      const provider = new GeminiSecondOpinion(CONFIG, "g-test", COST, transport);
+      const error = await provider.secondOpinion(REQUEST).catch((caught) => caught as GeminiError);
+      expect(error, finishReason).toBeInstanceOf(GeminiError);
+      expect((error as GeminiError).message, finishReason).toContain(finishReason);
+      expect((error as GeminiError).transient, finishReason).toBe(false);
+    }
   });
 
   it("surfaces a prompt block with its reason, as permanent", async () => {

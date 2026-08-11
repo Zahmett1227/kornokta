@@ -16,6 +16,7 @@ import CizgiCore
 /// the deck on its own).
 struct SecondOpinionSection: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.modelContext) private var context
     let card: Card
 
     private enum Phase: Equatable {
@@ -155,7 +156,9 @@ struct SecondOpinionSection: View {
         let back = card.back
         let explanation = card.explanation
         let requestId = card.id.uuidString
+        let pageId = card.knowledgeUnit?.region?.page?.id.uuidString
         let store = environment.imageStore
+        let started = Date()
 
         do {
             // Load + downscale off the main actor: the stored original is
@@ -174,6 +177,29 @@ struct SecondOpinionSection: View {
                 back: back,
                 explanation: explanation
             )
+
+            // The opinion text stays ephemeral, its *cost* does not: Ayarlar →
+            // Kullanım totals `ModelRun`, and a paid call that never lands
+            // there permanently underreports spend (Codex, PR #39). Recorded
+            // only on success, the same deliberate gap card generation has
+            // (docs/FAZ3-PLAN.md F3-8).
+            if let usage = opinion.usage {
+                context.insert(ModelRun(
+                    requestId: requestId,
+                    jobId: pageId ?? requestId,
+                    provider: usage.provider,
+                    model: usage.model,
+                    purpose: "second_opinion",
+                    promptVersion: opinion.promptVersion ?? "",
+                    latencyMs: Int(Date().timeIntervalSince(started) * 1000),
+                    inputTokens: usage.inputTokens,
+                    outputTokens: usage.outputTokens,
+                    estimatedCostUSD: usage.estimatedCostUSD,
+                    success: true
+                ))
+                try? context.save()
+            }
+
             phase = .loaded(opinion)
         } catch let error as SecondOpinionError {
             // The server's message travels verbatim — it already names the

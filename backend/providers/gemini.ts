@@ -103,7 +103,19 @@ export interface SecondOpinionResult {
   reading: string;
   /** One-sentence explanation, mainly for `contradicts`. */
   note?: string;
-  usage: { inputTokens: number; outputTokens: number; estimatedCostUSD: number };
+  /**
+   * Same shape as card generation's `usage` block on purpose: the phone's
+   * `ModelRun` accounting (§16.8, Ayarlar → Kullanım) records provider and
+   * model per call, and this call must count like every other paid one
+   * (Codex, PR #39).
+   */
+  usage: {
+    provider: "gemini";
+    model: string;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUSD: number;
+  };
 }
 
 /** Estimated USD from real usage figures and the configured per-token price (§20.3). */
@@ -274,6 +286,19 @@ export class GeminiSecondOpinion {
       );
     }
 
+    if (candidate.finishReason && candidate.finishReason !== "STOP") {
+      // SAFETY, RECITATION, BLOCKLIST… can leave schema-valid JSON behind, and
+      // parsing it would present a policy-terminated fragment as a trustworthy
+      // medical verdict (Codex, PR #39). Anything that did not stop cleanly is
+      // an unsuccessful call, not content. Permanent: the same page and card
+      // would trip the same filter again.
+      throw new GeminiError(
+        `Model üretimi temiz bitmedi (finishReason: ${candidate.finishReason}); içerik güvenilmez sayıldı.`,
+        undefined,
+        false,
+      );
+    }
+
     const text = candidate.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
     if (!text.trim()) {
       throw new GeminiError(
@@ -314,6 +339,8 @@ export class GeminiSecondOpinion {
       reading: record.reading,
       ...(note ? { note } : {}),
       usage: {
+        provider: "gemini",
+        model: this.config.model,
         inputTokens,
         outputTokens,
         estimatedCostUSD: estimateGeminiCostUSD(inputTokens, outputTokens, this.cost),

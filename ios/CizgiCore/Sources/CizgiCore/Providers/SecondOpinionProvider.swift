@@ -16,18 +16,42 @@ public struct SecondOpinion: Sendable, Equatable {
         case unclear
     }
 
+    /// What the call cost, as the server reported it (§16.8). Optional so an
+    /// older server without the block cannot fail the whole response; without
+    /// it the caller simply has nothing to account.
+    public struct Usage: Sendable, Equatable {
+        public let provider: String
+        public let model: String
+        public let inputTokens: Int
+        public let outputTokens: Int
+        public let estimatedCostUSD: Double
+
+        public init(provider: String, model: String, inputTokens: Int, outputTokens: Int, estimatedCostUSD: Double) {
+            self.provider = provider
+            self.model = model
+            self.inputTokens = inputTokens
+            self.outputTokens = outputTokens
+            self.estimatedCostUSD = estimatedCostUSD
+        }
+    }
+
     public let verdict: Verdict?
     public let verdictRaw: String
     /// The independent transcription (≤3 candidates per unclear spot).
     public let reading: String
     /// One-sentence explanation, mainly on `contradicts`.
     public let note: String?
+    public let usage: Usage?
+    /// For the `ModelRun` record, same role as `cardPromptVersion` on cards.
+    public let promptVersion: String?
 
-    public init(verdictRaw: String, reading: String, note: String?) {
+    public init(verdictRaw: String, reading: String, note: String?, usage: Usage?, promptVersion: String?) {
         self.verdict = Verdict(rawValue: verdictRaw)
         self.verdictRaw = verdictRaw
         self.reading = reading
         self.note = note
+        self.usage = usage
+        self.promptVersion = promptVersion
     }
 }
 
@@ -166,7 +190,20 @@ public struct SecondOpinionProvider: Sendable {
         return SecondOpinion(
             verdictRaw: decoded.verdict,
             reading: decoded.reading,
-            note: (note?.isEmpty ?? true) ? nil : note
+            note: (note?.isEmpty ?? true) ? nil : note,
+            // Kept even though the opinion text itself is ephemeral: Ayarlar →
+            // Kullanım totals `ModelRun`, and a paid call that never lands
+            // there permanently underreports cost (Codex, PR #39).
+            usage: decoded.usage.map {
+                SecondOpinion.Usage(
+                    provider: $0.provider,
+                    model: $0.model,
+                    inputTokens: $0.inputTokens,
+                    outputTokens: $0.outputTokens,
+                    estimatedCostUSD: $0.estimatedCostUSD
+                )
+            },
+            promptVersion: decoded.promptVersion
         )
     }
 
@@ -191,10 +228,13 @@ public struct SecondOpinionProvider: Sendable {
 
 /// Field names match the server's JSON exactly (`_secondOpinion.ts`).
 /// `verdict` stays a plain string on the wire — see `SecondOpinion.verdict`.
+/// `usage` reuses card generation's own wire type: the server sends the same
+/// shape on both endpoints on purpose.
 struct RemoteSecondOpinion: Decodable {
     let requestId: String
     let verdict: String
     let reading: String
     let note: String?
+    let usage: RemoteUsage?
     let promptVersion: String?
 }

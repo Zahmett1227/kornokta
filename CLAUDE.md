@@ -69,7 +69,9 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    orijinal sayfa + kart `/api/second-opinion`'a gider, **Gemini** (bilinçli
    olarak kartı üreten OpenAI'den bağımsız aile; §10.4'ün pivotu sağ çıkan
    fikri) bölgeyi yeniden okuyup `supports|contradicts|unclear` verdikti döner.
-   Yalnız istek üzerine harcar, cevap kaydedilmez (ekrandan çıkınca gider),
+   Yalnız istek üzerine harcar; cevabın metni kaydedilmez (ekrandan çıkınca
+   gider) ama maliyeti kaydedilir (`ModelRun`, `purpose: "second_opinion"` —
+   Kullanım ekranı Gemini'yi de sayar),
    `GEMINI_API_KEY` yoksa/Gemini çökse yalnız bu düğme etkilenir. Kota/kredi
    biterse hata mesajı bunu **adıyla** söyler; OpenAI 429 `insufficient_quota`
    da öyle (sahibinin şartı — "sorunu arayıp arayıp durmayalım").

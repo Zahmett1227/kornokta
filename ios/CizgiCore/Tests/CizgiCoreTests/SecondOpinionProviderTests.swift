@@ -11,24 +11,38 @@ final class SecondOpinionProviderTests: XCTestCase {
         let opinion = try SecondOpinionProvider.parse(data(
             """
             {"requestId":"r1","verdict":"contradicts","reading":"hipokalemi",
-             "note":"Önek ters okunmuş.","promptVersion":"2.0"}
+             "note":"Önek ters okunmuş.","promptVersion":"2.0",
+             "usage":{"provider":"gemini","model":"gemini-3.5-flash",
+                      "inputTokens":800,"outputTokens":90,"estimatedCostUSD":0.001}}
             """
         ))
         XCTAssertEqual(opinion.verdict, .contradicts)
         XCTAssertEqual(opinion.verdictRaw, "contradicts")
         XCTAssertEqual(opinion.reading, "hipokalemi")
         XCTAssertEqual(opinion.note, "Önek ters okunmuş.")
+        XCTAssertEqual(opinion.promptVersion, "2.0")
+        // The accounting block must survive the parse: Ayarlar → Kullanım
+        // totals ModelRun, and this call pays like every other (Codex, PR #39).
+        XCTAssertEqual(
+            opinion.usage,
+            SecondOpinion.Usage(
+                provider: "gemini", model: "gemini-3.5-flash",
+                inputTokens: 800, outputTokens: 90, estimatedCostUSD: 0.001
+            )
+        )
     }
 
-    func testMissingNoteAndPromptVersionDecodeToNil() throws {
-        // promptVersion arrived with the endpoint, but the decoder must not
-        // depend on it — the same forward-compatibility stance as the rest of
-        // the wire types.
+    func testMissingNoteUsageAndPromptVersionDecodeToNil() throws {
+        // usage/promptVersion arrived with the endpoint, but the decoder must
+        // not depend on them — the same forward-compatibility stance as the
+        // rest of the wire types.
         let opinion = try SecondOpinionProvider.parse(data(
             #"{"requestId":"r1","verdict":"supports","reading":"aynı metin"}"#
         ))
         XCTAssertEqual(opinion.verdict, .supports)
         XCTAssertNil(opinion.note)
+        XCTAssertNil(opinion.usage)
+        XCTAssertNil(opinion.promptVersion)
     }
 
     func testBlankNoteCollapsesToNil() throws {
