@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { labelOrder, parseModelSpec } from "../scripts/compareModels.js";
+import { experimentCardCeiling, labelOrder, parseModelSpec } from "../scripts/compareModels.js";
 
 const FALLBACK = {
   openaiUsdPerMillionInputTokens: 5,
@@ -70,5 +70,23 @@ describe("parseModelSpec — fiyatlar", () => {
     expect(() => parseModelSpec("gpt-5.6-terra:2/x/12", FALLBACK)).toThrow();
     expect(() => parseModelSpec("gpt-5.6-terra:2/-1/12", FALLBACK)).toThrow();
     expect(() => parseModelSpec(":5/0.5/30", FALLBACK)).toThrow(/Model adı boş/);
+  });
+});
+
+describe("experimentCardCeiling", () => {
+  it("honours a ceiling above the deployment's own", () => {
+    // The generator clamps a *request* down to the deployment's configured
+    // ceiling, so `--max-cards 20` against a deployment set to 12 would have
+    // run at 12 while the report claimed 20. Silent, and exactly the shape of
+    // the bug that left "sayfa başına kart" doing nothing for two phases.
+    expect(experimentCardCeiling(20, 12)).toBe(20);
+  });
+
+  it("falls back to the deployment's ceiling when none was asked for", () => {
+    expect(experimentCardCeiling(undefined, 12)).toBe(12);
+  });
+
+  it("allows a lower ceiling too", () => {
+    expect(experimentCardCeiling(4, 12)).toBe(4);
   });
 });

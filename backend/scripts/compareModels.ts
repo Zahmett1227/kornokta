@@ -160,6 +160,27 @@ export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): Mode
 }
 
 /**
+ * The card ceiling this experiment runs at.
+ *
+ * `OpenAICardGenerator` clamps a request down to the deployment's configured
+ * ceiling — `Math.min(requested, configured)` — because a *client* must not be
+ * able to raise someone else's spending limit (§21.3). That guard is right in
+ * production and wrong here: the operator running this script is the
+ * deployment's owner, spending their own key, and `--max-cards` is their
+ * explicit instruction about their own experiment.
+ *
+ * Without this, `--max-cards 20` against a deployment configured for 12 would
+ * silently run at 12 and the report would say `maxCards: 20` — the exact
+ * shape of the bug that left the "sayfa başına kart" setting doing nothing for
+ * two phases (see `config.ts`). The value returned here is pushed into the
+ * generator's *config*, so the schema's `maxItems`, the prompt text and the
+ * gate all agree on one number.
+ */
+export function experimentCardCeiling(requested: number | undefined, configured: number): number {
+  return requested ?? configured;
+}
+
+/**
  * What a file actually is, read from its first bytes rather than its name.
  *
  * The extension is not evidence. An iPhone photo AirDropped to a Mac is HEIC,
@@ -343,14 +364,25 @@ async function main(): Promise<void> {
   const pagesDir = typeof args.pages === "string" ? args.pages : "../evals/fixtures/pages";
   const outDir = typeof args.out === "string" ? args.out : "../evals/reports";
   const subject = typeof args.subject === "string" ? args.subject : undefined;
-  const maxCards =
-    typeof args["max-cards"] === "string"
-      ? Number(args["max-cards"])
-      : config.openai.maxCardsPerKnowledgeUnit;
+  let requestedMaxCards: number | undefined;
+  if (typeof args["max-cards"] === "string") {
+    requestedMaxCards = Number(args["max-cards"]);
+    if (!Number.isInteger(requestedMaxCards) || requestedMaxCards < 1) {
+      // Unvalidated, a typo became `NaN`, then `maxItems: NaN` in the schema,
+      // then a bare 400 from the provider — money spent to learn nothing.
+      throw new Error(`--max-cards 1 veya daha büyük bir tam sayı olmalı, alınan: ${args["max-cards"]}`);
+    }
+  }
+  const maxCards = experimentCardCeiling(requestedMaxCards, config.openai.maxCardsPerKnowledgeUnit);
 
   const pages = await readPages(pagesDir);
   console.log(
-    `${pages.length} sayfa × ${specs.length} model = ${pages.length * specs.length} gerçek çağrı.\n`,
+    `${pages.length} sayfa × ${specs.length} model = ${pages.length * specs.length} gerçek çağrı.\n` +
+      `Sayfa başına kart tavanı: ${maxCards}` +
+      (maxCards !== config.openai.maxCardsPerKnowledgeUnit
+        ? ` (dağıtımın kendi ayarı ${config.openai.maxCardsPerKnowledgeUnit}; yalnız bu koşu için aşıldı)`
+        : "") +
+      "\n",
   );
 
   const results: PageResult[] = [];
@@ -364,7 +396,10 @@ async function main(): Promise<void> {
 
   for (const [modelIndex, spec] of specs.entries()) {
     const generator = new OpenAICardGenerator(
-      { ...config.openai, model: spec.model },
+      // `maxCardsPerKnowledgeUnit` overridden, not just passed on the request:
+      // the request is clamped *to* this value, so leaving the deployment's own
+      // here would quietly cap the experiment at it.
+      { ...config.openai, model: spec.model, maxCardsPerKnowledgeUnit: maxCards },
       apiKey,
       spec.prices,
     );

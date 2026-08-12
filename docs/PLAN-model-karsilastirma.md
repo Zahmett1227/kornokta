@@ -16,7 +16,7 @@ sayfada hangisi yetiyor?" sorusunu da cevaplar.
 
 | Ayar | Değer | Neden |
 |---|---|---|
-| Sayfa başına kart | **12** | Sayfalar yoğun; sahibinin kararı. Ölçüm, kalıcı olarak kullanılacak ayarla yapılmalı. |
+| Sayfa başına kart | **20** (yalnız deneyde) | Aşağıya bak — 12'de üç model de tavana yapışıyor ve kapsama farkı ölçülemiyor. Uygulama 12'de kalıyor. |
 | Beş şıklı mod | `mixed` | Üç modelde de aynı |
 | `reasoning_effort` | `low` | Adil karşılaştırma sabit tutar (ikinci tur notuna bak) |
 | Ders | Patoloji (ya da sayfaların dersi) | Konu atamasını da ölçer |
@@ -54,7 +54,16 @@ npm run compare -- \
   --subject Patoloji
 ```
 
-`--max-cards` verilmiyor: `.env`'deki 12 zaten kullanılacak ayar.
+`--max-cards 20` **bilerek** veriliyor, ve sebebi ilk gerçek koşuda ortaya çıktı:
+25'ten fazla işaret taşıyan bir sayfada üç model de tam 12 kart üretti — yani
+üçü de tavana çarptı. O sayfada "yakalanan işaret / toplam" satırı modeli
+değil **sınırı** ölçüyor, ve üç model birbirinden ayırt edilemiyor. Tavanı
+deneyde açmak, kapsama farkını görünür kılan tek yol.
+
+Uygulamanın kendi ayarı **12'de kalıyor**; bu yalnız ölçüm içindir. Betik
+`--max-cards`'ı dağıtımın tavanının üstüne çıkarabiliyor (`experimentCardCeiling`)
+— üretimde geçerli olan §21.3 kelepçesi burada yanlış olurdu, çünkü betiği
+koşturan kişi dağıtımın sahibi ve kendi anahtarını harcıyor.
 
 **Deneyin maliyeti ~$1.2** (8 sayfa: Sol ≈$0.77, Terra ≈$0.31, Luna ≈$0.03).
 Cevabı tahmin etmeye çalışmaktan ucuz.
