@@ -51,7 +51,8 @@ cd backend
 npm run compare -- \
   --models "gpt-5.6-sol:5/0.5/30,gpt-5.6-terra:2/0.2/12,gpt-5.6-luna:0.2/0.02/1.2" \
   --pages ../evals/fixtures/pages \
-  --subject Patoloji
+  --subject Patoloji \
+  --max-cards 20
 ```
 
 `--max-cards 20` **bilerek** veriliyor, ve sebebi ilk gerçek koşuda ortaya çıktı:
