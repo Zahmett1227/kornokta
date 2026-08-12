@@ -113,14 +113,26 @@ describe("prompt contracts (§15)", () => {
     // necroptosis block), which no rule had asked for.
     const prompt = CARD_GENERATION_SYSTEM_PROMPT;
     expect(prompt).toContain("İŞARET EDER");
+
     // Ordering is the contract: handwriting, then stars, then underline, then
     // highlighter. Positions, not prose, so a reworded list still fails here.
-    const star = prompt.indexOf("YILDIZ/daire/ok/ünlem");
-    const underline = prompt.indexOf("altı çizili tek terim");
-    const highlight = prompt.indexOf("geniş fosforlu vurgu");
-    expect(prompt.indexOf("EL YAZISI notlar")).toBeLessThan(star);
-    expect(star).toBeLessThan(underline);
-    expect(underline).toBeLessThan(highlight);
+    //
+    // Sliced to rule 3's own block first, and that is the whole point rather
+    // than tidiness: "EL YAZISI notlar" also appears up in the scanning
+    // section, hundreds of characters earlier, so searching the whole prompt
+    // compared the *scanning bullet* to the star item. That comparison is
+    // true no matter what rule 3 says — item (a) could be demoted below the
+    // star, or deleted outright, and this test would still have passed while
+    // claiming to guard the order.
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    expect(rule3).not.toBe("");
+
+    const positions = ["EL YAZISI notlar", "YILDIZ/daire/ok/ünlem", "altı çizili tek terim", "geniş fosforlu vurgu"]
+      .map((item) => rule3.indexOf(item));
+    // -1 would sort as "first" and quietly satisfy the ordering below, so a
+    // deleted item has to fail here rather than pass as a bad comparison.
+    expect(positions).not.toContain(-1);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
   });
 
   it("card prompt (v2.6) demands a whole-page scan and a coverage check", () => {
