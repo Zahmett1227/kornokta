@@ -20,6 +20,12 @@ import {
   HANDWRITING_SECOND_OPINION_PROMPT,
   HANDWRITING_SECOND_OPINION_PROMPT_VERSION,
 } from "../prompts/handwritingSecondOpinion.js";
+import {
+  EMPTY_TOKEN_USAGE,
+  estimateCostUSD,
+  readGeminiUsage,
+  type TokenUsage,
+} from "./tokenUsage.js";
 import type { CostConfig, GeminiConfig } from "../config.js";
 
 export { HANDWRITING_SECOND_OPINION_PROMPT_VERSION };
@@ -113,21 +119,35 @@ export interface SecondOpinionResult {
     provider: "gemini";
     model: string;
     inputTokens: number;
+    /** Subset of `inputTokens` served from Gemini's context cache, billed cheaper. */
+    cachedInputTokens: number;
     outputTokens: number;
+    /** Subset of `outputTokens` Gemini reports as `thoughtsTokenCount`. */
+    reasoningTokens: number;
     estimatedCostUSD: number;
   };
 }
 
-/** Estimated USD from real usage figures and the configured per-token price (§20.3). */
-export function estimateGeminiCostUSD(
-  inputTokens: number,
-  outputTokens: number,
-  cost: Pick<CostConfig, "geminiUsdPerMillionInputTokens" | "geminiUsdPerMillionOutputTokens">,
-): number {
-  return (
-    (inputTokens / 1_000_000) * cost.geminiUsdPerMillionInputTokens +
-    (outputTokens / 1_000_000) * cost.geminiUsdPerMillionOutputTokens
-  );
+/** The three prices this provider is billed at, in the shape `estimateCostUSD` wants. */
+export type GeminiCostConfig = Pick<
+  CostConfig,
+  | "geminiUsdPerMillionInputTokens"
+  | "geminiUsdPerMillionCachedInputTokens"
+  | "geminiUsdPerMillionOutputTokens"
+>;
+
+/**
+ * Estimated USD from real usage figures and the configured per-token price
+ * (§20.3). Same widening as `estimateOpenAICostUSD`, for the same reason: the
+ * cached share of the input has its own rate and pricing it as uncached
+ * overstates every repeated call.
+ */
+export function estimateGeminiCostUSD(usage: TokenUsage, cost: GeminiCostConfig): number {
+  return estimateCostUSD(usage, {
+    usdPerMillionInputTokens: cost.geminiUsdPerMillionInputTokens,
+    usdPerMillionCachedInputTokens: cost.geminiUsdPerMillionCachedInputTokens,
+    usdPerMillionOutputTokens: cost.geminiUsdPerMillionOutputTokens,
+  });
 }
 
 export function buildSecondOpinionInstruction(request: SecondOpinionRequest): string {
@@ -162,7 +182,13 @@ interface GenerateContentBody {
     finishReason?: string;
   }>;
   promptFeedback?: { blockReason?: string };
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  /** Read through `readGeminiUsage`, which also folds in `thoughtsTokenCount`. */
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    cachedContentTokenCount?: number;
+    thoughtsTokenCount?: number;
+  };
   error?: { message?: string; status?: string };
 }
 
@@ -211,10 +237,7 @@ export class GeminiSecondOpinion {
   constructor(
     private readonly config: GeminiConfig,
     private readonly apiKey: string,
-    private readonly cost: Pick<
-      CostConfig,
-      "geminiUsdPerMillionInputTokens" | "geminiUsdPerMillionOutputTokens"
-    >,
+    private readonly cost: GeminiCostConfig,
     private readonly transport: GeminiTransport = geminiFetchTransport,
   ) {}
 
@@ -330,8 +353,7 @@ export class GeminiSecondOpinion {
       throw new GeminiError("Model yanıtında reading alanı yok.", undefined, false);
     }
 
-    const inputTokens = parsedBody?.usageMetadata?.promptTokenCount ?? 0;
-    const outputTokens = parsedBody?.usageMetadata?.candidatesTokenCount ?? 0;
+    const tokens = readGeminiUsage(parsedBody) ?? EMPTY_TOKEN_USAGE;
     const note = typeof record.note === "string" && record.note.trim() ? record.note.trim() : undefined;
 
     return {
@@ -341,9 +363,11 @@ export class GeminiSecondOpinion {
       usage: {
         provider: "gemini",
         model: this.config.model,
-        inputTokens,
-        outputTokens,
-        estimatedCostUSD: estimateGeminiCostUSD(inputTokens, outputTokens, this.cost),
+        inputTokens: tokens.inputTokens,
+        cachedInputTokens: tokens.cachedInputTokens,
+        outputTokens: tokens.outputTokens,
+        reasoningTokens: tokens.reasoningTokens,
+        estimatedCostUSD: estimateGeminiCostUSD(tokens, this.cost),
       },
     };
   }

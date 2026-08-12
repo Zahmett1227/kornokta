@@ -22,7 +22,16 @@ const CONFIG: OpenAIConfig = {
   timeoutMs: 1_000,
 };
 
-const COST = { openaiUsdPerMillionInputTokens: 2, openaiUsdPerMillionOutputTokens: 8 };
+const COST = {
+  openaiUsdPerMillionInputTokens: 2,
+  openaiUsdPerMillionCachedInputTokens: 0.2,
+  openaiUsdPerMillionOutputTokens: 8,
+};
+
+/** A `TokenUsage` with nothing cached and nothing reasoned — the old two-number shape. */
+function plainUsage(inputTokens: number, outputTokens: number) {
+  return { inputTokens, cachedInputTokens: 0, outputTokens, reasoningTokens: 0 };
+}
 
 const REQUEST = {
   requestId: "req_1",
@@ -70,6 +79,103 @@ function stubTransport(status: number, body: unknown) {
   };
   return { transport, calls };
 }
+
+/** The billed-failure cases all follow the same shape: call, catch, inspect. */
+async function failWith(status: number, body: unknown): Promise<OpenAIError> {
+  const { transport } = stubTransport(status, body);
+  const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+  const caught = await generator.generateCards(REQUEST).catch((error) => error as OpenAIError);
+  expect(caught).toBeInstanceOf(OpenAIError);
+  return caught as OpenAIError;
+}
+
+describe("failed calls carry what they spent (§16.8, §20.3)", () => {
+  it("attaches usage to a response truncated at max_output_tokens", async () => {
+    // The most expensive failure in the system: every output token was
+    // generated and billed, and the truncated JSON is worth nothing. Before
+    // this the caller saw a message and no figure, so the ledger recorded the
+    // call as if it had never happened.
+    const error = await failWith(200, {
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      usage: {
+        input_tokens: 4200,
+        output_tokens: 8192,
+        input_tokens_details: { cached_tokens: 3000 },
+        output_tokens_details: { reasoning_tokens: 6000 },
+      },
+    });
+    expect(error.usage).toEqual({
+      inputTokens: 4200,
+      cachedInputTokens: 3000,
+      outputTokens: 8192,
+      reasoningTokens: 6000,
+    });
+    expect(error.reason).toBe("incomplete_max_output_tokens");
+    expect(error.transient).toBe(true);
+  });
+
+  it("attaches usage to a schema-invalid response", async () => {
+    const broken = { ...(modelOutput() as Record<string, unknown>), cards: "not-an-array" };
+    const error = await failWith(200, responsesEnvelope(broken, { input_tokens: 900, output_tokens: 400 }));
+    expect(error.usage?.outputTokens).toBe(400);
+    expect(error.reason).toBe("schema_invalid");
+  });
+
+  it("attaches usage to a refusal", async () => {
+    const error = await failWith(200, {
+      output: [{ type: "message", content: [{ type: "refusal", refusal: "olmaz" }] }],
+      usage: { input_tokens: 700, output_tokens: 30 },
+    });
+    expect(error.usage?.inputTokens).toBe(700);
+    expect(error.reason).toBe("refusal");
+  });
+
+  it("attaches NO usage to a request the API rejected before generating", async () => {
+    // A 429 or a bad key costs nothing, and recording a zero-token call as
+    // "billed" would be just as wrong as hiding a real one. `reason` is what
+    // lets the ledger tell the two apart without parsing prose.
+    const error = await failWith(429, { error: { message: "slow down", code: "rate_limit_exceeded" } });
+    expect(error.usage).toBeUndefined();
+    expect(error.reason).toBe("http_429");
+    expect(error.transient).toBe(true);
+  });
+
+  it("names an aborted call as a timeout and says the tokens may still have been billed", async () => {
+    // The abort path used to leave this method as an anonymous Error, which
+    // both the ledger and the phone reported as "provider unreachable" — the
+    // same words as a connection that never opened and cost nothing.
+    const aborted = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+    const transport: Transport = {
+      async post() {
+        throw aborted;
+      },
+    };
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    const error = (await generator
+      .generateCards(REQUEST)
+      .catch((caught) => caught)) as OpenAIError;
+
+    expect(error).toBeInstanceOf(OpenAIError);
+    expect(error.reason).toBe("timeout");
+    expect(error.message).toMatch(/ücretlendirilmiş olabilir/);
+    // No figures to report — that is exactly what `billing: "unmeasured"`
+    // downstream is for.
+    expect(error.usage).toBeUndefined();
+    expect(error.transient).toBe(true);
+  });
+
+  it("keeps a connection failure distinct from an abort", async () => {
+    const transport: Transport = {
+      async post() {
+        throw new Error("ECONNREFUSED");
+      },
+    };
+    const generator = new OpenAICardGenerator(CONFIG, "sk-test", COST, transport);
+    const error = (await generator.generateCards(REQUEST).catch((caught) => caught)) as OpenAIError;
+    expect(error.reason).toBe("transport");
+  });
+});
 
 describe("buildModelResponseSchema", () => {
   it("strips usage and requestId — the model never invents its own cost or id", () => {
@@ -192,12 +298,16 @@ describe("stricterMode", () => {
 
 describe("estimateOpenAICostUSD", () => {
   it("computes from per-million pricing", () => {
-    expect(estimateOpenAICostUSD(1_000_000, 1_000_000, COST)).toBeCloseTo(10);
-    expect(estimateOpenAICostUSD(500_000, 0, COST)).toBeCloseTo(1);
+    expect(estimateOpenAICostUSD(plainUsage(1_000_000, 1_000_000), COST)).toBeCloseTo(10);
+    expect(estimateOpenAICostUSD(plainUsage(500_000, 0), COST)).toBeCloseTo(1);
   });
 
   it("is zero when pricing is unset (§0.6 default: no guessed price)", () => {
-    expect(estimateOpenAICostUSD(1_000_000, 1_000_000, { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0 })).toBe(0);
+    expect(estimateOpenAICostUSD(plainUsage(1_000_000, 1_000_000), {
+      openaiUsdPerMillionInputTokens: 0,
+      openaiUsdPerMillionCachedInputTokens: 0,
+      openaiUsdPerMillionOutputTokens: 0,
+    })).toBe(0);
   });
 });
 
@@ -292,9 +402,9 @@ describe("OpenAICardGenerator", () => {
       model: "gpt-5.6-sol",
       inputTokens: 1000,
       outputTokens: 200,
-      estimatedCostUSD: estimateOpenAICostUSD(1000, 200, COST),
+      estimatedCostUSD: estimateOpenAICostUSD(plainUsage(1000, 200), COST),
     });
-    expect(result.rawUsage).toEqual({ inputTokens: 1000, outputTokens: 200 });
+    expect(result.rawUsage).toEqual(plainUsage(1000, 200));
   });
 
   it("returns output that independently passes schema validation", async () => {

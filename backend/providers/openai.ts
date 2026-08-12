@@ -22,6 +22,12 @@
 import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction, topicInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
 import { sanitizeTopics, topicsFor } from "./subjectTopics.js";
+import {
+  EMPTY_TOKEN_USAGE,
+  estimateCostUSD,
+  readOpenAIUsage,
+  type TokenUsage,
+} from "./tokenUsage.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type MultipleChoiceMode, type OpenAIConfig } from "../config.js";
 
@@ -31,6 +37,21 @@ export class OpenAIError extends Error {
     readonly status: number | undefined,
     /** Transient failures are worth retrying; permanent ones are not (§17). */
     readonly transient: boolean,
+    /**
+     * What the call spent before it failed, when the provider said.
+     *
+     * Absent on the failures that cost nothing — a 429, a 401, a connection
+     * that never opened — and present on the ones that cost full price and
+     * returned nothing usable: a response truncated at `max_output_tokens`, a
+     * body that failed schema validation, a refusal. Those are the expensive
+     * failures, and without carrying the figure out with the error they were
+     * invisible: the caller only ever saw a message.
+     *
+     * A short machine-readable `reason` travels with it so the ledger can say
+     * *which* kind of failure burned the tokens without parsing Turkish prose.
+     */
+    readonly usage?: TokenUsage,
+    readonly reason?: string,
   ) {
     super(message);
     this.name = "OpenAIError";
@@ -114,8 +135,16 @@ export interface CardGenerationRequest {
 
 export interface CardGenerationResult {
   output: LlmOutput;
-  /** As OpenAI reported it, before our own cost math — kept for audit (§16.8). */
-  rawUsage: { inputTokens: number; outputTokens: number };
+  /**
+   * As OpenAI reported it, before our own cost math — kept for audit (§16.8).
+   *
+   * Widened from a bare input/output pair to the full `TokenUsage` once it
+   * turned out the two most expensive things in a call were both hidden inside
+   * it: the cached share of the input, billed at a tenth of the price it was
+   * being charged at, and the reasoning share of the output, billed at the
+   * most expensive rate in the system and folded invisibly into `outputTokens`.
+   */
+  rawUsage: TokenUsage;
 }
 
 interface ResponsesApiContentPart {
@@ -134,7 +163,13 @@ interface ResponsesApiBody {
   status?: string;
   incomplete_details?: { reason?: string };
   output?: ResponsesApiOutputItem[];
-  usage?: { input_tokens?: number; output_tokens?: number };
+  /** Read through `readOpenAIUsage`, which also unpacks the two `*_details` sub-objects. */
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    input_tokens_details?: { cached_tokens?: number };
+    output_tokens_details?: { reasoning_tokens?: number };
+  };
   error?: { message?: string };
 }
 
@@ -198,7 +233,13 @@ export function buildModelResponseSchema(
   return clone as Record<string, unknown>;
 }
 
-function extractOutputText(body: ResponsesApiBody): string {
+/**
+ * `usage` is threaded in rather than re-read from the body because both
+ * failures here are billed ones: a refusal and a message-less response are
+ * both generations the provider completed and charged for. Dropping the figure
+ * on the way out is what used to make them look free.
+ */
+function extractOutputText(body: ResponsesApiBody, usage: TokenUsage | null): string {
   for (const item of body.output ?? []) {
     if (item.type !== "message") continue;
     for (const part of item.content ?? []) {
@@ -207,6 +248,8 @@ function extractOutputText(body: ResponsesApiBody): string {
           `Model içerik üretmeyi reddetti: ${part.refusal ?? "sebep verilmedi"}`,
           undefined,
           false,
+          usage ?? undefined,
+          "refusal",
         );
       }
       if (part.type === "output_text" && typeof part.text === "string") {
@@ -214,7 +257,13 @@ function extractOutputText(body: ResponsesApiBody): string {
       }
     }
   }
-  throw new OpenAIError("Yanıtta üretilmiş metin bulunamadı.", undefined, false);
+  throw new OpenAIError(
+    "Yanıtta üretilmiş metin bulunamadı.",
+    undefined,
+    false,
+    usage ?? undefined,
+    "no_output_text",
+  );
 }
 
 export function buildUserInstruction(
@@ -252,16 +301,44 @@ export function stricterMode(a: MultipleChoiceMode, b: MultipleChoiceMode): Mult
   return rank(a) <= rank(b) ? a : b;
 }
 
-/** Estimated USD from real usage figures and the configured per-token price (§20.3). */
-export function estimateOpenAICostUSD(
-  inputTokens: number,
-  outputTokens: number,
-  cost: Pick<CostConfig, "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens">,
-): number {
-  return (
-    (inputTokens / 1_000_000) * cost.openaiUsdPerMillionInputTokens +
-    (outputTokens / 1_000_000) * cost.openaiUsdPerMillionOutputTokens
-  );
+/** The three prices this provider is billed at, in the shape `estimateCostUSD` wants. */
+export type OpenAICostConfig = Pick<
+  CostConfig,
+  | "openaiUsdPerMillionInputTokens"
+  | "openaiUsdPerMillionCachedInputTokens"
+  | "openaiUsdPerMillionOutputTokens"
+>;
+
+/**
+ * The worst case §21.3's pre-flight budget check prices: the full output
+ * ceiling and nothing else.
+ *
+ * A named function rather than an inline literal because the check is a
+ * *refusal* — the one place that can stop a call before it costs anything —
+ * and "which tokens does that ceiling actually cover?" should be answerable
+ * without reading the caller. It covers output only: the input cost depends on
+ * the image and cannot be known before the call.
+ */
+export function outputCeilingUsage(maxOutputTokens: number): TokenUsage {
+  return { ...EMPTY_TOKEN_USAGE, outputTokens: maxOutputTokens };
+}
+
+/**
+ * Estimated USD from real usage figures and the configured per-token price
+ * (§20.3).
+ *
+ * Takes a whole `TokenUsage` rather than the old input/output pair: the cached
+ * share of the input is billed at its own rate, and a function that cannot see
+ * it cannot price the call. Callers that only know a token *ceiling* (the
+ * pre-flight budget check) pass `outputCeilingUsage`, which prices the worst
+ * case exactly as before.
+ */
+export function estimateOpenAICostUSD(usage: TokenUsage, cost: OpenAICostConfig): number {
+  return estimateCostUSD(usage, {
+    usdPerMillionInputTokens: cost.openaiUsdPerMillionInputTokens,
+    usdPerMillionCachedInputTokens: cost.openaiUsdPerMillionCachedInputTokens,
+    usdPerMillionOutputTokens: cost.openaiUsdPerMillionOutputTokens,
+  });
 }
 
 export class OpenAICardGenerator {
@@ -272,7 +349,7 @@ export class OpenAICardGenerator {
   constructor(
     private readonly config: OpenAIConfig,
     private readonly apiKey: string,
-    private readonly cost: Pick<CostConfig, "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens">,
+    private readonly cost: OpenAICostConfig,
     private readonly transport: Transport = fetchTransport,
   ) {}
 
@@ -336,12 +413,34 @@ export class OpenAICardGenerator {
       },
     };
 
-    const response = await this.transport.post(
-      OpenAICardGenerator.ENDPOINT,
-      this.apiKey,
-      body,
-      this.config.timeoutMs,
-    );
+    let response: { status: number; body: unknown };
+    try {
+      response = await this.transport.post(
+        OpenAICardGenerator.ENDPOINT,
+        this.apiKey,
+        body,
+        this.config.timeoutMs,
+      );
+    } catch (error) {
+      // A raw throw from the transport used to leave this method as an
+      // anonymous `Error`, which both the ledger and the phone then reported as
+      // a generic "provider unreachable". The two causes deserve different
+      // words and, more importantly, different billing verdicts: an aborted
+      // call already made the model generate — OpenAI charges for it and never
+      // tells us how much — while a connection that never opened costs
+      // nothing. `reason` is what carries that distinction to `_jobs.ts`.
+      const aborted = error instanceof Error && error.name === "AbortError";
+      throw new OpenAIError(
+        aborted
+          ? `OpenAI çağrısı ${this.config.timeoutMs} ms zaman aşımında kesildi. Üretim sağlayıcı ` +
+            "tarafında sürmüş ve ücretlendirilmiş olabilir; sonucu alınamadı."
+          : `OpenAI'ye ulaşılamadı: ${error instanceof Error ? error.message : "bilinmeyen ağ hatası"}`,
+        undefined,
+        true,
+        undefined,
+        aborted ? "timeout" : "transport",
+      );
+    }
 
     if (response.status < 200 || response.status >= 300) {
       const errorBody = (
@@ -362,12 +461,28 @@ export class OpenAICardGenerator {
             `bakiyeyi kontrol et. Sağlayıcı mesajı: ${detail}`,
           response.status,
           true,
+          // No usage on purpose: a rejected request generated nothing, so this
+          // failure is genuinely free and must not be counted as spend.
+          undefined,
+          "insufficient_quota",
         );
       }
-      throw new OpenAIError(`OpenAI ${response.status}: ${detail}`, response.status, isTransientStatus(response.status));
+      throw new OpenAIError(
+        `OpenAI ${response.status}: ${detail}`,
+        response.status,
+        isTransientStatus(response.status),
+        undefined,
+        `http_${response.status}`,
+      );
     }
 
     const parsedBody = response.body as ResponsesApiBody;
+
+    // Read once, immediately, and reused by every path below including the
+    // failing ones. Read late — after the checks — and the expensive failures
+    // would each have to remember to fetch it, which is precisely how they all
+    // came to report nothing.
+    const usage = readOpenAIUsage(parsedBody);
 
     // The Responses API can answer 2xx with a body that still reports failure.
     // Without this check the flow falls through to `extractOutputText`, the
@@ -379,6 +494,8 @@ export class OpenAICardGenerator {
         `Sağlayıcı üretimi başarısız bildirdi: ${parsedBody.error?.message ?? "ayrıntı yok"}`,
         undefined,
         true,
+        usage ?? undefined,
+        "provider_failed",
       );
     }
 
@@ -397,6 +514,10 @@ export class OpenAICardGenerator {
     // classification would lock that page out of `/api/jobs` forever — the
     // attempt ceiling on the phone is what stops an endless loop, not this
     // flag.
+    // The single most expensive failure in the system: every token of
+    // `max_output_tokens` is generated and billed, and the truncated JSON that
+    // comes back is worth nothing. Carrying `usage` out with it is what finally
+    // makes that visible in Ayarlar → Kullanım instead of only on the invoice.
     if (parsedBody.status === "incomplete") {
       const reason = parsedBody.incomplete_details?.reason ?? "bilinmeyen";
       throw new OpenAIError(
@@ -407,19 +528,33 @@ export class OpenAICardGenerator {
             : ""),
         undefined,
         true,
+        usage ?? undefined,
+        `incomplete_${reason}`,
       );
     }
 
-    const text = extractOutputText(parsedBody);
+    const text = extractOutputText(parsedBody, usage);
 
     let modelJson: unknown;
     try {
       modelJson = JSON.parse(text);
     } catch {
-      throw new OpenAIError("Model yanıtı geçerli JSON değil.", undefined, false);
+      throw new OpenAIError(
+        "Model yanıtı geçerli JSON değil.",
+        undefined,
+        false,
+        usage ?? undefined,
+        "json_parse",
+      );
     }
     if (typeof modelJson !== "object" || modelJson === null || Array.isArray(modelJson)) {
-      throw new OpenAIError("Model yanıtı bir JSON nesnesi değil.", undefined, false);
+      throw new OpenAIError(
+        "Model yanıtı bir JSON nesnesi değil.",
+        undefined,
+        false,
+        usage ?? undefined,
+        "json_shape",
+      );
     }
 
     // Third of the three layers holding the topic field (after the schema
@@ -434,10 +569,7 @@ export class OpenAICardGenerator {
       );
     }
 
-    const rawUsage = {
-      inputTokens: parsedBody.usage?.input_tokens ?? 0,
-      outputTokens: parsedBody.usage?.output_tokens ?? 0,
-    };
+    const rawUsage = usage ?? EMPTY_TOKEN_USAGE;
 
     const candidate: unknown = {
       ...(modelJson as Record<string, unknown>),
@@ -447,18 +579,22 @@ export class OpenAICardGenerator {
         model: this.config.model,
         inputTokens: rawUsage.inputTokens,
         outputTokens: rawUsage.outputTokens,
-        estimatedCostUSD: estimateOpenAICostUSD(rawUsage.inputTokens, rawUsage.outputTokens, this.cost),
+        estimatedCostUSD: estimateOpenAICostUSD(rawUsage, this.cost),
       },
     };
 
     const validation = validateLlmOutput(candidate);
     if (!validation.valid) {
       // §14: "Şema doğrulanmayan cevap kaydedilmemelidir" — thrown, not
-      // returned, so a caller cannot accidentally persist it.
+      // returned, so a caller cannot accidentally persist it. Fully billed,
+      // like every other failure below the HTTP layer: the model generated the
+      // whole response, it just generated the wrong shape.
       throw new OpenAIError(
         `Model çıktısı §14 şemasına uymuyor: ${validation.errors.join("; ")}`,
         undefined,
         false,
+        usage ?? undefined,
+        "schema_invalid",
       );
     }
 

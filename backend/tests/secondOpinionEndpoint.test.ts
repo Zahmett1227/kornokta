@@ -18,7 +18,15 @@ const RESULT: SecondOpinionResult = {
   verdict: "contradicts",
   reading: "hipokalemi (hiperkalemi değil)",
   note: "Önek ters okunmuş.",
-  usage: { provider: "gemini", model: "gemini-3.5-flash", inputTokens: 800, outputTokens: 90, estimatedCostUSD: 0 },
+  usage: {
+    provider: "gemini",
+    model: "gemini-3.5-flash",
+    inputTokens: 800,
+    cachedInputTokens: 0,
+    outputTokens: 90,
+    reasoningTokens: 0,
+    estimatedCostUSD: 0,
+  },
 };
 
 /** Records what it was handed, so privacy claims can be checked — same role as `stubGenerator`. */

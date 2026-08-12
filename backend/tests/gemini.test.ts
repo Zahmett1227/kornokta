@@ -17,7 +17,11 @@ const CONFIG: GeminiConfig = {
   timeoutMs: 1_000,
 };
 
-const COST = { geminiUsdPerMillionInputTokens: 1, geminiUsdPerMillionOutputTokens: 4 };
+const COST = {
+  geminiUsdPerMillionInputTokens: 1,
+  geminiUsdPerMillionCachedInputTokens: 0.1,
+  geminiUsdPerMillionOutputTokens: 4,
+};
 
 const REQUEST: SecondOpinionRequest = {
   requestId: "req_1",
@@ -70,18 +74,34 @@ describe("buildSecondOpinionInstruction", () => {
   });
 });
 
+/** A `TokenUsage` with nothing cached and nothing reasoned. */
+function plainUsage(inputTokens: number, outputTokens: number) {
+  return { inputTokens, cachedInputTokens: 0, outputTokens, reasoningTokens: 0 };
+}
+
 describe("estimateGeminiCostUSD", () => {
   it("computes from per-million pricing", () => {
-    expect(estimateGeminiCostUSD(1_000_000, 1_000_000, COST)).toBeCloseTo(5);
+    expect(estimateGeminiCostUSD(plainUsage(1_000_000, 1_000_000), COST)).toBeCloseTo(5);
   });
 
   it("is zero when pricing is unset (§0.6 default: no guessed price)", () => {
     expect(
-      estimateGeminiCostUSD(1_000_000, 1_000_000, {
+      estimateGeminiCostUSD(plainUsage(1_000_000, 1_000_000), {
         geminiUsdPerMillionInputTokens: 0,
+        geminiUsdPerMillionCachedInputTokens: 0,
         geminiUsdPerMillionOutputTokens: 0,
       }),
     ).toBe(0);
+  });
+
+  it("prices the cached share at its own rate, not the uncached one", () => {
+    // The whole reason this function grew a `TokenUsage`: a call whose prompt
+    // prefix was served from cache is billed a fraction of the headline input
+    // price, and charging it in full is how the Kullanım screen came to
+    // disagree with the provider's invoice.
+    const halfCached = { inputTokens: 1_000_000, cachedInputTokens: 500_000, outputTokens: 0, reasoningTokens: 0 };
+    // 500k uncached @ $1/M + 500k cached @ $0.1/M
+    expect(estimateGeminiCostUSD(halfCached, COST)).toBeCloseTo(0.55);
   });
 });
 
@@ -132,8 +152,10 @@ describe("GeminiSecondOpinion", () => {
       provider: "gemini",
       model: "gemini-3.5-flash",
       inputTokens: 1000,
+      cachedInputTokens: 0,
       outputTokens: 200,
-      estimatedCostUSD: estimateGeminiCostUSD(1000, 200, COST),
+      reasoningTokens: 0,
+      estimatedCostUSD: estimateGeminiCostUSD(plainUsage(1000, 200), COST),
     });
   });
 

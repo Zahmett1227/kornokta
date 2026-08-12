@@ -21,6 +21,7 @@ import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import {
   OpenAIError,
   estimateOpenAICostUSD,
+  outputCeilingUsage,
   type CardGenerationRequest,
   type CardGenerationResult,
 } from "../providers/openai.js";
@@ -146,7 +147,13 @@ export interface CardGeneratorLike {
 export interface CardsDependencies {
   generator: CardGeneratorLike;
   openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens" | "multipleChoiceMode">;
-  cost: Pick<CostConfig, "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens" | "maxUsdPerCardGeneration">;
+  cost: Pick<
+    CostConfig,
+    | "openaiUsdPerMillionInputTokens"
+    | "openaiUsdPerMillionCachedInputTokens"
+    | "openaiUsdPerMillionOutputTokens"
+    | "maxUsdPerCardGeneration"
+  >;
   deviceToken: string | undefined;
   /** Content never reaches this — only ids, counts and durations (§7.3). */
   log?: (entry: Record<string, unknown>) => void;
@@ -248,7 +255,10 @@ export async function handleCardsRequest(
   // and prompt and is not estimated here; it is still recorded for real
   // after the call returns (§16.8, §20.3).
   if (deps.cost.maxUsdPerCardGeneration > 0) {
-    const upperBound = estimateOpenAICostUSD(0, deps.openai.maxOutputTokens, deps.cost);
+    const upperBound = estimateOpenAICostUSD(
+      outputCeilingUsage(deps.openai.maxOutputTokens),
+      deps.cost,
+    );
     if (upperBound > deps.cost.maxUsdPerCardGeneration) {
       return fail(
         `Tahmini üst sınır maliyet (${upperBound.toFixed(4)} USD) yapılandırılan sınırı ` +
@@ -292,7 +302,9 @@ export async function handleCardsRequest(
       // Counts only, never option text (§7.3).
       multipleChoiceNotes: checked.notes.length,
       inputTokens: rawUsage.inputTokens,
+      cachedInputTokens: rawUsage.cachedInputTokens,
       outputTokens: rawUsage.outputTokens,
+      reasoningTokens: rawUsage.reasoningTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
       cardPromptVersion: CARD_PROMPT_VERSION,
       elapsedMs: Date.now() - started,
@@ -317,6 +329,20 @@ export async function handleCardsRequest(
       bytes: image.length,
       status: openAIError?.status,
       retryable,
+      reason: openAIError?.reason,
+      // Present only when the provider reported usage — that is, when this
+      // failure was billed. Its absence is meaningful too: it says the call
+      // never got far enough to generate anything (§20.3).
+      ...(openAIError?.usage
+        ? {
+            billed: true,
+            inputTokens: openAIError.usage.inputTokens,
+            cachedInputTokens: openAIError.usage.cachedInputTokens,
+            outputTokens: openAIError.usage.outputTokens,
+            reasoningTokens: openAIError.usage.reasoningTokens,
+            estimatedCostUSD: estimateOpenAICostUSD(openAIError.usage, deps.cost),
+          }
+        : { billed: false }),
       elapsedMs: Date.now() - started,
     });
 

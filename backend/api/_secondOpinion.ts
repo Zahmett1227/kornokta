@@ -164,7 +164,9 @@ export async function handleSecondOpinionRequest(
       bytes: image.length,
       verdict: result.verdict,
       inputTokens: result.usage.inputTokens,
+      cachedInputTokens: result.usage.cachedInputTokens,
       outputTokens: result.usage.outputTokens,
+      reasoningTokens: result.usage.reasoningTokens,
       estimatedCostUSD: result.usage.estimatedCostUSD,
       promptVersion: HANDWRITING_SECOND_OPINION_PROMPT_VERSION,
       elapsedMs: Date.now() - started,
@@ -189,6 +191,11 @@ export async function handleSecondOpinionRequest(
       bytes: image.length,
       status: geminiError?.status,
       retryable,
+      // Same three-way verdict the job ledger uses (`tokenUsage.ts`). Gemini
+      // answers a rejected request with a status and no generation, so a call
+      // that got one cost nothing; anything else reached the model and may
+      // have been billed without ever reporting how much.
+      billing: geminiError?.status === undefined ? "unmeasured" : "none",
       elapsedMs: Date.now() - started,
     });
 

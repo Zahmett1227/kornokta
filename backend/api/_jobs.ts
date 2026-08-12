@@ -26,7 +26,8 @@ import { authorize } from "./_auth.js";
 import { MAX_IMAGE_BYTES, decodeImage } from "./_image.js";
 import { MULTIPLE_CHOICE_MODES, type CostConfig, type OpenAIConfig } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
-import { OpenAIError, estimateOpenAICostUSD } from "../providers/openai.js";
+import { OpenAIError, estimateOpenAICostUSD, outputCeilingUsage } from "../providers/openai.js";
+import { EMPTY_TOKEN_USAGE, type CallAccounting, type TokenUsage } from "../providers/tokenUsage.js";
 import { runCardGate } from "../providers/cardGate.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
@@ -51,10 +52,19 @@ const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 export interface JobsDependencies {
   store: JobStoreLike;
   generator: CardGeneratorLike;
-  openai: Pick<OpenAIConfig, "maxCardsPerKnowledgeUnit" | "maxOutputTokens" | "multipleChoiceMode">;
+  openai: Pick<
+    OpenAIConfig,
+    // `model` is here only for the ledger: a failed call has no response to
+    // read the model id off, and an accounting line that cannot say which
+    // model spent the money is useless the moment a comparison run starts.
+    "maxCardsPerKnowledgeUnit" | "maxOutputTokens" | "multipleChoiceMode" | "model"
+  >;
   cost: Pick<
     CostConfig,
-    "openaiUsdPerMillionInputTokens" | "openaiUsdPerMillionOutputTokens" | "maxUsdPerCardGeneration"
+    | "openaiUsdPerMillionInputTokens"
+    | "openaiUsdPerMillionCachedInputTokens"
+    | "openaiUsdPerMillionOutputTokens"
+    | "maxUsdPerCardGeneration"
   >;
   supabase: Pick<SupabaseConfig, "staleAfterMs" | "resultRetentionMs">;
   deviceToken: string | undefined;
@@ -79,6 +89,18 @@ export interface JobView {
   error?: string;
   retryable?: boolean;
   attempts: number;
+  /**
+   * Every provider call this job has made, priced (§16.8).
+   *
+   * Sent on every view, not only the terminal one, and deliberately not gated
+   * on `status`: a page that is on its third attempt has already spent money
+   * twice, and the phone should be able to write that down the moment it asks
+   * — not only if it is still listening when the job finally resolves.
+   *
+   * Omitted entirely when empty so an untouched job's reply stays the shape it
+   * always was.
+   */
+  usage?: CallAccounting[];
 }
 
 export interface JobsFailure {
@@ -102,6 +124,7 @@ export function toJobView(row: JobRow): JobView {
   if (row.result !== null && row.result !== undefined) view.result = row.result;
   if (row.error !== null) view.error = row.error;
   if (row.retryable !== null) view.retryable = row.retryable;
+  if (row.usage.length > 0) view.usage = row.usage;
   return view;
 }
 
@@ -110,7 +133,39 @@ export function imagePathFor(jobId: string): string {
   return `pages/${jobId}`;
 }
 
-const STALE_MESSAGE = "İşleyen sunucu yanıt vermeden sonlandı; tekrar denenebilir.";
+const STALE_MESSAGE =
+  "İşleyen sunucu yanıt vermeden sonlandı; tekrar denenebilir. Model üretimi sağlayıcı " +
+  "tarafında tamamlanmış ve ücretlendirilmiş olabilir.";
+
+/**
+ * The ledger line for an attempt whose worker was killed before it could write
+ * anything.
+ *
+ * Always `unmeasured`, never `none`: the instance died at the platform's
+ * duration ceiling, which by definition is *after* it had been generating for
+ * minutes. The provider finished that generation and billed it; the only
+ * reason there are no token counts is that the process holding them stopped
+ * existing. Recording it as a zero-cost event would hide the most expensive
+ * failure mode this system has.
+ */
+function staleAccounting(row: JobRow, deps: JobsDependencies): CallAccounting {
+  const now = deps.now?.() ?? Date.now();
+  const startedAt = Date.parse(row.startedAt ?? row.updatedAt);
+  return {
+    attempt: row.attempts,
+    provider: "openai",
+    model: deps.openai.model,
+    purpose: "card_generation",
+    promptVersion: CARD_PROMPT_VERSION,
+    outcome: "failure",
+    failureReason: "worker_killed",
+    billing: "unmeasured",
+    usage: EMPTY_TOKEN_USAGE,
+    estimatedCostUSD: 0,
+    latencyMs: Number.isNaN(startedAt) ? 0 : now - startedAt,
+    at: new Date(now).toISOString(),
+  };
+}
 
 /**
  * Re-reads a job whose state moved under this request and reports what it
@@ -259,7 +314,10 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
   // its own reply, instead of having to poll to find out it was never going to
   // happen.
   if (deps.cost.maxUsdPerCardGeneration > 0) {
-    const upperBound = estimateOpenAICostUSD(0, deps.openai.maxOutputTokens, deps.cost);
+    const upperBound = estimateOpenAICostUSD(
+      outputCeilingUsage(deps.openai.maxOutputTokens),
+      deps.cost,
+    );
     if (upperBound > deps.cost.maxUsdPerCardGeneration) {
       return fail(
         `Tahmini üst sınır maliyet (${upperBound.toFixed(4)} USD) yapılandırılan sınırı ` +
@@ -317,7 +375,10 @@ async function submit(request: Request, deps: JobsDependencies): Promise<Respons
     // A stale `processing` row has to be retired before it can be re-armed, and
     // that retirement is itself fenced to the attempt this request saw.
     if (existing?.status === "processing") {
-      const retired = await deps.store.expire(jobId, existing.startedAt, STALE_MESSAGE);
+      const retired = await deps.store.expire(jobId, existing.startedAt, STALE_MESSAGE, [
+        ...existing.usage,
+        staleAccounting(existing, deps),
+      ]);
       if (!retired) return await currentState(jobId, deps, existing);
       mayHaveOrphanedObject = true;
     }
@@ -454,11 +515,15 @@ function isStale(row: JobRow, deps: JobsDependencies): boolean {
 }
 
 async function reclaim(row: JobRow, deps: JobsDependencies): Promise<JobView> {
+  const accounting = staleAccounting(row, deps);
   try {
     // Fenced to the attempt this poll observed. Without `startedAt` in the
     // condition, a job re-armed and re-claimed between the read and this write
     // would have its *new* attempt killed by a sweep aimed at the old one.
-    const expired = await deps.store.expire(row.id, row.startedAt, STALE_MESSAGE);
+    const expired = await deps.store.expire(row.id, row.startedAt, STALE_MESSAGE, [
+      ...row.usage,
+      accounting,
+    ]);
     if (!expired) {
       // It finished, or moved on, between our read and our write. Re-read
       // rather than report a stale snapshot as a failure the user would see for
@@ -471,8 +536,23 @@ async function reclaim(row: JobRow, deps: JobsDependencies): Promise<JobView> {
     // before the fenced write succeeded could remove a replacement worker's
     // freshly uploaded page (Codex, PR #25 P2).
     if (row.imagePath) await deleteImageQuietly(row.imagePath, deps);
-    deps.log?.({ jobId: row.id, event: "jobs.expired", attempts: row.attempts });
-    return { jobId: row.id, status: "failed", error: STALE_MESSAGE, retryable: true, attempts: row.attempts };
+    deps.log?.({
+      jobId: row.id,
+      event: "jobs.expired",
+      attempts: row.attempts,
+      billing: accounting.billing,
+      elapsedMs: accounting.latencyMs,
+    });
+    return {
+      jobId: row.id,
+      status: "failed",
+      error: STALE_MESSAGE,
+      retryable: true,
+      attempts: row.attempts,
+      // The reclaimed attempt's own line goes back with the view, so a phone
+      // that only ever sees this one poll still records the killed generation.
+      usage: [...row.usage, accounting],
+    };
   } catch {
     // Reporting the row as it stands is better than failing the whole poll: the
     // other jobs in this batch have nothing to do with this one.
@@ -516,12 +596,23 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
   }
 
   if (!job.imagePath) {
-    await finishFailed(jobId, job.startedAt, "İş kaydında görüntü yolu yok.", false, deps, started, undefined);
+    // No provider call was made, so no ledger line: `usage` passes through
+    // unchanged. A row full of zero-cost entries for things that never reached
+    // a model would make "how many calls did this page take?" unanswerable.
+    await finishFailed(jobId, job, "İş kaydında görüntü yolu yok.", false, deps, started, undefined, null);
     return;
   }
 
+  // Flipped immediately before the call and read on the failure path, which is
+  // the only way to tell a provider failure from a store failure that happened
+  // on the way to one. `getImage` throwing means nothing was ever sent and
+  // nothing was ever charged; anything after this line means a request left
+  // the building and may well have been billed.
+  let providerCalled = false;
+
   try {
     const image = await deps.store.getImage(job.imagePath);
+    providerCalled = true;
     const { output, rawUsage } = await deps.generator.generateCards({
       requestId: jobId,
       image,
@@ -546,15 +637,30 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       maxCardsPerKnowledgeUnit: job.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
 
+    const accounting = accountingEntry({
+      job,
+      deps,
+      started,
+      outcome: "success",
+      billing: "measured",
+      usage: rawUsage,
+      model: output.usage.model,
+    });
+
     // Stored in the shape `/api/cards-vision` returns, so the phone's decoder is
     // the same one and this table never becomes a second definition of the card
     // contract.
-    const completed = await deps.store.complete(jobId, job.startedAt, {
+    const completed = await deps.store.complete(
       jobId,
-      output: output_,
-      gate,
-      cardPromptVersion: CARD_PROMPT_VERSION,
-    });
+      job.startedAt,
+      {
+        jobId,
+        output: output_,
+        gate,
+        cardPromptVersion: CARD_PROMPT_VERSION,
+      },
+      [...job.usage, accounting],
+    );
     if (!completed) {
       // The fence lost: this attempt was expired and the row — and the bytes at
       // the shared object path — now belong to a newer one. Touch nothing;
@@ -571,7 +677,9 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       // Counts only, never option text (§7.3).
       multipleChoiceNotes: checked.notes.length,
       inputTokens: rawUsage.inputTokens,
+      cachedInputTokens: rawUsage.cachedInputTokens,
       outputTokens: rawUsage.outputTokens,
+      reasoningTokens: rawUsage.reasoningTokens,
       estimatedCostUSD: output.usage.estimatedCostUSD,
       cardPromptVersion: CARD_PROMPT_VERSION,
       attempts: job.attempts,
@@ -581,22 +689,103 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
     const openAIError = error instanceof OpenAIError ? error : null;
     const supabaseError = error instanceof SupabaseError ? error : null;
     const retryable = openAIError?.transient ?? supabaseError?.transient ?? true;
-    await finishFailed(jobId, job.startedAt, describe(error), retryable, deps, started, job.imagePath);
+    await finishFailed(
+      jobId,
+      job,
+      describe(error),
+      retryable,
+      deps,
+      started,
+      job.imagePath,
+      // A failure on the way to the provider is not a call and gets no ledger
+      // line; a failure at or after it always does, priced if the provider
+      // said what it spent and flagged `unmeasured` if it did not.
+      providerCalled
+        ? accountingEntry({
+            job,
+            deps,
+            started,
+            outcome: "failure",
+            billing: billingVerdict(openAIError),
+            usage: openAIError?.usage ?? EMPTY_TOKEN_USAGE,
+            model: deps.openai.model,
+            failureReason: openAIError?.reason ?? "unknown",
+          })
+        : null,
+    );
   }
+}
+
+/**
+ * What is known about the money for a failed provider call.
+ *
+ * The rule is about *where* the call died, not about how bad the error was.
+ * An HTTP status means OpenAI answered before generating — rate limit, bad
+ * key, exhausted quota — and charged nothing. A reported usage block means it
+ * generated and told us the size. Anything else (our abort at the timeout, a
+ * connection dropped mid-stream) means it generated and did not get to tell
+ * us: billed, unmeasurable, and the single most useful thing this ledger can
+ * point at.
+ */
+function billingVerdict(error: OpenAIError | null): CallAccounting["billing"] {
+  if (!error) return "unmeasured";
+  if (error.usage) return "measured";
+  return error.status === undefined ? "unmeasured" : "none";
+}
+
+/**
+ * One ledger line, priced from the deployment's configured rates.
+ *
+ * `attempt` comes from the row's own counter rather than a local variable so
+ * that the phone can key on it: the same job polled from two devices, or twice
+ * by one, must produce one `ModelRun` per real call and not one per poll.
+ */
+function accountingEntry(params: {
+  job: JobRow;
+  deps: JobsDependencies;
+  started: number;
+  outcome: CallAccounting["outcome"];
+  billing: CallAccounting["billing"];
+  usage: TokenUsage;
+  model: string;
+  failureReason?: string;
+}): CallAccounting {
+  const { job, deps, started, outcome, billing, usage, model, failureReason } = params;
+  const now = deps.now?.() ?? Date.now();
+  return {
+    attempt: job.attempts,
+    provider: "openai",
+    model,
+    purpose: "card_generation",
+    promptVersion: CARD_PROMPT_VERSION,
+    outcome,
+    ...(failureReason ? { failureReason } : {}),
+    billing,
+    usage,
+    // Priced even when `billing` is `unmeasured`: the usage is all zeros
+    // there, so this comes out 0.00 and the phone reports the call as
+    // "cost unknown" from the flag rather than from a fabricated figure.
+    estimatedCostUSD: estimateOpenAICostUSD(usage, deps.cost),
+    latencyMs: now - started,
+    at: new Date(now).toISOString(),
+  };
 }
 
 async function finishFailed(
   jobId: string,
-  startedAt: string | null,
+  job: JobRow,
   message: string,
   retryable: boolean,
   deps: JobsDependencies,
   started: number,
   imagePath: string | undefined,
+  /** `null` when this failure was not a provider call and so buys no ledger line. */
+  accounting: CallAccounting | null,
 ): Promise<void> {
+  const usage = accounting ? [...job.usage, accounting] : job.usage;
   let wrote = false;
   try {
-    wrote = await deps.store.fail(jobId, startedAt, message, retryable);
+    wrote = await deps.store.fail(jobId, job.startedAt, message, retryable, usage);
   } catch {
     // Nothing left to do: the row stays `processing` and the staleness sweep in
     // `poll` will reclaim it. That path exists precisely for this.
@@ -608,6 +797,17 @@ async function finishFailed(
     jobId,
     event: "jobs.failed",
     retryable,
+    attempts: job.attempts,
+    // The whole point of the ledger, in the one line an operator reads first:
+    // did this failure cost anything, and if so how much (§20.3, §7.3 — counts
+    // and money only, never content).
+    billing: accounting?.billing ?? "none",
+    reason: accounting?.failureReason,
+    inputTokens: accounting?.usage.inputTokens,
+    cachedInputTokens: accounting?.usage.cachedInputTokens,
+    outputTokens: accounting?.usage.outputTokens,
+    reasoningTokens: accounting?.usage.reasoningTokens,
+    estimatedCostUSD: accounting?.estimatedCostUSD,
     elapsedMs: (deps.now?.() ?? Date.now()) - started,
   });
 }
