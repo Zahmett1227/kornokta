@@ -202,6 +202,70 @@ Doldurma yordamı Tur A ile birebir aynı (`perception-*.md`, sonra anahtar).
 Ek olarak bakılacak iki satır rapordadır: `reasoningTokens` ve
 `medianLatencyMs` — high'ın bedeli bu ikisi.
 
+### Tur A2 sonucu (2026-08-12 akşamı, prompt v2.6)
+
+6 sayfa × 2 kol × 20 kart, kör dolduruldu, anahtar açıldı.
+**`@high` 4 sayfada üstün, 1'de eşit, 1'de geride** — ve üstünlüğü rastgele
+dağılmıyor, tam olarak reasoning'in yardım etmesi beklenen iki eksende:
+
+| El yazısı okuma | `@low` | `@high` |
+|---|---|---|
+| bol_fosfor (1 not) | **hiç değinmedi** | okudu |
+| bol_yıldız (4 not) | 3/4, ikisi düşük güvenle | **4/4, hepsi emin** |
+| karışık (4 not) | 2,5/4 — **ASCA hiç yok** | **4/4** |
+
+`@low`'un kaçırdıkları *sessiz* kaçırma: kart üretilmiyor, dolayısıyla
+`lowConfidence` de yok. Prompt 3(a) el yazısını "EN DEĞERLİ" sayar; kaybedilen
+tam o katman. İki kolda da "yanlış ama emin" kart **sıfır**.
+
+Bedeli — ve asıl sürpriz maliyet değil:
+
+| | `@low` | `@high` | oran |
+|---|---|---|---|
+| Reasoning tokenı (6 sayfa) | 685 | **72 017** | **105×** |
+| $/sayfa | 0.0050 | 0.0200 | 4× |
+| Ortanca gecikme | 21 sn | 112 sn | 5,3× |
+| En kötü gecikme | 27 sn | **161 sn** | — |
+| 290 sn tavanına pay | 11 kat | **1,8 kat** | — |
+
+Sayfa başına ~12 000 reasoning tokenı, ilk denemenin neden 6/6 düştüğünü tek
+başına açıklıyor: 8192'lik çıktı tavanı yalnız düşünmeye bile yetmiyordu.
+**Bu ayara geçilecekse `OPENAI_MAX_OUTPUT_TOKENS` mutlaka birlikte
+yükseltilmeli** (32000 önerilir) — uygulamanın kart tavanı 12 olsa da reasoning
+aynı kalır, ve yetmediğinde çağrı tam ücret faturalanıp sıfır kart üretir.
+
+Kabul edilen risk: zaman aşımı payı 11 kattan 1,8 kata iniyor. Ölçülen yayılım
+96–161 sn (1,7 kat), yani pay var ama dar.
+
+**Ölçülmeyen:** `luna@high` ile `sol@low` doğrudan karşılaştırılmadı. Tur A'nın
+Sol verisi **prompt v2.5**'ten; bu koşu v2.6. İki sürüm arası kart üretimi
+değişti, dolayısıyla o sayılar bugünküyle yan yana konamaz. "Ucuz kademe + çok
+düşünme, pahalı kademe + az düşünmeyi geçer mi?" sorusu hâlâ açık ve tek
+turda cevaplanabilir (aşağıya bak).
+
+### Prompt v2.6 doğrulaması (aynı koşudan bedavaya)
+
+Tur A2 aynı zamanda v2.6'nın ilk sınavıydı. İki kuralın biri tuttu, biri tutmadı:
+
+| | v2.5 (Tur A) | v2.6 (Tur A2) |
+|---|---|---|
+| Sayfaya atıf yapan **soru** | 82 / 360 | **0 / 239** |
+| — kitap kapalıyken cevaplanamayan | 17 | **0** |
+| Çok-fikirli kart (kural 5) | ~2,8 / set | ~2–4 / set → **değişmedi** |
+
+**Kural 8 tam çalıştı.** "Sayfadaki kutuya göre MI yapabilen üç vaskülit
+hangileridir?" yerine artık "Miyokard infarktüsü yapabilen vaskülitler
+hangileridir?" geliyor. Kalan atıflar yalnız `explanation` içinde ve çoğu
+izinli istisna (okunamayan el yazısı); birkaçı istisnanın dışına taşıyor ama
+soru ve cevap temiz kaldığı için kart kullanılabilir.
+
+**Kural 5 bağlamadı.** "…tipik hasta profili, temel kapak değişikliği ve sık
+sonucu nedir?" tipi kartlar aynı sıklıkta sürüyor. Bölme talimatı ve
+"cevabın yarısını bilen dürüst not verebilmeli" ölçütü yetmiyor. Bir sonraki
+prompt turunda denenecek: kuralı olumsuzdan olumluya çevirmek (soru **tek bir
+şey** sormalı; "ve" ile bağlanan iki bilgi iki karttır) ve örneği yanlış-doğru
+çifti hâlinde vermek — kural 8'de işe yarayan biçim buydu.
+
 ---
 
 # Kademe yönlendirmesi (routing)

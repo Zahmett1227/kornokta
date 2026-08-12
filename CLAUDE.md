@@ -156,7 +156,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de; **iOS derlemesi + cihaz doğrulaması açık** |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
 | Prompt v2.6 (Tur A'nın ikinci ürünü) | ✅ `main`'de; Sol'un üstünlüğünün prompt'la alınabilen kısmı kurala çevrildi |
-| Tur A2 — `luna@low` vs `luna@high` | 🟡 Düzenek hazır (`--models "…@low,…@high"`); **koşulacak.** Sebep: üç model de `effort: low` koştu, o ayarın gerekçesi (60 s senkron tavan) ADR-006 ile kalkmıştı. Reasoning çıktı fiyatından faturalanır → Luna'da ~bedava |
+| Tur A2 — `luna@low` vs `luna@high` (2026-08-12 akşamı, prompt v2.6) | ✅ Koşuldu ve kör değerlendirildi. **`@high` 4 sayfada üstün, 1 eşit, 1 geride**; üstünlük el yazısı ve kapsamada. Bedeli: reasoning 685→72 017 token (105×), $0.005→$0.020/sayfa, 21→112 sn. İkisinde de "yanlış ama emin" sıfır. Ayrıntı `docs/PLAN-model-karsilastirma.md` → "Tur A2 sonucu". **Model kararı sahibinde açık** (`luna@high` önerilen) |
+| Prompt v2.6 doğrulaması | ✅ Aynı koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -194,6 +195,14 @@ fiyat değişkenleri de aynı anda değişmeli (`..._INPUT_TOKENS`,
 tokenlarını eski modelin fiyatından çarpar ve Kullanım ekranı sessizce yanlış
 okur — kaçırılması en kolay hata, çünkü hiçbir şey patlamaz. Kademe fiyatları
 (2026-08 doğrulaması): Sol 5/0.5/30, Terra 2/0.2/12, Luna 0.2/0.02/1.2.
+
+**`OPENAI_REASONING_EFFORT` yükseltilirken kural:** `OPENAI_MAX_OUTPUT_TOKENS`
+da yükselmeli. Reasoning tokenları çıktı bütçesinden düşülür ve `high`'ta
+sayfa başına ~12 000 token yiyor — 8192'lik varsayılan yalnız düşünmeye bile
+yetmez. Tur A2'nin ilk denemesi tam bu yüzden 6/6 düştü; her düşen çağrı **tam
+ücret** faturalanıp sıfır kart üretti. `high` için 32000 önerilir. Karşılaştırma
+betiğinde `--max-output-tokens`, ve effort yükseltilip tavan yükseltilmediğinde
+çağrılardan önce uyarı basılıyor.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
