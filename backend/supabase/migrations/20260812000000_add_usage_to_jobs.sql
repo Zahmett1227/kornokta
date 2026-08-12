@@ -29,10 +29,13 @@
 -- job's terminal write and leave pages stuck at `processing` until the
 -- staleness sweep reclaimed them (the mc_mode lesson, CLAUDE.md "Migration
 -- sırası").
-alter table public.jobs add column usage jsonb not null default '[]'::jsonb;
+-- Quoted: `usage` is a SQL-standard reserved word that PostgreSQL happens to
+-- treat as non-reserved, so it works bare — but a column whose name only works
+-- because of one vendor's leniency is not worth the five characters saved.
+alter table public.jobs add column "usage" jsonb not null default '[]'::jsonb;
 
 -- The shape is the server's contract, not the database's, so there is no CHECK
 -- on the element keys — the same reasoning that kept `subject` unconstrained.
 -- Only the outermost invariant is enforced, because every reader spreads it.
 alter table public.jobs add constraint jobs_usage_is_array
-  check (jsonb_typeof(usage) = 'array');
+  check (jsonb_typeof("usage") = 'array');
