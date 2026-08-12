@@ -30,7 +30,8 @@ swift test                                                        # yalnız bir 
 Paket **Linux'ta derlenmez** (CoreGraphics, SwiftData). Foundation'a bağlı yeni
 mantık, bir Swift araç zinciri kurup yalnız o dosyaları içeren izole bir pakette
 gerçekten koşturulabilir — PR #27'nin 63 testi, ADR-007'nin 12 testi ve maliyet
-defterinin 13 testi (`UsageSummary` + `FailureDiagnosis`) böyle doğrulandı. SwiftUI dosyaları için elde yalnız `swiftc -parse` var; o
+defterinin 13 testi (`UsageSummary` + `FailureDiagnosis`) böyle doğrulandı.
+SwiftUI dosyaları için elde yalnız `swiftc -parse` var; o
 **sözdizimi** kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. App hedefi ve
 tam paket için tek gerçek kapı CI'daki macOS işi ya da bir Mac derlemesi.
 
@@ -68,17 +69,21 @@ fiyat uydurulmaz, verilir).
 ```bash
 cd backend
 npm run compare -- \
-  --models "gpt-5.6-sol:5/0.5/30,gpt-5.6-terra:2/0.2/12" \
+  --models "gpt-5.6-sol:5/0.5/30,gpt-5.6-terra:2/0.2/12,gpt-5.6-luna:0.2/0.02/1.2" \
   --pages ../evals/fixtures/pages --subject Patoloji
 ```
 
-Üç dosya yazar (hepsi `evals/reports/`, gitignore'lu): tam rapor, **kör
-puanlama sayfası** (hangi modelin ürettiği yazmaz) ve anahtar. Kartları §23.3
-rubriğiyle puanlamadan **anahtarı açma** — bu karşılaştırmadaki her kart
-tanım gereği sınıra yakındır (kimse bariz bir kalite çöküşü için model
+Dört dosya yazar (hepsi `evals/reports/`, gitignore'lu): tam rapor,
+`perception-*.md` (**Tur A** — sayfa başına üç anonim kart takımı, doldurulacak
+sayım tablosu), `blind-*.json` (**Tur B** — kart bazlı §23.3 rubriği) ve
+anahtar. **Doldurma bitene kadar anahtarı açma** — bu karşılaştırmadaki her
+kart tanım gereği sınıra yakındır (kimse bariz bir kalite çöküşü için model
 değiştirmez) ve modeli bilmek tam da o sınır kararını bozar.
 
-Puanlama bitince kalite ve maliyet yan yana:
+Önce Tur A (~20 dk); modeller orada ayrılıyorsa Tur B'ye hiç geçme. Tam plan
+ve kademe yönlendirmesi tasarımı: `docs/PLAN-model-karsilastirma.md`.
+
+Tur B'yi puanladıysan kalite ve maliyet yan yana:
 
 ```bash
 cd ..

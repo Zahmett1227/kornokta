@@ -12,6 +12,7 @@ import pytest
 
 from evals.card_quality.aggregate import score_entries
 from evals.model_compare.report import (
+    card_key,
     cost_per_accept,
     format_report,
     group_by_model,
@@ -134,3 +135,12 @@ def test_report_never_prints_a_verdict():
     text = format_report([quality], {"sol": {"totalCostUSD": 0.2, "costPerPageUSD": 0.1}}).lower()
     for banned in ("kazanan", "öneri", "tercih et", "geç"):
         assert banned not in text
+
+
+def test_both_key_file_shapes_are_read():
+    # The key file grew a second mapping when the perception round was added.
+    # A run recorded before that must still be joinable — an experiment record
+    # that stops being readable is an experiment that stops being reproducible.
+    flat = {"a": "sol", "b": "terra"}
+    assert card_key(flat) == flat
+    assert card_key({"byCard": flat, "byPageLabel": {"s01.jpg": {"A": "sol"}}}) == flat

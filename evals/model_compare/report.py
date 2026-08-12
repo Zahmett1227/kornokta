@@ -57,6 +57,19 @@ def load_json(path: Path) -> dict:
         return json.load(fh)
 
 
+def card_key(key_file: dict) -> dict[str, str]:
+    """cardId → model, from either key-file shape.
+
+    The file grew a second mapping (`byPageLabel`) when the perception round
+    was added, and a key written before that is a bare cardId → model object.
+    Both are read rather than one being migrated: these files are experiment
+    records, and rewriting a record after the fact is how a comparison quietly
+    stops being reproducible.
+    """
+    by_card = key_file.get("byCard")
+    return by_card if isinstance(by_card, dict) else key_file
+
+
 def group_by_model(scored: list[ScoredCard], key: dict[str, str]) -> dict[str, list[ScoredCard]]:
     """Buckets scored cards by the model that produced them.
 
@@ -151,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         print("Puan dosyasında kart yok.", file=sys.stderr)
         return 1
 
-    key = load_json(args.key)
+    key = card_key(load_json(args.key))
     grouped = group_by_model(scored, key)
     qualities = [quality_of(model, cards) for model, cards in grouped.items()]
 

@@ -140,7 +140,7 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
  * produce a report saying the cheap model costs the same as the expensive one,
  * which is worse than no report.
  */
-function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): ModelSpec {
+export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): ModelSpec {
   const [model, pricePart] = raw.split(":");
   const name = model?.trim() ?? "";
   if (!name) throw new Error(`Model adı boş: "${raw}"`);
@@ -387,15 +387,52 @@ async function main(): Promise<void> {
     "utf-8",
   );
 
+  // --- Per-page blind sheet (Tur A: perception) --------------------------
+  //
+  // The card-shuffled sheet above is right for scoring card *craft* and wrong
+  // for scoring *perception*: to ask "which of the marks I made did it catch?"
+  // the three models' card sets have to sit together under one page, because
+  // the page — with its highlighter and its margin notes — is what they are
+  // being scored against.
+  //
+  // Labels are permuted independently per page. A fixed A/B/C order would be
+  // blind for exactly one page: by the third you would have inferred which
+  // letter is the expensive model from the card counts alone, and the blinding
+  // would be theatre for the rest of the run.
+  const pageLabels: Record<string, Record<string, string>> = {};
+  const perceptionPages = pages.map((page) => {
+    const sets = labelOrder(
+      page.name,
+      specs.map((spec) => spec.model),
+    ).map(({ label, model }) => {
+      pageLabels[page.name] ??= {};
+      pageLabels[page.name]![label] = model;
+      return {
+        label,
+        row: results.find((entry) => entry.page === page.name && entry.model === model),
+      };
+    });
+    return { page: page.name, sets };
+  });
+
+  const perceptionPath = join(outDir, `perception-${stamp}.md`);
+  await writeFile(perceptionPath, renderPerceptionSheet(perceptionPages, stamp), "utf-8");
+
   const keyPath = join(outDir, `key-${stamp}.json`);
   await writeFile(
     keyPath,
     JSON.stringify(
-      Object.fromEntries(
-        results.flatMap((row) =>
-          (row.cards as Array<Record<string, unknown>>).map((card) => [String(card.id), row.model]),
+      {
+        byCard: Object.fromEntries(
+          results.flatMap((row) =>
+            (row.cards as Array<Record<string, unknown>>).map((card) => [
+              String(card.id),
+              row.model,
+            ]),
+          ),
         ),
-      ),
+        byPageLabel: pageLabels,
+      },
       null,
       2,
     ),
@@ -421,13 +458,107 @@ async function main(): Promise<void> {
     );
   }
 
-  console.log(`\nRapor:      ${reportPath}`);
-  console.log(`Kör puanlama: ${blindPath}`);
-  console.log(`Anahtar:    ${keyPath}   ← puanlama bitene kadar AÇMA`);
+  console.log(`\nRapor:              ${reportPath}`);
+  console.log(`Tur A — algı:       ${perceptionPath}   ← ÖNCE bunu doldur (~20 dk)`);
+  console.log(`Tur B — rubrik:     ${blindPath}        ← yalnız Tur A ayıramazsa`);
+  console.log(`Anahtar:            ${keyPath}          ← doldurma bitene kadar AÇMA`);
   console.log(
-    "\nKaliteyi puanladıktan sonra:\n" +
+    "\nTur B'yi puanladıysan:\n" +
       `  python -m evals.model_compare.report --scores <puanlar.json> --key ${keyPath} --report ${reportPath}`,
   );
+}
+
+/**
+ * The fill-in sheet for Tur A: perception.
+ *
+ * Markdown rather than JSON because a human reads this one, next to the page
+ * photo, and fills it in by hand. The three sets are labelled A/B/C with no
+ * model named anywhere.
+ *
+ * The tally asks four things, and the fourth is the one that decides whether
+ * tier *routing* is possible at all. "Kaç işareti yakaladı" and "el yazısını
+ * okudu mu" measure how good the model is. **"Yanlış ama emin"** measures
+ * whether it knows when it is bad — and a cheap-model-first cascade only works
+ * if the cheap model reliably flags its own failures. A model that misreads
+ * "hipokalemi" as "hiperkalemi" and marks the card confident is worse than an
+ * expensive one, because nothing downstream will ever escalate it and a wrong
+ * card enters the deck silently. Cheap and wrong beats expensive and right on
+ * price alone; this column is what stops the comparison being decided on price
+ * alone.
+ */
+function renderPerceptionSheet(
+  pages: Array<{ page: string; sets: Array<{ label: string; row: PageResult | undefined }> }>,
+  stamp: string,
+): string {
+  const lines: string[] = [
+    `# Algı taraması — ${stamp}`,
+    "",
+    "Her sayfa için, **sayfanın kendi fotoğrafını yanına açıp** aşağıdaki üç kart",
+    "takımını karşılaştır. Hangi takımın hangi modelden geldiği bilerek yazılmadı;",
+    "harfler her sayfada bağımsız karıştırıldı, yani A'nın sayfa 1'deki modeliyle",
+    "sayfa 2'deki modeli aynı değil. Anahtarı (`key-*.json`) doldurma bitmeden açma.",
+    "",
+    "Doldurulacak dört satır:",
+    "",
+    "- **Yakalanan işaret** — senin koyduğun kaç işaret karta dönüşmüş (yakalanan / toplam).",
+    "- **El yazısı** — `okundu` / `okunamadı dedi` / `yanlış okudu` / `yok`.",
+    "- **Uydurma kart** — işaretlenmemiş yerden üretilmiş kart sayısı.",
+    "- **Yanlış ama emin** — içeriği yanlış OLDUĞU HÂLDE \"emin değil\" işareti",
+    "  taşımayan kart sayısı. Bu satır ucuz-model-önce yönlendirmesinin",
+    "  mümkün olup olmadığını belirler: ucuz model hatasını kendisi bildirmiyorsa",
+    "  hiçbir kademe yükseltmesi tetiklenmez ve yanlış kart sessizce desteye girer.",
+    "",
+  ];
+
+  for (const { page, sets } of pages) {
+    lines.push(`## ${page}`, "");
+    for (const { label, row } of sets) {
+      if (!row || !row.ok) {
+        lines.push(`### Takım ${label}`, "", `> Çağrı başarısız: ${row?.failureReason ?? "bilinmiyor"}`, "");
+        continue;
+      }
+      const unsure = row.lowConfidenceCount;
+      lines.push(
+        `### Takım ${label}`,
+        "",
+        `${row.cardCount} kart` +
+          (unsure > 0 ? ` · ${unsure} tanesi modelin kendi "emin değilim" işaretini taşıyor` : "") +
+          (row.rejectedCount > 0 ? ` · ${row.rejectedCount} kart kapıda elendi` : ""),
+        "",
+      );
+      const cards = row.cards as Array<Record<string, unknown>>;
+      cards.forEach((card, index) => {
+        const flag = card.lowConfidence === true ? "  ⚠ *(model emin değil)*" : "";
+        lines.push(`${index + 1}. **S:** ${String(card.front ?? "")}`);
+        lines.push(`   **C:** ${String(card.back ?? "")}${flag}`);
+        const explanation = String(card.explanation ?? "").trim();
+        if (explanation) lines.push(`   *${explanation}*`);
+        lines.push("");
+      });
+    }
+
+    const cells = (fill: string) => sets.map(() => fill).join(" | ");
+    lines.push(
+      `| | ${sets.map((set) => set.label).join(" | ")} |`,
+      `| --- | ${cells("---")} |`,
+      `| Yakalanan işaret / toplam | ${cells("   ")} |`,
+      `| El yazısı | ${cells("   ")} |`,
+      `| Uydurma kart | ${cells("   ")} |`,
+      `| **Yanlış ama emin** | ${cells("   ")} |`,
+      `| Not | ${cells("   ")} |`,
+      "",
+    );
+  }
+
+  lines.push(
+    "---",
+    "",
+    "Doldurduktan sonra anahtarı aç (`key-*.json` → `byPageLabel`) ve harfleri",
+    "modellerle eşleştir. Tur A modelleri ayıramadıysa Tur B'ye (§23.3 rubriği,",
+    "`blind-*.json`) geç — ayırdıysa geçme, o rubrik turu bir buçuk saat sürer.",
+    "",
+  );
+  return lines.join("\n");
 }
 
 function median(values: number[]): number {
@@ -435,6 +566,25 @@ function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
+}
+
+/**
+ * Which model hides behind A, B, C on one page.
+ *
+ * Permuted independently per page, and that is the whole point rather than a
+ * flourish: with a fixed order the sheet is blind for exactly one page — by the
+ * third you would have worked out from the card counts alone which letter is
+ * the expensive tier, and every judgement after that is unblinded without the
+ * reader noticing. Derived from the page name so a re-run reproduces the same
+ * sheet: re-reading after a crash has to be the same experiment, not a new one.
+ */
+export function labelOrder(
+  pageName: string,
+  models: string[],
+): Array<{ label: string; model: string }> {
+  return [...models]
+    .sort((left, right) => hash(pageName + left) - hash(pageName + right))
+    .map((model, index) => ({ label: String.fromCharCode(65 + index), model }));
 }
 
 /** Stable, content-derived ordering for the blind sheet. Not a security hash. */
@@ -446,11 +596,19 @@ function hash(value: string): number {
   return result;
 }
 
-main().catch((error) => {
-  if (error instanceof ConfigError) {
-    console.error(`Yapılandırma hatası: ${error.message}`);
-  } else {
-    console.error(error instanceof Error ? error.message : String(error));
-  }
-  process.exit(1);
-});
+/**
+ * Guarded so `labelOrder` and `parseModelSpec` can be imported by a test
+ * without the script making real API calls on import.
+ */
+const invokedDirectly = process.argv[1]?.includes("compareModels");
+
+if (invokedDirectly) {
+  main().catch((error) => {
+    if (error instanceof ConfigError) {
+      console.error(`Yapılandırma hatası: ${error.message}`);
+    } else {
+      console.error(error instanceof Error ? error.message : String(error));
+    }
+    process.exit(1);
+  });
+}
