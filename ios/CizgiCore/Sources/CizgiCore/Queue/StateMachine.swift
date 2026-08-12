@@ -130,17 +130,27 @@ public enum FailureKind: Sendable, Equatable {
         }
     }
 
-    /// What the queue shows the user.
+    /// What the queue shows the user *when the server said nothing more
+    /// specific*.
     ///
     /// The queue used to print `String(describing:)` of this enum, so a real
     /// person read "invalidResponse" in a Turkish interface and could not tell
     /// whether to retry, re-shoot, or check the settings.
+    ///
+    /// It is now a fallback rather than the whole story. These sentences are
+    /// classifications, and a classification cannot distinguish a page that is
+    /// merely still generating (free, collected on the next attempt) from one
+    /// whose output budget was burned and thrown away (paid, twice). Both read
+    /// "Sağlayıcıya ulaşılamadı" and both looked identical on screen — which is
+    /// exactly why the cost question could not be answered from the phone.
+    /// `PipelineOutcome.failureDetail` carries the server's own words and is
+    /// preferred wherever it exists.
     public var message: String {
         switch self {
         case .network:
             return "İnternet bağlantısı kurulamadı. Ağ gelince kendiliğinden yeniden denenecek."
         case .rateLimited:
-            return "Sağlayıcı çok fazla istek aldı. Biraz sonra yeniden denenecek."
+            return "Sağlayıcı çok fazla istek aldı ya da kotası doldu. Biraz sonra yeniden denenecek."
         case .providerUnavailable:
             return "Sağlayıcıya ulaşılamadı. Yeniden denenecek."
         case .invalidResponse:

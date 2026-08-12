@@ -437,6 +437,11 @@ final class ProcessingQueue: ObservableObject {
         // user chose stays chosen.
         guard page.processingState != .cancelled else { return }
 
+        // Before the branch, deliberately: what the calls cost is true on every
+        // path through this method, and the failure paths are the ones the old
+        // success-only accounting was blind to.
+        recordAccounting(outcome.modelRuns, for: page, context: context)
+
         // Keep completed groups before returning a retryable failure. A later
         // retry receives their ids and generates only the unfinished groups.
         if outcome.finalState != .ready {
@@ -486,11 +491,11 @@ final class ProcessingQueue: ObservableObject {
             page.processingState = retryPolicy.shouldRetry(attempt: page.retryCount)
                 ? .temporaryFailure
                 : .permanentFailure
-            page.lastError = outcome.failure?.message
+            page.lastError = FailureDiagnosis.text(detail: outcome.failureDetail, kind: outcome.failure)
 
         case .permanentFailure:
             page.processingState = .permanentFailure
-            page.lastError = outcome.failure?.message
+            page.lastError = FailureDiagnosis.text(detail: outcome.failureDetail, kind: outcome.failure)
 
         default:
             page.processingState = outcome.finalState
@@ -587,26 +592,57 @@ final class ProcessingQueue: ObservableObject {
             }
         }
 
-        // Only the real backend generator reports this (§16.8); the mock
-        // makes no network call and has nothing to account for. Recorded
-        // only on success — `persist` runs solely from the `.ready` branch of
-        // `apply`, so a failed call never reaches here (a known, deliberate
-        // gap: a failed generation is not yet given its own `ModelRun`).
-        if let metadata = knowledge.modelRun {
-            let run = ModelRun(
-                requestId: metadata.requestId,
-                jobId: page.id.uuidString,
-                provider: metadata.provider,
-                model: metadata.model,
-                purpose: metadata.purpose,
-                promptVersion: metadata.promptVersion,
-                latencyMs: metadata.latencyMs,
-                inputTokens: metadata.inputTokens,
-                outputTokens: metadata.outputTokens,
-                estimatedCostUSD: metadata.estimatedCostUSD,
-                success: true
+    }
+
+    /// Writes down every provider call the server reports for this page.
+    ///
+    /// Moved out of `persist` and up into `apply`, which is the whole fix:
+    /// `persist` runs only from the `.ready` branch and only per generated
+    /// group, so accounting written there could only ever record successes —
+    /// and would record one row per group if a page ever produced two. A
+    /// generation that burns its output budget and fails costs the same as one
+    /// that works, so the ledger has to be written wherever the run ends.
+    ///
+    /// De-duplicated on `(purpose, attempt)` because the server reports its
+    /// whole ledger on every poll and a page is polled many times — and
+    /// because two runs for one page genuinely overlap (a manual "Tekrar dene"
+    /// racing a pull-to-refresh, documented in `process`), so both arrive here
+    /// with the same entries.
+    private func recordAccounting(
+        _ runs: [ModelRunMetadata],
+        for page: CapturedPage,
+        context: ModelContext
+    ) {
+        guard !runs.isEmpty else { return }
+        let jobId = page.id.uuidString
+        let descriptor = FetchDescriptor<ModelRun>(predicate: #Predicate { $0.jobId == jobId })
+        let existing = (try? context.fetch(descriptor)) ?? []
+        var seen = Set(existing.map { "\($0.purpose)#\($0.attempt)" })
+
+        for metadata in runs {
+            let key = "\(metadata.purpose)#\(metadata.attempt)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            context.insert(
+                ModelRun(
+                    requestId: metadata.requestId,
+                    jobId: jobId,
+                    attempt: metadata.attempt,
+                    provider: metadata.provider,
+                    model: metadata.model,
+                    purpose: metadata.purpose,
+                    promptVersion: metadata.promptVersion,
+                    latencyMs: metadata.latencyMs,
+                    inputTokens: metadata.inputTokens,
+                    cachedInputTokens: metadata.cachedInputTokens,
+                    outputTokens: metadata.outputTokens,
+                    reasoningTokens: metadata.reasoningTokens,
+                    estimatedCostUSD: metadata.estimatedCostUSD,
+                    success: metadata.success,
+                    billing: metadata.billing,
+                    failureReason: metadata.failureReason
+                )
             )
-            context.insert(run)
         }
     }
 

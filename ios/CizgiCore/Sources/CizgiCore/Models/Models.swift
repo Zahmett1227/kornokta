@@ -457,20 +457,50 @@ public final class OCRCorrection {
 
 /// Provider call accounting (§16.8). Content and OCR text are deliberately not
 /// stored here (§22).
+///
+/// One row per real provider call, successes and failures alike. It used to be
+/// written only on success, which made the total structurally incapable of
+/// matching the provider's invoice: a generation that burns its whole output
+/// budget and then fails costs exactly what a successful one costs, and there
+/// were three separate ways for that to happen. Every new field below exists
+/// to answer a question the old five could not.
 @Model
 public final class ModelRun {
     @Attribute(.unique) public var id: UUID
     public var requestId: String
     public var jobId: String
+    /// Which attempt at `jobId` this was, as the server's job row counted them.
+    ///
+    /// The de-duplication key, with `jobId` and `purpose`: the server reports
+    /// its whole ledger on every poll, and a page is polled many times, so
+    /// without this one call would be recorded once per poll. Defaults to 0
+    /// for rows written before per-attempt accounting existed.
+    public var attempt: Int
     public var provider: String
     public var model: String
     public var purpose: String
     public var promptVersion: String
     public var latencyMs: Int
     public var inputTokens: Int
+    /// Share of `inputTokens` served from the provider's prompt cache — a
+    /// subset, not an addition — billed at roughly a tenth of the usual rate.
+    public var cachedInputTokens: Int
     public var outputTokens: Int
+    /// Share of `outputTokens` the model spent thinking rather than answering.
+    /// A subset, like `cachedInputTokens`, and the most expensive tokens here.
+    public var reasoningTokens: Int
     public var estimatedCostUSD: Double
     public var success: Bool
+    /// `measured`, `unmeasured` or `none` — see `CallAccounting.billing`.
+    ///
+    /// A cost of 0.00 is ambiguous without it: the call may have been rejected
+    /// before generating (free) or aborted after generating (billed, amount
+    /// unknowable). Only the first may be added into a total as zero; the
+    /// second has to be counted separately or it hides the leak.
+    public var billing: String
+    /// Short machine-readable cause on a failed call: `timeout`,
+    /// `incomplete_max_output_tokens`, `schema_invalid`, `worker_killed`, …
+    public var failureReason: String?
     public var errorCategory: String?
     public var createdAt: Date
 
@@ -478,34 +508,45 @@ public final class ModelRun {
         id: UUID = UUID(),
         requestId: String,
         jobId: String,
+        attempt: Int = 0,
         provider: String,
         model: String,
         purpose: String,
         promptVersion: String,
         latencyMs: Int,
         inputTokens: Int,
+        cachedInputTokens: Int = 0,
         outputTokens: Int,
+        reasoningTokens: Int = 0,
         estimatedCostUSD: Double,
         success: Bool,
+        billing: String = ModelRunBilling.measured,
+        failureReason: String? = nil,
         errorCategory: String? = nil,
         createdAt: Date = .now
     ) {
         self.id = id
         self.requestId = requestId
         self.jobId = jobId
+        self.attempt = attempt
         self.provider = provider
         self.model = model
         self.purpose = purpose
         self.promptVersion = promptVersion
         self.latencyMs = latencyMs
         self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
         self.outputTokens = outputTokens
+        self.reasoningTokens = reasoningTokens
         self.estimatedCostUSD = estimatedCostUSD
         self.success = success
+        self.billing = billing
+        self.failureReason = failureReason
         self.errorCategory = errorCategory
         self.createdAt = createdAt
     }
 }
+
 
 /// A free-practice session. It is deliberately separate from `ReviewLog` and
 /// has no relationship to Card scheduling fields: Egzersiz history may inform

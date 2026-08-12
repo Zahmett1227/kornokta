@@ -29,11 +29,23 @@ public struct PipelineOutcome: Sendable, Equatable {
     public let knowledge: GeneratedKnowledge?
     public let generatedGroups: [GeneratedAnnotationGroup]
     public let failure: FailureKind?
-    /// Provider call accounting for this run's card generation (§16.8), when
-    /// the generator made one. Mirrors `knowledge.modelRun` — carried on the
-    /// outcome too so the caller can persist it without reaching back into
-    /// `knowledge`.
-    public let modelRun: ModelRunMetadata?
+    /// The server's own description of what went wrong, verbatim.
+    ///
+    /// The classification in `failure` is a retry policy, not a diagnosis, and
+    /// it was the only thing surviving the trip to the screen: an aborted
+    /// generation that burned its whole output budget, a job still running
+    /// happily on the server, an exhausted API quota and a dropped Wi-Fi
+    /// connection all arrived as one sentence — "Sağlayıcıya ulaşılamadı" —
+    /// so no one could tell which failures had cost money. The server always
+    /// knew and always said; this is where its words stopped being discarded.
+    public let failureDetail: String?
+    /// Provider call accounting for this run (§16.8).
+    ///
+    /// Carried on the outcome — rather than left inside `knowledge` — because
+    /// a *failed* run has no knowledge to reach into and is exactly the case
+    /// worth recording: the call still happened and still cost money. Plural
+    /// because one page can take several attempts, all of them billed.
+    public let modelRuns: [ModelRunMetadata]
 
     public init(
         jobId: String,
@@ -44,7 +56,8 @@ public struct PipelineOutcome: Sendable, Equatable {
         knowledge: GeneratedKnowledge? = nil,
         generatedGroups: [GeneratedAnnotationGroup] = [],
         failure: FailureKind? = nil,
-        modelRun: ModelRunMetadata? = nil
+        failureDetail: String? = nil,
+        modelRuns: [ModelRunMetadata] = []
     ) {
         self.jobId = jobId
         self.finalState = finalState
@@ -54,7 +67,8 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.knowledge = knowledge
         self.generatedGroups = generatedGroups
         self.failure = failure
-        self.modelRun = modelRun
+        self.failureDetail = failureDetail
+        self.modelRuns = modelRuns
     }
 }
 
@@ -138,15 +152,15 @@ public struct CapturePipeline: Sendable {
                     forceResubmit: forceResubmit
                 )
             )
+        } catch let failure as CardGenerationFailure {
+            // The real provider's error: it carries the ledger of what the
+            // failed attempt — and every attempt before it — already spent, so
+            // a page that never succeeds still records its cost.
+            return Self.failed(jobId: jobId, error: failure.error, accounting: failure.accounting)
         } catch let error as CardGenerationError {
-            if case .sourceInsufficient = error {
-                // The model found nothing markable to build a card from. Faz 6
-                // has no confirmation lane, so this is a terminal "couldn't make
-                // cards from this page" rather than a bounce to the user.
-                return PipelineOutcome(jobId: jobId, finalState: .permanentFailure, failure: .noContent)
-            }
-            let kind = Self.failureKind(for: error)
-            return PipelineOutcome(jobId: jobId, finalState: kind.resultingState, failure: kind)
+            // A bare case: the offline stand-in and the tests throw these, and
+            // they have nothing to account for.
+            return Self.failed(jobId: jobId, error: error, accounting: [])
         } catch {
             return PipelineOutcome(jobId: jobId, finalState: .temporaryFailure, failure: .providerUnavailable)
         }
@@ -171,7 +185,7 @@ public struct CapturePipeline: Sendable {
             passage: knowledge.canonicalClaim,
             knowledge: knowledge,
             generatedGroups: [generated],
-            modelRun: knowledge.modelRun
+            modelRuns: knowledge.modelRuns
         )
     }
 
@@ -199,6 +213,55 @@ public struct CapturePipeline: Sendable {
             contextText: knowledge.canonicalClaim,
             handwrittenNotes: []
         )
+    }
+
+    /// The one place a generation error becomes an outcome, so the two throw
+    /// sites cannot disagree about the classification or drop the ledger.
+    static func failed(
+        jobId: String,
+        error: CardGenerationError,
+        accounting: [ModelRunMetadata]
+    ) -> PipelineOutcome {
+        let detail = Self.detail(of: error)
+        if case .sourceInsufficient = error {
+            // The model found nothing markable to build a card from. Faz 6 has
+            // no confirmation lane, so this is a terminal "couldn't make cards
+            // from this page" rather than a bounce to the user. It is also a
+            // *paid* outcome — the model read the whole page to decide it — so
+            // the accounting travels with it like every other failure.
+            // No detail: `.noContent`'s own sentence already says the useful
+            // thing ("nothing marked on this page"), and the server's wording
+            // for it is an internal one.
+            return PipelineOutcome(
+                jobId: jobId,
+                finalState: .permanentFailure,
+                failure: .noContent,
+                modelRuns: accounting
+            )
+        }
+        let kind = FailureDiagnosis.refine(
+            Self.failureKind(for: error),
+            using: accounting.last?.failureReason
+        )
+        return PipelineOutcome(
+            jobId: jobId,
+            finalState: kind.resultingState,
+            failure: kind,
+            failureDetail: detail,
+            modelRuns: accounting
+        )
+    }
+
+    /// The message the error is carrying, or nil when it has nothing to add.
+    /// The trimming rule itself lives in `FailureDiagnosis`, which is where it
+    /// is tested.
+    static func detail(of error: CardGenerationError) -> String? {
+        switch error {
+        case .schemaInvalid(let message), .providerUnavailable(let message):
+            return FailureDiagnosis.detail(message)
+        case .budgetExceeded, .sourceInsufficient:
+            return nil
+        }
     }
 
     /// Single mapping from a generator error to the retry classification.

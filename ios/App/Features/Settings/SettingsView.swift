@@ -199,6 +199,13 @@ struct SettingsView: View {
                 onCompletion: restore
             )
             .navigationTitle("Ayarlar")
+            // Value-based like every other push in the app (AppNavigator's
+            // note): only a value push appends to the stack's path.
+            .navigationDestination(for: AppNavigator.SettingsRoute.self) { route in
+                switch route {
+                case .usageDetail: UsageDetailView()
+                }
+            }
             .onAppear {
                 // Shown as a placeholder, never as text: reading the stored
                 // token back into an on-screen field would put it somewhere a
@@ -210,33 +217,109 @@ struct SettingsView: View {
 
     /// What the provider calls have actually cost (§16.8, §20.3).
     ///
-    /// `ModelRun` has been written on every successful generation since Faz 3
-    /// and read by nothing, so the accounting the spec asks for existed only in
-    /// the database. Token counts are real; the money figure is not shown at all
-    /// unless a price has been configured, because §0.6 forbids inventing one
-    /// and "0,00 USD" would read as free rather than as unpriced.
+    /// This screen used to add up successful calls only, which made it
+    /// structurally incapable of matching the provider's invoice: a generation
+    /// that burns its whole output budget and then fails costs exactly what a
+    /// working one costs, and there are three separate ways for that to happen.
+    /// The gap between this total and the provider's dashboard *was* the
+    /// diagnosis, and there was no way to see it from here.
+    ///
+    /// So the split is the point now, not the total. "Boşa giden" is money
+    /// spent on pages that produced no cards; "ölçülemedi" is calls known to
+    /// have been billed without reporting how much, kept as a count because
+    /// averaging them into a figure would invent a number (§0.6).
     @ViewBuilder
     private var usageSection: some View {
         if !modelRuns.isEmpty {
-            let inputTokens = modelRuns.reduce(0) { $0 + $1.inputTokens }
-            let outputTokens = modelRuns.reduce(0) { $0 + $1.outputTokens }
-            let cost = modelRuns.reduce(0) { $0 + $1.estimatedCostUSD }
+            let entries = modelRuns.map(Self.entry(for:))
+            let summary = UsageSummary.of(entries)
             Section {
-                LabeledContent("Model çağrısı", value: "\(modelRuns.count)")
-                LabeledContent("Girdi token", value: inputTokens.formatted())
-                LabeledContent("Çıktı token", value: outputTokens.formatted())
-                if cost > 0 {
-                    LabeledContent("Tahmini maliyet", value: String(format: "%.2f USD", cost))
+                LabeledContent("Model çağrısı", value: "\(summary.callCount)")
+
+                if summary.totalCostUSD > 0 {
+                    LabeledContent("Tahmini maliyet", value: Self.usd(summary.totalCostUSD))
+                    LabeledContent("Çağrı başına ortalama") {
+                        Text(Self.usd(summary.averageCostPerMeasuredCallUSD))
+                            .foregroundStyle(Cizgi.muted)
+                    }
+                }
+
+                if summary.billedFailureCount > 0 {
+                    LabeledContent("Boşa giden") {
+                        // Colour is never the only signal (§29): the count and
+                        // the share say it in words too.
+                        Text(
+                            "\(Self.usd(summary.wastedCostUSD)) · \(summary.billedFailureCount) çağrı "
+                                + "(%\(Int((summary.wastedShare * 100).rounded())))"
+                        )
+                        .foregroundStyle(Cizgi.danger)
+                    }
+                }
+
+                if summary.hasUnmeasuredSpend {
+                    LabeledContent("Ölçülemedi") {
+                        Text("\(summary.unmeasuredCount) çağrı")
+                            .foregroundStyle(Cizgi.warning)
+                    }
+                }
+
+                if summary.freeFailureCount > 0 {
+                    LabeledContent("Reddedildi (ücretsiz)", value: "\(summary.freeFailureCount)")
+                }
+
+                NavigationLink(value: AppNavigator.SettingsRoute.usageDetail) {
+                    Text("Çağrı dökümü")
                 }
             } header: {
                 Text("Kullanım")
             } footer: {
-                Text(cost > 0
-                     ? "Sunucudaki fiyat ayarlarından hesaplanır."
-                     : "Maliyet için sunucuda OPENAI_/GEMINI_USD_PER_MILLION_* "
-                       + "değerleri ayarlanmalı; uydurma bir fiyat gösterilmiyor.")
+                Text(Self.usageFooter(summary))
             }
         }
+    }
+
+    /// Projects a stored row into the value type the arithmetic works on.
+    ///
+    /// Rows written before per-call accounting carry an empty `billing`; they
+    /// were only ever written on success, so treating them as measured is
+    /// exactly right and keeps the old totals intact.
+    static func entry(for run: ModelRun) -> UsageEntry {
+        UsageEntry(
+            purpose: run.purpose,
+            model: run.model,
+            success: run.success,
+            billing: run.billing.isEmpty ? ModelRunBilling.measured : run.billing,
+            inputTokens: run.inputTokens,
+            cachedInputTokens: run.cachedInputTokens,
+            outputTokens: run.outputTokens,
+            reasoningTokens: run.reasoningTokens,
+            estimatedCostUSD: run.estimatedCostUSD
+        )
+    }
+
+    /// Four decimals, not two: a single page costs single-digit cents, and
+    /// "0,00 USD" for a real call reads as free.
+    static func usd(_ value: Double) -> String {
+        String(format: "%.4f USD", value)
+    }
+
+    static func usageFooter(_ summary: UsageSummary) -> String {
+        if summary.totalCostUSD <= 0 {
+            return "Maliyet için sunucuda OPENAI_/GEMINI_USD_PER_MILLION_* değerleri "
+                + "ayarlanmalı; uydurma bir fiyat gösterilmiyor."
+        }
+        var lines = ["Sunucudaki fiyat ayarlarından hesaplanır."]
+        if summary.hasUnmeasuredSpend {
+            // The honest caveat, and the reason this screen can disagree with
+            // the provider's dashboard by a knowable amount rather than an
+            // unknown one.
+            lines.append(
+                "\(summary.unmeasuredCount) çağrı modele ulaştıktan sonra kesildi; sağlayıcı "
+                    + "bunları faturalamış olabilir ama ne kadar olduğunu bildirmedi. Toplam bu "
+                    + "yüzden bir alt sınırdır."
+            )
+        }
+        return lines.joined(separator: " ")
     }
 
     /// Cloud OCR setup (§7.2, §7.3).

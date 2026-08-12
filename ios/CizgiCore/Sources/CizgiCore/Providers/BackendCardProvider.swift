@@ -110,36 +110,58 @@ public struct BackendCardProvider: CardGenerating {
 
         var waited: TimeInterval = 0
         while true {
+            // Re-read on every turn of the loop: the ledger grows as the server
+            // works, and every exit below owes the queue whatever has been
+            // spent so far — a page that fails after two paid attempts must not
+            // take that record down with it.
+            let spent = Self.accounting(of: view)
+
             switch Self.action(for: view) {
             case .useResult:
                 guard let result = view?.result else {
                     // `useResult` is only ever returned for a view that has one;
                     // this is unreachable and would be a bug in `action(for:)`.
-                    throw CardGenerationError.schemaInvalid("Biten işte sonuç yok.")
+                    throw CardGenerationFailure(
+                        error: .schemaInvalid("Biten işte sonuç yok."),
+                        accounting: spent
+                    )
                 }
-                return try Self.map(result, elapsedMs: Int(Date().timeIntervalSince(started) * 1000))
+                return try Self.map(
+                    result,
+                    elapsedMs: Int(Date().timeIntervalSince(started) * 1000),
+                    accounting: spent
+                )
 
             case .failPermanently(let message):
-                throw CardGenerationError.schemaInvalid(message)
+                throw CardGenerationFailure(error: .schemaInvalid(message), accounting: spent)
 
             case .failTransiently(let message):
-                throw CardGenerationError.providerUnavailable(message)
+                throw CardGenerationFailure(error: .providerUnavailable(message), accounting: spent)
 
             case .submit:
                 // The job vanished between the submit and this poll — nothing
                 // sensible left to wait for, and re-uploading from inside the
                 // wait loop would risk looping forever. The queue's own retry
                 // starts cleanly from the top.
-                throw CardGenerationError.providerUnavailable("İş kaydı bulunamadı; tekrar denenecek.")
+                throw CardGenerationFailure(
+                    error: .providerUnavailable("İş kaydı bulunamadı; tekrar denenecek."),
+                    accounting: spent
+                )
 
             case .wait:
                 let interval = Self.pollInterval(afterWaiting: waited)
                 guard waited + interval <= configuration.jobDeadline else {
-                    // Not a lost page: the job is still running on the server and
-                    // its answer will be waiting for whoever asks next. Reported
-                    // as transient so the queue retries rather than gives up.
-                    throw CardGenerationError.providerUnavailable(
-                        "Kart üretimi sürüyor; sonuç bir sonraki denemede alınacak."
+                    // Not a lost page and, crucially, not a second charge: the
+                    // job is still running on the server and its answer will be
+                    // waiting for whoever asks next. Reported as transient so
+                    // the queue retries rather than gives up — the retry
+                    // collects, it does not regenerate.
+                    throw CardGenerationFailure(
+                        error: .providerUnavailable(
+                            "Kart üretimi sunucuda sürüyor; sonuç bir sonraki denemede alınacak "
+                                + "(yeniden ücretlendirilmez)."
+                        ),
+                        accounting: spent
                     )
                 }
                 try await sleepOrFail(interval)
@@ -351,7 +373,39 @@ public struct BackendCardProvider: CardGenerating {
         return options
     }
 
-    static func map(_ decoded: RemoteCardsSuccess, elapsedMs: Int) throws -> GeneratedKnowledge {
+    /// Turns the server's ledger into the phone's, verbatim.
+    ///
+    /// Nothing is recomputed here on purpose. The server knows the prices, saw
+    /// the provider's own `usage` block and is the only party that observes
+    /// every attempt; a phone that re-derived any of it would be inventing a
+    /// second answer to a question that already has one.
+    static func accounting(of view: RemoteJobView?) -> [ModelRunMetadata] {
+        (view?.usage ?? []).map { entry in
+            ModelRunMetadata(
+                requestId: view?.jobId ?? "",
+                attempt: entry.attempt,
+                provider: entry.provider,
+                model: entry.model,
+                purpose: entry.purpose,
+                promptVersion: entry.promptVersion,
+                latencyMs: entry.latencyMs,
+                inputTokens: entry.usage.inputTokens,
+                cachedInputTokens: entry.usage.cachedInputTokens,
+                outputTokens: entry.usage.outputTokens,
+                reasoningTokens: entry.usage.reasoningTokens,
+                estimatedCostUSD: entry.estimatedCostUSD,
+                success: entry.outcome == "success",
+                billing: entry.billing,
+                failureReason: entry.failureReason
+            )
+        }
+    }
+
+    static func map(
+        _ decoded: RemoteCardsSuccess,
+        elapsedMs: Int,
+        accounting: [ModelRunMetadata]
+    ) throws -> GeneratedKnowledge {
         // Built with `reduce`, not `Dictionary(uniqueKeysWithValues:)`: card
         // ids come from a model response, and a duplicate must not crash the
         // app — it is untrusted input, not a contract this package controls.
@@ -409,24 +463,35 @@ public struct BackendCardProvider: CardGenerating {
         // surfacing (e.g. cards dropped for the per-passage limit).
         let concern = decoded.gate.warnings.isEmpty ? nil : decoded.gate.warnings.joined(separator: " ")
 
-        let modelRun = ModelRunMetadata(
-            requestId: decoded.output.requestId,
-            provider: decoded.output.usage.provider,
-            model: decoded.output.usage.model,
-            purpose: "card_generation",
-            promptVersion: decoded.cardPromptVersion,
-            latencyMs: elapsedMs,
-            inputTokens: decoded.output.usage.inputTokens,
-            outputTokens: decoded.output.usage.outputTokens,
-            estimatedCostUSD: decoded.output.usage.estimatedCostUSD
-        )
+        // The server's ledger is authoritative when it sent one. The fallback
+        // reconstructs a single line from the card payload's own `usage` block,
+        // which is what a deployment predating the ledger still returns — one
+        // call recorded is better than none, and it keeps this decoder working
+        // against both.
+        let runs = accounting.isEmpty
+            ? [
+                ModelRunMetadata(
+                    requestId: decoded.output.requestId,
+                    attempt: 1,
+                    provider: decoded.output.usage.provider,
+                    model: decoded.output.usage.model,
+                    purpose: "card_generation",
+                    promptVersion: decoded.cardPromptVersion,
+                    latencyMs: elapsedMs,
+                    inputTokens: decoded.output.usage.inputTokens,
+                    outputTokens: decoded.output.usage.outputTokens,
+                    estimatedCostUSD: decoded.output.usage.estimatedCostUSD,
+                    success: true
+                )
+            ]
+            : accounting
 
         return GeneratedKnowledge(
             canonicalClaim: canonicalClaim,
             tags: tags,
             sourceConcern: concern,
             cards: survivingCards,
-            modelRun: modelRun
+            modelRuns: runs
         )
     }
 
@@ -470,6 +535,39 @@ struct RemoteJobView: Decodable {
     let result: RemoteCardsSuccess?
     let error: String?
     let retryable: Bool?
+    /// The server's per-call cost ledger for this job (§16.8).
+    ///
+    /// Sent on every view, not only the terminal one, and absent on jobs that
+    /// have not called a provider yet — so `decodeIfPresent`, like every other
+    /// field added after a build shipped.
+    let usage: [RemoteCallAccounting]?
+}
+
+/// One provider call as `/api/jobs` reports it. Field names match the server's
+/// `CallAccounting` exactly; the accompanying backend test is what keeps the
+/// two from drifting.
+struct RemoteCallAccounting: Decodable {
+    let attempt: Int
+    let provider: String
+    let model: String
+    let purpose: String
+    let promptVersion: String
+    /// `"success"` or `"failure"`. A plain string, not an enum, for the same
+    /// reason `status` is: an unknown value must not fail the whole response.
+    let outcome: String
+    let failureReason: String?
+    /// `measured` / `unmeasured` / `none` — see `ModelRunBilling`.
+    let billing: String
+    let usage: RemoteTokenUsage
+    let estimatedCostUSD: Double
+    let latencyMs: Int
+}
+
+struct RemoteTokenUsage: Decodable {
+    let inputTokens: Int
+    let cachedInputTokens: Int
+    let outputTokens: Int
+    let reasoningTokens: Int
 }
 
 struct RemoteJobsResponse: Decodable {
@@ -556,6 +654,12 @@ struct RemoteUsage: Decodable {
     let inputTokens: Int
     let outputTokens: Int
     let estimatedCostUSD: Double
+    /// Optional because this one type decodes two different blocks: the card
+    /// payload's §14 `usage` (which stays the shipped contract and carries only
+    /// the totals) and `/api/second-opinion`'s, which reports the split. Absent
+    /// means "this endpoint does not break the numbers down", not "zero".
+    let cachedInputTokens: Int?
+    let reasoningTokens: Int?
 }
 
 struct RemoteCardGateReport: Decodable {
