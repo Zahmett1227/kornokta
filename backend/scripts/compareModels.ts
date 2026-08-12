@@ -72,6 +72,12 @@ Seçenekler:
   --pages <dizin>    İşaretli sayfa görüntüleri (varsayılan: ../evals/fixtures/pages)
   --subject <ders>   Konu ataması için kanonik ders adı (örn. Patoloji)
   --max-cards <n>    Sayfa başına kart tavanı (varsayılan: .env'deki değer)
+  --max-output-tokens <n>
+                     Çağrı başına çıktı tokenı tavanı (varsayılan: .env'deki değer).
+                     Reasoning tokenları da bu bütçeden düşülür, yani effort
+                     yükseltilen bir koşuda bu da yükseltilmeli — yoksa çağrı
+                     kesilir ve TAM ÜCRET ödenip kart çıkmaz. Tavan üst sınırdır;
+                     harcanmayan token faturalanmaz.
   --out <dizin>      Rapor dizini (varsayılan: ../evals/reports)
   --help
 
@@ -467,6 +473,17 @@ async function main(): Promise<void> {
   }
   const maxCards = experimentCardCeiling(requestedMaxCards, config.openai.maxCardsPerKnowledgeUnit);
 
+  let requestedMaxOutputTokens: number | undefined;
+  if (typeof args["max-output-tokens"] === "string") {
+    requestedMaxOutputTokens = Number(args["max-output-tokens"]);
+    if (!Number.isInteger(requestedMaxOutputTokens) || requestedMaxOutputTokens < 1) {
+      throw new Error(
+        `--max-output-tokens 1 veya daha büyük bir tam sayı olmalı, alınan: ${args["max-output-tokens"]}`,
+      );
+    }
+  }
+  const maxOutputTokens = requestedMaxOutputTokens ?? config.openai.maxOutputTokens;
+
   const pages = await readPages(pagesDir);
   console.log(
     `${pages.length} sayfa × ${specs.length} model = ${pages.length * specs.length} gerçek çağrı.\n` +
@@ -474,8 +491,37 @@ async function main(): Promise<void> {
       (maxCards !== config.openai.maxCardsPerKnowledgeUnit
         ? ` (dağıtımın kendi ayarı ${config.openai.maxCardsPerKnowledgeUnit}; yalnız bu koşu için aşıldı)`
         : "") +
+      `\nÇıktı tokenı tavanı: ${maxOutputTokens}` +
+      (maxOutputTokens !== config.openai.maxOutputTokens
+        ? ` (dağıtımın kendi ayarı ${config.openai.maxOutputTokens})`
+        : "") +
       "\n",
   );
+
+  // The failure this exists to prevent, learned by paying for it: raising an
+  // arm's effort without raising the output ceiling burned every `@high` call
+  // on a six-page run. Reasoning tokens come out of `max_output_tokens`, and
+  // that ceiling was tuned for the deployment's own (low) effort — so the
+  // model spends the budget thinking, emits truncated JSON, and the call fails
+  // *after* being billed in full. Six calls, real money, zero cards.
+  //
+  // A warning rather than an auto-raise: silently rewriting a spending ceiling
+  // is precisely what §0.6 forbids, and the right number depends on the model.
+  const configRank = KNOWN_EFFORTS.indexOf(config.openai.reasoningEffort);
+  const raisedArms = specs.filter((spec) => {
+    const rank = spec.effort ? KNOWN_EFFORTS.indexOf(spec.effort) : configRank;
+    return rank >= 0 && configRank >= 0 && rank > configRank;
+  });
+  if (raisedArms.length > 0 && requestedMaxOutputTokens === undefined) {
+    console.warn(
+      `⚠ Şu kollar dağıtımın effort ayarından ("${config.openai.reasoningEffort}") yüksek koşacak: ` +
+        `${raisedArms.map((spec) => spec.id).join(", ")}.\n` +
+        `  Çıktı tavanı ise dağıtımınki (${maxOutputTokens}) — ve reasoning tokenları da bu bütçeden düşülür.\n` +
+        "  Tavan yetmezse çağrı max_output_tokens'ta kesilir: TAM ÜCRET ödenir, kart çıkmaz.\n" +
+        "  Tavan bir üst sınırdır, harcanmayan token faturalanmaz — bolca vermek bedavadır:\n" +
+        `    --max-output-tokens 32000\n`,
+    );
+  }
 
   const results: PageResult[] = [];
   /**
@@ -498,6 +544,7 @@ async function main(): Promise<void> {
         // deployment's own setting — the same rule `--max-cards` follows.
         reasoningEffort: spec.effort ?? config.openai.reasoningEffort,
         maxCardsPerKnowledgeUnit: maxCards,
+        maxOutputTokens,
       },
       apiKey,
       spec.prices,

@@ -19,7 +19,19 @@ const CONFIG: OpenAIConfig = {
   maxOutputTokens: 700,
   maxCardsPerKnowledgeUnit: 4,
   multipleChoiceMode: "mixed",
-  timeoutMs: 1_000,
+  // Not 1_000. That is a *real* wall-clock abort timer (`setTimeout` →
+  // `controller.abort()`), and every test here stubs `fetch` to resolve
+  // immediately — so the timer exists only to fire spuriously. On a loaded
+  // machine the event loop can stall past a second between arming the timer
+  // and the stub resolving, aborting calls the test expects to succeed; that
+  // is the shape of the intermittent multi-test failure seen twice in this
+  // suite, both times on runs that took ~3× the usual duration.
+  //
+  // No test waits for this timer (the abort path constructs its own
+  // AbortError) and nothing asserts on the number, so a value that cannot
+  // fire is strictly better. `clearTimeout` runs in a `finally`, so the long
+  // timer never delays the run.
+  timeoutMs: 60_000,
 };
 
 const COST = {
