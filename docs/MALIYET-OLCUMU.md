@@ -19,6 +19,13 @@ aynı yöne, eksik göstermeye çalışıyordu:
    — sistemdeki en pahalı fiyattan — faturalanıyor ve tek bir `outputTokens`
    sayısının içinde eriyordu. "Para karta mı düşünmeye mi gidiyor?" sorusunun
    cevabı yoktu.
+
+   Bu satırın pratik sonucu, ölçüm yerine oturunca çıktı: reasoning çıktı
+   fiyatından sayıldığı için **akıl yürütme bütçesinin bedeli tamamen model
+   kademesine bağlı.** \$30/M çıktılı bir kademede `effort: high` pahalıdır;
+   \$1.20/M'de neredeyse bedavadır. Yani "daha çok düşünsün" kararı evrensel
+   değil, kademeye özeldir — ve ancak ölçülerek verilir
+   (`docs/PLAN-model-karsilastirma.md` → Tur A2).
 3. **Başarısız çağrılar hiç kaydedilmiyordu.** Çıktı bütçesini tamamen yakıp
    sonra düşen bir üretim, başarılı olanla birebir aynı parayı harcar. Yalnız
    başarılar yazıldığı için defter **bilinmeyen bir miktarda** düşük okumak

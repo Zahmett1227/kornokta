@@ -54,7 +54,10 @@ describe("prompt contracts (§15)", () => {
 
   it("card prompt (v2) allows enrichment but forbids fabrication when unsure (Faz 6 §4)", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Zenginleştirmeye izin var");
-    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("uydurma");
+    // Case-insensitive: the prompt capitalises for emphasis and which words
+    // carry caps shifts between versions. Pinning the exact casing made a
+    // v2.6 emphasis edit look like the anti-fabrication rule had been deleted.
+    expect(CARD_GENERATION_SYSTEM_PROMPT.toLocaleLowerCase("tr")).toContain("uydurma");
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("lowConfidence");
   });
 
@@ -80,8 +83,33 @@ describe("prompt contracts (§15)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("hipo/hiper");
   });
 
-  it("card prompt is at v2.5 (per-card topic assignment)", () => {
-    expect(CARD_PROMPT_VERSION).toBe("2.5");
+  it("card prompt is at v2.6 (self-contained cards, one idea, full-page scan)", () => {
+    expect(CARD_PROMPT_VERSION).toBe("2.6");
+  });
+
+  it("card prompt (v2.6) forbids referring to the page inside the card", () => {
+    // The defect this rule exists for: a card whose question quotes the
+    // book's own layout ("sayfadaki kutuya göre…") is unanswerable months
+    // later with the book shut — 10 such cards in the Tur A comparison.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("KART TEK BAŞINA ANLAŞILMALI");
+    for (const banned of ["sayfadaki", "işaretlenen", "daire içine alınmış"]) {
+      expect(CARD_GENERATION_SYSTEM_PROMPT).toContain(`"${banned}"`);
+    }
+    // front/back stay clean even in the one case explanation may mention it.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("TEK İSTİSNA");
+  });
+
+  it("card prompt (v2.6) makes the one-idea rule splittable and checkable", () => {
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("o kartı BÖL");
+    // The rule needs a test the model can apply, not just a prohibition.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("dürüst bir not verebilmeli");
+  });
+
+  it("card prompt (v2.6) demands a whole-page scan and a coverage check", () => {
+    // The cheap tier's failure was silent: marks that never became cards
+    // carry no lowConfidence flag, so nothing downstream can notice them.
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("kenar boşlukları");
+    expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Bitirmeden önce KONTROL ET");
   });
 
   it("topic instruction names the subject, lists topics verbatim, and allows null (v2.5)", () => {

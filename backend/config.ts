@@ -238,15 +238,23 @@ export function loadConfig(): Config {
   return {
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
-      // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4). The vision call has a hard 60 s
-      // ceiling (vercel.json maxDuration = 60, OPENAI_TIMEOUT_MS = 60_000).
-      // "high" then "medium" both blew it on a dense marked page → the phone got
-      // `providerUnavailable` and no cards. Generation/reasoning tokens are the
-      // dominant latency cost, so reasoning is dropped to "low". The
-      // handwriting-reading lever (`imageDetail: "high"`) is cheap on latency and
-      // stays; mark discrimination lives in the prompt (v2.2). All
-      // env-overridable (§0.6) — raise reasoning again only if the call
-      // comfortably fits the budget (e.g. behind an async job, B4).
+      // Faz 6/B3 (docs/FAZ6-PLAN.md §5.4) set this to "low" because the vision
+      // call then ran inline under a 60 s ceiling, and "high" then "medium"
+      // both blew it on a dense marked page → the phone got
+      // `providerUnavailable` and no cards. Reasoning tokens are the dominant
+      // latency cost, so reasoning was the thing that got cut.
+      //
+      // **That constraint is gone.** ADR-006 moved generation behind an async
+      // job (the "B4" the original note named as the condition for raising this
+      // again): maxDuration is now 300 s and `timeoutMs` below is 290 s, so a
+      // ~50 s page leaves roughly 5× headroom. The value stayed "low" only
+      // because nobody revisited it — not because it is still the right answer.
+      //
+      // Before raising it, note what it costs: reasoning tokens bill at the
+      // *output* rate, so "high" is expensive on a $30/M tier and nearly free
+      // on a $1.20/M one. Which way that trades is a measurement, not a guess —
+      // `npm run compare` takes an `@effort` suffix precisely to run it
+      // (docs/PLAN-model-karsilastirma.md → "Tur A2").
       reasoningEffort: optional("OPENAI_REASONING_EFFORT", "low"),
       // Kept "high": lets the model tile the full page at resolution and read
       // faint margin handwriting / thin highlighter strokes. Adds input tokens

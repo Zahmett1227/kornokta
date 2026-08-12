@@ -19,7 +19,7 @@ describe("labelOrder — kör puanlamanın kendisi", () => {
     // them noticing, which is the worst kind.
     const pages = ["s01.jpg", "s02.jpg", "s03.jpg", "s04.jpg", "s05.jpg", "s06.jpg"];
     const positions = pages.map(
-      (page) => labelOrder(page, MODELS).find((entry) => entry.model === "gpt-5.6-sol")!.label,
+      (page) => labelOrder(page, MODELS).find((entry) => entry.id === "gpt-5.6-sol")!.label,
     );
     expect(new Set(positions).size).toBeGreaterThan(1);
   });
@@ -33,7 +33,7 @@ describe("labelOrder — kör puanlamanın kendisi", () => {
   it("gives every model exactly one label, and every label exactly one model", () => {
     const order = labelOrder("s01.jpg", MODELS);
     expect(order.map((entry) => entry.label)).toEqual(["A", "B", "C"]);
-    expect(new Set(order.map((entry) => entry.model))).toEqual(new Set(MODELS));
+    expect(new Set(order.map((entry) => entry.id))).toEqual(new Set(MODELS));
   });
 
   it("does not depend on the order the models were listed on the command line", () => {
@@ -42,6 +42,38 @@ describe("labelOrder — kör puanlamanın kendisi", () => {
     const forward = labelOrder("s01.jpg", MODELS);
     const backward = labelOrder("s01.jpg", [...MODELS].reverse());
     expect(backward).toEqual(forward);
+  });
+});
+
+describe("parseModelSpec — @effort kolları", () => {
+  it("gives an effort arm its own identity while sending the plain model id", () => {
+    // The two halves that must not be confused: `id` is what the blind sheet,
+    // the key and the report rows key off; `model` is what actually goes to
+    // the provider. Sending "gpt-5.6-luna@high" as a model id would 404.
+    const spec = parseModelSpec("gpt-5.6-luna@high:0.2/0.02/1.2", FALLBACK);
+    expect(spec.id).toBe("gpt-5.6-luna@high");
+    expect(spec.model).toBe("gpt-5.6-luna");
+    expect(spec.effort).toBe("high");
+  });
+
+  it("leaves effort undefined when none is given, so the deployment's own is used", () => {
+    const spec = parseModelSpec("gpt-5.6-luna:0.2/0.02/1.2", FALLBACK);
+    expect(spec.effort).toBeUndefined();
+    expect(spec.id).toBe("gpt-5.6-luna");
+  });
+
+  it("rejects an empty effort rather than silently dropping the @", () => {
+    expect(() => parseModelSpec("gpt-5.6-luna@:0.2/0.02/1.2", FALLBACK)).toThrow(/effort boş/);
+  });
+
+  it("keeps two efforts of one model on separate labels", () => {
+    // The failure this guards: with identity keyed on the model name, both
+    // arms hash to the same value, the key maps every letter to one name and
+    // the blind sheet becomes unreadable — while still looking perfectly fine.
+    const ids = ["gpt-5.6-luna@low", "gpt-5.6-luna@high"];
+    const order = labelOrder("s01.jpg", ids);
+    expect(order.map((entry) => entry.label)).toEqual(["A", "B"]);
+    expect(new Set(order.map((entry) => entry.id))).toEqual(new Set(ids));
   });
 });
 

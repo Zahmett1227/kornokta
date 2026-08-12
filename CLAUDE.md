@@ -91,6 +91,16 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   `backend/tests/subjectTopics.test.ts` ayrışırsa kırılır. **Konu adları
   yalnız ders içinde tekil** → her kontrol `(ders, konu)` çifti üzerinden.
   Uygulamada tek erişim noktası **`SubjectTopicSchema.shared`**.
+- **Prompt v2.6 (2026-08-12, Tur A ölçümünden):** üç kural, üçü de sayarak
+  gerekçelendi. **Kural 8 — kart tek başına anlaşılmalı:** kartın metni sayfaya
+  atıf yapamaz ("sayfadaki kutuya göre…" kitap kapalıyken cevaplanamaz); tek
+  istisna okunamayan el yazısının `explanation`'da anılması, `front`/`back`
+  asla. **Kural 5 — tek fikir**, artık bölünebilir ve sınanabilir ("cevabın
+  yarısını bilen dürüst not verebilmeli"). **Kural 2 — tarama**, sayfanın alt
+  yarısı/kenar boşlukları için sertleşti ve bitiş kontrolü kazandı; bu sonuncusu
+  ucuz kademenin *sessiz kapsama boşluğuna* karşı tek savunma (üretilmemiş kart
+  `lowConfidence` taşımaz). Sürüm sabiti `CARD_PROMPT_VERSION`, kurallar
+  `tests/prompts.test.ts` ile kilitli.
 - **Şema v2.2 / prompt v2.5:** karta opsiyonel `topic`. Kanonik şemada enum
   yok; enum yalnız model-yüzlü dinamik şemada (`buildModelResponseSchema` →
   `anyOf: [enum-string, null]`). Üç katman: şema enum'u + prompt + sunucu
@@ -138,6 +148,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda. **Kullanım ekranı için iOS derlemesi gerekli**; cihaz doğrulaması açık |
 | Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de; **iOS derlemesi + cihaz doğrulaması açık** |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
+| Prompt v2.6 (Tur A'nın ikinci ürünü) | ✅ `main`'de; Sol'un üstünlüğünün prompt'la alınabilen kısmı kurala çevrildi |
+| Tur A2 — `luna@low` vs `luna@high` | 🟡 Düzenek hazır (`--models "…@low,…@high"`); **koşulacak.** Sebep: üç model de `effort: low` koştu, o ayarın gerekçesi (60 s senkron tavan) ADR-006 ile kalkmıştı. Reasoning çıktı fiyatından faturalanır → Luna'da ~bedava |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -168,6 +180,13 @@ başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `OPENAI_USD_PER_MILLION_OUTPUT_TOKENS=30` (gpt-5.6-sol, Standard/short-context)
 ve `MAX_USD_PER_CARD_GENERATION=0.30` Vercel'de ayarlı; Ayarlar → Kullanım
 gerçek USD gösteriyor.
+
+**Model değiştirirken kural:** `OPENAI_MODEL` tek başına değiştirilmez —
+fiyat değişkenleri de aynı anda değişmeli (`..._INPUT_TOKENS`,
+`..._CACHED_INPUT_TOKENS`, `..._OUTPUT_TOKENS`). Yoksa defter yeni modelin
+tokenlarını eski modelin fiyatından çarpar ve Kullanım ekranı sessizce yanlış
+okur — kaçırılması en kolay hata, çünkü hiçbir şey patlamaz. Kademe fiyatları
+(2026-08 doğrulaması): Sol 5/0.5/30, Terra 2/0.2/12, Luna 0.2/0.02/1.2.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
@@ -345,7 +364,13 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 - **Tekrar (FSRS) oturumuna ders/konu filtresi** ("bugün yalnız Farmakoloji").
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti →
   prompt iterasyonuna girdi.
-- **Sayfayı yeniden üret:** aynı fotoğraftan farklı `hint` ile ikinci takım.
+- **Sayfayı yeniden üret — artık model kademesiyle birlikte** (Tur A bunu öne
+  aldı): aynı fotoğraftan ikinci takım, ama asıl değeri "bu sayfayı Sol'la
+  yeniden üret" düğmesi olmasında. Ucuz kademenin tehlikeli başarısızlığı
+  sessiz kapsama boşluğu ve onu hiçbir otomatik sinyal göremiyor; elle tetik
+  yanlış-pozitifsizdir, kullanılmadığında bedavadır ve otomatik tetiğin ne
+  sıklıkta haklı çıkacağını ölçmenin en ucuz yoludur
+  (`docs/PLAN-model-karsilastirma.md` → Kademeli akış).
 - **FSRS ağırlık optimizasyonu:** yedeğe giren `ReviewLog` geçmişinden
   kullanıcıya özel ağırlıklar (`evals/fsrs/` referansı hazır).
 - **PDF / Dosyalar'dan içe aktarma ve Share Sheet** (ANA-PLAN §4.3).

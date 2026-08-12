@@ -148,6 +148,60 @@ bu veriyle güncellenmeli (Terra-merkezli kademe zayıfladı, Luna-önce +
 zor sayfada Sol güçlendi — Luna belirsizliğini bayrakladığı için yükseltme
 tetiği gerçekten çalışabilir).
 
+### Turun ikinci ürünü: prompt v2.6
+
+Sol'un üstünlüğünün bir kısmı **model yeteneği değil, talimata uyma** çıktı —
+yani parayla değil kuralla alınır. 360 kart sayıldığında:
+
+| | Sol | Terra | Luna |
+|---|---|---|---|
+| Karta sayfanın kendisine atıf ("sayfadaki kutuya göre…") | **45**/120 | 19 | 18 |
+| — bunlardan kitap kapalıyken cevaplanamayanlar | **10** | 2 | 5 |
+| Çok-fikirli kart (kural 5 ihlali) | **17** | 8 | 1 |
+| Ortalama cevap uzunluğu | 59 krkt | 39 | 40 |
+
+Sol daha zengin soruyor (mekanizma/ayrım), ama iki bedelle: kitap elde yokken
+cevaplanamayan kart, ve FSRS'te dürüst notlanamayan çok-parçalı kart. İkisi de
+prompt kusuru. v2.6 üç kural ekledi (`prompts/cardGeneration.ts` başlığında
+gerekçeleriyle): kart tek başına anlaşılmalı (kural 8), tek fikir kuralı
+bölünebilir ve sınanabilir hâle geldi (kural 5), ve işaret taraması sayfanın
+alt yarısı/kenar boşlukları için sertleşti + bitiş kontrolü kazandı (kural 2).
+
+Üçüncüsü Luna'ya bakıyor: onun zaafı **sessiz kapsama boşluğu** — hiç
+üretilmemiş kart. Üretilmemiş kart `lowConfidence` taşımaz, dolayısıyla
+aşağıdaki yönlendirme onu göremez; tek savunma prompt.
+
+## Tur A2 — aynı model, iki akıl yürütme bütçesi
+
+Tur A'nın açtığı asıl soru bu, ve tur boyunca hiç denenmedi: **üç model de
+`effort: low` koştu.** O ayarın gerekçesi (60 s'lik senkron tavan) ADR-006 ile
+ortadan kalkmıştı; ayar sadece kimse dönüp bakmadığı için "low" kaldı
+(`config.ts` → `reasoningEffort` notu).
+
+Neden ayrı bir tur hak ediyor: reasoning tokenı **çıktı fiyatından**
+faturalanır. Sol'da (\$30/M) "high" pahalı, Luna'da (\$1.20/M) neredeyse
+bedava. Yani hiç ölçülmemiş bir bileşim var — Luna+high, Sol+low'dan ucuz olup
+ondan iyi okuyabilir. Tur A'nın modelleri ayıran iki ekseni (kapsama ve el
+yazısı) tam da reasoning'in yardım ettiği türden işler.
+
+```bash
+cd backend
+npm run compare -- \
+  --models "gpt-5.6-luna@low:0.2/0.02/1.2,gpt-5.6-luna@high:0.2/0.02/1.2" \
+  --subject Patoloji \
+  --max-cards 20
+```
+
+`@effort` soneki kola **kendi kimliğini** verir (`gpt-5.6-luna@high`); kör
+sayfa, anahtar ve rapor satırları bu kimliğe göre ayrışır — sağlayıcıya giden
+model adı temiz kalır. İki kola bilerek **aynı fiyat** verilir: soru "daha çok
+düşünmek kendini amorti ediyor mu?" olduğuna göre cevap token sayılarından
+çıkmalı, iki ayrı fiyat listesinden değil.
+
+Doldurma yordamı Tur A ile birebir aynı (`perception-*.md`, sonra anahtar).
+Ek olarak bakılacak iki satır rapordadır: `reasoningTokens` ve
+`medianLatencyMs` — high'ın bedeli bu ikisi.
+
 ---
 
 # Kademe yönlendirmesi (routing)
@@ -181,15 +235,42 @@ satırı tam olarak bunu sayar.
 üretmiyorsa yönlendirme güvenli; üretiyorsa **yönlendirme yapılmaz**, sabit
 model kullanılır. Kalibrasyon, ham doğruluktan önce gelir.
 
+### Tur A bu eşiği ne yaptı (2026-08-12)
+
+**Luna geçti, Terra kaldı.** Luna 120 kartta sıfır "yanlış ama emin" üretti ve
+riskli okumalarını kendisi bayrakladı. Terra'nın tek bayraksız hatası **iki
+bağımsız koşuda aynı sayfada tekrarladı** — tekrarlanabilir sessiz hata, tam da
+yukarıdaki paragrafın yasakladığı şey. Bu, tasarımı ters çevirdi: Terra ara
+kademe adayıydı, artık **kademeden çıkarılıyor**; kademe Luna → Sol.
+
+### Ama Tur A ikinci bir şey de gösterdi: bayrak her boşluğu görmez
+
+Luna'nın asıl eksiği kendinden emin hata değil, **sessiz kapsama boşluğu** —
+hiç üretilmemiş kart. Üretilmemiş kartın bayrağı olmaz. Yani aşağıdaki akışın
+`lowConfidence oranı yüksek` tetiği, Luna'nın en olası başarısızlığını
+göremez: 20 kartın hepsi gelir, hiçbiri bayraklı değildir, ve sayfanın alt
+yarısı hiç kartlaşmamıştır.
+
+Bunu gören tek gözlenebilir sinyal **tavanın dolması**: model kart limitine
+dayandıysa sayfada limitten çok işaret vardır, yani kapsama *bilinmiyordur*.
+Tur A'da 18 setin 18'i de tavana çarptı — sinyal bol.
+
 ## Kademeli akış (Tur A izin verirse)
 
 ```
 sayfa → Luna
-   ├─ kart yok / çok az kart            ─┐
-   ├─ lowConfidence kart oranı yüksek    ├─→ Sol ile yeniden üret
-   └─ "el yazısı okunamadı" dedi        ─┘
+   ├─ kart yok / çok az kart              ─┐
+   ├─ lowConfidence kart oranı yüksek      │
+   ├─ KART TAVANI DOLDU (kapsama bilinmiyor)├─→ Sol ile yeniden üret
+   └─ "el yazısı okunamadı" dedi          ─┘
    └─ hiçbiri yoksa → kartlar desteye
 ```
+
+Tavan tetiği ucuz değil — Tur A'da her sayfa tetiklerdi, yani her sayfa iki kez
+üretilirdi. Bu yüzden **elle tetiklenen "Sol'la yeniden üret" düğmesi** ilk
+adım olmalı: yanlış-pozitifi yok, kullanılmadığında maliyeti sıfır, ve tavan
+tetiğinin ne sıklıkta haklı çıkacağını ölçmenin en ucuz yolu odur. Otomatik
+tetik ancak o veriyle gerekçelenir (aşağıdaki uygulama sırasının 2. adımı).
 
 Terra ara kademe olarak Luna ile Sol arasına girebilir, ama **iki kademeyle
 başlanmalı**: her ek kademe, yükseltme kararının yanlış olma ihtimalini

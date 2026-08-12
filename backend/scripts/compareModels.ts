@@ -63,6 +63,12 @@ Seçenekler:
                      ve rapor bunu "fiyat varsayılandan" diye işaretler — modeller
                      farklı fiyatlıyken bu karşılaştırmayı anlamsız yapar, o yüzden
                      uyarı basılır. (§0.6: fiyat asla uydurulmaz, hep verilir.)
+                     Modele "@effort" ekleyerek aynı modeli iki farklı akıl
+                     yürütme bütçesinde karşılaştırabilirsin — reasoning tokenı
+                     çıktı fiyatından faturalanır, yani "daha çok düşünmek
+                     kendini amorti ediyor mu?" sorusu ancak ölçülerek yanıtlanır:
+                       --models "gpt-5.6-luna@low:0.2/0.02/1.2,gpt-5.6-luna@high:0.2/0.02/1.2"
+                     effort verilmezse dağıtımın kendi ayarı kullanılır.
   --pages <dizin>    İşaretli sayfa görüntüleri (varsayılan: ../evals/fixtures/pages)
   --subject <ders>   Konu ataması için kanonik ders adı (örn. Patoloji)
   --max-cards <n>    Sayfa başına kart tavanı (varsayılan: .env'deki değer)
@@ -81,7 +87,24 @@ const IMAGE_MIME: Record<string, string> = {
 };
 
 interface ModelSpec {
+  /**
+   * What this arm of the experiment is *called* — `model`, or `model@effort`
+   * when an effort was given.
+   *
+   * Separate from `model` because the most useful comparison this script can
+   * run is now one model against itself at two reasoning efforts (the tier
+   * comparison answered its question; `config.ts`'s `reasoningEffort` note has
+   * the reasoning). Everything that identifies an arm — the blind sheet's
+   * letters, the key, the per-model report rows — keys off `id`. Keying off
+   * `model` would give two arms of the same model the same identity: the
+   * label permutation hashes `page + id`, so both arms would hash equal, and
+   * the key would map every letter to one name. The blind sheet would look
+   * fine and be unreadable.
+   */
+  id: string;
   model: string;
+  /** Reasoning effort for this arm; undefined inherits the deployment's. */
+  effort?: string;
   prices: {
     openaiUsdPerMillionInputTokens: number;
     openaiUsdPerMillionCachedInputTokens: number;
@@ -90,6 +113,18 @@ interface ModelSpec {
   /** True when no per-model price was given and the deployment's own was used. */
   pricesInherited: boolean;
 }
+
+/**
+ * Efforts known at the time of writing, used *only* to warn on what looks like
+ * a typo.
+ *
+ * Deliberately not a hard allowlist: `OpenAIConfig.reasoningEffort` is passed
+ * to the Responses API verbatim precisely so a newly shipped tier needs no
+ * code change, and this script must not be stricter than the thing it is
+ * testing. An unknown effort is cheap to get wrong anyway — the provider
+ * rejects it before generating, so the call is billed as `none`.
+ */
+const KNOWN_EFFORTS = ["minimal", "low", "medium", "high"];
 
 interface PageResult {
   page: string;
@@ -127,20 +162,32 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 }
 
 /**
- * `name` or `name:input/cached/output`.
+ * `name`, `name@effort`, or either followed by `:input/cached/output`.
  *
  * The prices are required *per model* rather than read from the environment,
  * because the environment holds exactly one set and the entire point of this
  * script is that the tiers cost different amounts. Inheriting silently would
  * produce a report saying the cheap model costs the same as the expensive one,
  * which is worse than no report.
+ *
+ * The `@effort` half is for comparing one model against itself — same tier,
+ * same prices, different reasoning budget. Both arms then carry the *same*
+ * prices deliberately: reasoning tokens bill at the output rate, so the whole
+ * question ("does thinking harder pay for itself?") is answered by the token
+ * counts under one price sheet, not by two.
  */
 export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): ModelSpec {
-  const [model, pricePart] = raw.split(":");
-  const name = model?.trim() ?? "";
+  const [modelPart, pricePart] = raw.split(":");
+  const [modelName, effortName] = (modelPart ?? "").split("@");
+  const name = modelName?.trim() ?? "";
   if (!name) throw new Error(`Model adı boş: "${raw}"`);
+  const effort = effortName?.trim() || undefined;
+  if (effortName !== undefined && !effort) {
+    throw new Error(`"${raw}" içinde @ var ama effort boş. Örnek: gpt-5.6-luna@high`);
+  }
+  const id = effort ? `${name}@${effort}` : name;
   if (!pricePart) {
-    return { model: name, prices: fallback, pricesInherited: true };
+    return { id, model: name, effort, prices: fallback, pricesInherited: true };
   }
   const parts = pricePart.split("/").map((value) => Number(value.trim()));
   if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value) || value < 0)) {
@@ -149,7 +196,9 @@ export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): Mode
     );
   }
   return {
+    id,
     model: name,
+    effort,
     prices: {
       openaiUsdPerMillionInputTokens: parts[0]!,
       openaiUsdPerMillionCachedInputTokens: parts[1]!,
@@ -352,7 +401,34 @@ async function main(): Promise<void> {
       openaiUsdPerMillionOutputTokens: config.cost.openaiUsdPerMillionOutputTokens,
     }),
   );
-  const inherited = specs.filter((spec) => spec.pricesInherited).map((spec) => spec.model);
+  // Two arms with the same id would collide everywhere identity is used: the
+  // label permutation would hash them equal, and the key would map two letters
+  // to one name. Nothing downstream can detect that — the sheet looks normal —
+  // so it has to fail here, before any money is spent.
+  const duplicates = specs
+    .map((spec) => spec.id)
+    .filter((id, index, all) => all.indexOf(id) !== index);
+  if (duplicates.length > 0) {
+    console.error(
+      `Aynı kimlik birden fazla kez verilmiş: ${[...new Set(duplicates)].join(", ")}.\n` +
+        "Aynı modeli iki kez karşılaştıracaksan kollara farklı effort ver " +
+        "(ör. gpt-5.6-luna@low ve gpt-5.6-luna@high).",
+    );
+    process.exit(1);
+  }
+
+  const unknownEfforts = specs
+    .filter((spec) => spec.effort && !KNOWN_EFFORTS.includes(spec.effort))
+    .map((spec) => spec.effort!);
+  if (unknownEfforts.length > 0) {
+    console.warn(
+      `⚠ Tanımadığım effort değeri: ${[...new Set(unknownEfforts)].join(", ")}.\n` +
+        `  Bildiklerim: ${KNOWN_EFFORTS.join(", ")}. Yazım hatası değilse sorun yok —\n` +
+        "  sağlayıcı yeni bir kademe eklemiş olabilir, değer olduğu gibi gönderilir.\n",
+    );
+  }
+
+  const inherited = specs.filter((spec) => spec.pricesInherited).map((spec) => spec.id);
   if (inherited.length > 0) {
     console.warn(
       `⚠ Şu modeller için fiyat verilmedi, .env'deki tek fiyat seti kullanılıyor: ${inherited.join(", ")}.\n` +
@@ -399,16 +475,23 @@ async function main(): Promise<void> {
       // `maxCardsPerKnowledgeUnit` overridden, not just passed on the request:
       // the request is clamped *to* this value, so leaving the deployment's own
       // here would quietly cap the experiment at it.
-      { ...config.openai, model: spec.model, maxCardsPerKnowledgeUnit: maxCards },
+      {
+        ...config.openai,
+        model: spec.model,
+        // Undefined means "this arm didn't ask", which inherits the
+        // deployment's own setting — the same rule `--max-cards` follows.
+        reasoningEffort: spec.effort ?? config.openai.reasoningEffort,
+        maxCardsPerKnowledgeUnit: maxCards,
+      },
       apiKey,
       spec.prices,
     );
 
     for (const page of pages) {
-      const requestId = `cmp_${spec.model}_${basename(page.name, extname(page.name))}`;
+      const requestId = `cmp_${spec.id}_${basename(page.name, extname(page.name))}`;
       const started = Date.now();
       process.stdout.write(
-        blinded ? `  ${page.name} · ${modelIndex + 1}/${specs.length} … ` : `  ${spec.model} · ${page.name} … `,
+        blinded ? `  ${page.name} · ${modelIndex + 1}/${specs.length} … ` : `  ${spec.id} · ${page.name} … `,
       );
 
       try {
@@ -431,7 +514,7 @@ async function main(): Promise<void> {
 
         results.push({
           page: page.name,
-          model: spec.model,
+          model: spec.id,
           ok: true,
           cardCount: kept.length,
           rejectedCount: rejected.size,
@@ -459,7 +542,7 @@ async function main(): Promise<void> {
         const usage = openAIError?.usage ?? EMPTY_TOKEN_USAGE;
         results.push({
           page: page.name,
-          model: spec.model,
+          model: spec.id,
           ok: false,
           error: openAIError?.message ?? String(error),
           failureReason: openAIError?.reason ?? "unknown",
@@ -487,11 +570,12 @@ async function main(): Promise<void> {
 
   // --- Full report -------------------------------------------------------
   const perModel = specs.map((spec) => {
-    const rows = results.filter((row) => row.model === spec.model);
+    const rows = results.filter((row) => row.model === spec.id);
     const ok = rows.filter((row) => row.ok);
     const cost = rows.reduce((sum, row) => sum + row.estimatedCostUSD, 0);
     return {
-      model: spec.model,
+      model: spec.id,
+      effort: spec.effort ?? config.openai.reasoningEffort,
       pricesInherited: spec.pricesInherited,
       prices: spec.prices,
       calls: rows.length,
@@ -571,13 +655,13 @@ async function main(): Promise<void> {
   const perceptionPages = pages.map((page) => {
     const sets = labelOrder(
       page.name,
-      specs.map((spec) => spec.model),
-    ).map(({ label, model }) => {
+      specs.map((spec) => spec.id),
+    ).map(({ label, id }) => {
       pageLabels[page.name] ??= {};
-      pageLabels[page.name]![label] = model;
+      pageLabels[page.name]![label] = id;
       return {
         label,
-        row: results.find((entry) => entry.page === page.name && entry.model === model),
+        row: results.find((entry) => entry.page === page.name && entry.model === id),
       };
     });
     return { page: page.name, sets };
@@ -783,11 +867,11 @@ function median(values: number[]): number {
  */
 export function labelOrder(
   pageName: string,
-  models: string[],
-): Array<{ label: string; model: string }> {
-  return [...models]
+  ids: string[],
+): Array<{ label: string; id: string }> {
+  return [...ids]
     .sort((left, right) => hash(pageName + left) - hash(pageName + right))
-    .map((model, index) => ({ label: String.fromCharCode(65 + index), model }));
+    .map((id, index) => ({ label: String.fromCharCode(65 + index), id }));
 }
 
 /** Stable, content-derived ordering for the blind sheet. Not a security hash. */
