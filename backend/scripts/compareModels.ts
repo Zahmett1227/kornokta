@@ -38,7 +38,9 @@
  */
 
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnvFile } from "dotenv";
@@ -157,6 +159,68 @@ export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): Mode
   };
 }
 
+/**
+ * What a file actually is, read from its first bytes rather than its name.
+ *
+ * The extension is not evidence. An iPhone photo AirDropped to a Mac is HEIC,
+ * and renaming it `.jpg` changes nothing except that this script would then
+ * label it `image/jpeg` and OpenAI would reject it — as a bare 400, with no
+ * hint that the bytes were the problem.
+ */
+function detectImageKind(bytes: Uint8Array): "jpeg" | "png" | "webp" | "heic" | "unknown" {
+  const b = bytes;
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpeg";
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "png";
+  const ascii = (from: number, length: number) =>
+    String.fromCharCode(...b.slice(from, from + length));
+  if (b.length >= 12 && ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") return "webp";
+  // ISO-BMFF: `ftyp` at offset 4, brand right after. HEIC/HEIF share the box.
+  if (b.length >= 12 && ascii(4, 4) === "ftyp") {
+    const brand = ascii(8, 4);
+    if (["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1"].includes(brand)) return "heic";
+  }
+  return "unknown";
+}
+
+/** True when macOS's built-in `sips` is on this machine. */
+function hasSips(): boolean {
+  try {
+    execFileSync("sips", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Makes a page look exactly like what the phone uploads.
+ *
+ * This is not a convenience: the app downscales every capture to
+ * `UploadImageEncoder.defaultMaxPixelSize` (2600 px on the long edge, JPEG)
+ * before it sends it, so a comparison that posted the raw 12-megapixel
+ * original would be measuring the models on an input the app never produces.
+ * Whatever it concluded would not transfer.
+ *
+ * Uses macOS's `sips` rather than an image library so the backend gains no
+ * native dependency for a script only ever run locally — and `sips` converts
+ * HEIC on the way, which is the other half of the problem.
+ */
+function normalizeWithSips(sourcePath: string, name: string): Uint8Array {
+  const target = join(
+    tmpdir(),
+    `cizgi-compare-${basename(name, extname(name))}-${PHONE_MAX_PIXELS}.jpg`,
+  );
+  execFileSync(
+    "sips",
+    ["-Z", String(PHONE_MAX_PIXELS), "-s", "format", "jpeg", sourcePath, "--out", target],
+    { stdio: "ignore" },
+  );
+  return new Uint8Array(readFileSync(target));
+}
+
+/** Mirrors `UploadImageEncoder.defaultMaxPixelSize` in the iOS package. */
+const PHONE_MAX_PIXELS = 2600;
+
 async function readPages(dir: string): Promise<Array<{ name: string; bytes: Uint8Array; mimeType: string }>> {
   let names: string[];
   try {
@@ -167,14 +231,51 @@ async function readPages(dir: string): Promise<Array<{ name: string; bytes: Uint
         "İşaretli sayfa fotoğraflarını oraya koy (dizin gitignore'lu — telifli sayfa repoya girmez).",
     );
   }
+
+  const sips = hasSips();
   const pages = [];
+  const rejected: string[] = [];
+
   for (const name of names.sort()) {
-    const mimeType = IMAGE_MIME[extname(name).toLowerCase()];
-    if (!mimeType) continue;
-    pages.push({ name, bytes: new Uint8Array(await readFile(join(dir, name))), mimeType });
+    if (!IMAGE_MIME[extname(name).toLowerCase()] && extname(name).toLowerCase() !== ".heic") continue;
+    const path = join(dir, name);
+    const raw = new Uint8Array(await readFile(path));
+    const kind = detectImageKind(raw);
+
+    if (kind === "unknown") {
+      rejected.push(`${name}: tanınmayan görüntü biçimi`);
+      continue;
+    }
+    if (kind === "heic" && !sips) {
+      rejected.push(`${name}: HEIC (bu makinede sips yok, JPEG'e çevrilemiyor)`);
+      continue;
+    }
+
+    if (sips) {
+      // Always, not only when oversized: the phone re-encodes every capture,
+      // so matching it means re-encoding every page here too.
+      pages.push({ name, bytes: normalizeWithSips(path, name), mimeType: "image/jpeg" });
+    } else {
+      pages.push({ name, bytes: raw, mimeType: `image/${kind}` });
+    }
+  }
+
+  if (rejected.length > 0) {
+    throw new Error(
+      `Şu sayfalar okunamadı:\n  ${rejected.join("\n  ")}\n\n` +
+        "Mac'te düzeltmek için (fotoğrafları JPEG'e çevirir ve küçültür):\n" +
+        `  sips -Z ${PHONE_MAX_PIXELS} -s format jpeg ${dir}/*.* --out ${dir}\n`,
+    );
   }
   if (pages.length === 0) {
     throw new Error(`${dir} içinde desteklenen görüntü yok (${Object.keys(IMAGE_MIME).join(", ")}).`);
+  }
+  if (!sips) {
+    console.warn(
+      `⚠ sips bulunamadı: sayfalar telefonun yaptığı gibi ${PHONE_MAX_PIXELS} piksele\n` +
+        "  küçültülmeden gönderiliyor. Sonuçlar uygulamanın gerçek girdisiyle birebir\n" +
+        "  karşılaştırılabilir değil.\n",
+    );
   }
   return pages;
 }
@@ -472,6 +573,24 @@ async function main(): Promise<void> {
   );
 
   // --- Terminal summary --------------------------------------------------
+  // A failed run is the one case where the provider's own words have to reach
+  // the terminal. `http_400` alone sent this investigation looking at the
+  // models when the problem was the bytes being sent to them — the message
+  // said so, and it sat unread in the report file. Printed once per distinct
+  // message, because eighteen identical lines say no more than one.
+  const failures = results.filter((row) => !row.ok);
+  if (failures.length > 0) {
+    const seen = new Set<string>();
+    console.log(`\n⚠ ${failures.length} çağrı başarısız. Sağlayıcının söyledikleri:`);
+    for (const row of failures) {
+      const message = row.error ?? "(mesaj yok)";
+      if (seen.has(message)) continue;
+      seen.add(message);
+      const repeats = failures.filter((other) => other.error === message).length;
+      console.log(`  • ${message}${repeats > 1 ? `  (${repeats} çağrıda)` : ""}`);
+    }
+  }
+
   if (blinded) {
     // The whole per-model table is a key to the blind sheet, so it goes to the
     // report file and stays out of the scroll-back the scorer is sitting in
