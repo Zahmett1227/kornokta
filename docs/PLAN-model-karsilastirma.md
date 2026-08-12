@@ -84,6 +84,9 @@ Doldurulacak dört satır:
 Dördüncü satır bu planın en önemli ölçümü ve aşağıdaki yönlendirme
 tasarımının tamamı ona bağlı — ayrıntısı bir sonraki bölümde.
 
+Doldurulmuş bir örnek ve her satırın tek tek ne demek olduğu:
+[`docs/ORNEK-algi-taramasi.md`](ORNEK-algi-taramasi.md).
+
 Çoğu senaryoda karar Tur A'da biter. Terra işaretlerin ~hepsini yakalayıp el
 yazısını okuyorsa Tur B'ye gerek yok.
 

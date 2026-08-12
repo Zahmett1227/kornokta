@@ -81,7 +81,9 @@ kart tanım gereği sınıra yakındır (kimse bariz bir kalite çöküşü içi
 değiştirmez) ve modeli bilmek tam da o sınır kararını bozar.
 
 Önce Tur A (~20 dk); modeller orada ayrılıyorsa Tur B'ye hiç geçme. Tam plan
-ve kademe yönlendirmesi tasarımı: `docs/PLAN-model-karsilastirma.md`.
+ve kademe yönlendirmesi tasarımı: `docs/PLAN-model-karsilastirma.md`. Tur A
+sayfasının nasıl doldurulacağı, doldurulmuş örnekle:
+`docs/ORNEK-algi-taramasi.md`.
 
 Tur B'yi puanladıysan kalite ve maliyet yan yana:
 

@@ -243,7 +243,7 @@ Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/0
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
-yönlendirmesi tasarımı),
+yönlendirmesi tasarımı), `docs/ORNEK-algi-taramasi.md` (Tur A nasıl doldurulur),
 `docs/PRIVACY.md`, `docs/RUNBOOK.md`, `docs/MALIYET-OLCUMU.md` (çağrı başına
 maliyet defteri, teşhis yordamı, model karşılaştırması), `backend/README.md`,
 `ios/README.md`.
