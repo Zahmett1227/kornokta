@@ -105,6 +105,24 @@ describe("prompt contracts (§15)", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("dürüst bir not verebilmeli");
   });
 
+  it("card prompt (v2.6) ranks a star above highlighter and resolves what it points at", () => {
+    // A highlighter stroke is fast and broad; a star is a separate deliberate
+    // act. The priority order already placed them, but as a bare list item —
+    // and the thing that actually separated the tiers in Tur A was resolving
+    // an arrow to its *target* (the margin note whose arrow pointed at the
+    // necroptosis block), which no rule had asked for.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    expect(prompt).toContain("İŞARET EDER");
+    // Ordering is the contract: handwriting, then stars, then underline, then
+    // highlighter. Positions, not prose, so a reworded list still fails here.
+    const star = prompt.indexOf("YILDIZ/daire/ok/ünlem");
+    const underline = prompt.indexOf("altı çizili tek terim");
+    const highlight = prompt.indexOf("geniş fosforlu vurgu");
+    expect(prompt.indexOf("EL YAZISI notlar")).toBeLessThan(star);
+    expect(star).toBeLessThan(underline);
+    expect(underline).toBeLessThan(highlight);
+  });
+
   it("card prompt (v2.6) demands a whole-page scan and a coverage check", () => {
     // The cheap tier's failure was silent: marks that never became cards
     // carry no lowConfidence flag, so nothing downstream can notice them.

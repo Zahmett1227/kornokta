@@ -66,6 +66,22 @@ describe("parseModelSpec — @effort kolları", () => {
     expect(() => parseModelSpec("gpt-5.6-luna@:0.2/0.02/1.2", FALLBACK)).toThrow(/effort boş/);
   });
 
+  it("refuses to silently drop anything past a second separator", () => {
+    // Both of these used to parse "successfully" and throw half the argument
+    // away: the first ran at "high", the second ignored a trailing field. An
+    // experiment that runs at settings the operator did not ask for is worse
+    // than one that refuses to start.
+    expect(() => parseModelSpec("gpt-5.6-luna@high@low:0.2/0.02/1.2", FALLBACK)).toThrow(/"@"/);
+    expect(() => parseModelSpec("gpt-5.6-luna:0.2/0.02/1.2:20", FALLBACK)).toThrow(/":"/);
+  });
+
+  it("trims whitespace around an effort but keeps its spelling", () => {
+    // Trimming is safe; case-folding would not be — "HIGH" is either a real
+    // value or a typo, and quietly rewriting it hides which.
+    expect(parseModelSpec("gpt-5.6-luna@ high :0.2/0.02/1.2", FALLBACK).effort).toBe("high");
+    expect(parseModelSpec("gpt-5.6-luna@HIGH:0.2/0.02/1.2", FALLBACK).effort).toBe("HIGH");
+  });
+
   it("keeps two efforts of one model on separate labels", () => {
     // The failure this guards: with identity keyed on the model name, both
     // arms hash to the same value, the key maps every letter to one name and
