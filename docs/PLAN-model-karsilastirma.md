@@ -115,6 +115,39 @@ python -m evals.model_compare.report \
 Rapor kasten kazanan ilan etmez (§0.6). Öne çıkardığı sayı sayfa başına
 maliyet değil, **kabul edilen kart başına maliyet**.
 
+## Tur A sonucu (2026-08-12 koşusu)
+
+6 sayfa × 3 model × 20 kart üretildi, algı taraması dolduruldu, anahtar
+açıldı. Not: `labelOrder` sayfa adından deterministik türediği için aynı
+sayfa adları iki koşuda aynı harf→model eşlemesini verir — iki koşunun
+sonuçları bu sayede doğrudan karşılaştırılabildi. Öne çıkanlar:
+
+- **18 setin 18'i tam 20 kart** — tavan 20'de de doldu (sayfalar 25–40 işaret
+  taşıyor). "Yakalanan/toplam" satırı kısmen hâlâ sınırı ölçüyor; ama
+  modellerin *neyi düşürdüğü* ayrıştı ve her model en az bir sayfada bir
+  bölümü komple attı (Terra bir sayfada son üç konu başlığını, bir başkasında
+  ferroptozis + boya tablosunu hiç kartlaştırmadı).
+- **Koşunun tek "yanlış ama emin"i Terra'dan** — ve iki bağımsız koşuda aynı
+  sayfada aynı hata (Plummer-Vinson'ı web yerine Schatzki halkasına bağladı),
+  ikisinde de bayraksız. Orta kademede tekrarlanabilir sessiz hata, "varsayılan
+  Terra" fikrinin altını oydu.
+- **Luna (fiyatın ~1/25'i) 120 kartta sıfır bayraksız hata** yaptı; el yazısı
+  en yoğun sayfalardan oral kavitede en kapsamlı takımdı. Zayıf yanı el
+  yazısı/kapsama: bir notu hiç anmadı, bir notu yanlış yorumladı — ama o
+  yorumu kendisi "emin değilim" diye işaretledi. Sayfanın "kolaylığı"
+  Luna'nın kapsamasını öngörmedi (en zayıf kapsaması en kolay sayfadaydı).
+- **Sol el yazısında açık ara en iyi** (ok yönünü izleyip kenar notunu doğru
+  bölüme bağlayan tek model) ve toplam kapsaması en geniş (~15 eksik konu;
+  Luna ~22, Terra ~24). Ama bu sayfalarda Luna'ya farkı 25× fiyat farkını
+  anlatacak boyutta görünmedi; uygulamanın kendi 12 kart tavanında kapsama
+  farkı daha da görünmezleşir.
+
+Tur B'ye gerek kalmadı: Tur A modelleri ayırdı. Kart zanaatı sorusu ayrı iş
+olarak A6'da ölçülür. Model kararı sahibinin; aşağıdaki yönlendirme tasarımı
+bu veriyle güncellenmeli (Terra-merkezli kademe zayıfladı, Luna-önce +
+zor sayfada Sol güçlendi — Luna belirsizliğini bayrakladığı için yükseltme
+tetiği gerçekten çalışabilir).
+
 ---
 
 # Kademe yönlendirmesi (routing)
