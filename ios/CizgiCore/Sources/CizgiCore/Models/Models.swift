@@ -475,7 +475,14 @@ public final class ModelRun {
     /// its whole ledger on every poll, and a page is polled many times, so
     /// without this one call would be recorded once per poll. Defaults to 0
     /// for rows written before per-attempt accounting existed.
-    public var attempt: Int
+    ///
+    /// The `= 0` is load-bearing and belongs *here*, not only in `init`.
+    /// SwiftData's lightweight migration never calls the initializer: it fills
+    /// added columns from the property's own default, and a mandatory
+    /// attribute without one aborts the migration — which means the app
+    /// refuses to open at all, on a store it cannot repair. That is exactly
+    /// what shipping this row without a default did.
+    public var attempt: Int = 0
     public var provider: String
     public var model: String
     public var purpose: String
@@ -484,11 +491,13 @@ public final class ModelRun {
     public var inputTokens: Int
     /// Share of `inputTokens` served from the provider's prompt cache — a
     /// subset, not an addition — billed at roughly a tenth of the usual rate.
-    public var cachedInputTokens: Int
+    /// Defaulted for migration; see `attempt`.
+    public var cachedInputTokens: Int = 0
     public var outputTokens: Int
     /// Share of `outputTokens` the model spent thinking rather than answering.
     /// A subset, like `cachedInputTokens`, and the most expensive tokens here.
-    public var reasoningTokens: Int
+    /// Defaulted for migration; see `attempt`.
+    public var reasoningTokens: Int = 0
     public var estimatedCostUSD: Double
     public var success: Bool
     /// `measured`, `unmeasured` or `none` — see `CallAccounting.billing`.
@@ -497,7 +506,12 @@ public final class ModelRun {
     /// before generating (free) or aborted after generating (billed, amount
     /// unknowable). Only the first may be added into a total as zero; the
     /// second has to be counted separately or it hides the leak.
-    public var billing: String
+    ///
+    /// Defaulted to `measured` for migration (see `attempt`), and that is the
+    /// right value for the rows it backfills: before this field existed only
+    /// successful calls were written, and every one of them carried real
+    /// reported usage.
+    public var billing: String = ModelRunBilling.measured
     /// Short machine-readable cause on a failed call: `timeout`,
     /// `incomplete_max_output_tokens`, `schema_invalid`, `worker_killed`, …
     public var failureReason: String?
