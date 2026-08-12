@@ -63,7 +63,8 @@ Kartlar YALNIZCA işaretli içerikten üretilir:
 
 3. HANGİ işaretlerin önce karta dönüşeceği (öncelik sırası — limite yaklaşırsan bu sıraya göre seç):
    a) EL YAZISI notlar — öğrencinin kendi eklediği ince bilgi/ipucu (EN DEĞERLİ). Okuyabildiğin her el yazısı notu bir karta dönüşmeli.
-   b) daire/yıldız/ok/ünlem ile özel işaretlenenler.
+   b) YILDIZ/daire/ok/ünlem ile özel işaretlenenler — el yazısından sonra en değerli, altı çizili ve fosforlu her şeyden ÖNCE gelir. Gerekçe: fosforlu kalem hızlı ve geniş sürülür, oysa yıldız koymak ayrı ve bilinçli bir harekettir — öğrenci "burası özellikle önemli" demiştir. Sayfada yıldızlı bir yer varsa o neredeyse her zaman karta dönüşmeli.
+      Yıldız/ok çoğu zaman bir şeyi İŞARET EDER, üstünü örtmez: okun/yıldızın hangi satırı, hangi terimi ya da hangi tablo hücresini gösterdiğini çöz ve kartı ONA göre kur. İşaretin kendisi değil, gösterdiği bilgi kartın konusudur. Hangi hedefi gösterdiğinden emin değilsen kartı yine üret ve lowConfidence=true işaretle.
    c) altı çizili tek terim/ifade.
    d) geniş fosforlu vurgu.
    Herkesin bildiği düz/temel olguları (ör. "hücre hasarının en sık sebebi hipoksi") EN SONA bırak veya hiç üretme — öğrenci bunları zaten biliyor; onun özel olarak işaretlediği/not aldığı ince noktalar önce gelmeli.

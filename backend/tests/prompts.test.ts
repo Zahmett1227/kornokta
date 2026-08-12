@@ -105,6 +105,36 @@ describe("prompt contracts (§15)", () => {
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("dürüst bir not verebilmeli");
   });
 
+  it("card prompt (v2.6) ranks a star above highlighter and resolves what it points at", () => {
+    // A highlighter stroke is fast and broad; a star is a separate deliberate
+    // act. The priority order already placed them, but as a bare list item —
+    // and the thing that actually separated the tiers in Tur A was resolving
+    // an arrow to its *target* (the margin note whose arrow pointed at the
+    // necroptosis block), which no rule had asked for.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    expect(prompt).toContain("İŞARET EDER");
+
+    // Ordering is the contract: handwriting, then stars, then underline, then
+    // highlighter. Positions, not prose, so a reworded list still fails here.
+    //
+    // Sliced to rule 3's own block first, and that is the whole point rather
+    // than tidiness: "EL YAZISI notlar" also appears up in the scanning
+    // section, hundreds of characters earlier, so searching the whole prompt
+    // compared the *scanning bullet* to the star item. That comparison is
+    // true no matter what rule 3 says — item (a) could be demoted below the
+    // star, or deleted outright, and this test would still have passed while
+    // claiming to guard the order.
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    expect(rule3).not.toBe("");
+
+    const positions = ["EL YAZISI notlar", "YILDIZ/daire/ok/ünlem", "altı çizili tek terim", "geniş fosforlu vurgu"]
+      .map((item) => rule3.indexOf(item));
+    // -1 would sort as "first" and quietly satisfy the ordering below, so a
+    // deleted item has to fail here rather than pass as a bad comparison.
+    expect(positions).not.toContain(-1);
+    expect(positions).toEqual([...positions].sort((left, right) => left - right));
+  });
+
   it("card prompt (v2.6) demands a whole-page scan and a coverage check", () => {
     // The cheap tier's failure was silent: marks that never became cards
     // carry no lowConfidence flag, so nothing downstream can notice them.

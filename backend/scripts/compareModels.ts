@@ -177,8 +177,24 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
  * counts under one price sheet, not by two.
  */
 export function parseModelSpec(raw: string, fallback: ModelSpec["prices"]): ModelSpec {
-  const [modelPart, pricePart] = raw.split(":");
-  const [modelName, effortName] = (modelPart ?? "").split("@");
+  // Both separators are counted rather than destructured-and-forgotten. A
+  // plain `const [a, b] = raw.split(":")` drops everything after the second
+  // separator without a word, so `luna@high@low` would quietly run at "high"
+  // and `luna:5/0.5/30:20` would quietly ignore a number the operator meant to
+  // pass. Silent truncation of an argument is the exact failure this script
+  // already had once, in `--max-cards`.
+  const colonParts = raw.split(":");
+  if (colonParts.length > 2) {
+    throw new Error(
+      `"${raw}" içinde birden fazla ":" var. Beklenen biçim: model[@effort][:girdi/önbellek/çıktı]`,
+    );
+  }
+  const [modelPart, pricePart] = colonParts;
+  const atParts = (modelPart ?? "").split("@");
+  if (atParts.length > 2) {
+    throw new Error(`"${raw}" içinde birden fazla "@" var. Beklenen biçim: model@effort`);
+  }
+  const [modelName, effortName] = atParts;
   const name = modelName?.trim() ?? "";
   if (!name) throw new Error(`Model adı boş: "${raw}"`);
   const effort = effortName?.trim() || undefined;
