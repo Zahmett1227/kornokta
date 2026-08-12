@@ -91,8 +91,15 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   `backend/tests/subjectTopics.test.ts` ayrışırsa kırılır. **Konu adları
   yalnız ders içinde tekil** → her kontrol `(ders, konu)` çifti üzerinden.
   Uygulamada tek erişim noktası **`SubjectTopicSchema.shared`**.
-- **Prompt v2.6 (2026-08-12, Tur A ölçümünden):** üç kural, üçü de sayarak
-  gerekçelendi. **Kural 8 — kart tek başına anlaşılmalı:** kartın metni sayfaya
+- **Prompt v2.6 (2026-08-12, Tur A ölçümünden):** dört kural, dördü de sayarak
+  gerekçelendi. **Kural 3(b) — yıldız:** el yazısından sonra en değerli, altı
+  çizili ve fosforludan önce; gerekçesi prompt'ta yazılı (fosforlu hızlı ve
+  geniş sürülür, yıldız ayrı ve bilinçli bir harekettir). Yıldız/ok bir şeyi
+  *işaret eder, üstünü örtmez* — kart, gösterilen hedefe göre kurulur. Sıra
+  testle kilitli ve kilit **konum tabanlı**: madde taşınırsa ya da silinirse
+  test düşer (metin araması kural 3'ün kendi bloğuna sabitli — prompt'ta
+  "EL YAZISI notlar" iki yerde geçtiği için tüm prompt'ta arama yapan bir
+  kontrol hiçbir şey korumuyordu). **Kural 8 — kart tek başına anlaşılmalı:** kartın metni sayfaya
   atıf yapamaz ("sayfadaki kutuya göre…" kitap kapalıyken cevaplanamaz); tek
   istisna okunamayan el yazısının `explanation`'da anılması, `front`/`back`
   asla. **Kural 5 — tek fikir**, artık bölünebilir ve sınanabilir ("cevabın
