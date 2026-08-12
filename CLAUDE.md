@@ -157,7 +157,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
 | Prompt v2.6 (Tur A'nın ikinci ürünü) | ✅ `main`'de; Sol'un üstünlüğünün prompt'la alınabilen kısmı kurala çevrildi |
 | Tur A2 — `luna@low` vs `luna@high` (2026-08-12 akşamı, prompt v2.6) | ✅ Koşuldu ve kör değerlendirildi. **`@high` 4 sayfada üstün, 1 eşit, 1 geride**; üstünlük el yazısı ve kapsamada. Bedeli: reasoning 685→72 017 token (105×), $0.005→$0.020/sayfa, 21→112 sn. İkisinde de "yanlış ama emin" sıfır. Ayrıntı `docs/PLAN-model-karsilastirma.md` → "Tur A2 sonucu". **Model kararı sahibinde açık** (`luna@high` önerilen) |
-| Prompt v2.6 doğrulaması | ✅ Aynı koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
+| Prompt v2.6 doğrulaması | ✅ İki bağımsız koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu, pahalı kademede de); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
+| Tur A3 — `luna@medium` vs `luna@high` vs `sol@low` (aynı prompt sürümünde ilk dürüst kıyas) | ✅ Koşuldu ve kör değerlendirildi. **`medium` elendi** (turun tek sessiz hatası + tek uydurma kartı ondan; el yazısında 3 sayfada sonuncu). `sol@low` ↔ `luna@high` kalitede yakın, maliyette **7,5 kat** uzak ($0.1394 vs $0.0186/sayfa). **Karar: `luna@high`** — sahibinin ölçeğinde ~$240 yerine ~$32 |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.

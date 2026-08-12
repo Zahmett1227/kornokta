@@ -295,6 +295,40 @@ Tasarımın iki bilinçli kararı:
 Maliyet ~$0.95, çoğu Sol'dan. Asıl bedel okuma: 3 takım × 6 sayfa = 360 kart,
 ~45–60 dk.
 
+### Tur A3 sonucu (2026-08-12 gecesi, prompt v2.6)
+
+| | `sol@low` | `luna@high` | `luna@medium` |
+|---|---|---|---|
+| $/sayfa | **0.1394** | 0.0186 | 0.0062 |
+| Reasoning / sayfa | 451 | 11 044 | 836 |
+| Ortanca gecikme | 56 sn | 132 sn | 35 sn |
+| El yazısı (4 sayfa) | **hiçbirinde sıfırlamadı** | bir sayfada notu tamamen atladı, en zor sayfada birinci | **3 sayfada sonuncu** |
+| Yanlış ama emin | 0 | 0 | **1** |
+| Uydurma kart | 0 | 0 | **1** |
+
+**`medium` elendi, ve bu planın kendi önerisinin çürütülmesidir.** Tur A2'den
+sonra "gecikmeyi yarılayan orta yol" diye önerilmişti; ölçüm tersini gösterdi —
+turun tek sessiz hatası da tek uydurma kartı da ondan çıktı. Anlaşılan kalibrasyon
+effort'la monoton değil: az düşünen model hatasını bayraklıyor, çok düşünen
+model hata yapmıyor, ortadaki hem yapıyor hem bayraklamıyor. Bir ara kademe
+"her iki dünyanın iyisi" diye varsayılamaz; ölçülmek zorunda.
+
+**`sol@low` ile `luna@high` kalite olarak yakın, maliyet olarak 7,5 kat uzak.**
+İkisi de sıfır sessiz hata yaptı. Fark tutarlılıkta: Sol dört el yazısı
+sayfasının hiçbirinde sıfırlamadı, `luna@high` birinde bir notu tamamen
+atladı — ama en yoğun el yazısı sayfasında Sol'u geçti ve okuyamadığı notu
+dürüstçe bayrakladı.
+
+**Karar: `luna@high`.** Sahibinin ölçeğinde (11 ders) `sol@low` ~$240,
+`luna@high` ~$32. Bir el yazısı notunun kaçması $200 etmiyor — özellikle
+çaresi "Sol'la yeniden üret" düğmesi olarak zaten planlıyken. Sol'un
+üstünlüğünün belirli sayfalarda toplanması, elle tetiği yanlış-pozitifsiz
+kılıyor.
+
+Kabul edilen risk: 132 sn ortanca, 290 sn tavana ~2,2 kat pay. İki koşuda
+ortanca 112 ve 132 sn ölçüldü; en kötü tek çağrı 161 sn. Zaman aşımı olursa
+maliyet defteri onu `unmeasured` olarak ayrı gösterir.
+
 ---
 
 # Kademe yönlendirmesi (routing)
