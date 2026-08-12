@@ -253,8 +253,15 @@ async function main(): Promise<void> {
   );
 
   const results: PageResult[] = [];
+  /**
+   * More than one model means a blind sheet is about to be produced, and the
+   * terminal is the one place that can quietly undo it: the scorer sits in
+   * front of this scroll-back while filling the sheet in. With a single model
+   * there is nothing to hide, so everything prints.
+   */
+  const blinded = specs.length > 1;
 
-  for (const spec of specs) {
+  for (const [modelIndex, spec] of specs.entries()) {
     const generator = new OpenAICardGenerator(
       { ...config.openai, model: spec.model },
       apiKey,
@@ -264,7 +271,9 @@ async function main(): Promise<void> {
     for (const page of pages) {
       const requestId = `cmp_${spec.model}_${basename(page.name, extname(page.name))}`;
       const started = Date.now();
-      process.stdout.write(`  ${spec.model} · ${page.name} … `);
+      process.stdout.write(
+        blinded ? `  ${page.name} · ${modelIndex + 1}/${specs.length} … ` : `  ${spec.model} · ${page.name} … `,
+      );
 
       try {
         const { output, rawUsage } = await generator.generateCards({
@@ -299,8 +308,15 @@ async function main(): Promise<void> {
           cards: kept,
         });
         console.log(
-          `${kept.length} kart · ${fmtUsd(estimateOpenAICostUSD(rawUsage, spec.prices))} · ` +
-            `${Math.round((Date.now() - started) / 1000)} sn`,
+          blinded
+            // Card count and cost are both per model per page, so printing
+            // either here hands the reader the mapping the blind sheet exists
+            // to hide: match "9 kart" against the sheet's Takım A and the
+            // letter is solved. Duration is safe — it does not appear on the
+            // sheet.
+            ? `tamam (${Math.round((Date.now() - started) / 1000)} sn)`
+            : `${kept.length} kart · ${fmtUsd(estimateOpenAICostUSD(rawUsage, spec.prices))} · ` +
+              `${Math.round((Date.now() - started) / 1000)} sn`,
         );
       } catch (error) {
         const openAIError = error instanceof OpenAIError ? error : null;
@@ -323,7 +339,9 @@ async function main(): Promise<void> {
           latencyMs: Date.now() - started,
           cards: [],
         });
-        console.log(`HATA (${openAIError?.reason ?? "bilinmiyor"})`);
+        console.log(
+          blinded ? "HATA" : `HATA (${openAIError?.reason ?? "bilinmiyor"})`,
+        );
       }
     }
   }
@@ -454,22 +472,39 @@ async function main(): Promise<void> {
   );
 
   // --- Terminal summary --------------------------------------------------
-  console.log("\nModel başına:");
-  for (const row of perModel) {
+  if (blinded) {
+    // The whole per-model table is a key to the blind sheet, so it goes to the
+    // report file and stays out of the scroll-back the scorer is sitting in
+    // front of. It is not secret — it is simply the wrong thing to read first.
+    const totalCost = perModel.reduce((sum, row) => sum + row.totalCostUSD, 0);
+    const totalCalls = perModel.reduce((sum, row) => sum + row.calls, 0);
+    const totalFailed = perModel.reduce((sum, row) => sum + row.failed, 0);
     console.log(
-      `  ${row.model.padEnd(16)} ${String(row.cards).padStart(4)} kart · ` +
-        `${fmtUsd(row.totalCostUSD)} toplam · ${fmtUsd(row.costPerPageUSD)}/sayfa · ` +
-        `${row.failed} başarısız · ${Math.round(row.medianLatencyMs / 1000)} sn ortanca`,
+      `\nToplam: ${totalCalls} çağrı · ${fmtUsd(totalCost)}` +
+        (totalFailed > 0 ? ` · ${totalFailed} başarısız` : ""),
     );
-  }
+    console.log(
+      "Model başına döküm rapora yazıldı — Tur A'yı doldurmadan AÇMA: kart sayıları\n" +
+        "hangi harfin hangi model olduğunu ele verir.",
+    );
+  } else {
+    console.log("\nModel başına:");
+    for (const row of perModel) {
+      console.log(
+        `  ${row.model.padEnd(16)} ${String(row.cards).padStart(4)} kart · ` +
+          `${fmtUsd(row.totalCostUSD)} toplam · ${fmtUsd(row.costPerPageUSD)}/sayfa · ` +
+          `${row.failed} başarısız · ${Math.round(row.medianLatencyMs / 1000)} sn ortanca`,
+      );
+    }
 
-  const cheapest = [...perModel].sort((a, b) => a.totalCostUSD - b.totalCostUSD)[0];
-  const dearest = [...perModel].sort((a, b) => b.totalCostUSD - a.totalCostUSD)[0];
-  if (cheapest && dearest && cheapest.model !== dearest.model && dearest.totalCostUSD > 0) {
-    const saving = 1 - cheapest.totalCostUSD / dearest.totalCostUSD;
-    console.log(
-      `\n  ${cheapest.model}, ${dearest.model}'e göre %${Math.round(saving * 100)} daha ucuz.`,
-    );
+    const cheapest = [...perModel].sort((a, b) => a.totalCostUSD - b.totalCostUSD)[0];
+    const dearest = [...perModel].sort((a, b) => b.totalCostUSD - a.totalCostUSD)[0];
+    if (cheapest && dearest && cheapest.model !== dearest.model && dearest.totalCostUSD > 0) {
+      const saving = 1 - cheapest.totalCostUSD / dearest.totalCostUSD;
+      console.log(
+        `\n  ${cheapest.model}, ${dearest.model}'e göre %${Math.round(saving * 100)} daha ucuz.`,
+      );
+    }
   }
 
   console.log(`\nRapor:              ${reportPath}`);
