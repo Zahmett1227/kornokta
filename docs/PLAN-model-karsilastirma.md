@@ -266,6 +266,35 @@ prompt turunda denenecek: kuralı olumsuzdan olumluya çevirmek (soru **tek bir
 şey** sormalı; "ve" ile bağlanan iki bilgi iki karttır) ve örneği yanlış-doğru
 çifti hâlinde vermek — kural 8'de işe yarayan biçim buydu.
 
+## Tur A3 — kararı kapatan tur
+
+```bash
+npm run compare -- \
+  --models "gpt-5.6-luna@medium:0.2/0.02/1.2,gpt-5.6-luna@high:0.2/0.02/1.2,gpt-5.6-sol@low:5/0.5/30" \
+  --subject Patoloji --max-cards 20 --max-output-tokens 32000
+```
+
+Üç kol, üç ayrı soru:
+
+| Karşılaştırma | Cevabı |
+|---|---|
+| `luna@medium` ↔ `luna@high` | Luna'nın çalışma noktası. Gecikme yarılanırken el yazısı kazancı duruyor mu? |
+| ikisi ↔ `sol@low` | **Sol bırakılabilir mi?** — aynı prompt sürümünde ilk dürüst kıyas |
+| `sol@low` ↔ Tur A'nın Sol'u | v2.6 pahalı kademede de işe yaradı mı? |
+
+Tasarımın iki bilinçli kararı:
+
+- **Terra yok.** Tur A'da kanıtla elendi (tekrarlanabilir bayraksız hata). Geri
+  koymak $0.30 ve 120 kart daha okumak karşılığında çözülmüş bir soruyu
+  yeniden sormak olurdu. Bir modeli elemenin anlamı, sonraki turların ondan
+  kurtulmasıdır.
+- **Sol `low`'da tutuldu.** Üretimde çalışan ayar o; karşılaştırma hayali bir
+  Sol'la değil gerçekten bırakılan şeyle olmalı. Kademe ve effort'u aynı anda
+  oynatmak Tur A2'nin ana dersini (effort devasa bir değişken) çöpe atardı.
+
+Maliyet ~$0.95, çoğu Sol'dan. Asıl bedel okuma: 3 takım × 6 sayfa = 360 kart,
+~45–60 dk.
+
 ---
 
 # Kademe yönlendirmesi (routing)
