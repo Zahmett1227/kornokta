@@ -29,8 +29,8 @@ swift test                                                        # yalnız bir 
 
 Paket **Linux'ta derlenmez** (CoreGraphics, SwiftData). Foundation'a bağlı yeni
 mantık, bir Swift araç zinciri kurup yalnız o dosyaları içeren izole bir pakette
-gerçekten koşturulabilir — PR #27'nin 63 testi ve ADR-007'nin 12 testi böyle
-doğrulandı. SwiftUI dosyaları için elde yalnız `swiftc -parse` var; o
+gerçekten koşturulabilir — PR #27'nin 63 testi, ADR-007'nin 12 testi ve maliyet
+defterinin 13 testi (`UsageSummary` + `FailureDiagnosis`) böyle doğrulandı. SwiftUI dosyaları için elde yalnız `swiftc -parse` var; o
 **sözdizimi** kontrolüdür, tip/aşırı-yükleme hatasını yakalamaz. App hedefi ve
 tam paket için tek gerçek kapı CI'daki macOS işi ya da bir Mac derlemesi.
 
@@ -56,6 +56,42 @@ Yerel sunucu (yalnız 127.0.0.1, dışarıya açılmaz):
 npm run serve
 curl http://127.0.0.1:8787/health                                # {"ok":true}
 ```
+
+## Model karşılaştırması (Sol / Terra / Luna)
+
+Aynı işaretli sayfaları birden çok modele okutur, **gerçek** çağrı yapar ve
+maliyeti sağlayıcının kendi bildirdiği token sayılarından hesaplar. Her modele
+kendi 1M-token fiyatını vermek zorunludur (girdi/önbellek/çıktı) — modeller
+farklı fiyatlıyken tek fiyat setiyle yapılan karşılaştırma yanıltıcıdır (§0.6:
+fiyat uydurulmaz, verilir).
+
+```bash
+cd backend
+npm run compare -- \
+  --models "gpt-5.6-sol:5/0.5/30,gpt-5.6-terra:2/0.2/12" \
+  --pages ../evals/fixtures/pages --subject Patoloji
+```
+
+Üç dosya yazar (hepsi `evals/reports/`, gitignore'lu): tam rapor, **kör
+puanlama sayfası** (hangi modelin ürettiği yazmaz) ve anahtar. Kartları §23.3
+rubriğiyle puanlamadan **anahtarı açma** — bu karşılaştırmadaki her kart
+tanım gereği sınıra yakındır (kimse bariz bir kalite çöküşü için model
+değiştirmez) ve modeli bilmek tam da o sınır kararını bozar.
+
+Puanlama bitince kalite ve maliyet yan yana:
+
+```bash
+cd ..
+python -m evals.model_compare.report \
+  --scores evals/reports/puanlar.json \
+  --key evals/reports/key-<stamp>.json \
+  --report evals/reports/compare-<stamp>.json
+```
+
+Rapor kasten bir kazanan ilan etmez: §23.3 kart başına eşikleri koyar, bir
+tasarrufun ne kadar kaliteye değdiğini söylemez. Bakılacak asıl sayı **kabul
+edilen kart başına maliyet** — yarı fiyata üçte bir kullanılabilir kart üreten
+bir model ucuz değildir, ama sayfa başına maliyet onu ucuz gösterir.
 
 ## Anahtar yönetimi (§0.7, §7.3)
 

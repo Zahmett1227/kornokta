@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "cards": "tsx scripts/cards.ts",
     "serve": "tsx scripts/serve.ts",
-    "token": "tsx scripts/token.ts"
+    "token": "tsx scripts/token.ts",
+    "compare": "tsx scripts/compareModels.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.8.0",
