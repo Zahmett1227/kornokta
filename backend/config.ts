@@ -29,11 +29,26 @@ export interface CostConfig {
    * pricing page once known — a reference, not a contract.
    */
   openaiUsdPerMillionInputTokens: number;
+  /**
+   * Price of an input token served from the provider's prompt cache — roughly
+   * a tenth of the uncached rate on current models.
+   *
+   * Defaults to the *uncached* input price rather than to 0, unlike every
+   * other price here. A 0 default would make cached tokens free in our own
+   * books, and since the cached share of a repeated prompt is large, the
+   * Kullanım total would read well under the provider's own invoice — the
+   * exact under-reporting this accounting exists to end. Overstating a cached
+   * call by the size of the discount is the safe direction to be wrong in, and
+   * setting the variable makes it exact.
+   */
+  openaiUsdPerMillionCachedInputTokens: number;
   openaiUsdPerMillionOutputTokens: number;
   /** Refuse to start a card-generation call that would exceed this. 0 disables the check. */
   maxUsdPerCardGeneration: number;
   /** Same convention as the OpenAI pair: 0 until a verified price is filled in (§20.3). */
   geminiUsdPerMillionInputTokens: number;
+  /** Same fallback rule as the OpenAI cached price: the uncached rate, never 0. */
+  geminiUsdPerMillionCachedInputTokens: number;
   geminiUsdPerMillionOutputTokens: number;
 }
 
@@ -214,6 +229,12 @@ function numeric(name: string, fallback: number, min = 0): number {
  * module — in a test, say — never fails on a missing variable.
  */
 export function loadConfig(): Config {
+  // Read before the object literal because the cached-token prices fall back to
+  // them (see `CostConfig.openaiUsdPerMillionCachedInputTokens`), and a
+  // fallback cannot reference a sibling property of the literal it sits in.
+  const openaiInputPrice = numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0);
+  const geminiInputPrice = numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0);
+
   return {
     openai: {
       model: optional("OPENAI_MODEL", "gpt-5.6-sol"),
@@ -259,10 +280,18 @@ export function loadConfig(): Config {
       timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
     },
     cost: {
-      openaiUsdPerMillionInputTokens: numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0),
+      openaiUsdPerMillionInputTokens: openaiInputPrice,
+      openaiUsdPerMillionCachedInputTokens: numeric(
+        "OPENAI_USD_PER_MILLION_CACHED_INPUT_TOKENS",
+        openaiInputPrice,
+      ),
       openaiUsdPerMillionOutputTokens: numeric("OPENAI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
       maxUsdPerCardGeneration: numeric("MAX_USD_PER_CARD_GENERATION", 0),
-      geminiUsdPerMillionInputTokens: numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0),
+      geminiUsdPerMillionInputTokens: geminiInputPrice,
+      geminiUsdPerMillionCachedInputTokens: numeric(
+        "GEMINI_USD_PER_MILLION_CACHED_INPUT_TOKENS",
+        geminiInputPrice,
+      ),
       geminiUsdPerMillionOutputTokens: numeric("GEMINI_USD_PER_MILLION_OUTPUT_TOKENS", 0),
     },
     supabase: {

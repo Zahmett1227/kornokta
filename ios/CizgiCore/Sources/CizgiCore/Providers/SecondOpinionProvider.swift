@@ -23,14 +23,28 @@ public struct SecondOpinion: Sendable, Equatable {
         public let provider: String
         public let model: String
         public let inputTokens: Int
+        /// Subset of `inputTokens` served from the provider's cache, billed cheaper.
+        public let cachedInputTokens: Int
         public let outputTokens: Int
+        /// Subset of `outputTokens` spent on hidden reasoning, billed at the output rate.
+        public let reasoningTokens: Int
         public let estimatedCostUSD: Double
 
-        public init(provider: String, model: String, inputTokens: Int, outputTokens: Int, estimatedCostUSD: Double) {
+        public init(
+            provider: String,
+            model: String,
+            inputTokens: Int,
+            cachedInputTokens: Int = 0,
+            outputTokens: Int,
+            reasoningTokens: Int = 0,
+            estimatedCostUSD: Double
+        ) {
             self.provider = provider
             self.model = model
             self.inputTokens = inputTokens
+            self.cachedInputTokens = cachedInputTokens
             self.outputTokens = outputTokens
+            self.reasoningTokens = reasoningTokens
             self.estimatedCostUSD = estimatedCostUSD
         }
     }
@@ -199,7 +213,9 @@ public struct SecondOpinionProvider: Sendable {
                     provider: $0.provider,
                     model: $0.model,
                     inputTokens: $0.inputTokens,
+                    cachedInputTokens: $0.cachedInputTokens ?? 0,
                     outputTokens: $0.outputTokens,
+                    reasoningTokens: $0.reasoningTokens ?? 0,
                     estimatedCostUSD: $0.estimatedCostUSD
                 )
             },

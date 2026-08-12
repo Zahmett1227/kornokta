@@ -20,6 +20,7 @@
 
 /** The credential is deliberately absent: it is read at the composition root and passed in (§0.7). */
 import type { MultipleChoiceMode } from "../config.js";
+import type { CallAccounting } from "./tokenUsage.js";
 
 export interface SupabaseConfig {
   /** Project URL, e.g. `https://abcd.supabase.co`. Not a secret. */
@@ -73,6 +74,18 @@ export interface JobRow {
   attempts: number;
   /** `{ output, gate, cardPromptVersion }` — exactly what `/api/cards-vision` returns. */
   result: unknown | null;
+  /**
+   * One entry per provider call this job has made, in order, successes and
+   * failures alike (§16.8).
+   *
+   * Accumulated rather than overwritten, and that is the whole point of
+   * storing it here at all. A page that fails twice and succeeds on the third
+   * attempt cost three generations; the phone may well have been asleep for
+   * the first two, so anything the phone alone recorded would have shown one.
+   * Kept across `requeue` — the only field that is, because it is the only one
+   * describing what already happened rather than what is about to.
+   */
+  usage: CallAccounting[];
   error: string | null;
   retryable: boolean | null;
   createdAt: string;
@@ -147,10 +160,28 @@ export interface JobStoreLike {
    * and finishing, the job can be expired, re-armed and claimed afresh, and an
    * id-only write would let the retired worker overwrite the live attempt.
    * `false` means the fence lost and nothing was written.
+   *
+   * `usage` is the job's *whole* accounting array, not the one entry being
+   * added: the caller already holds the fenced row it read, so it composes
+   * `[...row.usage, entry]` and this writes it as one value. PostgREST cannot
+   * append to a jsonb array without a stored procedure, and the alternative —
+   * re-reading here — would open a window the fence does not cover. Losing the
+   * race costs one ledger line, never a card.
    */
-  complete(id: string, startedAt: string | null, result: unknown): Promise<boolean>;
+  complete(
+    id: string,
+    startedAt: string | null,
+    result: unknown,
+    usage: CallAccounting[],
+  ): Promise<boolean>;
   /** Same fence as `complete`, for the same race. */
-  fail(id: string, startedAt: string | null, error: string, retryable: boolean): Promise<boolean>;
+  fail(
+    id: string,
+    startedAt: string | null,
+    error: string,
+    retryable: boolean,
+    usage: CallAccounting[],
+  ): Promise<boolean>;
   /**
    * `processing` → failed-and-retryable, fenced to one exact attempt.
    *
@@ -158,7 +189,12 @@ export interface JobStoreLike {
    * stale row and writing this, the job can be re-armed and claimed afresh, and
    * a status-only condition would then kill the *new* attempt (Codex, PR #25 P2).
    */
-  expire(id: string, startedAt: string | null, error: string): Promise<boolean>;
+  expire(
+    id: string,
+    startedAt: string | null,
+    error: string,
+    usage: CallAccounting[],
+  ): Promise<boolean>;
   /**
    * Deletes finished rows (`ready` or `failed`) whose `finished_at` is older
    * than `cutoffIso`, and returns how many went.
@@ -231,6 +267,7 @@ interface JobRowJson {
   subject: string | null;
   attempts: number;
   result: unknown | null;
+  usage: CallAccounting[] | null;
   error: string | null;
   retryable: boolean | null;
   created_at: string;
@@ -253,6 +290,10 @@ export function toJobRow(row: JobRowJson): JobRow {
     subject: row.subject ?? null,
     attempts: row.attempts,
     result: row.result,
+    // Same defensive `?? []` as `subject`'s `?? null`, and for the same
+    // reason: a row written before the column migration ran carries
+    // `undefined`, and every reader here treats this as an array it can spread.
+    usage: Array.isArray(row.usage) ? row.usage : [],
     error: row.error,
     retryable: row.retryable,
     createdAt: row.created_at,
@@ -422,7 +463,12 @@ export class SupabaseJobStore implements JobStoreLike {
       : "&started_at=is.null";
   }
 
-  async complete(id: string, startedAt: string | null, result: unknown): Promise<boolean> {
+  async complete(
+    id: string,
+    startedAt: string | null,
+    result: unknown,
+    usage: CallAccounting[],
+  ): Promise<boolean> {
     const payload = await this.callJson(
       `${this.restBase}?id=eq.${id}&status=eq.processing${SupabaseJobStore.startedAtFilter(startedAt)}`,
       "PATCH",
@@ -430,6 +476,7 @@ export class SupabaseJobStore implements JobStoreLike {
       {
         status: "ready",
         result,
+        usage,
         error: null,
         retryable: null,
         image_path: null,
@@ -439,7 +486,13 @@ export class SupabaseJobStore implements JobStoreLike {
     return SupabaseJobStore.rows(payload).length > 0;
   }
 
-  async fail(id: string, startedAt: string | null, error: string, retryable: boolean): Promise<boolean> {
+  async fail(
+    id: string,
+    startedAt: string | null,
+    error: string,
+    retryable: boolean,
+    usage: CallAccounting[],
+  ): Promise<boolean> {
     const payload = await this.callJson(
       `${this.restBase}?id=eq.${id}&status=eq.processing${SupabaseJobStore.startedAtFilter(startedAt)}`,
       "PATCH",
@@ -448,6 +501,7 @@ export class SupabaseJobStore implements JobStoreLike {
         status: "failed",
         error,
         retryable,
+        usage,
         image_path: null,
         finished_at: new Date().toISOString(),
       },
@@ -455,7 +509,12 @@ export class SupabaseJobStore implements JobStoreLike {
     return SupabaseJobStore.rows(payload).length > 0;
   }
 
-  async expire(id: string, startedAt: string | null, error: string): Promise<boolean> {
+  async expire(
+    id: string,
+    startedAt: string | null,
+    error: string,
+    usage: CallAccounting[],
+  ): Promise<boolean> {
     // Encoded, not interpolated raw: a Postgres timestamp carries `+00:00`, and
     // a bare `+` in a query string means a space — the filter would match
     // nothing and every reclaim would silently become a no-op.
@@ -472,6 +531,7 @@ export class SupabaseJobStore implements JobStoreLike {
         // Always retryable: a worker that vanished tells us nothing about
         // whether the page itself is generatable.
         retryable: true,
+        usage,
         image_path: null,
         finished_at: new Date().toISOString(),
       },

@@ -11,12 +11,14 @@ const KEYS = [
   "OPENAI_TIMEOUT_MS",
   "OPENAI_USD_PER_MILLION_INPUT_TOKENS",
   "OPENAI_USD_PER_MILLION_OUTPUT_TOKENS",
+  "OPENAI_USD_PER_MILLION_CACHED_INPUT_TOKENS",
   "MAX_USD_PER_CARD_GENERATION",
   "GEMINI_MODEL",
   "GEMINI_MAX_OUTPUT_TOKENS",
   "GEMINI_TIMEOUT_MS",
   "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
   "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
+  "GEMINI_USD_PER_MILLION_CACHED_INPUT_TOKENS",
   "SUPABASE_URL",
   "SUPABASE_BUCKET",
   "SUPABASE_TIMEOUT_MS",
@@ -242,5 +244,35 @@ describe(".env.example", () => {
     expect(template).not.toContain("private_key");
     expect(template).not.toContain("BEGIN PRIVATE KEY");
     expect(template).not.toContain("sk-");
+  });
+});
+
+describe("cached-input pricing", () => {
+  it("falls back to the uncached input price, not to zero", () => {
+    // Every other price here defaults to 0 under §0.6 ("never invent a
+    // number"). This one must not: a large share of a repeated prompt is
+    // served from cache, so a 0 default would make most of the input free in
+    // our books and put the Kullanım total well under the real invoice — the
+    // exact under-reporting the per-call ledger exists to end. Erring high is
+    // the safe direction.
+    process.env.OPENAI_USD_PER_MILLION_INPUT_TOKENS = "5";
+    process.env.GEMINI_USD_PER_MILLION_INPUT_TOKENS = "1.25";
+
+    const config = loadConfig();
+
+    expect(config.cost.openaiUsdPerMillionCachedInputTokens).toBe(5);
+    expect(config.cost.geminiUsdPerMillionCachedInputTokens).toBe(1.25);
+  });
+
+  it("uses the configured cached price when one is given", () => {
+    process.env.OPENAI_USD_PER_MILLION_INPUT_TOKENS = "5";
+    process.env.OPENAI_USD_PER_MILLION_CACHED_INPUT_TOKENS = "0.5";
+
+    expect(loadConfig().cost.openaiUsdPerMillionCachedInputTokens).toBe(0.5);
+  });
+
+  it("still rejects a negative cached price like every other one", () => {
+    process.env.OPENAI_USD_PER_MILLION_CACHED_INPUT_TOKENS = "-1";
+    expect(() => loadConfig()).toThrow(ConfigError);
   });
 });

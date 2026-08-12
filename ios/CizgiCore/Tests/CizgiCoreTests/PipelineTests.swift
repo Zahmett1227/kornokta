@@ -30,7 +30,7 @@ enum PipelineTestFixtures {
     static func knowledge(
         canonicalClaim: String = "İşaretli içerik",
         cards: [GeneratedCard]? = nil,
-        modelRun: ModelRunMetadata? = nil
+        modelRuns: [ModelRunMetadata] = []
     ) -> GeneratedKnowledge {
         GeneratedKnowledge(
             canonicalClaim: canonicalClaim,
@@ -46,12 +46,12 @@ enum PipelineTestFixtures {
                     riskFlags: []
                 )
             ],
-            modelRun: modelRun
+            modelRuns: modelRuns
         )
     }
 }
 
-/// Fixed-knowledge generator for the success path, with an optional modelRun.
+/// Fixed-knowledge generator for the success path, with an optional ledger.
 struct StubVisionGenerator: CardGenerating {
     var knowledge: GeneratedKnowledge = PipelineTestFixtures.knowledge()
     func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
@@ -99,13 +99,59 @@ final class CapturePipelineTests: XCTestCase {
 
     func testModelRunReachesTheOutcome() async {
         let modelRun = ModelRunMetadata(
-            requestId: "req-1", provider: "openai", model: "gpt-5.6-sol", purpose: "card_generation",
-            promptVersion: "2.0", latencyMs: 120, inputTokens: 1012, outputTokens: 571, estimatedCostUSD: 0
+            requestId: "req-1", attempt: 1, provider: "openai", model: "gpt-5.6-sol",
+            purpose: "card_generation", promptVersion: "2.0", latencyMs: 120,
+            inputTokens: 1012, outputTokens: 571, estimatedCostUSD: 0
         )
-        let generator = StubVisionGenerator(knowledge: PipelineTestFixtures.knowledge(modelRun: modelRun))
+        let generator = StubVisionGenerator(knowledge: PipelineTestFixtures.knowledge(modelRuns: [modelRun]))
         let outcome = await pipeline(generator: generator).run(jobId: "job-3", imageURL: imageURL)
-        XCTAssertEqual(outcome.modelRun?.requestId, "req-1")
-        XCTAssertEqual(outcome.modelRun?.promptVersion, "2.0")
+        XCTAssertEqual(outcome.modelRuns.first?.requestId, "req-1")
+        XCTAssertEqual(outcome.modelRuns.first?.promptVersion, "2.0")
+    }
+
+    func testAFailedGenerationStillCarriesWhatItSpent() async {
+        // The gap this closes: a page that never produces a card still paid for
+        // every attempt it made. Reporting the failure without the ledger was
+        // how those attempts stayed invisible to Ayarlar → Kullanım.
+        let spent = ModelRunMetadata(
+            requestId: "job-5", attempt: 2, provider: "openai", model: "gpt-5.6-sol",
+            purpose: "card_generation", promptVersion: "2.5", latencyMs: 240_000,
+            inputTokens: 4200, outputTokens: 8192, reasoningTokens: 7000,
+            estimatedCostUSD: 0.267, success: false,
+            billing: ModelRunBilling.measured, failureReason: "incomplete_max_output_tokens"
+        )
+        let generator = ThrowingVisionGenerator(
+            failure: CardGenerationFailure(
+                error: .providerUnavailable("Model üretimi tamamlamadı."),
+                accounting: [spent]
+            )
+        )
+
+        let outcome = await pipeline(generator: generator).run(jobId: "job-5", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .temporaryFailure)
+        XCTAssertEqual(outcome.modelRuns.count, 1)
+        XCTAssertEqual(outcome.modelRuns.first?.failureReason, "incomplete_max_output_tokens")
+        XCTAssertEqual(outcome.modelRuns.first?.success, false)
+    }
+
+    func testNoContentIsAPaidOutcomeToo() async {
+        // "Nothing marked on this page" is a verdict the model reached by
+        // reading the whole page — billed like any other call.
+        let spent = ModelRunMetadata(
+            requestId: "job-6", attempt: 1, provider: "openai", model: "gpt-5.6-sol",
+            purpose: "card_generation", promptVersion: "2.5", latencyMs: 30_000,
+            inputTokens: 3000, outputTokens: 200, estimatedCostUSD: 0.021
+        )
+        let generator = ThrowingVisionGenerator(
+            failure: CardGenerationFailure(error: .sourceInsufficient, accounting: [spent])
+        )
+
+        let outcome = await pipeline(generator: generator).run(jobId: "job-6", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .permanentFailure)
+        XCTAssertEqual(outcome.failure, .noContent)
+        XCTAssertEqual(outcome.modelRuns.count, 1)
     }
 
     func testUnreadableImageIsAPermanentFailure() async {
@@ -246,5 +292,75 @@ final class MockCardProviderTests: XCTestCase {
 
     func testShortPassageHasNoCloze() {
         XCTAssertNil(MockCardProvider.clozeCard(for: "Kısa üç söz"))
+    }
+}
+
+/// Throws a `CardGenerationFailure` — the real provider's error, which carries
+/// the ledger. `FailingGenerator` covers the bare-enum case the offline
+/// stand-in throws.
+struct ThrowingVisionGenerator: CardGenerating {
+    let failure: CardGenerationFailure
+    func generate(_ request: CardGenerationRequest) async throws -> GeneratedKnowledge {
+        throw failure
+    }
+}
+
+/// The diagnosis half of a failed run: what the user actually reads.
+extension CapturePipelineTests {
+
+    func testTheServersOwnMessageReachesTheOutcome() async {
+        // Before this the string was dropped at `failureKind(for:)` and the
+        // screen printed a classification, so a job that was merely still
+        // generating and one that had burned its whole output budget looked
+        // identical.
+        let generator = ThrowingVisionGenerator(
+            failure: CardGenerationFailure(
+                error: .providerUnavailable("Model üretimi tamamlamadı: max_output_tokens."),
+                accounting: []
+            )
+        )
+
+        let outcome = await pipeline(generator: generator).run(jobId: "job-7", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.failureDetail, "Model üretimi tamamlamadı: max_output_tokens.")
+        XCTAssertEqual(
+            FailureDiagnosis.text(detail: outcome.failureDetail, kind: outcome.failure),
+            "Model üretimi tamamlamadı: max_output_tokens."
+        )
+    }
+
+    func testAQuotaFailureIsClassifiedAsRateLimitedFromTheLedgersReason() async {
+        // The phone never sees OpenAI's status code; the reason the backend
+        // records for the cost ledger is what carries it across.
+        let spent = ModelRunMetadata(
+            requestId: "job-8", attempt: 1, provider: "openai", model: "gpt-5.6-sol",
+            purpose: "card_generation", promptVersion: "2.5", latencyMs: 400,
+            inputTokens: 0, outputTokens: 0, estimatedCostUSD: 0, success: false,
+            billing: ModelRunBilling.none, failureReason: "insufficient_quota"
+        )
+        let generator = ThrowingVisionGenerator(
+            failure: CardGenerationFailure(
+                error: .providerUnavailable("OpenAI kredisi/kotası tükendi (insufficient_quota)."),
+                accounting: [spent]
+            )
+        )
+
+        let outcome = await pipeline(generator: generator).run(jobId: "job-8", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.failure, .rateLimited)
+        // Still transient, so the page is retried rather than locked out — the
+        // first attempt after a top-up succeeds without needing `force`.
+        XCTAssertEqual(outcome.finalState, .temporaryFailure)
+        XCTAssertEqual(outcome.failureDetail, "OpenAI kredisi/kotası tükendi (insufficient_quota).")
+    }
+
+    func testABareErrorWithoutADetailStillFallsBackToTheClassification() async {
+        let outcome = await pipeline(generator: FailingGenerator(error: .budgetExceeded))
+            .run(jobId: "job-9", imageURL: imageURL)
+        XCTAssertNil(outcome.failureDetail)
+        XCTAssertEqual(
+            FailureDiagnosis.text(detail: outcome.failureDetail, kind: outcome.failure),
+            FailureKind.budgetExceeded.message
+        )
     }
 }

@@ -45,7 +45,15 @@ function stubGenerator(result: LlmOutput | Error) {
     async generateCards(request) {
       seen.push(request);
       if (result instanceof Error) throw result;
-      return { output: result, rawUsage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens } } satisfies CardGenerationResult;
+      return {
+        output: result,
+        rawUsage: {
+          inputTokens: result.usage.inputTokens,
+          cachedInputTokens: 0,
+          outputTokens: result.usage.outputTokens,
+          reasoningTokens: 0,
+        },
+      } satisfies CardGenerationResult;
     },
   };
   return { generator, seen };
@@ -56,7 +64,12 @@ function deps(overrides: Partial<CardsDependencies> = {}): CardsDependencies & {
   return {
     generator: stubGenerator(validOutput()).generator,
     openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 700, multipleChoiceMode: "mixed" },
-    cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
+    cost: {
+      openaiUsdPerMillionInputTokens: 0,
+      openaiUsdPerMillionCachedInputTokens: 0,
+      openaiUsdPerMillionOutputTokens: 0,
+      maxUsdPerCardGeneration: 0,
+    },
     deviceToken: TOKEN,
     log: (entry) => logged.push(entry),
     logged,
@@ -204,7 +217,12 @@ describe("POST /api/cards-vision", () => {
         deps({
           generator,
           openai: { maxCardsPerKnowledgeUnit: 4, maxOutputTokens: 1_000_000, multipleChoiceMode: "mixed" },
-          cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 5, maxUsdPerCardGeneration: 0.5 },
+          cost: {
+            openaiUsdPerMillionInputTokens: 0,
+            openaiUsdPerMillionCachedInputTokens: 0,
+            openaiUsdPerMillionOutputTokens: 5,
+            maxUsdPerCardGeneration: 0.5,
+          },
         }),
       );
       expect(response.status).toBe(402);

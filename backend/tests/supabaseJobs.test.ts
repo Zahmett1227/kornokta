@@ -87,7 +87,7 @@ describe("SupabaseJobStore fences", () => {
     const { transport, seen } = stubTransport(200, ROW_JSON);
     const store = new SupabaseJobStore(CONFIG, "key", transport);
 
-    const won = await store.complete("3f2504e0-4f89-11d3-9a0c-0305e82c3301", STARTED_AT, { ok: true });
+    const won = await store.complete("3f2504e0-4f89-11d3-9a0c-0305e82c3301", STARTED_AT, { ok: true }, []);
 
     expect(won).toBe(true);
     expect(seen[0]?.url).toContain("status=eq.processing");
@@ -100,7 +100,7 @@ describe("SupabaseJobStore fences", () => {
     const { transport, seen } = stubTransport(200, "[]");
     const store = new SupabaseJobStore(CONFIG, "key", transport);
 
-    const won = await store.fail("3f2504e0-4f89-11d3-9a0c-0305e82c3301", STARTED_AT, "hata", true);
+    const won = await store.fail("3f2504e0-4f89-11d3-9a0c-0305e82c3301", STARTED_AT, "hata", true, []);
 
     expect(won).toBe(false);
     expect(seen[0]?.url).toContain("status=eq.processing");

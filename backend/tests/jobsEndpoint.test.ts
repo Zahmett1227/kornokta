@@ -78,6 +78,7 @@ function stubStore(seed: JobRow[] = []) {
         maxCards: request.maxCards ?? null,
         mcMode: request.mcMode ?? null,
         subject: request.subject ?? null,
+        usage: [],
         attempts: 0,
         result: null,
         error: null,
@@ -121,23 +122,23 @@ function stubStore(seed: JobRow[] = []) {
       rows.set(id, claimed);
       return claimed;
     },
-    async complete(id, startedAt, result) {
+    async complete(id, startedAt, result, usage) {
       calls.push(`complete:${id}`);
       const row = rows.get(id);
       // Fenced exactly as the real store fences it: only the attempt whose
       // claim wrote this `started_at` may finish the row.
       if (!row || row.status !== "processing" || row.startedAt !== startedAt) return false;
-      rows.set(id, { ...row, status: "ready", result, error: null, retryable: null, imagePath: null });
+      rows.set(id, { ...row, status: "ready", result, usage, error: null, retryable: null, imagePath: null });
       return true;
     },
-    async fail(id, startedAt, error, retryable) {
+    async fail(id, startedAt, error, retryable, usage) {
       calls.push(`fail:${id}`);
       const row = rows.get(id);
       if (!row || row.status !== "processing" || row.startedAt !== startedAt) return false;
-      rows.set(id, { ...row, status: "failed", error, retryable, imagePath: null });
+      rows.set(id, { ...row, status: "failed", error, retryable, usage, imagePath: null });
       return true;
     },
-    async expire(id, startedAt, error) {
+    async expire(id, startedAt, error, usage) {
       calls.push(`expire:${id}`);
       const row = rows.get(id);
       if (!row || row.status !== "processing") return false;
@@ -145,7 +146,7 @@ function stubStore(seed: JobRow[] = []) {
       // does server-side — a stub that ignored it would let a sweep aimed at a
       // dead attempt silently kill a live one and the tests would never notice.
       if (row.startedAt !== startedAt) return false;
-      rows.set(id, { ...row, status: "failed", error, retryable: true, imagePath: null });
+      rows.set(id, { ...row, status: "failed", error, retryable: true, usage, imagePath: null });
       return true;
     },
     async putImage(path, bytes) {
@@ -194,7 +195,12 @@ function stubGenerator(result: LlmOutput | Error) {
       if (result instanceof Error) throw result;
       return {
         output: result,
-        rawUsage: { inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens },
+        rawUsage: {
+          inputTokens: result.usage.inputTokens,
+          cachedInputTokens: 0,
+          outputTokens: result.usage.outputTokens,
+          reasoningTokens: 0,
+        },
       } satisfies CardGenerationResult;
     },
   };
@@ -214,8 +220,18 @@ function deps(
   return {
     store: stubStore().store,
     generator: stubGenerator(validOutput()).generator,
-    openai: { maxCardsPerKnowledgeUnit: 12, maxOutputTokens: 8192, multipleChoiceMode: "mixed" },
-    cost: { openaiUsdPerMillionInputTokens: 0, openaiUsdPerMillionOutputTokens: 0, maxUsdPerCardGeneration: 0 },
+    openai: {
+      maxCardsPerKnowledgeUnit: 12,
+      maxOutputTokens: 8192,
+      multipleChoiceMode: "mixed",
+      model: "gpt-test",
+    },
+    cost: {
+      openaiUsdPerMillionInputTokens: 0,
+      openaiUsdPerMillionCachedInputTokens: 0,
+      openaiUsdPerMillionOutputTokens: 0,
+      maxUsdPerCardGeneration: 0,
+    },
     supabase: { staleAfterMs: STALE_AFTER_MS, resultRetentionMs: RESULT_RETENTION_MS },
     deviceToken: TOKEN,
     runInBackground: (work) => {
@@ -262,6 +278,7 @@ function row(overrides: Partial<JobRow> = {}): JobRow {
     subject: null,
     attempts: 0,
     result: null,
+    usage: [],
     error: null,
     retryable: null,
     createdAt: new Date(NOW).toISOString(),
@@ -702,12 +719,12 @@ describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
     const generator: CardGeneratorLike = {
       async generateCards() {
         const current = store.rows.get(JOB_ID);
-        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat");
+        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat", []);
         await store.store.putImage(imagePathFor(JOB_ID), new Uint8Array([9]), "image/jpeg");
         await store.store.requeue({ id: JOB_ID, imagePath: imagePathFor(JOB_ID), mimeType: "image/jpeg" });
         return {
           output: validOutput(),
-          rawUsage: { inputTokens: 1, outputTokens: 1 },
+          rawUsage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, reasoningTokens: 0 },
         } satisfies CardGenerationResult;
       },
     };
@@ -730,7 +747,7 @@ describe("POST /api/jobs — yarışlar (Codex, PR #25)", () => {
     const generator: CardGeneratorLike = {
       async generateCards() {
         const current = store.rows.get(JOB_ID);
-        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat");
+        await store.store.expire(JOB_ID, current?.startedAt ?? null, "bayat", []);
         await store.store.putImage(imagePathFor(JOB_ID), new Uint8Array([9]), "image/jpeg");
         await store.store.requeue({ id: JOB_ID, imagePath: imagePathFor(JOB_ID), mimeType: "image/jpeg" });
         throw new OpenAIError("model bu koşuda patladı", undefined, false);
@@ -883,6 +900,7 @@ describe("POST /api/jobs — doğrulama", () => {
       store: store.store,
       cost: {
         openaiUsdPerMillionInputTokens: 0,
+        openaiUsdPerMillionCachedInputTokens: 0,
         openaiUsdPerMillionOutputTokens: 100,
         maxUsdPerCardGeneration: 0.0001,
       },
@@ -1111,5 +1129,221 @@ describe("/api/jobs — diğer yöntemler", () => {
       headers: { Authorization: `Bearer ${TOKEN}` },
     });
     expect((await handleJobsRequest(request, deps())).status).toBe(405);
+  });
+});
+
+describe("/api/jobs — çağrı başına maliyet defteri (§16.8, §20.3)", () => {
+  /** Prices chosen so input, cached input and output each move the total differently. */
+  const PRICED = {
+    openaiUsdPerMillionInputTokens: 5,
+    openaiUsdPerMillionCachedInputTokens: 0.5,
+    openaiUsdPerMillionOutputTokens: 30,
+    maxUsdPerCardGeneration: 0,
+  };
+
+  it("başarılı üretim, ölçülmüş bir satır yazar", async () => {
+    const store = stubStore();
+    const generator: CardGeneratorLike = {
+      async generateCards() {
+        return {
+          output: validOutput(),
+          rawUsage: {
+            inputTokens: 4000,
+            cachedInputTokens: 3000,
+            outputTokens: 2000,
+            reasoningTokens: 1200,
+          },
+        } satisfies CardGenerationResult;
+      },
+    };
+    const d = deps({ store: store.store, generator, cost: PRICED });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    const [entry, ...rest] = store.rows.get(JOB_ID)!.usage;
+    expect(rest).toHaveLength(0);
+    expect(entry).toMatchObject({
+      attempt: 1,
+      provider: "openai",
+      purpose: "card_generation",
+      outcome: "success",
+      billing: "measured",
+      usage: { inputTokens: 4000, cachedInputTokens: 3000, outputTokens: 2000, reasoningTokens: 1200 },
+    });
+    // 1000 uncached @ $5/M + 3000 cached @ $0.5/M + 2000 out @ $30/M
+    expect(entry!.estimatedCostUSD).toBeCloseTo(0.005 + 0.0015 + 0.06);
+  });
+
+  it("token yakıp başarısız olan çağrı da deftere ölçülmüş olarak girer", async () => {
+    // The case the whole feature exists for: `max_output_tokens` burns the
+    // entire output budget and returns nothing usable. Recording only
+    // successes made this call free in our books and non-free on the invoice.
+    const store = stubStore();
+    const burned = new OpenAIError(
+      "Model üretimi tamamlamadı: max_output_tokens.",
+      undefined,
+      true,
+      { inputTokens: 4200, cachedInputTokens: 0, outputTokens: 8192, reasoningTokens: 7000 },
+      "incomplete_max_output_tokens",
+    );
+    const d = deps({ store: store.store, generator: stubGenerator(burned).generator, cost: PRICED });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    const row = store.rows.get(JOB_ID)!;
+    expect(row.status).toBe("failed");
+    expect(row.usage).toHaveLength(1);
+    expect(row.usage[0]).toMatchObject({
+      outcome: "failure",
+      billing: "measured",
+      failureReason: "incomplete_max_output_tokens",
+    });
+    expect(row.usage[0]!.estimatedCostUSD).toBeCloseTo(0.021 + 0.24576);
+    // And the operator-facing line says the same thing without any content.
+    const failLog = d.logged.find((entry) => entry.event === "jobs.failed");
+    expect(failLog).toMatchObject({ billing: "measured", reason: "incomplete_max_output_tokens" });
+  });
+
+  it("üretime hiç ulaşmadan reddedilen çağrı 'none' olarak geçer", async () => {
+    // A 429 spends nothing. Counting it as spend would be as wrong as hiding a
+    // real cost, and it is the reason `billing` is three-valued.
+    const store = stubStore();
+    const rejected = new OpenAIError("OpenAI 429: slow down", 429, true, undefined, "http_429");
+    const d = deps({ store: store.store, generator: stubGenerator(rejected).generator, cost: PRICED });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)!.usage[0]).toMatchObject({
+      billing: "none",
+      failureReason: "http_429",
+      estimatedCostUSD: 0,
+    });
+  });
+
+  it("zaman aşımında kesilen çağrı 'unmeasured' — bedava değil, ölçülemedi", async () => {
+    const store = stubStore();
+    const aborted = new OpenAIError("290000 ms zaman aşımında kesildi", undefined, true, undefined, "timeout");
+    const d = deps({ store: store.store, generator: stubGenerator(aborted).generator, cost: PRICED });
+
+    await handleJobsRequest(post(VALID_BODY), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)!.usage[0]).toMatchObject({
+      billing: "unmeasured",
+      failureReason: "timeout",
+    });
+  });
+
+  it("sağlayıcıya hiç ulaşmayan hata deftere satır yazmaz", async () => {
+    // `getImage` failing means nothing was ever sent. A zero-cost line for it
+    // would make "how many calls did this page take?" unanswerable.
+    const store = stubStore();
+    // No image was ever put, so the store's own getImage throws.
+    store.rows.set(JOB_ID, row({ status: "queued", attempts: 0 }));
+    const d = deps({ store: store.store, cost: PRICED });
+
+    await handleJobsRequest(get(JOB_ID), d);
+    await d.settled();
+
+    expect(store.rows.get(JOB_ID)!.usage).toEqual([]);
+  });
+
+  it("defter denemeler boyunca birikir, sıfırlanmaz", async () => {
+    // A page that fails twice and succeeds on the third attempt cost three
+    // generations. `requeue` clears result/error — it must not clear this.
+    const store = stubStore();
+    let call = 0;
+    const generator: CardGeneratorLike = {
+      async generateCards() {
+        call += 1;
+        if (call < 3) {
+          throw new OpenAIError("geçici", undefined, true, {
+            inputTokens: 1000,
+            cachedInputTokens: 0,
+            outputTokens: 100,
+            reasoningTokens: 0,
+          }, "provider_failed");
+        }
+        return {
+          output: validOutput(),
+          rawUsage: { inputTokens: 1000, cachedInputTokens: 0, outputTokens: 500, reasoningTokens: 0 },
+        } satisfies CardGenerationResult;
+      },
+    };
+    const d = deps({ store: store.store, generator, cost: PRICED });
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await handleJobsRequest(post(VALID_BODY), d);
+      await d.settled();
+    }
+
+    const row_ = store.rows.get(JOB_ID)!;
+    expect(row_.status).toBe("ready");
+    expect(row_.usage).toHaveLength(3);
+    expect(row_.usage.map((entry) => entry.outcome)).toEqual(["failure", "failure", "success"]);
+    // Each line is attributed to its own attempt, which is what lets the phone
+    // record one ModelRun per real call rather than one per poll.
+    expect(row_.usage.map((entry) => entry.attempt)).toEqual([1, 2, 3]);
+  });
+
+  it("öldürülen işçinin denemesi 'unmeasured' olarak deftere düşer", async () => {
+    // Vercel kills the function at its duration ceiling — after minutes of
+    // generating. OpenAI finished and billed that generation; the only reason
+    // there are no counts is that the process holding them stopped existing.
+    const store = stubStore([row({ status: "processing", attempts: 1, startedAt: new Date(NOW - STALE_AFTER_MS - 1).toISOString() })]);
+    const d = deps({ store: store.store, cost: PRICED });
+
+    const response = await handleJobsRequest(get(JOB_ID), d);
+    const body = (await response.json()) as { jobs: Array<{ usage?: Array<Record<string, unknown>> }> };
+
+    expect(body.jobs[0]!.usage?.[0]).toMatchObject({
+      billing: "unmeasured",
+      failureReason: "worker_killed",
+      outcome: "failure",
+    });
+    // Returned on the very poll that reclaimed it, so a phone that only ever
+    // sees this one response still writes the killed generation down.
+    expect(store.rows.get(JOB_ID)!.usage).toHaveLength(1);
+  });
+
+  it("defter her yoklamada telefona gider, yalnız iş bitince değil", async () => {
+    const seeded = row({
+      status: "processing",
+      attempts: 2,
+      startedAt: new Date(NOW).toISOString(),
+      usage: [
+        {
+          attempt: 1,
+          provider: "openai",
+          model: "gpt-test",
+          purpose: "card_generation",
+          promptVersion: "2.5",
+          outcome: "failure",
+          failureReason: "timeout",
+          billing: "unmeasured",
+          usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+          estimatedCostUSD: 0,
+          latencyMs: 290_000,
+          at: new Date(NOW).toISOString(),
+        },
+      ],
+    });
+    const d = deps({ store: stubStore([seeded]).store, cost: PRICED });
+
+    const response = await handleJobsRequest(get(JOB_ID), d);
+    const body = (await response.json()) as { jobs: Array<{ status: string; usage?: unknown[] }> };
+
+    expect(body.jobs[0]!.status).toBe("processing");
+    expect(body.jobs[0]!.usage).toHaveLength(1);
+  });
+
+  it("hiç çağrı yapmamış işin cevabı eskisi gibi kalır (usage alanı yok)", async () => {
+    const d = deps({ store: stubStore([row({ status: "queued" })]).store });
+    const response = await handleJobsRequest(get(JOB_ID), d);
+    const body = (await response.json()) as { jobs: Array<Record<string, unknown>> };
+    expect(body.jobs[0]).not.toHaveProperty("usage");
   });
 });

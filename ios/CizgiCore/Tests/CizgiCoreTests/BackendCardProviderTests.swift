@@ -69,7 +69,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(topic: "İnflamasyon")],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
         XCTAssertEqual(knowledge.cards.first?.topic, "İnflamasyon")
     }
 
@@ -100,7 +100,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(type: .multipleChoice, options: remoteOptions(correctAt: 2), correctOption: 2)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertEqual(knowledge.cards[0].options?.count, 5)
         XCTAssertEqual(knowledge.cards[0].options?[2].isCorrect, true)
@@ -116,7 +116,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(type: .multipleChoice, options: remoteOptions(correctAt: 0), correctOption: 3)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertNil(knowledge.cards[0].options)
         // The card itself is kept: its front and back are fine.
@@ -129,7 +129,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(type: .multipleChoice, options: short, correctOption: 0)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: []).cards[0].options)
     }
 
     /// A v2.0 response, or any plain card: no options, no special case.
@@ -138,7 +138,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: []).cards[0].options)
     }
 
     /// Options on a card that did not claim to be five-option are not promoted:
@@ -148,7 +148,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(options: remoteOptions(), correctOption: 0)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].options)
+        XCTAssertNil(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: []).cards[0].options)
     }
 
     /// Decoded since Faz 6 and dropped on the floor ever since. It is what
@@ -159,7 +159,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(lowConfidence: true)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        XCTAssertTrue(try BackendCardProvider.map(decoded, elapsedMs: 100).cards[0].lowConfidence)
+        XCTAssertTrue(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: []).cards[0].lowConfidence)
 
         let confident = success(
             cards: [card(lowConfidence: false)],
@@ -173,7 +173,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertEqual(knowledge.cards.count, 1)
         // Faz 6: cards go straight to the active deck, no approval.
@@ -191,7 +191,7 @@ final class BackendCardProviderTests: XCTestCase {
                 RemoteCardVerdict(cardId: "card_2", decision: "reject"),
             ]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertEqual(knowledge.cards.count, 1)
     }
@@ -204,7 +204,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(id: "card_1")],
             verdicts: []
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertEqual(knowledge.cards.count, 1)
         XCTAssertFalse(knowledge.cards[0].requiresUserApproval)
@@ -246,14 +246,14 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "reject")]
         )
-        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100)) { error in
+        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
             XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
         }
     }
 
     func testNoCardsAtAllIsTreatedAsSourceInsufficient() {
         let decoded = success(cards: [], verdicts: [])
-        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100)) { error in
+        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
             XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
         }
     }
@@ -263,7 +263,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(explanation: "")],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
         XCTAssertNil(knowledge.cards[0].explanation)
     }
 
@@ -273,7 +273,7 @@ final class BackendCardProviderTests: XCTestCase {
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")],
             warnings: ["2 kart pasaj limitini aştığı için reddedildi."]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertNotNil(knowledge.sourceConcern)
         XCTAssertTrue(knowledge.sourceConcern?.contains("pasaj limitini") ?? false)
@@ -284,7 +284,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
         XCTAssertNil(knowledge.sourceConcern)
     }
 
@@ -293,16 +293,54 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 1234)
+        // No server ledger in this response — the fallback reconstructs one
+        // line from the card payload's own usage block, so a deployment that
+        // predates per-call accounting still records its call.
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 1234, accounting: [])
 
-        XCTAssertEqual(knowledge.modelRun?.requestId, "req-1")
-        XCTAssertEqual(knowledge.modelRun?.provider, "openai")
-        XCTAssertEqual(knowledge.modelRun?.model, "gpt-5.6-sol")
-        XCTAssertEqual(knowledge.modelRun?.purpose, "card_generation")
-        XCTAssertEqual(knowledge.modelRun?.promptVersion, "2.0")
-        XCTAssertEqual(knowledge.modelRun?.latencyMs, 1234)
-        XCTAssertEqual(knowledge.modelRun?.inputTokens, 1012)
-        XCTAssertEqual(knowledge.modelRun?.outputTokens, 571)
+        XCTAssertEqual(knowledge.modelRuns.count, 1)
+        let run = knowledge.modelRuns.first
+        XCTAssertEqual(run?.requestId, "req-1")
+        XCTAssertEqual(run?.provider, "openai")
+        XCTAssertEqual(run?.model, "gpt-5.6-sol")
+        XCTAssertEqual(run?.purpose, "card_generation")
+        XCTAssertEqual(run?.promptVersion, "2.0")
+        XCTAssertEqual(run?.latencyMs, 1234)
+        XCTAssertEqual(run?.inputTokens, 1012)
+        XCTAssertEqual(run?.outputTokens, 571)
+        XCTAssertEqual(run?.success, true)
+    }
+
+    func testServerLedgerWinsOverTheSingleLineFallback() throws {
+        // When the server reports its own ledger it is authoritative: it saw
+        // every attempt, including the ones that failed before this phone was
+        // even awake, and it knows the prices. Recomputing anything here would
+        // be a second answer to a settled question.
+        let decoded = success(
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let ledger = [
+            ModelRunMetadata(
+                requestId: "job-9", attempt: 1, provider: "openai", model: "gpt-5.6-sol",
+                purpose: "card_generation", promptVersion: "2.5", latencyMs: 290_000,
+                inputTokens: 0, outputTokens: 0, estimatedCostUSD: 0, success: false,
+                billing: ModelRunBilling.unmeasured, failureReason: "timeout"
+            ),
+            ModelRunMetadata(
+                requestId: "job-9", attempt: 2, provider: "openai", model: "gpt-5.6-sol",
+                purpose: "card_generation", promptVersion: "2.5", latencyMs: 62_000,
+                inputTokens: 4000, cachedInputTokens: 3000, outputTokens: 2000,
+                reasoningTokens: 1200, estimatedCostUSD: 0.0665
+            ),
+        ]
+
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 1234, accounting: ledger)
+
+        XCTAssertEqual(knowledge.modelRuns.count, 2)
+        XCTAssertEqual(knowledge.modelRuns.first?.billing, ModelRunBilling.unmeasured)
+        XCTAssertEqual(knowledge.modelRuns.last?.cachedInputTokens, 3000)
+        XCTAssertEqual(knowledge.modelRuns.last?.reasoningTokens, 1200)
     }
 
     func testCanonicalClaimIsTheReadTextAndTagsAreTheUnionOfCardTags() throws {
@@ -317,7 +355,7 @@ final class BackendCardProviderTests: XCTestCase {
                 RemoteCardVerdict(cardId: "card_2", decision: "auto_accept"),
             ]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
 
         XCTAssertEqual(knowledge.canonicalClaim, "Anafilaksi tedavisi")
         XCTAssertEqual(knowledge.tags, ["Acil", "Farmakoloji", "Dahiliye"])
@@ -329,7 +367,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card()],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
         XCTAssertEqual(knowledge.canonicalClaim, "Ön yüz")
     }
 

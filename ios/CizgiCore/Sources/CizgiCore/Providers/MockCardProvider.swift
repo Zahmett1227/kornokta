@@ -86,3 +86,25 @@ public enum CardGenerationError: Error, Sendable, Equatable {
     case providerUnavailable(String)
     case budgetExceeded
 }
+
+/// A `CardGenerationError` with the ledger of whatever the failed attempt (and
+/// any attempt before it) already spent.
+///
+/// Thrown instead of a bare `CardGenerationError` by the real provider, and
+/// caught ahead of it in `CapturePipeline`. A separate wrapper rather than a
+/// payload on every case so that the enum stays `Equatable` and the offline
+/// stand-ins — and the tests — can keep throwing plain cases.
+///
+/// This exists because the expensive failures are exactly the ones nobody was
+/// writing down: a page that never succeeds still spent money on every attempt
+/// it made, and without carrying that out with the error the only record of it
+/// was the provider's invoice.
+public struct CardGenerationFailure: Error, Sendable {
+    public let error: CardGenerationError
+    public let accounting: [ModelRunMetadata]
+
+    public init(error: CardGenerationError, accounting: [ModelRunMetadata] = []) {
+        self.error = error
+        self.accounting = accounting
+    }
+}

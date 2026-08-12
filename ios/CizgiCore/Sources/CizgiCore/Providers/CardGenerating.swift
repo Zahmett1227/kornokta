@@ -52,42 +52,70 @@ public struct GeneratedCard: Sendable, Equatable {
     }
 }
 
-/// What a real provider call cost (§16.8) — `nil` for `MockCardProvider`,
+/// What one real provider call cost (§16.8) — empty for `MockCardProvider`,
 /// which makes no network call and has nothing to account for. The caller
 /// (`ProcessingQueue`) fills in the fields it already knows itself (`id`,
-/// `jobId`, `success`, `errorCategory`, `createdAt`) when turning this into a
-/// stored `ModelRun`, so only what solely the provider can know lives here.
+/// `jobId`, `errorCategory`, `createdAt`) when turning this into a stored
+/// `ModelRun`, so only what solely the provider can know lives here.
+///
+/// Describes *one call*, not one page. A page that failed twice before
+/// succeeding produced three of these, and the server reports all three —
+/// which is the only way the phone's total can agree with the invoice.
 public struct ModelRunMetadata: Sendable, Equatable {
     public let requestId: String
+    /// Which attempt at the job this was, as the server counted it. The
+    /// de-duplication key together with the job id and `purpose`.
+    public let attempt: Int
     public let provider: String
     public let model: String
     public let purpose: String
     public let promptVersion: String
     public let latencyMs: Int
     public let inputTokens: Int
+    /// Subset of `inputTokens` served from the provider's cache, billed cheaper.
+    public let cachedInputTokens: Int
     public let outputTokens: Int
+    /// Subset of `outputTokens` spent on hidden reasoning, billed at the output rate.
+    public let reasoningTokens: Int
     public let estimatedCostUSD: Double
+    public let success: Bool
+    /// One of `ModelRunBilling`'s three values — see there for why 0.00 alone
+    /// is not enough to know whether a call was free.
+    public let billing: String
+    public let failureReason: String?
 
     public init(
         requestId: String,
+        attempt: Int = 0,
         provider: String,
         model: String,
         purpose: String,
         promptVersion: String,
         latencyMs: Int,
         inputTokens: Int,
+        cachedInputTokens: Int = 0,
         outputTokens: Int,
-        estimatedCostUSD: Double
+        reasoningTokens: Int = 0,
+        estimatedCostUSD: Double,
+        success: Bool = true,
+        billing: String = ModelRunBilling.measured,
+        failureReason: String? = nil
     ) {
         self.requestId = requestId
+        self.attempt = attempt
         self.provider = provider
         self.model = model
         self.purpose = purpose
         self.promptVersion = promptVersion
         self.latencyMs = latencyMs
         self.inputTokens = inputTokens
+        self.cachedInputTokens = cachedInputTokens
         self.outputTokens = outputTokens
+        self.reasoningTokens = reasoningTokens
         self.estimatedCostUSD = estimatedCostUSD
+        self.success = success
+        self.billing = billing
+        self.failureReason = failureReason
     }
 }
 
@@ -96,20 +124,27 @@ public struct GeneratedKnowledge: Sendable, Equatable {
     public let tags: [String]
     public let sourceConcern: String?
     public let cards: [GeneratedCard]
-    public let modelRun: ModelRunMetadata?
+    /// Every provider call the server made for this page, not only the one
+    /// that finally worked.
+    ///
+    /// Plural because the phone is the ledger of last resort and a page really
+    /// does cost several calls: the app may be asleep or killed while a job
+    /// fails and retries, so anything keyed on "the call I personally watched
+    /// succeed" reads low by however many attempts went unwitnessed.
+    public let modelRuns: [ModelRunMetadata]
 
     public init(
         canonicalClaim: String,
         tags: [String] = [],
         sourceConcern: String? = nil,
         cards: [GeneratedCard],
-        modelRun: ModelRunMetadata? = nil
+        modelRuns: [ModelRunMetadata] = []
     ) {
         self.canonicalClaim = canonicalClaim
         self.tags = tags
         self.sourceConcern = sourceConcern
         self.cards = cards
-        self.modelRun = modelRun
+        self.modelRuns = modelRuns
     }
 }
 

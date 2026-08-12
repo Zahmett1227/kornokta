@@ -34,6 +34,13 @@ final class AppNavigator: ObservableObject {
         case queue
     }
 
+    /// Value-based routes for the Settings tab's stack, same reasoning as
+    /// `CaptureRoute`: the per-call cost breakdown has no model object of its
+    /// own to push.
+    enum SettingsRoute: Hashable {
+        case usageDetail
+    }
+
     /// Egzersiz is the product's daily working surface, so launches and the
     /// global home action both land here. Capture remains one tap away.
     @Published var selectedTab: RootTab = .exercise

@@ -180,9 +180,9 @@ struct SecondOpinionSection: View {
 
             // The opinion text stays ephemeral, its *cost* does not: Ayarlar →
             // Kullanım totals `ModelRun`, and a paid call that never lands
-            // there permanently underreports spend (Codex, PR #39). Recorded
-            // only on success, the same deliberate gap card generation has
-            // (docs/FAZ3-PLAN.md F3-8).
+            // there permanently underreports spend (Codex, PR #39). The failure
+            // path below now records too — a second opinion that reached Gemini
+            // and then failed was billed exactly like this one.
             if let usage = opinion.usage {
                 context.insert(ModelRun(
                     requestId: requestId,
@@ -193,21 +193,72 @@ struct SecondOpinionSection: View {
                     promptVersion: opinion.promptVersion ?? "",
                     latencyMs: Int(Date().timeIntervalSince(started) * 1000),
                     inputTokens: usage.inputTokens,
+                    cachedInputTokens: usage.cachedInputTokens,
                     outputTokens: usage.outputTokens,
+                    reasoningTokens: usage.reasoningTokens,
                     estimatedCostUSD: usage.estimatedCostUSD,
-                    success: true
+                    success: true,
+                    billing: ModelRunBilling.measured
                 ))
                 try? context.save()
             }
 
             phase = .loaded(opinion)
         } catch let error as SecondOpinionError {
+            // A failed second opinion is a paid one whenever the request
+            // actually reached the model — the same asymmetry card generation
+            // has. `retryable` is the best signal available here: the server
+            // marks a rejected request (bad key, exhausted quota) permanent and
+            // everything that got as far as generating transient.
+            recordFailedCall(
+                billing: error.retryable ? ModelRunBilling.unmeasured : ModelRunBilling.none,
+                requestId: requestId,
+                pageId: pageId,
+                started: started
+            )
             // The server's message travels verbatim — it already names the
             // real suspect (an exhausted Gemini quota says "kota/kredi tükendi",
             // per the owner's requirement), and rewording would hide it.
             phase = .failed(message: error.localizedDescription, retryable: error.retryable)
         } catch {
+            recordFailedCall(
+                billing: ModelRunBilling.unmeasured,
+                requestId: requestId,
+                pageId: pageId,
+                started: started
+            )
             phase = .failed(message: error.localizedDescription, retryable: true)
         }
+    }
+
+    /// A ledger line for a second opinion that cost money and returned nothing.
+    ///
+    /// Zero tokens, deliberately: Gemini reported none, and inventing an
+    /// average would be worse than a `billing` flag that says plainly the
+    /// amount is unknown (§0.6 — never invent a number).
+    private func recordFailedCall(
+        billing: String,
+        requestId: String,
+        pageId: String?,
+        started: Date
+    ) {
+        context.insert(ModelRun(
+            requestId: requestId,
+            jobId: pageId ?? requestId,
+            provider: "gemini",
+            // Unknown on this path: the model id lives in the response that
+            // never arrived. Left empty rather than guessed at from settings,
+            // which could name a model this call did not actually use.
+            model: "",
+            purpose: "second_opinion",
+            promptVersion: "",
+            latencyMs: Int(Date().timeIntervalSince(started) * 1000),
+            inputTokens: 0,
+            outputTokens: 0,
+            estimatedCostUSD: 0,
+            success: false,
+            billing: billing
+        ))
+        try? context.save()
     }
 }

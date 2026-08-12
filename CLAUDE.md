@@ -135,6 +135,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
 | Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
+| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | 🟡 Kod hazır; `jobs.usage` migration'ı **canlıya uygulandı**; dağıtım + cihaz doğrulaması açık |
+| Teşhis mesajı (sunucunun gerçek hatası ekrana) + model karşılaştırma düzeneği | 🟡 `main`'e girecek; cihaz/çalıştırma doğrulaması açık |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -168,8 +170,10 @@ gerçek USD gösteriyor.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
-PostgREST `insert`'i reddeder ve her çekim patlar. Bugüne kadarki üç sütun
-(`max_cards`, `mc_mode`, `subject`) canlıda mevcut.
+PostgREST `insert`'i reddeder ve her çekim patlar. Dört sütun (`max_cards`,
+`mc_mode`, `subject`, `usage`) canlıda mevcut — `usage` 2026-08-12'de uygulandı
+(`jsonb not null default '[]'`, `jobs_usage_is_array` kısıtıyla; mevcut 28 iş
+boş defterle geçti).
 
 ## Kararlar (değiştirmeden önce oku)
 
@@ -238,7 +242,11 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/007`,
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
-`docs/PRIVACY.md`, `docs/RUNBOOK.md`, `backend/README.md`, `ios/README.md`.
+`docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
+yönlendirmesi tasarımı), `docs/ORNEK-algi-taramasi.md` (Tur A nasıl doldurulur),
+`docs/PRIVACY.md`, `docs/RUNBOOK.md`, `docs/MALIYET-OLCUMU.md` (çağrı başına
+maliyet defteri, teşhis yordamı, model karşılaştırması), `backend/README.md`,
+`ios/README.md`.
 
 Tarihsel (davranış için değil, karar gerekçesi için): `docs/HISTORY.md`
 (oturum kayıtları arşivi), `docs/ADR-001..004`, `docs/FAZ0-*` – `FAZ5-*`,
@@ -320,12 +328,10 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 
 ### 3. Küçük ve gerçek kalanlar
 
-1. **Başarısız üretim çağrıları için de `ModelRun` kaydı** — şu an yalnız
-   başarılı çağrılar kaydediliyor (`docs/FAZ3-PLAN.md`, F3-8).
-2. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote`, TextRegion'ın
+1. **`Models` alan sadeleşmesi + SwiftData göçü** (`sourceQuote`, TextRegion'ın
    OCR-dönemi alanları vb.). Bilerek ertelendi: §10.4 "mevcut kartlar
    korunmalı" — SwiftData şemasına dokunmak ayrı, dikkatli bir iş.
-3. **`TopicBackfillMigration` sonlanma koşulu** (PR #36 incelemesinin bulgusu,
+2. **`TopicBackfillMigration` sonlanma koşulu** (PR #36 incelemesinin bulgusu,
    kod `main`'den geliyor): bayrak ancak 203 eşlenmiş kimliğin **hepsi**
    görülünce yazılıyor; v2'den önce silinmiş tek bir kart, migration'ın her
    açılışta tüm desteyi taramasına yol açar. Maliyet bugün küçük (tek fetch)

@@ -275,7 +275,13 @@ extension ProcessingState {
         switch self {
         case .captured: return "Bekliyor"
         case .localPreprocessing: return "Hazırlanıyor"
-        case .localOCR: return "Yerel OCR"
+        // Not "Yerel OCR": there has been no local OCR since the ADR-005 trim.
+        // `.localOCR` survives as the enum case the vision flow reuses for "in
+        // flight" (ProcessingQueue.process), and a row reading "Yerel OCR"
+        // while the page is at OpenAI sent every cost investigation looking in
+        // the wrong place. Renaming the case itself would migrate every stored
+        // `processingStateRaw`; renaming what the human reads costs nothing.
+        case .localOCR: return "Modele gönderildi"
         case .markerDetection: return "İşaret aranıyor"
         case .cloudOCR: return "Bulut OCR"
         case .transcriptionReconciliation: return "Doğrulanıyor"
