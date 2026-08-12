@@ -135,8 +135,9 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
 | Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
-| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | 🟡 Kod hazır; `jobs.usage` migration'ı **canlıya uygulandı**; dağıtım + cihaz doğrulaması açık |
-| Teşhis mesajı (sunucunun gerçek hatası ekrana) + model karşılaştırma düzeneği | 🟡 `main`'e girecek; cihaz/çalıştırma doğrulaması açık |
+| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda. **Kullanım ekranı için iOS derlemesi gerekli**; cihaz doğrulaması açık |
+| Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de; **iOS derlemesi + cihaz doğrulaması açık** |
+| Model karşılaştırma düzeneği (Sol/Terra/Luna, iki turlu kör puanlama) | ✅ `main`'de; sayfalar eklenip koşturulmayı bekliyor (`docs/PLAN-model-karsilastirma.md`) |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
