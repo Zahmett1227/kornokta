@@ -135,7 +135,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
 | Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
-| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | 🟡 Kod hazır; **`jobs.usage` migration'ı dağıtımdan önce canlıya uygulanmalı**, cihaz doğrulaması açık |
+| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | 🟡 Kod hazır; `jobs.usage` migration'ı **canlıya uygulandı**; dağıtım + cihaz doğrulaması açık |
 | Teşhis mesajı (sunucunun gerçek hatası ekrana) + model karşılaştırma düzeneği | 🟡 `main`'e girecek; cihaz/çalıştırma doğrulaması açık |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
@@ -170,12 +170,10 @@ gerçek USD gösteriyor.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
-PostgREST `insert`'i reddeder ve her çekim patlar. Üç sütun (`max_cards`,
-`mc_mode`, `subject`) canlıda mevcut. **`usage` (jsonb, maliyet defteri —
-`20260812000000_add_usage_to_jobs.sql`) henüz uygulanmadı; bu satır silinmeden
-dağıtım yapılmamalı.** Bu sütunda yazma yolu `PATCH` (terminal yazımlar), yani
-eksikse çekimler kabul edilir ama hiçbiri sonuçlanamaz — sayfalar
-`processing`'de kalır ve bayatlama süpürmesine düşer.
+PostgREST `insert`'i reddeder ve her çekim patlar. Dört sütun (`max_cards`,
+`mc_mode`, `subject`, `usage`) canlıda mevcut — `usage` 2026-08-12'de uygulandı
+(`jsonb not null default '[]'`, `jobs_usage_is_array` kısıtıyla; mevcut 28 iş
+boş defterle geçti).
 
 ## Kararlar (değiştirmeden önce oku)
 
