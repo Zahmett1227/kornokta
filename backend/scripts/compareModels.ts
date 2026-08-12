@@ -40,15 +40,8 @@
 import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config as loadEnvFile } from "dotenv";
-
-if (existsSync(".env")) {
-  const result = loadEnvFile();
-  if (result.error) {
-    console.error(`.env okunamadı: ${result.error.message}`);
-    process.exit(1);
-  }
-}
 
 import { loadConfig, ConfigError } from "../config.js";
 import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
@@ -190,12 +183,33 @@ function fmtUsd(value: number): string {
   return `$${value.toFixed(4)}`;
 }
 
+/**
+ * Reads `.env`, if there is one.
+ *
+ * Called from `main` rather than at import time, which the sibling scripts do
+ * — and which is wrong here, because this module is also *imported* by its
+ * test. A top-level read would load the developer's real `.env` into
+ * `process.env` as a side effect of importing, which is both a test that
+ * depends on an untracked local file and a way to break `config.test.ts`,
+ * whose whole method is controlling exactly these variables.
+ */
+function loadEnvIfPresent(): void {
+  if (!existsSync(".env")) return;
+  const result = loadEnvFile();
+  if (result.error) {
+    console.error(`.env okunamadı: ${result.error.message}`);
+    process.exit(1);
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     console.log(USAGE);
     return;
   }
+
+  loadEnvIfPresent();
 
   const config = loadConfig();
   const apiKey = process.env.OPENAI_API_KEY?.trim();
@@ -598,11 +612,24 @@ function hash(value: string): number {
 
 /**
  * Guarded so `labelOrder` and `parseModelSpec` can be imported by a test
- * without the script making real API calls on import.
+ * without the script running.
+ *
+ * Compares resolved paths rather than looking for the file name inside
+ * `process.argv[1]`: the test file is *called* `compareModels.test.ts`, so a
+ * substring check would have matched it under some runners and started a run
+ * of real, paid API calls from inside the test suite.
  */
-const invokedDirectly = process.argv[1]?.includes("compareModels");
+function isEntryPoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return entry === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
 
-if (invokedDirectly) {
+if (isEntryPoint()) {
   main().catch((error) => {
     if (error instanceof ConfigError) {
       console.error(`Yapılandırma hatası: ${error.message}`);
