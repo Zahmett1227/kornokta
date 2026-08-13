@@ -151,7 +151,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); kamera **ve galeri** yolunda cihazda doğrulandı (2026-08-13) — PhotosPicker artık riski gerçekleşmedi |
-| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
+| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır, `GEMINI_API_KEY` Vercel'de (2026-08-13); **denenmesi `lowConfidence` bayraklı bir kart bekliyor** — düğme o koşulla kapılı |
 | Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda; Kullanım ekranı cihazda doğrulandı (2026-08-13) |
 | Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de ve cihazda (2026-08-13) |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
@@ -328,10 +328,14 @@ alt bar.
 
 **🔲 Henüz doğrulanmamış:**
 
-1. **"İkinci görüş iste" (Gemini).** Vercel'e `GEMINI_API_KEY` girildi mi
-   teyit edilmedi. "Gözden geçir"deki bir kartın detayında düğmeye bas —
-   verdikt + "İkinci okuma (Gemini)" metni gelmeli; anahtar yoksa hata mesajı
-   `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da uygulanır: Gemini
+1. **"İkinci görüş iste" (Gemini).** `GEMINI_API_KEY` Vercel'e girildi
+   (2026-08-13); **denenmesi bayraklı kart bekliyor.** Düğme `if
+   card.lowConfidence` ile kapılı ve "Gözden geçir" bölümü de aynı koşulla
+   görünüyor, yani `luna@high` hiçbir karta "emin değilim" demediği sürece
+   ikisi de ekranda yok — bu bir hata değil, tasarım (ikinci okuma yalnız
+   modelin kendi şüphelendiği anda değerli). Tetiklemek için el yazısı
+   gerçekten okunaksız bir sayfa çek. Düğmeye basıldığında verdikt +
+   "İkinci okuma (Gemini)" metni gelmeli. `anyOf` şeması riski buraya da uygulanır: Gemini
    `responseSchema`'yı reddederse B planı şemayı bırakıp yalnız prompt +
    sunucu doğrulamasına güvenmek (`providers/gemini.ts` RESPONSE_SCHEMA).
    - Bu düğme aynı zamanda **"başka bir model ailesi denemeli miyiz?"**
