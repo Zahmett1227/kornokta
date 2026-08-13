@@ -148,12 +148,12 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Konu backfill (204 Patoloji kartı) | ✅ `main`'de (PR #34/#35) |
 | `jobs.result` 60 günlük saklama süpürmesi | ✅ `main`'de (PR #36); karar: docs/PRIVACY.md |
 | Ölü kod tıraşı (deterministik hat silindi) | ✅ `main`'de (PR #36); ADR-005'e not düşüldü |
-| Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
-| Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
-| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
+| Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
+| Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
+| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); kamera **ve galeri** yolunda cihazda doğrulandı (2026-08-13) — PhotosPicker artık riski gerçekleşmedi |
 | Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
-| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda. **Kullanım ekranı için iOS derlemesi gerekli**; cihaz doğrulaması açık |
-| Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de; **iOS derlemesi + cihaz doğrulaması açık** |
+| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda; Kullanım ekranı cihazda doğrulandı (2026-08-13) |
+| Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de ve cihazda (2026-08-13) |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
 | Prompt v2.6 (Tur A'nın ikinci ürünü) | ✅ `main`'de; Sol'un üstünlüğünün prompt'la alınabilen kısmı kurala çevrildi |
 | Tur A2 — `luna@low` vs `luna@high` (2026-08-12 akşamı, prompt v2.6) | ✅ Koşuldu ve kör değerlendirildi. **`@high` 4 sayfada üstün, 1 eşit, 1 geride**; üstünlük el yazısı ve kapsamada. Bedeli: reasoning 685→72 017 token (105×), $0.005→$0.020/sayfa, 21→112 sn. İkisinde de "yanlış ama emin" sıfır. Ayrıntı `docs/PLAN-model-karsilastirma.md` → "Tur A2 sonucu". **Model kararı sahibinde açık** (`luna@high` önerilen) |
@@ -185,10 +185,13 @@ başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `page-uploads` özel kovası; ikisinde de RLS açık ve **policy yok** (yalnız
 `service_role` geçer).
 
-**Maliyet:** `OPENAI_USD_PER_MILLION_INPUT_TOKENS=5`,
-`OPENAI_USD_PER_MILLION_OUTPUT_TOKENS=30` (gpt-5.6-sol, Standard/short-context)
-ve `MAX_USD_PER_CARD_GENERATION=0.30` Vercel'de ayarlı; Ayarlar → Kullanım
-gerçek USD gösteriyor.
+**Model (2026-08-13'ten beri canlı):** `OPENAI_MODEL=gpt-5.6-luna`,
+`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=32000`, fiyatlar
+`0.2 / 0.02 / 1.2`. Gerekçesi üç turluk ölçüm:
+`docs/PLAN-model-karsilastirma.md` → "Tur A3 sonucu". Özet: `sol@low` ile
+kalitede yakın (ikisi de sıfır sessiz hata), maliyette 7,5 kat uzak —
+sahibinin ölçeğinde ~$240 yerine ~$32. `MAX_USD_PER_CARD_GENERATION=0.30`
+ayarlı; Ayarlar → Kullanım gerçek USD gösteriyor ve cihazda doğrulandı.
 
 **Model değiştirirken kural:** `OPENAI_MODEL` tek başına değiştirilmez —
 fiyat değişkenleri de aynı anda değişmeli (`..._INPUT_TOKENS`,
@@ -309,56 +312,37 @@ galeriden seçme; kart üretimi uçtan uca. **Bununla şemanın en büyük riski
 kapandı:** OpenAI `anyOf: [enum-string, null]` konu alanını kabul ediyor —
 etmeseydi her iş düşerdi, B planına (enum'u şemadan çıkarmak) gerek kalmadı.
 
-**🔲 Henüz doğrulanmamış — önem sırasıyla:**
+**✅ Cihazda doğrulanmış (2026-08-13, ikinci tur):** konu ataması gerçekten
+doluyor (kart detayında "Sınıflandırma" makul ders/konu gösteriyor — şemanın
+kabul edilmesi bunu garanti etmiyordu, `sanitizeTopics` tanımadığı konuyu
+sessizce null'a çevirir ve iş yine biter); Ayarlar → Kullanım "Çağrı dökümü"
+gerçek USD ve token kırılımı veriyor; çift sayfa kadraj adımı **hem kamerada
+hem galeride** çalışıyor (galerideki bilinen `PhotosPicker` artık riski
+gerçekleşmedi — "N sayfa kadraj seçimi bekliyor" kartı çıkmadı, yapısal
+düzeltme gerekmiyor); değer tabanlı navigasyon (derin ekranda alt bar
+kayboluyor, ev düğmesi köke dönüyor); Egzersiz→FSRS köprüsü (vadesi gelmemiş
+kart en fazla yarına çekiliyor); yedek al → geri yükle `softLapseCount` dahil
+durumu koruyor; Bilgi Haritası "Konusuz" satırı, "Hızlı 10"un tekrarında
+farklı kart, aktif oturum diyaloğu, erişilebilirlik yazı boyutunda ikon-only
+alt bar.
 
-1. **Konu ataması gerçekten doluyor mu.** Şema kabul edildi ama bu, konuların
-   *atandığını* göstermez: `sanitizeTopics` tanımadığı konuyu sessizce null'a
-   çevirir, iş düşmez. Kart detayında "Sınıflandırma" satırında makul bir
-   ders/konu duruyor mu, birkaç kartta bak. Hepsi boşsa sorun şemada değil,
-   prompt'un konu listesinde.
-   - Aynı çekim **A6'yı da açar** (aşağıda).
-2. **Ayarlar → Kullanım → "Çağrı dökümü".** Bu oturumun tüm işinin karşılığı
-   ve hiç görülmedi: sayfa başına gerçek USD, token kırılımı (önbellek /
-   düşünme payı) ve "Modele göre" satırı. `luna@high`'ın deneyde ölçülen
-   $0.0186/sayfa'sını gerçek kullanımda doğrular; sapma varsa fiyat
-   değişkenleri yanlış girilmiş demektir.
-3. **Çift sayfa kadraj düzeltmesi (`PageSplit`):** açık kitap çek —
-   "Fotoğrafa iki sayfa girmiş" adımı çıkmalı, "Sol/Sağ" seçince karşı yarı
-   kararmalı, çizgi sürüklenebilmeli, "Devam"dan sonra kart detayındaki
-   "Kaynağı göster"de **yalnız seçilen sayfa** durmalı. Tek sayfa çektiğinde bu
-   adım **hiç çıkmamalı** (oran eşiği `spreadAspectThreshold = 1.05`). Çoklu
-   çekimde her çift sayfa için sırayla sorulmalı ("2 / 3" sayacı).
-   - **Aynı testi galeriden de yap.** Bilinen artık risk (PR #37, Codex): iOS
-     `PhotosPicker` bir kapanma-tamamlanma geri çağrısı sunmuyor, dolayısıyla
-     küçük ve yerel bir fotoğraf picker kapanırken yüklenip biterse kadraj
-     cover'ının sunumu SwiftUI tarafından düşürülebilir. Bu olursa **sessiz
-     değil**: yakalama ekranında "N sayfa kadraj seçimi bekliyor" kartı
-     çıkar, tek dokunuşla açılır. *Bu kartı gördüysen not et* — yapısal
-     çözüm (kadraj adımını modal cover yerine görünüm hiyerarşisi içinde tam
-     ekran katman yapmak) o zaman gerekçelenir; görmediysen gerek yok.
-4. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
-   sayfa detayı ve Bilgilerim → kart / Bilgi Haritası → ders push'ları
-   çalışıyor mu; derin ekranda alt bar kayboluyor mu; ev düğmesi derin
-   ekrandan gerçekten köke dönüyor mu.
-5. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
-   yanlış yapınca kartın vadesinin en fazla yarına çekildiğini (Bilgilerim →
-   kart detayı), vadesi gelmiş kartın Egzersiz'den etkilenmediğini gör.
-6. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
-   Egzersiz başlamalı (`TopicFilter.none` yolu).
-7. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
-8. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
-   diyaloğu çıkmalı.
-9. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
-   kalkıp yalnız ikonlar kalmalı.
-10. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
-11. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
-    "Gözden geçir"deki bir kartın detayında düğmeye bas — verdikt + "İkinci
-    okuma (Gemini)" metni gelmeli; anahtarı bilerek silip denersen hata
-    mesajı `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da benzer
-    şekilde uygulanır: Gemini `responseSchema`'yı reddederse B planı şemayı
-    bırakıp yalnız prompt + sunucu doğrulamasına güvenmek
-    (`providers/gemini.ts` RESPONSE_SCHEMA).
-12. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
+**🔲 Henüz doğrulanmamış:**
+
+1. **"İkinci görüş iste" (Gemini).** Vercel'e `GEMINI_API_KEY` girildi mi
+   teyit edilmedi. "Gözden geçir"deki bir kartın detayında düğmeye bas —
+   verdikt + "İkinci okuma (Gemini)" metni gelmeli; anahtar yoksa hata mesajı
+   `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da uygulanır: Gemini
+   `responseSchema`'yı reddederse B planı şemayı bırakıp yalnız prompt +
+   sunucu doğrulamasına güvenmek (`providers/gemini.ts` RESPONSE_SCHEMA).
+   - Bu düğme aynı zamanda **"başka bir model ailesi denemeli miyiz?"**
+     sorusunun ucuz cevabı: gerçek kullanımda biriken verdiktler, Gemini'nin
+     OpenAI'nin kaçırdığını sistematik yakalayıp yakalamadığını adaptör
+     yazmadan ölçer (2026-08-13 tartışması).
+2. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
+   sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
+   kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
+   **düzelmedi** — kural 5 yeniden yazılacak.
+3. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
