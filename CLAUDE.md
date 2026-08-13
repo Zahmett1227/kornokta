@@ -303,16 +303,26 @@ buradan silinip "doğrulananlar"a taşınır.
 Bilgi Haritası'nın "Konusuz" kovası dolu; Egzersiz'in "Bitir"i çalışıyor ve
 biten koşu "Son Egzersizler"e düşüyor.
 
+**✅ Cihazda doğrulanmış (2026-08-13, `luna@high` canlıyken):** uygulama
+açılıyor (SwiftData göç düzeltmesi tuttu, veri kayıpsız); kameradan yakalama;
+galeriden seçme; kart üretimi uçtan uca. **Bununla şemanın en büyük riski
+kapandı:** OpenAI `anyOf: [enum-string, null]` konu alanını kabul ediyor —
+etmeseydi her iş düşerdi, B planına (enum'u şemadan çıkarmak) gerek kalmadı.
+
 **🔲 Henüz doğrulanmamış — önem sırasıyla:**
 
-1. **Bir sayfa çek (en kritik).** Sistemin en büyük açık riski: OpenAI'nin
-   model-yüzlü şemadaki `anyOf: [enum-string, null]` konu alanını kabul edip
-   etmediği hiç denenmedi.
-   - *Beklenen:* kart geliyor; kart detayında "Sınıflandırma"da makul ders/konu.
-   - *Olmazsa:* tüm işler düşer. **B planı:** `buildModelResponseSchema`'dan
-     enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek.
+1. **Konu ataması gerçekten doluyor mu.** Şema kabul edildi ama bu, konuların
+   *atandığını* göstermez: `sanitizeTopics` tanımadığı konuyu sessizce null'a
+   çevirir, iş düşmez. Kart detayında "Sınıflandırma" satırında makul bir
+   ders/konu duruyor mu, birkaç kartta bak. Hepsi boşsa sorun şemada değil,
+   prompt'un konu listesinde.
    - Aynı çekim **A6'yı da açar** (aşağıda).
-2. **Çift sayfa kadraj düzeltmesi (`PageSplit`):** açık kitap çek —
+2. **Ayarlar → Kullanım → "Çağrı dökümü".** Bu oturumun tüm işinin karşılığı
+   ve hiç görülmedi: sayfa başına gerçek USD, token kırılımı (önbellek /
+   düşünme payı) ve "Modele göre" satırı. `luna@high`'ın deneyde ölçülen
+   $0.0186/sayfa'sını gerçek kullanımda doğrular; sapma varsa fiyat
+   değişkenleri yanlış girilmiş demektir.
+3. **Çift sayfa kadraj düzeltmesi (`PageSplit`):** açık kitap çek —
    "Fotoğrafa iki sayfa girmiş" adımı çıkmalı, "Sol/Sağ" seçince karşı yarı
    kararmalı, çizgi sürüklenebilmeli, "Devam"dan sonra kart detayındaki
    "Kaynağı göster"de **yalnız seçilen sayfa** durmalı. Tek sayfa çektiğinde bu
@@ -326,29 +336,29 @@ biten koşu "Son Egzersizler"e düşüyor.
      çıkar, tek dokunuşla açılır. *Bu kartı gördüysen not et* — yapısal
      çözüm (kadraj adımını modal cover yerine görünüm hiyerarşisi içinde tam
      ekran katman yapmak) o zaman gerekçelenir; görmediysen gerek yok.
-3. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
+4. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
    sayfa detayı ve Bilgilerim → kart / Bilgi Haritası → ders push'ları
    çalışıyor mu; derin ekranda alt bar kayboluyor mu; ev düğmesi derin
    ekrandan gerçekten köke dönüyor mu.
-4. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
+5. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
    yanlış yapınca kartın vadesinin en fazla yarına çekildiğini (Bilgilerim →
    kart detayı), vadesi gelmiş kartın Egzersiz'den etkilenmediğini gör.
-5. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
+6. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
    Egzersiz başlamalı (`TopicFilter.none` yolu).
-6. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
-7. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
+7. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
+8. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
    diyaloğu çıkmalı.
-8. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
+9. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
    kalkıp yalnız ikonlar kalmalı.
-9. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
-10. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
+10. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
+11. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
     "Gözden geçir"deki bir kartın detayında düğmeye bas — verdikt + "İkinci
     okuma (Gemini)" metni gelmeli; anahtarı bilerek silip denersen hata
     mesajı `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da benzer
     şekilde uygulanır: Gemini `responseSchema`'yı reddederse B planı şemayı
     bırakıp yalnız prompt + sunucu doğrulamasına güvenmek
     (`providers/gemini.ts` RESPONSE_SCHEMA).
-11. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
+12. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
