@@ -221,7 +221,7 @@ function deps(
     store: stubStore().store,
     generator: stubGenerator(validOutput()).generator,
     openai: {
-      maxCardsPerKnowledgeUnit: 12,
+      maxCardsPerKnowledgeUnit: 18,
       maxOutputTokens: 8192,
       multipleChoiceMode: "mixed",
       model: "gpt-test",
@@ -789,7 +789,7 @@ describe("POST /api/jobs — kart sınırı (§6.7)", () => {
     await handleJobsRequest(post({ ...VALID_BODY, maxCards: 999 }), d);
     await d.settled();
 
-    expect(generator.seen[0]?.maxCards).toBe(12);
+    expect(generator.seen[0]?.maxCards).toBe(18);
   });
 
   it("sınır verilmezse dağıtımın varsayılanı kullanılır", async () => {

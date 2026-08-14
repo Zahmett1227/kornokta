@@ -156,8 +156,8 @@ struct AppSettings: Codable, Equatable {
     /// was written for the pre-Faz-6 "one passage → ≤4 cards" flow and was never
     /// actually sent to the server, so every install has a stored 2 in it —
     /// wiring it up would have silently capped every page at two cards and
-    /// undone B3's deliberate raise to 12.
-    var maxCardsPerPage: Int = 12
+    /// undone B3's deliberate raise to 12 (since raised to 18, 2026-08-14).
+    var maxCardsPerPage: Int = 18
     /// Five-option cards (§13.3). Stored as the wire value so the setting and
     /// the request body cannot drift apart.
     var multipleChoiceModeRaw: String = MultipleChoiceMode.mixed.rawValue
@@ -177,6 +177,8 @@ struct AppSettings: Codable, Equatable {
     var keepOriginalPage: Bool = true
 
     static let storageKey = "cizgi.settings.v1"
+    /// Guards the one-time `maxCardsPerPage` 12→18 migration in `load()`.
+    private static let maxCardsPerPageMigrationFlagKey = "cizgi.migration.maxCardsPerPage12to18.v1"
 
     private enum CodingKeys: String, CodingKey {
         case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
@@ -194,7 +196,7 @@ struct AppSettings: Codable, Equatable {
         backendURL = try values.decodeIfPresent(String.self, forKey: .backendURL) ?? ""
         defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
         maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
-        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 12
+        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 18
         multipleChoiceModeRaw = try values.decodeIfPresent(String.self, forKey: .multipleChoiceModeRaw)
             ?? MultipleChoiceMode.mixed.rawValue
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
@@ -209,8 +211,40 @@ struct AppSettings: Codable, Equatable {
         guard
             let data = UserDefaults.standard.data(forKey: storageKey),
             let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
-        else { return AppSettings() }
-        return decoded
+        else {
+            // No persisted blob: nothing legacy to migrate, and every value
+            // this install saves from now on is a fresh, deliberate choice.
+            // Flag it migrated right here rather than waiting for the first
+            // successful decode below — otherwise a later deliberate 12
+            // (valid in the new 1...18 range) would itself be the first
+            // value the migrator ever sees, get mistaken for the pre-update
+            // default, and get silently bounced back to 18 (Codex, PR #42,
+            // third P1).
+            UserDefaults.standard.set(true, forKey: maxCardsPerPageMigrationFlagKey)
+            return AppSettings()
+        }
+        return migratingMaxCardsPerPageIfNeeded(decoded)
+    }
+
+    /// One-time migration (2026-08-14, Codex PR #42 P1): `save()` always
+    /// writes every field, so any install that ever opened Settings before
+    /// this change already has an explicit 12 on disk — the `?? 18` fallback
+    /// in `init(from:)` only fires when the key is *absent*, which is never
+    /// true for an existing install. Bumps a persisted 12 to 18 exactly once;
+    /// gated by a flag rather than "is it 12" so a user who deliberately
+    /// dials back to 12 *after* this runs (or after a clean install, which
+    /// `load()` above flags immediately) stays at 12 on every later launch.
+    private static func migratingMaxCardsPerPageIfNeeded(
+        _ settings: AppSettings,
+        defaults: UserDefaults = .standard
+    ) -> AppSettings {
+        guard !defaults.bool(forKey: maxCardsPerPageMigrationFlagKey) else { return settings }
+        defaults.set(true, forKey: maxCardsPerPageMigrationFlagKey)
+        guard settings.maxCardsPerPage == 12 else { return settings }
+        var migrated = settings
+        migrated.maxCardsPerPage = 18
+        migrated.save()
+        return migrated
     }
 
     func save() {

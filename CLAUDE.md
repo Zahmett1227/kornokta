@@ -212,8 +212,9 @@ başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `page-uploads` özel kovası; ikisinde de RLS açık ve **policy yok** (yalnız
 `service_role` geçer).
 
-**Model (2026-08-13'ten beri canlı):** `OPENAI_MODEL=gpt-5.6-luna`,
-`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=32000`, fiyatlar
+**Model (2026-08-13'ten beri canlı, `OPENAI_MAX_OUTPUT_TOKENS` 2026-08-14'te
+48000'e çekildi):** `OPENAI_MODEL=gpt-5.6-luna`,
+`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=48000`, fiyatlar
 `0.2 / 0.02 / 1.2`. Gerekçesi üç turluk ölçüm:
 `docs/PLAN-model-karsilastirma.md` → "Tur A3 sonucu". Özet: `sol@low` ile
 kalitede yakın (ikisi de sıfır sessiz hata), maliyette 7,5 kat uzak —
@@ -229,11 +230,36 @@ okur — kaçırılması en kolay hata, çünkü hiçbir şey patlamaz. Kademe f
 
 **`OPENAI_REASONING_EFFORT` yükseltilirken kural:** `OPENAI_MAX_OUTPUT_TOKENS`
 da yükselmeli. Reasoning tokenları çıktı bütçesinden düşülür ve `high`'ta
-sayfa başına ~12 000 token yiyor — 8192'lik varsayılan yalnız düşünmeye bile
+sayfa başına ~12 000 token yiyor — 12288'lik varsayılan yalnız düşünmeye bile
 yetmez. Tur A2'nin ilk denemesi tam bu yüzden 6/6 düştü; her düşen çağrı **tam
 ücret** faturalanıp sıfır kart üretti. `high` için 32000 önerilir. Karşılaştırma
 betiğinde `--max-output-tokens`, ve effort yükseltilip tavan yükseltilmediğinde
 çağrılardan önce uyarı basılıyor.
+
+**`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` yükseltilirken kural:**
+`OPENAI_MAX_OUTPUT_TOKENS` da aynı oranda yükselmeli — daha çok kart, daha çok
+görünür çıktı token'ı ister; reasoning'den bağımsız bir eksen ama aynı hata
+sınıfı (yukarıdaki reasoning-effort kuralıyla aynı: tavanı büyütmeden ceza
+büyütmek, düşen çağrı tam ücret faturalanır). 2026-08-14: kart tavanı 12→18
+olunca kod varsayılanı aynı oranda (1,5×) 8192→12288'e çekildi (`config.ts`,
+`.env.example`); sahibi canlıdaki `OPENAI_MAX_OUTPUT_TOKENS`'ı da elle 48000'e
+çekip redeploy etti (yukarıdaki "Model" notu güncel).
+
+**Kapanan risk (Codex, PR #42 P1 — 2026-08-14):** kart tavanı canlıda elle
+girilmiş olsaydı `numeric()` onu kod varsayılanına tercih eder,
+`OpenAICardGenerator` her isteği yine eski sayıya kırpar (§21.3) ve bu
+değişiklik canlıda hiçbir şeyi değiştirmemiş olurdu. Sahibi Vercel'in ortam
+değişkeni listesini kontrol etti: **`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT`
+girilmemiş** — yani tavan hep kod varsayılanından geliyor ve 18 dağıtımla
+birlikte geçerli oluyor. Bu değişkeni ileride Vercel'e eklemek, `config.ts`'i
+sessizce devre dışı bırakmak demektir; ekleneceği gün iki yer birlikte
+güncellenmeli.
+
+**Ortam değişkeni notu (2026-08-14 envanteri):** canlıda `DOCUMENTAI_*`,
+`GOOGLE_PROJECT_ID` ve `GOOGLE_CREDENTIALS_JSON` hâlâ duruyor. Bunlar
+deterministik hattın (ADR-005 tıraşı, 2026-08-09) kalıntısı; kod artık
+hiçbirini okumuyor. Zararsız ama `GOOGLE_CREDENTIALS_JSON` gerçek bir
+kimlik bilgisi — bir gün temizlik yapılacaksa oradan başlanmalı.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa

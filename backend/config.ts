@@ -263,15 +263,18 @@ export function loadConfig(): Config {
       // Faz 6/B3: raised 4096→8192 so a densely-marked full page's cards (up to
       // maxCardsPerKnowledgeUnit below) are not truncated to a `status:
       // "incomplete"` failure. A ceiling, not a target — at reasoning "low" the
-      // model emits only what the cards need.
-      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 8192, 1),
+      // model emits only what the cards need. Scaled 8192→12288 in the same
+      // ratio (2026-08-14) when maxCardsPerKnowledgeUnit went 12→18, so an 18th
+      // card gets the same headroom the 12th card had before.
+      maxOutputTokens: numeric("OPENAI_MAX_OUTPUT_TOKENS", 12288, 1),
       // Faz 6/B3: this was 4 for the old "one reconciled passage → ≤4 cards"
       // flow. In the vision flow one full page carries many distinct marks and
       // handwritten notes; capping at 4 made the model spend its whole budget on
       // the first, most basic printed facts and drop every handwritten insight
       // (second device test). Raised to 12 so a marked page's distinct points
-      // each get a card. Now really "max cards per page"; env-overridable (§0.6).
-      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12, 1),
+      // each get a card, then to 18 (2026-08-14, owner request). Now really
+      // "max cards per page"; env-overridable (§0.6).
+      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 18, 1),
       // Faz 7 (§13.3): five-option cards. "mixed" by default — see the field's
       // own comment for why not "all".
       multipleChoiceMode: oneOf("OPENAI_MULTIPLE_CHOICE_MODE", MULTIPLE_CHOICE_MODES, "mixed"),
