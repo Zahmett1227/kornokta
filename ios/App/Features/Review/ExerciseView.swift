@@ -35,6 +35,13 @@ struct ExerciseView: View {
     @State private var isShowingSetupSheet = false
     /// How many cards (or how much time) "Egzersize başla" should draw.
     @State private var budget: ExerciseBudget = .cards(20)
+    /// Which segment ("Kart"/"Süre") the presets row below is showing.
+    ///
+    /// Its own state, not derived from `budget`: `.all` is shared by both
+    /// kinds ("Tümü" appears in each preset row), so deriving it from
+    /// `budget` alone made picking "Tümü" while on "Süre" silently snap the
+    /// segmented control back to "Kart" (Codex review, PR #41, third pass).
+    @State private var budgetKind: BudgetKind = .cards
     @State private var secondsPerCard = ReviewPace.fallbackSecondsPerCard
     @State private var isConfirmingEarlyFinish = false
     /// A filter requested from another screen that arrived mid-run, parked
@@ -343,12 +350,18 @@ struct ExerciseView: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(Cizgi.ink)
 
-                            Picker("Bütçe türü", selection: budgetKindBinding) {
+                            Picker("Bütçe türü", selection: $budgetKind) {
                                 Text("Kart").tag(BudgetKind.cards)
                                 Text("Süre").tag(BudgetKind.minutes)
                             }
                             .pickerStyle(.segmented)
                             .labelsHidden()
+                            .onChange(of: budgetKind) { _, newKind in
+                                switch newKind {
+                                case .cards: budget = .cards(ExerciseBudget.cardPresets[1])
+                                case .minutes: budget = .minutes(ExerciseBudget.minutePresets[0])
+                                }
+                            }
 
                             ChipFlowRow(budgetOptions) { option in
                                 SelectableChip(title: budgetLabel(option), isSelected: budget == option) {
@@ -414,26 +427,6 @@ struct ExerciseView: View {
 
     private enum BudgetKind: Hashable {
         case cards, minutes
-    }
-
-    private var budgetKind: BudgetKind {
-        if case .minutes = budget { return .minutes }
-        return .cards
-    }
-
-    /// Switching segments picks a sensible default for the new kind rather
-    /// than leaving `budget` pointing at a value the presets row below no
-    /// longer shows as selected.
-    private var budgetKindBinding: Binding<BudgetKind> {
-        Binding(
-            get: { budgetKind },
-            set: { newKind in
-                switch newKind {
-                case .cards: budget = .cards(ExerciseBudget.cardPresets[1])
-                case .minutes: budget = .minutes(ExerciseBudget.minutePresets[0])
-                }
-            }
-        )
     }
 
     private var budgetOptions: [ExerciseBudget] {
