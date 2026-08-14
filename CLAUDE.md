@@ -229,11 +229,23 @@ okur — kaçırılması en kolay hata, çünkü hiçbir şey patlamaz. Kademe f
 
 **`OPENAI_REASONING_EFFORT` yükseltilirken kural:** `OPENAI_MAX_OUTPUT_TOKENS`
 da yükselmeli. Reasoning tokenları çıktı bütçesinden düşülür ve `high`'ta
-sayfa başına ~12 000 token yiyor — 8192'lik varsayılan yalnız düşünmeye bile
+sayfa başına ~12 000 token yiyor — 12288'lik varsayılan yalnız düşünmeye bile
 yetmez. Tur A2'nin ilk denemesi tam bu yüzden 6/6 düştü; her düşen çağrı **tam
 ücret** faturalanıp sıfır kart üretti. `high` için 32000 önerilir. Karşılaştırma
 betiğinde `--max-output-tokens`, ve effort yükseltilip tavan yükseltilmediğinde
 çağrılardan önce uyarı basılıyor.
+
+**`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` yükseltilirken kural:**
+`OPENAI_MAX_OUTPUT_TOKENS` da aynı oranda yükselmeli — daha çok kart, daha çok
+görünür çıktı token'ı ister; reasoning'den bağımsız bir eksen ama aynı hata
+sınıfı (yukarıdaki reasoning-effort kuralıyla aynı: tavanı büyütmeden ceza
+büyütmek, düşen çağrı tam ücret faturalanır). 2026-08-14: kart tavanı 12→18
+olunca kod varsayılanı aynı oranda (1,5×) 8192→12288'e çekildi (`config.ts`,
+`.env.example`). **Açık iş:** canlıdaki `OPENAI_MAX_OUTPUT_TOKENS=32000`
+(yukarıdaki "Model" notu) bu değişiklikten önce, eski 12 kartlık tavana göre
+ayarlanmıştı — Claude'un Vercel ortam değişkenlerine yazma erişimi yok, o
+yüzden sahibinin Vercel'de elle aynı oranla ~48000'e çekmesi gerekiyor; yoksa
+yoğun bir sayfada 13-18. kartlar arasında `status:"incomplete"` riski var.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa

@@ -91,9 +91,9 @@ describe("loadConfig", () => {
     // "high" image detail for reading handwriting (config.ts note).
     expect(openai.reasoningEffort).toBe("low");
     expect(openai.imageDetail).toBe("high");
-    // Faz 6/B3: raised for the vision flow (config.ts notes) — 8192 output
-    // headroom for a densely-marked page, 18 cards per page (was 4/4096, then 12).
-    expect(openai.maxOutputTokens).toBe(8192);
+    // Faz 6/B3: raised for the vision flow (config.ts notes) — 12288 output
+    // headroom for a densely-marked page, 18 cards per page (was 4/4096, then 12/8192).
+    expect(openai.maxOutputTokens).toBe(12288);
     expect(openai.maxCardsPerKnowledgeUnit).toBe(18);
   });
 
