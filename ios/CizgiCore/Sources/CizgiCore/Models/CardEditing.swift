@@ -79,6 +79,93 @@ public enum CardEditor {
     }
 }
 
+/// Changing a card's kind in the editor (2026-08-15).
+///
+/// Before this, type was only ever *derived*: adding a sound set of options made
+/// a card `multipleChoice`, removing them degraded it back
+/// (`MultipleChoice.resolvedType`). Picking a type directly opens a second door
+/// onto the same state, and the two doors can contradict each other — a card
+/// claiming `.multipleChoice` with no options, or five options sitting under
+/// `.cloze`.
+///
+/// So every type change, from the picker *and* from "Şıkları kaldır", goes
+/// through this one function. The invariant it maintains, and the editor's whole
+/// contract with itself:
+///
+///     options UI visible  ⟺  type == .multipleChoice  ⟺  options is non-empty
+///
+/// This is deliberately structural rather than careful: both Codex bugs in this
+/// area (PR #29) were ordering mistakes in exactly this derivation — the answer
+/// left pointing at the old option — and a rule written once in a testable
+/// function is the only kind that cannot be forgotten at the second call site.
+public enum CardTypeChange {
+
+    public enum Effect: Equatable, Sendable {
+        /// Plain → plain. Nothing but the type moves.
+        case setTypeOnly(CardType)
+        /// → five options. The editor shows the option rows and stops editing
+        /// `back` directly; the answer is now the correct option.
+        case enterMultipleChoice(options: [CardOption])
+        /// Five options → plain. `back` carries the answer out of the options
+        /// before they are dropped, which is the ordering both PR #29 bugs got
+        /// wrong; `stash` keeps them for an undo within the same sheet.
+        case leaveMultipleChoice(type: CardType, back: String, stash: [CardOption])
+    }
+
+    /// What picking `newType` should do to the editor's state.
+    ///
+    /// - Parameters:
+    ///   - derivedBack: the answer as it stands now — the editor's `effectiveBack`,
+    ///     i.e. the ticked option's text on a five-option card, the typed answer
+    ///     otherwise.
+    ///   - currentOptions: the options as edited, empty on a plain card.
+    ///   - stash: options from an earlier `leaveMultipleChoice` in this sheet, so
+    ///     switching away and back does not make the user retype four distractors.
+    public static func effect(
+        picking newType: CardType,
+        currentType: CardType,
+        derivedBack: String,
+        currentOptions: [CardOption],
+        stash: [CardOption]?
+    ) -> Effect {
+        guard newType != currentType else {
+            return newType == .multipleChoice
+                ? .enterMultipleChoice(options: currentOptions)
+                : .setTypeOnly(newType)
+        }
+
+        if newType == .multipleChoice {
+            return .enterMultipleChoice(options: seededOptions(answer: derivedBack, stash: stash))
+        }
+
+        if currentType == .multipleChoice {
+            return .leaveMultipleChoice(type: newType, back: derivedBack, stash: currentOptions)
+        }
+
+        return .setTypeOnly(newType)
+    }
+
+    /// The option list to start from when the card becomes a five-option one.
+    ///
+    /// A restored stash keeps its distractors but **takes its answer from the
+    /// current `back`**: the user may have rewritten the answer while the card
+    /// was plain, and restoring the old correct option would silently reinstate
+    /// the answer they just replaced — the same invariant break as PR #29, only
+    /// arriving by a different route.
+    static func seededOptions(answer: String, stash: [CardOption]?) -> [CardOption] {
+        guard let stash, stash.count == MultipleChoice.optionCount else {
+            return [CardOption(text: answer, isCorrect: true, why: nil)]
+                + Array(
+                    repeating: CardOption(text: "", isCorrect: false, why: nil),
+                    count: MultipleChoice.optionCount - 1
+                )
+        }
+        return stash.map { option in
+            option.isCorrect ? CardOption(text: answer, isCorrect: true, why: nil) : option
+        }
+    }
+}
+
 /// What can honestly be shown as the origin of a card.
 public struct CardSourceMaterial: Equatable, Sendable {
     /// Per-card quote. Only legacy cards have one — the Faz 6 contract dropped it.

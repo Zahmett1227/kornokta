@@ -61,6 +61,23 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 4. **Kartlar onaysız** `.active` olarak SwiftData'ya girer ve FSRS-6 ile
    tekrar edilir. "Kaynağı göster" sayfa fotoğrafını ve modelin okuduğu metni
    gösterir; kart düzenleme FSRS geçmişine dokunmaz.
+   **Sayfa detayı (2026-08-15):** kuyruktan bitmiş bir sayfaya dokununca açılan
+   ekran artık salt-okunur değil — üretilen karta dokunmak ortak
+   `CardEditorView`'ı açar (soru/cevap, açıklama, **kart tipi**, ders/konu,
+   şıklar), her pasajın altındaki **"Kart ekle"** ise `ManualCardSheet`'i.
+   Elle eklenen kart üretilenle aynı yoldan girer (aynı region/unit zinciri,
+   `status: .active`, sıfır FSRS durumu) — tek farkı unit'inin
+   **`canonicalClaim`'inin boş olması**. `canonicalClaim` "Kaynağı göster"de
+   *Modelin okuduğu* başlığı altında basılır, yani bir provenans iddiasıdır;
+   model bu kartı hiç okumadığı için orada söylenecek bir şey yoktur ve boş
+   claim bu yokluğu **yapısal** olarak temsil eder (`nonEmpty` onu düşürür).
+   Oraya kartın sorusunu yazmak yanlıştır: `CardSourceResolver` okumayı yalnız
+   karta *eşit olduğu sürece* gizler, soru düzenlenince eski soru "Modelin
+   okuduğu" olarak geri çıkar (Codex, PR #43). Aynı sebeple
+   `KnowledgeUnitBinding` eşleşmesine claim de girer — elle kart modelin
+   unit'ine yapışıp onun okumasını kendi kaynağı gibi gösteremesin diye.
+   Kart tipi değişikliği ve ders/konu bağlama kuralları çekirdekte ve testli
+   (`CardTypeChange`, `ManualCardDraft`, `KnowledgeUnitBinding`).
 5. **Kartların bir kısmı beş şıklı** olabilir (§13.3, Ayarlar'daki mod). FSRS
    eşlemesi asimetrik: yanlış şık = Unuttum; doğru şıkta Zor/İyi/Kolay.
 6. **Şüpheli kartlar bloklanmaz, işaretlenir:** `lowConfidence` kartlar
@@ -187,6 +204,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Tur A3 — `luna@medium` vs `luna@high` vs `sol@low` (aynı prompt sürümünde ilk dürüst kıyas) | ✅ Koşuldu ve kör değerlendirildi. **`medium` elendi** (turun tek sessiz hatası + tek uydurma kartı ondan; el yazısında 3 sayfada sonuncu). `sol@low` ↔ `luna@high` kalitede yakın, maliyette **7,5 kat** uzak ($0.1394 vs $0.0186/sayfa). **Karar: `luna@high`** — sahibinin ölçeğinde ~$240 yerine ~$32 |
 | FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 `main`'de (PR #41, squash `e934cb7`); Codex turları kapandı. Yerel `swift test` + `xcodegen`/`xcodebuild`, backend ve evals yeşildi; simülatörde kurulup açıldı — kritik risk olan "yeni migration açılışta çökertir mi" orada elendi. **Cihaz doğrulaması açık:** aşağıdaki doğrulama listesinin 1-5. maddeleri |
 | Sayfa başına kart tavanı 12→18 (2026-08-14) | ✅ `main`'de (PR #42). Sunucu tavanı (`config.ts`/`.env.example`), iOS varsayılanı + Stepper aralığı (`AppEnvironment`/`SettingsView`) ve çıktı token tavanı (aynı 1,5× oranla 8192→12288) **birlikte** değişti — istemci sunucu tavanını aşamadığı için (§21.3) yalnız birini değiştirmek hiçbir şey yapmazdı. Canlıda `OPENAI_MAX_OUTPUT_TOKENS` elle 48000'e çekilip redeploy edildi; `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` Vercel'e hiç girilmemiş, tavan kod varsayılanından geliyor. Codex'in iki gerçek iOS bulgusu düzeltildi: mevcut kurulumlarda UserDefaults'taki 12 için bayraklı tek seferlik göç, ve temiz kurulumda bayrağın hemen yazılması (yoksa kullanıcının sonradan bilerek seçtiği 12 sessizce 18'e çevrilirdi). **Cihaz doğrulaması açık:** yoğun işaretli bir sayfa gerçekten 12'den fazla kart üretiyor mu, ve Ayarlar'daki Stepper 18'e kadar çıkıyor mu |
+
+| Sayfa detayında kart ekleme + düzenleme (2026-08-15) | 🟡 `claude/sayfa-detayinda-kart-ekleme` dalında. Kuyruktan açılan sayfa ekranı (`PageDetailView`) salt-okunur olmaktan çıktı: karta dokunmak ortak `CardEditorView`'ı açıyor, her pasajın altında **"Kart ekle"** var (`ManualCardSheet`). Gerekçe: modelin tehlikeli hatası yanlış kart değil **eksik** kart, ve üretilmemiş kart `lowConfidence` taşımadığı için onu hiçbir otomatik sinyal görmüyor — tek çare sayfaya bakarken elle eklemek. Ortak editör **kart tipi seçici** kazandı (Bilgilerim/Tekrar/Egzersiz de). Yerel `swift test` (387), simülatör derlemesi, backend ve evals yeşil. **Cihaz doğrulaması açık:** aşağıdaki listenin 6-10. maddeleri |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -436,11 +455,30 @@ gösterir (2026-08-13 tartışması).
 5. **Yedek al → geri yükle (v6):** FES sicili (`fesScore`/`fesNegativeCount`)
    de korunuyor mu — üstteki 2026-08-13 doğrulaması yalnız v5'i (`softLapseCount`)
    kapsıyor, v6'nın FES alanları henüz denenmedi.
-6. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
-   sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
-   kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
-   **düzelmedi** — kural 5 yeniden yazılacak.
-7. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
+6. **Sayfa detayında kart düzenleme.** Kuyruk → bitmiş sayfa → üretilmiş bir
+   karta dokun: editör açılmalı. Tipini "Beş şık"a çevir, dört şıkkı doldur,
+   kaydet → Tekrar'da kart gerçekten şıklarla soruluyor mu. Sonra tipi düz bir
+   tipe geri al: **cevap, işaretlediğin doğru şık olarak kalmalı** (bu tam
+   olarak PR #29'da iki kez kırılan yer).
+7. **"Kart ekle" — dersli sayfa.** Çekimde ders seçilmiş bir sayfada Kart ekle:
+   ders kilitli görünmeli (seçici yok) ve konu listesi **yalnız o dersin**
+   konularını göstermeli. Ders seçilmemiş bir sayfada ders seçici çıkmalı.
+   Konu seçilmeden "Kaydet" aktifleşmemeli.
+8. **Elle beş şıklı kart.** Cevap alanına yazdığın metin doğru şık olmalı;
+   boş bırakılan bir yanlış şık ya da cevabı tekrarlayan bir şık Kaydet'i
+   kilitlemeli. "Neden yanlış" boş bırakılabilmeli (kart bayraklanmamalı).
+   Kaydedilen kart Tekrar'da ve Bilgilerim'de **hemen** görünmeli — görünmüyorsa
+   `status` `.draft` kalmıştır.
+9. **0 kartlı sayfa.** Model hiç kart üretmemiş (ya da kalıcı hata almış) bir
+   sayfada "Bu sayfadan kart üretilmedi." satırı ve Kart ekle görünmeli;
+   eklenen kartın "Kaynağı göster"i sayfa fotoğrafını gösterebilmeli.
+10. **Yedek al → geri yükle:** elle eklenen kart ders/konu/şıklarıyla
+    korunuyor mu (biçim değişmedi, ama elle kart bu yoldan ilk kez geçiyor).
+11. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
+    sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
+    kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
+    **düzelmedi** — kural 5 yeniden yazılacak.
+12. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

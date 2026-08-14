@@ -138,10 +138,31 @@ struct QueueView: View {
     }
 }
 
-/// Read-only view of a page that is not waiting on the user.
+/// A finished page: the photo, what the model read, and the cards it produced.
+///
+/// Was read-only until 2026-08-15. The two things it now allows are the two the
+/// vision flow cannot do for itself — correcting a card the model got wrong, and
+/// adding one it never produced. Both belong here rather than only in
+/// Bilgilerim: this is the one screen where the photo, the reading and the cards
+/// are visible together, which is what makes a missing card noticeable at all.
 struct PageDetailView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @Environment(\.modelContext) private var context
     let page: CapturedPage
+
+    /// The card whose editor is open. `sheet(item:)` rather than a push: editors
+    /// are sheets everywhere in this app, and the Capture stack does not register
+    /// a `Card` destination.
+    @State private var editingCard: Card?
+    @State private var addTarget: AddCardTarget?
+
+    /// Which passage a new card is being written under. A wrapper rather than
+    /// `TextRegion?` directly, so `sheet(item:)` can tell "no passage" (a page
+    /// that produced nothing) from "no sheet".
+    private struct AddCardTarget: Identifiable {
+        let id = UUID()
+        let region: TextRegion?
+    }
 
     var body: some View {
         List {
@@ -167,20 +188,67 @@ struct PageDetailView: View {
 
             ForEach(page.regions) { region in
                 Section("Pasaj") {
-                    Text(region.finalText)
+                    if !region.finalText.isEmpty {
+                        Text(region.finalText)
+                    }
                     ForEach(region.knowledgeUnits) { unit in
                         ForEach(unit.cards) { card in
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(card.front).font(.subheadline).bold()
-                                Text(card.back).font(.subheadline).foregroundStyle(.secondary)
-                            }
+                            cardRow(card)
                         }
                     }
+                    addCardButton(for: region)
+                }
+            }
+
+            // A job can finish having produced nothing (`noContent`, or a
+            // permanent failure). That is exactly when a card most needs adding
+            // by hand, so the button has to survive having no passage to sit
+            // under.
+            if page.regions.isEmpty && page.processingState.isTerminal {
+                Section("Kartlar") {
+                    Text("Bu sayfadan kart üretilmedi.")
+                        .foregroundStyle(Cizgi.muted)
+                    addCardButton(for: nil)
                 }
             }
         }
         .navigationTitle("Sayfa")
         .homeButtonToolbar()
+        .sheet(item: $editingCard) { CardEditorView(card: $0) }
+        .sheet(item: $addTarget) { ManualCardSheet(page: page, region: $0.region) }
+    }
+
+    private func cardRow(_ card: Card) -> some View {
+        Button {
+            editingCard = card
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(card.front).font(.subheadline).bold()
+                Text(card.back).font(.subheadline).foregroundStyle(.secondary)
+                Label(card.type.displayName, systemImage: card.type.icon)
+                    .font(.caption)
+                    .foregroundStyle(Cizgi.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Cizgi.ink)
+        .accessibilityHint("Kartı düzenle")
+    }
+
+    /// Only on a page the queue has finished with: while it is still working,
+    /// the cards under this button are about to change, and adding one to a page
+    /// mid-generation would invite a duplicate of a card that is on its way.
+    @ViewBuilder
+    private func addCardButton(for region: TextRegion?) -> some View {
+        if page.processingState.isTerminal {
+            Button {
+                addTarget = AddCardTarget(region: region)
+            } label: {
+                Label("Kart ekle", systemImage: "plus.circle")
+            }
+        }
     }
 
     private func loadImage() -> Image? {
