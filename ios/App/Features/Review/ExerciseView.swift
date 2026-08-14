@@ -756,13 +756,19 @@ struct ExerciseView: View {
     /// cards every single time — "Hızlı 10" would never show card eleven.
     private func start(cards: [Card], limit: Int?, mode: ExerciseMode) {
         var generator = SystemRandomNumberGenerator()
+        let ranked = mode == .weak
         let selected = ExerciseSelection.pick(
             from: cards.map(\.id),
             limit: limit,
-            ranked: mode == .weak,
+            ranked: ranked,
             using: &generator
         )
-        let newSession = ExerciseSession(cardIds: selected, using: &generator)
+        // A ranked pool (FES) chose this order on purpose — the plain
+        // shuffling init would throw away exactly what `ranked: true` was
+        // for, most urgent first (Codex review, PR #41, fifth pass).
+        let newSession = ranked
+            ? ExerciseSession(queue: selected, position: 0)
+            : ExerciseSession(cardIds: selected, using: &generator)
         session = newSession
         fesEnteredCount = 0
         fesLeftCount = 0
