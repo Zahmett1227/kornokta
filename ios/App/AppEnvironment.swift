@@ -211,7 +211,18 @@ struct AppSettings: Codable, Equatable {
         guard
             let data = UserDefaults.standard.data(forKey: storageKey),
             let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
-        else { return AppSettings() }
+        else {
+            // No persisted blob: nothing legacy to migrate, and every value
+            // this install saves from now on is a fresh, deliberate choice.
+            // Flag it migrated right here rather than waiting for the first
+            // successful decode below — otherwise a later deliberate 12
+            // (valid in the new 1...18 range) would itself be the first
+            // value the migrator ever sees, get mistaken for the pre-update
+            // default, and get silently bounced back to 18 (Codex, PR #42,
+            // third P1).
+            UserDefaults.standard.set(true, forKey: maxCardsPerPageMigrationFlagKey)
+            return AppSettings()
+        }
         return migratingMaxCardsPerPageIfNeeded(decoded)
     }
 
@@ -221,7 +232,8 @@ struct AppSettings: Codable, Equatable {
     /// in `init(from:)` only fires when the key is *absent*, which is never
     /// true for an existing install. Bumps a persisted 12 to 18 exactly once;
     /// gated by a flag rather than "is it 12" so a user who deliberately
-    /// dials back to 12 *after* this runs stays at 12 on every later launch.
+    /// dials back to 12 *after* this runs (or after a clean install, which
+    /// `load()` above flags immediately) stays at 12 on every later launch.
     private static func migratingMaxCardsPerPageIfNeeded(
         _ settings: AppSettings,
         defaults: UserDefaults = .standard
