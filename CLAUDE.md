@@ -212,8 +212,9 @@ başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `page-uploads` özel kovası; ikisinde de RLS açık ve **policy yok** (yalnız
 `service_role` geçer).
 
-**Model (2026-08-13'ten beri canlı):** `OPENAI_MODEL=gpt-5.6-luna`,
-`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=32000`, fiyatlar
+**Model (2026-08-13'ten beri canlı, `OPENAI_MAX_OUTPUT_TOKENS` 2026-08-14'te
+48000'e çekildi):** `OPENAI_MODEL=gpt-5.6-luna`,
+`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=48000`, fiyatlar
 `0.2 / 0.02 / 1.2`. Gerekçesi üç turluk ölçüm:
 `docs/PLAN-model-karsilastirma.md` → "Tur A3 sonucu". Özet: `sol@low` ile
 kalitede yakın (ikisi de sıfır sessiz hata), maliyette 7,5 kat uzak —
@@ -241,11 +242,20 @@ görünür çıktı token'ı ister; reasoning'den bağımsız bir eksen ama ayn�
 sınıfı (yukarıdaki reasoning-effort kuralıyla aynı: tavanı büyütmeden ceza
 büyütmek, düşen çağrı tam ücret faturalanır). 2026-08-14: kart tavanı 12→18
 olunca kod varsayılanı aynı oranda (1,5×) 8192→12288'e çekildi (`config.ts`,
-`.env.example`). **Açık iş:** canlıdaki `OPENAI_MAX_OUTPUT_TOKENS=32000`
-(yukarıdaki "Model" notu) bu değişiklikten önce, eski 12 kartlık tavana göre
-ayarlanmıştı — Claude'un Vercel ortam değişkenlerine yazma erişimi yok, o
-yüzden sahibinin Vercel'de elle aynı oranla ~48000'e çekmesi gerekiyor; yoksa
-yoğun bir sayfada 13-18. kartlar arasında `status:"incomplete"` riski var.
+`.env.example`); sahibi canlıdaki `OPENAI_MAX_OUTPUT_TOKENS`'ı da elle 48000'e
+çekip redeploy etti (yukarıdaki "Model" notu güncel).
+
+**Açık iş (Codex, PR #42 P1):** `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT`'in
+kendisi canlıda `.env.example`'dan bağımsız, elle `=12` olarak girilmiş
+olabilir — girilmişse `numeric()` o değeri yeni kod varsayılanına (18) tercih
+eder, `OpenAICardGenerator` her isteği yine 12'ye kırpar (§21.3) ve bu PR
+canlıda hiçbir şeyi değiştirmemiş olur. Claude'un Vercel ortam değişkenlerini
+**okuma** erişimi de yok (yalnız repo/PR üzerinden çalışıyor), o yüzden
+sahibinin Vercel projesinin ortam değişkenleri listesinde
+`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` diye bir satır olup olmadığına bakması
+gerekiyor: varsa 18'e çekilmeli ya da tamamen silinmeli (silinirse kod
+varsayılanı zaten geçerli olur), yoksa (hiç girilmemişse) ek bir şey
+gerekmez.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
