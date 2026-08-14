@@ -151,7 +151,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
 | Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
 | Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); kamera **ve galeri** yolunda cihazda doğrulandı (2026-08-13) — PhotosPicker artık riski gerçekleşmedi |
-| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır, `GEMINI_API_KEY` Vercel'de (2026-08-13); **denenmesi `lowConfidence` bayraklı bir kart bekliyor** — düğme o koşulla kapılı |
+| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | ✅ `main`'de ve **cihazda doğrulandı** (2026-08-13). Gemini `responseSchema`'yı kabul ediyor — OpenAI'de yaşadığımız şema riskinin buradaki eşi de kapandı |
 | Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda; Kullanım ekranı cihazda doğrulandı (2026-08-13) |
 | Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de ve cihazda (2026-08-13) |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
@@ -296,6 +296,10 @@ Tarihsel (davranış için değil, karar gerekçesi için): `docs/HISTORY.md`
 
 ## Sıradaki iş
 
+**Elle yapılacak tek somut iş A6'dır** (§2 aşağıda). Cihaz doğrulama listesi
+2026-08-13'te büyük ölçüde kapandı; kalan iki maddesi haftalara yayılan
+gerçek-kullanım gözlemi, oturup yapılacak bir şey değil.
+
 ### 1. Cihaz doğrulama listesi
 
 **Bu bölüm kullanıcıya sorulacak soruların listesidir.** Kod ve CI yeşil;
@@ -324,29 +328,19 @@ kayboluyor, ev düğmesi köke dönüyor); Egzersiz→FSRS köprüsü (vadesi ge
 kart en fazla yarına çekiliyor); yedek al → geri yükle `softLapseCount` dahil
 durumu koruyor; Bilgi Haritası "Konusuz" satırı, "Hızlı 10"un tekrarında
 farklı kart, aktif oturum diyaloğu, erişilebilirlik yazı boyutunda ikon-only
-alt bar.
+alt bar; **"İkinci görüş iste" (Gemini)** — düğme çalışıyor ve Gemini
+`responseSchema`'yı kabul ediyor. Bu düğme aynı zamanda "başka bir model
+ailesi denemeli miyiz?" sorusunun ucuz ölçüm aracı: gerçek kullanımda biriken
+verdiktler, Gemini'nin OpenAI'nin kaçırdığını sistematik yakalayıp
+yakalamadığını adaptör yazmadan gösterir (2026-08-13 tartışması).
 
 **🔲 Henüz doğrulanmamış:**
 
-1. **"İkinci görüş iste" (Gemini).** `GEMINI_API_KEY` Vercel'e girildi
-   (2026-08-13); **denenmesi bayraklı kart bekliyor.** Düğme `if
-   card.lowConfidence` ile kapılı ve "Gözden geçir" bölümü de aynı koşulla
-   görünüyor, yani `luna@high` hiçbir karta "emin değilim" demediği sürece
-   ikisi de ekranda yok — bu bir hata değil, tasarım (ikinci okuma yalnız
-   modelin kendi şüphelendiği anda değerli). Tetiklemek için el yazısı
-   gerçekten okunaksız bir sayfa çek. Düğmeye basıldığında verdikt +
-   "İkinci okuma (Gemini)" metni gelmeli. `anyOf` şeması riski buraya da uygulanır: Gemini
-   `responseSchema`'yı reddederse B planı şemayı bırakıp yalnız prompt +
-   sunucu doğrulamasına güvenmek (`providers/gemini.ts` RESPONSE_SCHEMA).
-   - Bu düğme aynı zamanda **"başka bir model ailesi denemeli miyiz?"**
-     sorusunun ucuz cevabı: gerçek kullanımda biriken verdiktler, Gemini'nin
-     OpenAI'nin kaçırdığını sistematik yakalayıp yakalamadığını adaptör
-     yazmadan ölçer (2026-08-13 tartışması).
-2. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
+1. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
    sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
    kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
    **düzelmedi** — kural 5 yeniden yazılacak.
-3. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
+2. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
@@ -354,12 +348,30 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 
 - İlk denemede **Ayarlar → Beş şıklı kart: Hepsi** (`Karışık` bilerek seçici;
   yolu doğrulamak için "Hepsi" net).
-- Bakılacaklar: şıklar aynı semantik sınıftan mı, distraktörler gerçekten
-  karıştırılabilir mi, "iki doğru" var mı, "neden yanlış" öğretiyor mu, şıklar
-  telefonda okunacak kadar kısa mı. Bulgular prompt'un
-  `multipleChoiceInstruction` bloğuna işlenir.
+- **Makine zaten neyi tutuyor** (bunlara bakmaya gerek yok):
+  `sanitizeMultipleChoice`, şık sayısı beş değilse / doğru şık bir taneden az
+  ya da fazlaysa / `correctOption` uyuşmuyorsa / iki şık aynı anlama geliyorsa
+  (Türkçe normalizasyonlu) / `back` doğru şıkla eşleşmiyorsa kartı **düz karta
+  indiriyor**; bir şık diğerini kapsıyorsa ya da "neden yanlış" boşsa
+  `lowConfidence` **işaretliyor**. Yani sayılabilir ihlaller kapıda duruyor.
+- **Yalnız insanın görebileceği beş soru:** distraktörler gerçekten
+  karıştırılabilir mi (yakınlık tıbbi bir yargı — biçimsel olarak kusursuz bir
+  şık takımı soruyu bedavaya çevirebilir); şıklar aynı semantik sınıftan mı;
+  kurguda **ikinci bir doğru** var mı (kapı yalnız metin kapsamasını görür,
+  "klinik olarak da doğru sayılır"ı göremez); "neden yanlış" gerçekten
+  öğretiyor mu (kapı boş olmadığına bakar, doğru olduğuna bakamaz); şıklar
+  telefonda okunacak kadar kısa mı.
+- **İki somut tahmin** (2026-08-13, prompt okunarak): en olası kusur **şık
+  uzunluğu** — prompt "kısa olsun" diyor ama ölçüt vermiyor, ve v2.6'nın kural
+  5 deneyimi ölçütsüz kuralın bağlamadığını gösterdi. İkincisi: `Karışık`
+  modda modelin "bu kart ayırt etme mi?" kararını fazla cömert verip düz
+  tanımları da beş şıklı yapması.
+- Bulgular prompt'un `multipleChoiceInstruction` bloğuna işlenir — kural 8'de
+  işe yarayan biçimle: yanlış örnek + doğru örnek çifti.
 - İlk turda ölç: Ayarlar → Kullanım'daki çıktı token artışı (tahmin: kart
-  başına +80–150).
+  başına +80–150). **Not:** bu tahmin Sol dönemindeydi; `luna@high`'ta çıktı
+  $1.20/M olduğu için sayfa başına ~+$0.002 — beş şıklı kart artık bir maliyet
+  kararı değil, yalnız kalite kararı.
 
 ### 3. Küçük ve gerçek kalanlar
 
