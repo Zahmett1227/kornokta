@@ -24,6 +24,15 @@ struct CardEditorView: View {
     @State private var isLoaded = false
     /// Editable copies of the five options; empty when this is a plain card.
     @State private var options: [EditableOption] = []
+    /// The kind of card, chosen directly rather than only inferred from whether
+    /// the options are sound. Kept in lockstep with `options` by
+    /// `CardTypeChange` — see `applyTypeChange`.
+    @State private var selectedType: CardType = .directRecall
+    /// Options put aside by a switch to a plain type, so changing your mind
+    /// inside the same sheet does not cost four retyped distractors. Not
+    /// persisted: dismissing the sheet drops it, which is the same "unsaved
+    /// edits are lost" the rest of the form already has.
+    @State private var optionStash: [CardOption]?
     /// Empty string means "Seçilmedi"/"Konusuz" — `Picker` tags cannot be nil.
     @State private var subject = ""
     @State private var topic = ""
@@ -79,6 +88,12 @@ struct CardEditorView: View {
         validation.edit != nil && optionValidation == nil
     }
 
+    /// The type as it will actually be stored: the picked one, with
+    /// `resolvedType` as the same final guard every other save path uses.
+    private var resolvedType: CardType {
+        MultipleChoice.resolvedType(current: selectedType, options: editedOptions)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -120,6 +135,8 @@ struct CardEditorView: View {
                         .foregroundStyle(Cizgi.muted)
                 }
 
+                typeSection
+
                 classificationSection
 
                 if !options.isEmpty {
@@ -156,6 +173,12 @@ struct CardEditorView: View {
                 options = (card.options ?? []).map {
                     EditableOption(text: $0.text, why: $0.why ?? "", isCorrect: $0.isCorrect)
                 }
+                // Resolved rather than taken raw, so the invariant holds from
+                // the first frame: a card stored as `.multipleChoice` whose
+                // options no longer decode has nothing to choose from, and
+                // showing "Beş şık" over an absent options section would offer
+                // no way back. It opens as what it actually is.
+                selectedType = MultipleChoice.resolvedType(current: card.type, options: card.options)
                 subject = SubjectPickerBar.canonicalSubject(card.knowledgeUnit?.subject) ?? ""
                 topic = card.knowledgeUnit?.topic ?? ""
                 isLoaded = true
@@ -183,6 +206,72 @@ struct CardEditorView: View {
                 topic = ""
             }
         )
+    }
+
+    /// Kart tipi. The model picks one at generation; this is where a card that
+    /// should have been a beş şık — or should never have been one — is changed.
+    ///
+    /// The binding routes every pick through `applyTypeChange` rather than
+    /// assigning `selectedType`, so the picker cannot leave the type and the
+    /// option list disagreeing.
+    private var typeSection: some View {
+        Section {
+            Picker("Kart tipi", selection: typeBinding) {
+                ForEach(CardType.allCases, id: \.self) { type in
+                    Label(type.displayName, systemImage: type.icon).tag(type)
+                }
+            }
+        } header: {
+            header("Kart tipi")
+        } footer: {
+            Text(selectedType == .multipleChoice
+                 ? "Beş şıklı kartta cevap, aşağıda işaretlediğin doğru şıktır."
+                 : "Düz kartta soru ve cevabı sen yazarsın.")
+                .font(.footnote)
+                .foregroundStyle(Cizgi.muted)
+        }
+    }
+
+    private var typeBinding: Binding<CardType> {
+        Binding(
+            get: { selectedType },
+            set: { applyTypeChange(to: $0) }
+        )
+    }
+
+    /// The single door onto "this card is now a different kind".
+    ///
+    /// Both the picker and "Şıkları kaldır" come through here so the invariant
+    /// `options UI visible ⟺ .multipleChoice ⟺ options non-empty` holds without
+    /// anyone having to remember it. The decision itself is in `CardTypeChange`,
+    /// where `swift test` can hold it still.
+    private func applyTypeChange(to newType: CardType) {
+        // Re-picking the type already selected is not an edit. Without this,
+        // tapping the ticked row rebuilds every option row with a fresh id and
+        // takes the keyboard focus with it, mid-sentence.
+        guard newType != selectedType else { return }
+
+        let effect = CardTypeChange.effect(
+            picking: newType,
+            currentType: selectedType,
+            derivedBack: effectiveBack,
+            currentOptions: editedOptions ?? [],
+            stash: optionStash
+        )
+        switch effect {
+        case .setTypeOnly(let type):
+            selectedType = type
+        case .enterMultipleChoice(let seeded):
+            options = seeded.map { EditableOption(text: $0.text, why: $0.why ?? "", isCorrect: $0.isCorrect) }
+            selectedType = .multipleChoice
+        case .leaveMultipleChoice(let type, let derivedBack, let stash):
+            // The answer is written down before the options go, or it goes with
+            // them (Codex, PR #29).
+            back = derivedBack
+            optionStash = stash
+            options = []
+            selectedType = type
+        }
     }
 
     /// Ders/konu (schema v2.2). The model assigns these at capture time; this
@@ -247,14 +336,12 @@ struct CardEditorView: View {
                 .padding(.vertical, 2)
             }
 
+            // Same operation as picking a plain type above, so it goes through
+            // the same funnel: `.directRecall` is `resolvedType`'s own
+            // degradation target, which is what stops the button and the picker
+            // from ever disagreeing about what a card without options becomes.
             Button("Şıkları kaldır", role: .destructive) {
-                // The derived answer is written down *before* the options go,
-                // or it goes with them: after moving the tick from A to B and
-                // then removing the options, `effectiveBack` would fall back to
-                // the stale `back` (A) and save it as the card's answer — the
-                // user's last choice lost without a word (Codex, PR #29).
-                back = effectiveBack
-                options = []
+                applyTypeChange(to: .directRecall)
             }
         } header: {
             header("Şıklar")
@@ -281,8 +368,12 @@ struct CardEditorView: View {
     private func save() {
         guard let edit = validation.edit, optionValidation == nil else { return }
         let optionsChanged = editedOptions != card.options
+        // Without this a pure type change (beş şık → mekanizma, say) would fall
+        // into the "nothing to write" branch below and be dropped silently.
+        let typeChanged = resolvedType != card.type
         applyClassification()
-        guard CardEditor.changes(edit, from: card.front, card.back, card.explanation) || optionsChanged else {
+        guard CardEditor.changes(edit, from: card.front, card.back, card.explanation)
+            || optionsChanged || typeChanged else {
             // Still saved: `applyClassification` may have moved the card even
             // when its text is untouched.
             try? context.save()
@@ -296,10 +387,12 @@ struct CardEditorView: View {
         card.explanation = edit.explanation
         if optionsChanged {
             card.options = editedOptions
-            // Removing the options has to leave a usable plain card, not a
-            // five-option card with nothing to choose from (§13.3).
-            card.type = MultipleChoice.resolvedType(current: card.type, options: editedOptions)
         }
+        // Removing the options has to leave a usable plain card, not a
+        // five-option card with nothing to choose from (§13.3). `resolvedType`
+        // stays the last word even though the picker already maintains the
+        // invariant — it is the rule every save path in the app shares.
+        card.type = resolvedType
         card.updatedAt = .now
         try? context.save()
         dismiss()
@@ -339,22 +432,20 @@ struct CardEditorView: View {
             return
         }
 
-        let sibling = current.region?.knowledgeUnits.first {
-            $0.id != current.id && $0.subject == newSubject && $0.topic == newTopic
-        }
-        let target = sibling ?? {
-            let unit = KnowledgeUnit(
-                canonicalClaim: current.canonicalClaim,
-                subject: newSubject,
-                topic: newTopic,
-                tags: current.tags,
-                sourceConcern: current.sourceConcern
-            )
-            unit.region = current.region
-            context.insert(unit)
-            return unit
-        }()
-        card.knowledgeUnit = target
+        // Shared with the manual-card sheet: the same "find the unit carrying
+        // this pair, or make one on the same region" decision, written once
+        // (`KnowledgeUnitBinding`). The old `$0.id != current.id` filter is not
+        // needed — the guard above already established that `current`'s pair is
+        // not the one being looked for.
+        card.knowledgeUnit = KnowledgeUnitBinding.findOrCreate(
+            on: current.region,
+            subject: newSubject,
+            topic: newTopic,
+            claim: current.canonicalClaim,
+            tags: current.tags,
+            sourceConcern: current.sourceConcern,
+            context: context
+        )
         card.updatedAt = .now
     }
 }
