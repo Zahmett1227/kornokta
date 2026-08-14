@@ -66,8 +66,16 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    `CardEditorView`'ı açar (soru/cevap, açıklama, **kart tipi**, ders/konu,
    şıklar), her pasajın altındaki **"Kart ekle"** ise `ManualCardSheet`'i.
    Elle eklenen kart üretilenle aynı yoldan girer (aynı region/unit zinciri,
-   `status: .active`, sıfır FSRS durumu) — tek farkı `canonicalClaim`'inin
-   kendi sorusu olması: model o kartı hiç okumadı, öyle de gösterilmez.
+   `status: .active`, sıfır FSRS durumu) — tek farkı unit'inin
+   **`canonicalClaim`'inin boş olması**. `canonicalClaim` "Kaynağı göster"de
+   *Modelin okuduğu* başlığı altında basılır, yani bir provenans iddiasıdır;
+   model bu kartı hiç okumadığı için orada söylenecek bir şey yoktur ve boş
+   claim bu yokluğu **yapısal** olarak temsil eder (`nonEmpty` onu düşürür).
+   Oraya kartın sorusunu yazmak yanlıştır: `CardSourceResolver` okumayı yalnız
+   karta *eşit olduğu sürece* gizler, soru düzenlenince eski soru "Modelin
+   okuduğu" olarak geri çıkar (Codex, PR #43). Aynı sebeple
+   `KnowledgeUnitBinding` eşleşmesine claim de girer — elle kart modelin
+   unit'ine yapışıp onun okumasını kendi kaynağı gibi gösteremesin diye.
    Kart tipi değişikliği ve ders/konu bağlama kuralları çekirdekte ve testli
    (`CardTypeChange`, `ManualCardDraft`, `KnowledgeUnitBinding`).
 5. **Kartların bir kısmı beş şıklı** olabilir (§13.3, Ayarlar'daki mod). FSRS
