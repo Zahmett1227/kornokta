@@ -186,6 +186,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Prompt v2.6 doğrulaması | ✅ İki bağımsız koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu, pahalı kademede de); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
 | Tur A3 — `luna@medium` vs `luna@high` vs `sol@low` (aynı prompt sürümünde ilk dürüst kıyas) | ✅ Koşuldu ve kör değerlendirildi. **`medium` elendi** (turun tek sessiz hatası + tek uydurma kartı ondan; el yazısında 3 sayfada sonuncu). `sol@low` ↔ `luna@high` kalitede yakın, maliyette **7,5 kat** uzak ($0.1394 vs $0.0186/sayfa). **Karar: `luna@high`** — sahibinin ölçeğinde ~$240 yerine ~$32 |
 | FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 PR #41 (`claude/fes-sicili-egzersiz-filtreleri`), Codex review turlarından geçiyor; yerel `xcodebuild` + `swift test` yeşil. **main'e merge + cihaz doğrulaması açık** |
+| Sayfa başına kart tavanı 12→18 (2026-08-14) | ✅ `main`'de (PR #42). Sunucu tavanı (`config.ts`/`.env.example`), iOS varsayılanı + Stepper aralığı (`AppEnvironment`/`SettingsView`) ve çıktı token tavanı (aynı 1,5× oranla 8192→12288) **birlikte** değişti — istemci sunucu tavanını aşamadığı için (§21.3) yalnız birini değiştirmek hiçbir şey yapmazdı. Canlıda `OPENAI_MAX_OUTPUT_TOKENS` elle 48000'e çekilip redeploy edildi; `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` Vercel'e hiç girilmemiş, tavan kod varsayılanından geliyor. Codex'in iki gerçek iOS bulgusu düzeltildi: mevcut kurulumlarda UserDefaults'taki 12 için bayraklı tek seferlik göç, ve temiz kurulumda bayrağın hemen yazılması (yoksa kullanıcının sonradan bilerek seçtiği 12 sessizce 18'e çevrilirdi). **Cihaz doğrulaması açık:** yoğun işaretli bir sayfa gerçekten 12'den fazla kart üretiyor mu, ve Ayarlar'daki Stepper 18'e kadar çıkıyor mu |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -195,6 +196,19 @@ ucundan yeni bir dalla başlar.
 `swift test` + `xcodegen generate` + simülatör derlemesi). Üçü de yeşilse
 durum sağlıklıdır. Bu belgeye test sayısı yazmıyoruz — üç yerde üç farklı
 sayı tutmayı iki kez denedik, ikisinde de ayrıştı.
+
+**⚠️ CI şu an kullanılamıyor — GitHub Actions kotası doldu (2026-08-14):** üç
+workflow da (backend, evals, ios) artık bir runner'a **hiç atanmadan** saniyeler
+içinde kırmızı dönüyor — imzası belirgin: `runner_id: 0`, boş `runner_name`,
+2-4 saniyede "failure". Bu bir **kod sinyali değil**; checkout adımına bile
+ulaşılmıyor, dolayısıyla log da yok (log indirme 404 veriyor). PR #42'de altı
+koşunun altısı böyleydi ve aynı imza `main`'in kendi HEAD'inde de var (`ios`
+en az 2026-08-12'den beri). **Sonuç:** yukarıdaki "üçü de yeşilse sağlıklıdır"
+ölçütü kota yenilenene kadar geçersiz, ve bu dönemde kırmızı CI'ya bakıp "bu
+değişiklik bir şeyi bozdu" diye okumak yanlış olur. Kota dönene kadar tek
+gerçek kapı yerelde `npm test` + `npm run typecheck` ve bir Mac'te
+`swift test`. Kota yenilendiğinde ilk iş `main`'i bir kez yeşile koşturup bu
+notu silmek.
 
 **Bu ortamın kalıcı sınırı:** Linux'ta `CizgiCore` derlenmiyor (CoreGraphics,
 SwiftData); SwiftUI dosyaları yalnız `swiftc -parse` ile denetlenebiliyor — bu
