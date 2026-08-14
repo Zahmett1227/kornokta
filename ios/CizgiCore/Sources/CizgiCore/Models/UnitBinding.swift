@@ -15,13 +15,23 @@ import SwiftData
 /// find-or-create lives here, once.
 public enum KnowledgeUnitBinding {
 
-    /// The unit on `region` carrying exactly this (subject, topic), creating one
-    /// if there is none.
+    /// The unit on `region` carrying exactly this (subject, topic, claim),
+    /// creating one if there is none.
     ///
-    /// Never mutates a unit it finds: matching means the pair is already right,
-    /// and anything else would be reaching into cards the caller was not asked
+    /// Never mutates a unit it finds: matching means it is already right, and
+    /// anything else would be reaching into cards the caller was not asked
     /// about. A new unit is bound to the same `region`, which is what keeps
     /// "Kaynağı göster" showing the page photo for the card that lands on it.
+    ///
+    /// **`claim` is part of the match, not just of the new unit.**
+    /// `canonicalClaim` is what "Kaynağı göster" prints under *Modelin okuduğu*,
+    /// so it is a provenance claim, not a label: two units with the same
+    /// ders/konu but different claims are genuinely different provenance, and
+    /// merging them would attribute one's reading to the other's cards. This
+    /// costs the generated path nothing — every unit `persist` writes for a page
+    /// shares that page's single reading, so they still match each other — but it
+    /// keeps a hand-written card (which passes `""`, no reading at all) from
+    /// silently inheriting the model's text (Codex, PR #43).
     ///
     /// A `nil` region is allowed and yields an unbound unit — a card can carry a
     /// ders/konu with no page behind it (this is what a restored backup's cards
@@ -36,7 +46,10 @@ public enum KnowledgeUnitBinding {
         sourceConcern: String? = nil,
         context: ModelContext
     ) -> KnowledgeUnit {
-        if let existing = region?.knowledgeUnits.first(where: { $0.subject == subject && $0.topic == topic }) {
+        let existing = region?.knowledgeUnits.first {
+            $0.subject == subject && $0.topic == topic && $0.canonicalClaim == claim
+        }
+        if let existing {
             return existing
         }
         let unit = KnowledgeUnit(

@@ -229,11 +229,19 @@ struct ManualCardSheet: View {
             on: target,
             subject: manual.subject,
             topic: manual.topic,
-            // The card's own question, never the model's page text: claiming the
-            // model read something for a card it never produced would be a lie
-            // dressed as provenance, and `CardSourceResolver` drops a read text
-            // equal to the front for exactly that reason.
-            claim: manual.front,
+            // No reading, said explicitly. `canonicalClaim` is printed under
+            // *Modelin okuduğu*, and the model read nothing for this card — it
+            // is the card the model failed to write.
+            //
+            // Empty rather than the question: `CardSourceResolver` does drop a
+            // read text equal to the front, but that equality is a coincidence
+            // with an expiry date. Edit the question afterwards and the *old*
+            // one reappears as text the model supposedly read. Passing `""`
+            // makes the absence structural — `nonEmpty` drops it whatever the
+            // question later becomes — and keeps this card off the model's unit,
+            // whose claim is a real reading that is not this card's (Codex,
+            // PR #43).
+            claim: "",
             context: context
         )
 

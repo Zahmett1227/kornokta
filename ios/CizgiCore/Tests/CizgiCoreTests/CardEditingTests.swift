@@ -122,6 +122,21 @@ final class CardEditingTests: XCTestCase {
         XCTAssertNil(resolved.readText)
     }
 
+    /// Why a hand-written card's unit carries an **empty** claim rather than the
+    /// question (Codex, PR #43).
+    ///
+    /// The equality rule above hides a claim only while it still matches the
+    /// front. Edit the question afterwards and the stale one walks back out
+    /// under "Modelin okuduğu" — text the model never read. An empty claim is
+    /// dropped whatever the question later becomes.
+    func testAnEmptyClaimStaysHiddenAfterTheQuestionIsEdited() {
+        let seededWithTheQuestion = material(cardFront: "Yeni soru?", readText: "Eski soru?")
+        XCTAssertEqual(seededWithTheQuestion.readText, "Eski soru?", "kusurun kendisi: eski soru sızıyor")
+
+        let seededEmpty = material(cardFront: "Yeni soru?", readText: "")
+        XCTAssertNil(seededEmpty.readText)
+    }
+
     func testBlankFieldsNeverBecomeEmptySections() {
         let resolved = material(quote: "   ", readText: "\n", subject: "  ")
         XCTAssertNil(resolved.quote)

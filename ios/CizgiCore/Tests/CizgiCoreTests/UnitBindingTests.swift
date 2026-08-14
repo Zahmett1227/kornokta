@@ -45,13 +45,16 @@ final class UnitBindingTests: XCTestCase {
             on: region,
             subject: "Patoloji",
             topic: "Hücre zedelenmesi",
-            claim: "Başka bir iddia",
+            claim: "İddia",
+            tags: ["yeni etiket"],
             context: context
         )
 
         XCTAssertIdentical(found, existing)
-        // Reused, not rewritten: the claim of a unit siblings share is theirs.
+        // Reused, not rewritten: a unit siblings share is not the caller's to
+        // edit, so even the tags it was asked for are ignored on a match.
         XCTAssertEqual(existing.canonicalClaim, "İddia")
+        XCTAssertEqual(existing.tags, [])
         XCTAssertEqual(region.knowledgeUnits.count, 1)
     }
 
@@ -81,6 +84,69 @@ final class UnitBindingTests: XCTestCase {
         XCTAssertEqual(region.knowledgeUnits.count, 2)
     }
 
+    /// The provenance half of the match (Codex, PR #43).
+    ///
+    /// A hand-written card asks for `claim: ""` — it has no model reading. If the
+    /// pair alone decided, it would land on the model's unit and "Kaynağı göster"
+    /// would print that page's reading under *Modelin okuduğu* for a card the
+    /// model never wrote.
+    func testAUnitWithADifferentClaimIsNotReused() throws {
+        let context = try makeContext()
+        let region = makeRegion(in: context)
+        let modelUnit = KnowledgeUnit(
+            canonicalClaim: "Sayfadan okunan metin",
+            subject: "Patoloji",
+            topic: "Hücre zedelenmesi"
+        )
+        modelUnit.region = region
+        context.insert(modelUnit)
+
+        let manual = KnowledgeUnitBinding.findOrCreate(
+            on: region,
+            subject: "Patoloji",
+            topic: "Hücre zedelenmesi",
+            claim: "",
+            context: context
+        )
+
+        XCTAssertNotIdentical(manual, modelUnit)
+        XCTAssertEqual(manual.canonicalClaim, "")
+        XCTAssertEqual(modelUnit.canonicalClaim, "Sayfadan okunan metin")
+        XCTAssertEqual(region.knowledgeUnits.count, 2)
+    }
+
+    /// Two hand-written cards under the same ders/konu still share one unit —
+    /// the claim match separates provenance, it does not fragment per card.
+    func testTwoManualCardsShareOneUnit() throws {
+        let context = try makeContext()
+        let region = makeRegion(in: context)
+        let first = KnowledgeUnitBinding.findOrCreate(
+            on: region, subject: "Patoloji", topic: "İnflamasyon", claim: "", context: context
+        )
+        let second = KnowledgeUnitBinding.findOrCreate(
+            on: region, subject: "Patoloji", topic: "İnflamasyon", claim: "", context: context
+        )
+        XCTAssertIdentical(first, second)
+        XCTAssertEqual(region.knowledgeUnits.count, 1)
+    }
+
+    /// The generated path is unaffected: `persist` gives every unit on a page the
+    /// same single reading, so the editor moving a card between topics still
+    /// finds its sibling.
+    func testGeneratedSiblingsStillMatchOnTheSharedPageReading() throws {
+        let context = try makeContext()
+        let region = makeRegion(in: context)
+        let reading = "Sayfadan okunan metin"
+        let sibling = KnowledgeUnit(canonicalClaim: reading, subject: "Patoloji", topic: "İnflamasyon")
+        sibling.region = region
+        context.insert(sibling)
+
+        let found = KnowledgeUnitBinding.findOrCreate(
+            on: region, subject: "Patoloji", topic: "İnflamasyon", claim: reading, context: context
+        )
+        XCTAssertIdentical(found, sibling)
+    }
+
     /// A unit with no ders/konu at all is a real pair too (the "Konusuz" bucket),
     /// so it has to be matched rather than duplicated on every call.
     func testAnUnclassifiedUnitIsMatchedOnNilNil() throws {
@@ -91,7 +157,7 @@ final class UnitBindingTests: XCTestCase {
         context.insert(unclassified)
 
         let found = KnowledgeUnitBinding.findOrCreate(
-            on: region, subject: nil, topic: nil, claim: "Soru", context: context
+            on: region, subject: nil, topic: nil, claim: "İddia", context: context
         )
         XCTAssertIdentical(found, unclassified)
     }

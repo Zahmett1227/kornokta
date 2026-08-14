@@ -414,8 +414,14 @@ struct CardEditorView: View {
 
         // Nothing to share with, and nothing to preserve: a fresh unit is the
         // only way a unitless card can carry a subject at all.
+        //
+        // Empty claim, for the reason `ManualCardSheet` records: a card that had
+        // no unit had no model reading either, and seeding one with the question
+        // makes "Kaynağı göster" print the *old* question as "Modelin okuduğu"
+        // the moment the question is edited (Codex, PR #43). It was hidden only
+        // by an equality that the next edit breaks.
         guard let current else {
-            let unit = KnowledgeUnit(canonicalClaim: card.front, subject: newSubject, topic: newTopic)
+            let unit = KnowledgeUnit(canonicalClaim: "", subject: newSubject, topic: newTopic)
             context.insert(unit)
             card.knowledgeUnit = unit
             card.updatedAt = .now
