@@ -10,14 +10,22 @@ import CizgiCore
 /// unlike `SubjectBackfillMigration`/`TopicBackfillMigration`: this is not a
 /// one-time event in the deck's history. A brand new card also starts nil —
 /// its replay is simply a no-op, since it has no history yet — and a card
-/// restored from a pre-v6 backup arrives nil on purpose. Both cases must
-/// self-heal on the very next launch rather than being permanently skipped by
-/// a global flag that only remembers "every card known at the time this ran
-/// once was handled".
+/// restored from a pre-v6 backup arrives nil on purpose.
+///
+/// Takes a `ModelContext` rather than a `ModelContainer` so it can run twice
+/// in one launch on the *same* context: once at startup, and again right
+/// after a backup restore (`SettingsView.restore`). The restore call is not
+/// an optimisation — it closes a real gap (Codex review, PR #41): a restored
+/// pre-v6 card arrives with `fesInitializedAt == nil`, and `ReviewView.grade`/
+/// `ExerciseView.applyFesScore` now stamp that field the instant they touch a
+/// card. Study a freshly restored card before the next cold start and the
+/// live update sets a non-nil marker over a score that only reflects the one
+/// new signal — the restored `ReviewLog` history behind it is never replayed,
+/// silently and permanently, because a non-nil marker is exactly what tells
+/// this migration to leave a card alone.
 @MainActor
 enum FesBackfillMigration {
-    static func runIfNeeded(container: ModelContainer) {
-        let context = ModelContext(container)
+    static func runIfNeeded(context: ModelContext) {
         do {
             let cards = try context.fetch(
                 FetchDescriptor<Card>(predicate: #Predicate { $0.fesInitializedAt == nil })

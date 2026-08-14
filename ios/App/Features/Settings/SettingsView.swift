@@ -519,6 +519,16 @@ struct SettingsView: View {
                 throw error
             }
 
+            // A restored pre-v6 card arrives with `fesInitializedAt == nil`.
+            // Without this call, studying it before the next cold start would
+            // let the live-update paths in `ReviewView.grade`/
+            // `ExerciseView.applyFesScore` stamp that field over a score that
+            // never replayed the just-restored `ReviewLog` history — a real
+            // and permanent loss, not a defensive no-op (Codex review, PR #41,
+            // second pass). Running it here, on this restore's own context,
+            // closes the gap before the user can ever touch the card.
+            FesBackfillMigration.runIfNeeded(context: context)
+
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
                 : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."

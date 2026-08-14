@@ -36,8 +36,11 @@ struct CizgiApp: App {
         TopicBackfillMigration.runIfNeeded(container: container)
         // Independent of the two above: keys off each card's own
         // `fesInitializedAt`, not a shared flag, so it runs every launch and
-        // only ever touches cards that still need it (docs/ADR-008).
-        FesBackfillMigration.runIfNeeded(container: container)
+        // only ever touches cards that still need it (docs/ADR-008). Also
+        // called again after a backup restore, on that flow's own context —
+        // see `FesBackfillMigration`'s doc comment for why that second call
+        // is load-bearing, not defensive.
+        FesBackfillMigration.runIfNeeded(context: ModelContext(container))
     }
 
     var body: some Scene {
