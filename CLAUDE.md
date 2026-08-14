@@ -174,18 +174,18 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Konu backfill (204 Patoloji kartı) | ✅ `main`'de (PR #34/#35) |
 | `jobs.result` 60 günlük saklama süpürmesi | ✅ `main`'de (PR #36); karar: docs/PRIVACY.md |
 | Ölü kod tıraşı (deterministik hat silindi) | ✅ `main`'de (PR #36); ADR-005'e not düşüldü |
-| Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
-| Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); **cihaz doğrulaması açık** |
-| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); **cihaz doğrulaması açık** |
-| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | 🟡 Kod hazır; **Vercel'e `GEMINI_API_KEY` girilmeli** ve cihaz doğrulaması açık |
-| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda. **Kullanım ekranı için iOS derlemesi gerekli**; cihaz doğrulaması açık |
-| Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de; **iOS derlemesi + cihaz doğrulaması açık** |
+| Değer tabanlı navigasyon refaktörü | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
+| Egzersiz→FSRS köprüsü (ADR-007) | ✅ `main`'de (PR #36); cihazda doğrulandı (2026-08-13) |
+| Çift sayfa kadraj düzeltmesi (`PageSplit` + "Sol/Sağ/Tümü") | ✅ `main`'de (PR #37); kamera **ve galeri** yolunda cihazda doğrulandı (2026-08-13) — PhotosPicker artık riski gerçekleşmedi |
+| Gemini ikinci görüş (`/api/second-opinion` + "İkinci görüş iste") | ✅ `main`'de ve **cihazda doğrulandı** (2026-08-13). Gemini `responseSchema`'yı kabul ediyor — OpenAI'de yaşadığımız şema riskinin buradaki eşi de kapandı |
+| Çağrı başına maliyet defteri (cached/reasoning token, başarısız çağrılar, Kullanım dökümü) | ✅ `main`'de; `jobs.usage` migration'ı canlıda; Kullanım ekranı cihazda doğrulandı (2026-08-13) |
+| Teşhis mesajı (sunucunun gerçek hatası ekrana) | ✅ `main`'de ve cihazda (2026-08-13) |
 | Model karşılaştırması — Tur A koşuldu ve kör değerlendirme yapıldı (2026-08-12, 6 sayfa × 3 model × 20 kart) | ✅ Bulgular `docs/PLAN-model-karsilastirma.md` → "Tur A sonucu". Özet: tek bayraksız hata Terra'dan ve iki koşuda tekrarladı; Luna 120 kartta sıfır bayraksız hata; Sol el yazısında en iyi. Tur B gereksiz. **Model kararı sahibinde açık** (Luna güçlü aday) |
 | Prompt v2.6 (Tur A'nın ikinci ürünü) | ✅ `main`'de; Sol'un üstünlüğünün prompt'la alınabilen kısmı kurala çevrildi |
 | Tur A2 — `luna@low` vs `luna@high` (2026-08-12 akşamı, prompt v2.6) | ✅ Koşuldu ve kör değerlendirildi. **`@high` 4 sayfada üstün, 1 eşit, 1 geride**; üstünlük el yazısı ve kapsamada. Bedeli: reasoning 685→72 017 token (105×), $0.005→$0.020/sayfa, 21→112 sn. İkisinde de "yanlış ama emin" sıfır. Ayrıntı `docs/PLAN-model-karsilastirma.md` → "Tur A2 sonucu". **Model kararı sahibinde açık** (`luna@high` önerilen) |
 | Prompt v2.6 doğrulaması | ✅ İki bağımsız koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu, pahalı kademede de); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
 | Tur A3 — `luna@medium` vs `luna@high` vs `sol@low` (aynı prompt sürümünde ilk dürüst kıyas) | ✅ Koşuldu ve kör değerlendirildi. **`medium` elendi** (turun tek sessiz hatası + tek uydurma kartı ondan; el yazısında 3 sayfada sonuncu). `sol@low` ↔ `luna@high` kalitede yakın, maliyette **7,5 kat** uzak ($0.1394 vs $0.0186/sayfa). **Karar: `luna@high`** — sahibinin ölçeğinde ~$240 yerine ~$32 |
-| FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 Kod yazıldı (yedek v6, `FesBackfillMigration` dahil), yerel `xcodebuild` + `swift test` yeşil. **Henüz commit edilmedi**; cihaz doğrulaması açık |
+| FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 PR #41 (`claude/fes-sicili-egzersiz-filtreleri`), Codex review turlarından geçiyor; yerel `xcodebuild` + `swift test` yeşil. **main'e merge + cihaz doğrulaması açık** |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -212,10 +212,13 @@ başka hiçbir şey etkilenmez. Supabase'de `jobs` tablosu +
 `page-uploads` özel kovası; ikisinde de RLS açık ve **policy yok** (yalnız
 `service_role` geçer).
 
-**Maliyet:** `OPENAI_USD_PER_MILLION_INPUT_TOKENS=5`,
-`OPENAI_USD_PER_MILLION_OUTPUT_TOKENS=30` (gpt-5.6-sol, Standard/short-context)
-ve `MAX_USD_PER_CARD_GENERATION=0.30` Vercel'de ayarlı; Ayarlar → Kullanım
-gerçek USD gösteriyor.
+**Model (2026-08-13'ten beri canlı):** `OPENAI_MODEL=gpt-5.6-luna`,
+`OPENAI_REASONING_EFFORT=high`, `OPENAI_MAX_OUTPUT_TOKENS=32000`, fiyatlar
+`0.2 / 0.02 / 1.2`. Gerekçesi üç turluk ölçüm:
+`docs/PLAN-model-karsilastirma.md` → "Tur A3 sonucu". Özet: `sol@low` ile
+kalitede yakın (ikisi de sıfır sessiz hata), maliyette 7,5 kat uzak —
+sahibinin ölçeğinde ~$240 yerine ~$32. `MAX_USD_PER_CARD_GENERATION=0.30`
+ayarlı; Ayarlar → Kullanım gerçek USD gösteriyor ve cihazda doğrulandı.
 
 **Model değiştirirken kural:** `OPENAI_MODEL` tek başına değiştirilmez —
 fiyat değişkenleri de aynı anda değişmeli (`..._INPUT_TOKENS`,
@@ -326,6 +329,12 @@ Tarihsel (davranış için değil, karar gerekçesi için): `docs/HISTORY.md`
 
 ## Sıradaki iş
 
+**Elle yapılacak somut işler:** FES sicili ve Egzersiz'in altı boyutlu
+filtresinin cihaz doğrulaması (ADR-008, aşağıda 1-5) ve A6 (§2 aşağıda).
+Cihaz doğrulama listesinin geri kalanı 2026-08-13'te büyük ölçüde kapandı;
+kalan iki madde (6-7) haftalara yayılan gerçek-kullanım gözlemi, oturup
+yapılacak bir şey değil.
+
 ### 1. Cihaz doğrulama listesi
 
 **Bu bölüm kullanıcıya sorulacak soruların listesidir.** Kod ve CI yeşil;
@@ -336,73 +345,62 @@ buradan silinip "doğrulananlar"a taşınır.
 Bilgi Haritası'nın "Konusuz" kovası dolu; Egzersiz'in "Bitir"i çalışıyor ve
 biten koşu "Son Egzersizler"e düşüyor.
 
-**🔲 Henüz doğrulanmamış — önem sırasıyla:**
+**✅ Cihazda doğrulanmış (2026-08-13, `luna@high` canlıyken):** uygulama
+açılıyor (SwiftData göç düzeltmesi tuttu, veri kayıpsız); kameradan yakalama;
+galeriden seçme; kart üretimi uçtan uca. **Bununla şemanın en büyük riski
+kapandı:** OpenAI `anyOf: [enum-string, null]` konu alanını kabul ediyor —
+etmeseydi her iş düşerdi, B planına (enum'u şemadan çıkarmak) gerek kalmadı.
 
-1. **Bir sayfa çek (en kritik).** Sistemin en büyük açık riski: OpenAI'nin
-   model-yüzlü şemadaki `anyOf: [enum-string, null]` konu alanını kabul edip
-   etmediği hiç denenmedi.
-   - *Beklenen:* kart geliyor; kart detayında "Sınıflandırma"da makul ders/konu.
-   - *Olmazsa:* tüm işler düşer. **B planı:** `buildModelResponseSchema`'dan
-     enum'u kaldırıp yalnız prompt + `sanitizeTopics`'e güvenmek.
-   - Aynı çekim **A6'yı da açar** (aşağıda).
-2. **Çift sayfa kadraj düzeltmesi (`PageSplit`):** açık kitap çek —
-   "Fotoğrafa iki sayfa girmiş" adımı çıkmalı, "Sol/Sağ" seçince karşı yarı
-   kararmalı, çizgi sürüklenebilmeli, "Devam"dan sonra kart detayındaki
-   "Kaynağı göster"de **yalnız seçilen sayfa** durmalı. Tek sayfa çektiğinde bu
-   adım **hiç çıkmamalı** (oran eşiği `spreadAspectThreshold = 1.05`). Çoklu
-   çekimde her çift sayfa için sırayla sorulmalı ("2 / 3" sayacı).
-   - **Aynı testi galeriden de yap.** Bilinen artık risk (PR #37, Codex): iOS
-     `PhotosPicker` bir kapanma-tamamlanma geri çağrısı sunmuyor, dolayısıyla
-     küçük ve yerel bir fotoğraf picker kapanırken yüklenip biterse kadraj
-     cover'ının sunumu SwiftUI tarafından düşürülebilir. Bu olursa **sessiz
-     değil**: yakalama ekranında "N sayfa kadraj seçimi bekliyor" kartı
-     çıkar, tek dokunuşla açılır. *Bu kartı gördüysen not et* — yapısal
-     çözüm (kadraj adımını modal cover yerine görünüm hiyerarşisi içinde tam
-     ekran katman yapmak) o zaman gerekçelenir; görmediysen gerek yok.
-3. **Değer tabanlı navigasyon (2026-08-09 refaktörü):** Yakala → Kuyruk →
-   sayfa detayı ve Bilgilerim → kart / Bilgi Haritası → ders push'ları
-   çalışıyor mu; derin ekranda alt bar kayboluyor mu; ev düğmesi derin
-   ekrandan gerçekten köke dönüyor mu.
-4. **Egzersiz→FSRS köprüsü (ADR-007):** vadesi gelmemiş bir kartı Egzersiz'de
-   yanlış yapınca kartın vadesinin en fazla yarına çekildiğini (Bilgilerim →
-   kart detayı), vadesi gelmiş kartın Egzersiz'den etkilenmediğini gör.
-5. **Bilgi Haritası → "Konusuz" satırına dokun:** o dersin konusuz kartlarıyla
-   Egzersiz başlamalı (`TopicFilter.none` yolu).
-6. **"Hızlı 10"u üst üste iki kez çalıştır:** farklı kartlar gelmeli.
-7. **Aktif oturumdayken haritadan derse dokun:** "Devam eden Egzersiz var"
-   diyaloğu çıkmalı.
-8. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
-   kalkıp yalnız ikonlar kalmalı.
-9. **Yedek al → geri yükle (v6):** `softLapseCount` ve FES sicili
-   (`fesScore`/`fesNegativeCount`) dahil durum korunuyor mu.
-10. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
-    "Gözden geçir"deki bir kartın detayında düğmeye bas — verdikt + "İkinci
-    okuma (Gemini)" metni gelmeli; anahtarı bilerek silip denersen hata
-    mesajı `GEMINI_API_KEY` demeli. `anyOf` şeması riski buraya da benzer
-    şekilde uygulanır: Gemini `responseSchema`'yı reddederse B planı şemayı
-    bırakıp yalnız prompt + sunucu doğrulamasına güvenmek
-    (`providers/gemini.ts` RESPONSE_SCHEMA).
-11. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
-12. **FES sicili ve geçmiş replay'i (ADR-008, en kritik — uygulama hiç
-    açılmama riski).** Uygulamayı aç: `Card`'a eklenen üç alan
-    declaration-time default'lu olduğu için açılmalı, ama bu tam olarak bir
-    kez yaşanmış bir hata sınıfı (`ModelRun.attempt`, §"Migration sırası"
-    kuralının ruhu) — kontrol şart. Birkaç kez yanlış/kararsız işaretlenmiş
-    eski bir kart ilk açılışta Bilgilerim → "FES kartlar" bölümünde ve kart
-    detayında görünmeli.
-13. **Egzersiz kurulum sheet'i.** "Filtrele" ikonuna dokun; ders, konu, kart
-    tipi, kart durumu, eklenme tarihi, FES'i tek tek dene — sheet'teki canlı
-    "N kart hazır" sayacı her dokunuşta değişmeli. "Uygula"dan sonra ana
-    ekrandaki chip'ler tutmalı, her chip'in "x"i yalnız kendi boyutunu
-    silmeli. "Sıfırla" hepsini temizlemeli.
-14. **Egzersiz bütçesi — Kart / Süre.** "Süre" segmentini seç, bir kademe
-    dene; altındaki "≈ N kart" tahmini makul mü (ilk kullanımda 12 sn/kart
-    varsayımıyla; birkaç Egzersiz'den sonra ölçülen hızla değişmeli).
-15. **"FES kartlar" hızlı başlangıcı.** Birkaç kartı bilerek yanlış/kararsız
-    yanıtla → eşiği aşınca Egzersiz'in "FES kartlar" kutucuğunda, Bilgilerim'de
-    ve kart detayında görünmeli; ardından birkaç kez doğru yanıtla → listeden
-    kendiliğinden çıkmalı. Egzersiz sonuç ekranındaki "N kart FES'e girdi/çıktı"
-    satırı doğru mu.
+**✅ Cihazda doğrulanmış (2026-08-13, ikinci tur):** konu ataması gerçekten
+doluyor (kart detayında "Sınıflandırma" makul ders/konu gösteriyor — şemanın
+kabul edilmesi bunu garanti etmiyordu, `sanitizeTopics` tanımadığı konuyu
+sessizce null'a çevirir ve iş yine biter); Ayarlar → Kullanım "Çağrı dökümü"
+gerçek USD ve token kırılımı veriyor; çift sayfa kadraj adımı **hem kamerada
+hem galeride** çalışıyor (galerideki bilinen `PhotosPicker` artık riski
+gerçekleşmedi — "N sayfa kadraj seçimi bekliyor" kartı çıkmadı, yapısal
+düzeltme gerekmiyor); değer tabanlı navigasyon (derin ekranda alt bar
+kayboluyor, ev düğmesi köke dönüyor); Egzersiz→FSRS köprüsü (vadesi gelmemiş
+kart en fazla yarına çekiliyor); yedek al → geri yükle `softLapseCount` dahil
+durumu koruyor (**v5'e kadar** — v6'nın FES alanları aşağıda hâlâ açık);
+Bilgi Haritası "Konusuz" satırı, "Hızlı 10"un tekrarında farklı kart, aktif
+oturum diyaloğu, erişilebilirlik yazı boyutunda ikon-only alt bar; **"İkinci
+görüş iste" (Gemini)** — düğme çalışıyor ve Gemini `responseSchema`'yı kabul
+ediyor. Bu düğme aynı zamanda "başka bir model ailesi denemeli miyiz?"
+sorusunun ucuz ölçüm aracı: gerçek kullanımda biriken verdiktler, Gemini'nin
+OpenAI'nin kaçırdığını sistematik yakalayıp yakalamadığını adaptör yazmadan
+gösterir (2026-08-13 tartışması).
+
+**🔲 Henüz doğrulanmamış:**
+
+1. **FES sicili ve geçmiş replay'i (ADR-008, en kritik — uygulama hiç
+   açılmama riski).** Uygulamayı aç: `Card`'a eklenen üç alan
+   declaration-time default'lu olduğu için açılmalı, ama bu tam olarak bir
+   kez yaşanmış bir hata sınıfı (`ModelRun.attempt`, §"Migration sırası"
+   kuralının ruhu) — kontrol şart. Birkaç kez yanlış/kararsız işaretlenmiş
+   eski bir kart ilk açılışta Bilgilerim → "FES kartlar" bölümünde ve kart
+   detayında görünmeli.
+2. **Egzersiz kurulum sheet'i.** "Filtrele" ikonuna dokun; ders, konu, kart
+   tipi, kart durumu, eklenme tarihi, FES'i tek tek dene — sheet'teki canlı
+   "N kart hazır" sayacı her dokunuşta değişmeli. "Uygula"dan sonra ana
+   ekrandaki chip'ler tutmalı, her chip'in "x"i yalnız kendi boyutunu
+   silmeli. "Sıfırla" hepsini temizlemeli.
+3. **Egzersiz bütçesi — Kart / Süre.** "Süre" segmentini seç, bir kademe
+   dene; altındaki "≈ N kart" tahmini makul mü (ilk kullanımda 12 sn/kart
+   varsayımıyla; birkaç Egzersiz'den sonra ölçülen hızla değişmeli). "Tümü"yü
+   Süre sekmesindeyken seç — sekme Kart'a atlamamalı (Codex, PR #41).
+4. **"FES kartlar" hızlı başlangıcı.** Birkaç kartı bilerek yanlış/kararsız
+   yanıtla → eşiği aşınca Egzersiz'in "FES kartlar" kutucuğunda, Bilgilerim'de
+   ve kart detayında görünmeli; ardından birkaç kez doğru yanıtla → listeden
+   kendiliğinden çıkmalı. Egzersiz sonuç ekranındaki "N kart FES'e girdi/çıktı"
+   satırı doğru mu.
+5. **Yedek al → geri yükle (v6):** FES sicili (`fesScore`/`fesNegativeCount`)
+   de korunuyor mu — üstteki 2026-08-13 doğrulaması yalnız v5'i (`softLapseCount`)
+   kapsıyor, v6'nın FES alanları henüz denenmedi.
+6. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
+   sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
+   kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
+   **düzelmedi** — kural 5 yeniden yazılacak.
+7. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
@@ -410,12 +408,30 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 
 - İlk denemede **Ayarlar → Beş şıklı kart: Hepsi** (`Karışık` bilerek seçici;
   yolu doğrulamak için "Hepsi" net).
-- Bakılacaklar: şıklar aynı semantik sınıftan mı, distraktörler gerçekten
-  karıştırılabilir mi, "iki doğru" var mı, "neden yanlış" öğretiyor mu, şıklar
-  telefonda okunacak kadar kısa mı. Bulgular prompt'un
-  `multipleChoiceInstruction` bloğuna işlenir.
+- **Makine zaten neyi tutuyor** (bunlara bakmaya gerek yok):
+  `sanitizeMultipleChoice`, şık sayısı beş değilse / doğru şık bir taneden az
+  ya da fazlaysa / `correctOption` uyuşmuyorsa / iki şık aynı anlama geliyorsa
+  (Türkçe normalizasyonlu) / `back` doğru şıkla eşleşmiyorsa kartı **düz karta
+  indiriyor**; bir şık diğerini kapsıyorsa ya da "neden yanlış" boşsa
+  `lowConfidence` **işaretliyor**. Yani sayılabilir ihlaller kapıda duruyor.
+- **Yalnız insanın görebileceği beş soru:** distraktörler gerçekten
+  karıştırılabilir mi (yakınlık tıbbi bir yargı — biçimsel olarak kusursuz bir
+  şık takımı soruyu bedavaya çevirebilir); şıklar aynı semantik sınıftan mı;
+  kurguda **ikinci bir doğru** var mı (kapı yalnız metin kapsamasını görür,
+  "klinik olarak da doğru sayılır"ı göremez); "neden yanlış" gerçekten
+  öğretiyor mu (kapı boş olmadığına bakar, doğru olduğuna bakamaz); şıklar
+  telefonda okunacak kadar kısa mı.
+- **İki somut tahmin** (2026-08-13, prompt okunarak): en olası kusur **şık
+  uzunluğu** — prompt "kısa olsun" diyor ama ölçüt vermiyor, ve v2.6'nın kural
+  5 deneyimi ölçütsüz kuralın bağlamadığını gösterdi. İkincisi: `Karışık`
+  modda modelin "bu kart ayırt etme mi?" kararını fazla cömert verip düz
+  tanımları da beş şıklı yapması.
+- Bulgular prompt'un `multipleChoiceInstruction` bloğuna işlenir — kural 8'de
+  işe yarayan biçimle: yanlış örnek + doğru örnek çifti.
 - İlk turda ölç: Ayarlar → Kullanım'daki çıktı token artışı (tahmin: kart
-  başına +80–150).
+  başına +80–150). **Not:** bu tahmin Sol dönemindeydi; `luna@high`'ta çıktı
+  $1.20/M olduğu için sayfa başına ~+$0.002 — beş şıklı kart artık bir maliyet
+  kararı değil, yalnız kalite kararı.
 
 ### 3. Küçük ve gerçek kalanlar
 
