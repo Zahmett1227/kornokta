@@ -563,6 +563,10 @@ struct ReviewView: View {
         let lapseCount: Int
         let lastReviewedAt: Date?
         let updatedAt: Date
+        /// FES sicili (docs/ADR-008) — grade'den önceki değerler, undo için.
+        let fesScore: Int
+        let fesNegativeCount: Int
+        let fesInitializedAt: Date?
         /// Whether this grade spent one of today's new-card allowances.
         let countedAsNew: Bool
         /// Which option was picked, on a five-option card.
@@ -629,7 +633,10 @@ struct ReviewView: View {
             reviewCount: card.reviewCount,
             lapseCount: card.lapseCount,
             lastReviewedAt: card.lastReviewedAt,
-            updatedAt: card.updatedAt
+            updatedAt: card.updatedAt,
+            fesScore: card.fesScore,
+            fesNegativeCount: card.fesNegativeCount,
+            fesInitializedAt: card.fesInitializedAt
         )
 
         card.dueDate = result.dueDate
@@ -639,6 +646,20 @@ struct ReviewView: View {
         if rating == .again { card.lapseCount += 1 }
         card.lastReviewedAt = now
         card.updatedAt = now
+
+        // FES sicili (docs/ADR-008): Tekrar'ın dört derecesi de besler, FSRS
+        // durumundan bağımsız muhasebe. "Zor" Egzersiz'in "Kararsızdım"ı gibi
+        // okunur — ikisi de kısmi puan.
+        let fesSignal = FesScore.signal(for: rating)
+        card.fesScore = FesScore.apply(fesSignal, to: card.fesScore)
+        if fesSignal.isNegative { card.fesNegativeCount += 1 }
+        // A live update is itself authoritative — it need not wait for
+        // `FesBackfillMigration` to say so. Without this, a card graded
+        // between one launch and the next carries a real, nonzero score next
+        // to a `nil` marker; exporting it in that window and restoring
+        // elsewhere replays an empty history and silently zeroes the score
+        // right back out (Codex review, PR #41).
+        card.fesInitializedAt = now
 
         try? context.save()
 
@@ -676,6 +697,9 @@ struct ReviewView: View {
                 lapseCount: snapshotFields.lapseCount,
                 lastReviewedAt: snapshotFields.lastReviewedAt,
                 updatedAt: snapshotFields.updatedAt,
+                fesScore: snapshotFields.fesScore,
+                fesNegativeCount: snapshotFields.fesNegativeCount,
+                fesInitializedAt: snapshotFields.fesInitializedAt,
                 countedAsNew: wasNew,
                 selectedOption: pickedOption,
                 optionsFingerprint: card.optionsRaw
@@ -729,6 +753,9 @@ struct ReviewView: View {
         card.lapseCount = snapshot.lapseCount
         card.lastReviewedAt = snapshot.lastReviewedAt
         card.updatedAt = snapshot.updatedAt
+        card.fesScore = snapshot.fesScore
+        card.fesNegativeCount = snapshot.fesNegativeCount
+        card.fesInitializedAt = snapshot.fesInitializedAt
 
         try? context.save()
 

@@ -60,6 +60,16 @@ struct LibraryView: View {
         cards.filter { $0.lowConfidence && $0.status != .suspended }
     }
 
+    /// FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
+    /// merged into it — a low-confidence card is the model doubting itself,
+    /// a FES card is *this user* repeatedly getting it wrong or unsure. Same
+    /// shape, different evidence.
+    private var fesCards: [Card] {
+        cards
+            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
+            .sorted { $0.fesScore > $1.fesScore }
+    }
+
     private var mostForgotten: [Card] {
         cards.filter { $0.lapseCount > 0 }
             .sorted { $0.lapseCount > $1.lapseCount }
@@ -172,6 +182,22 @@ struct LibraryView: View {
                     Text("Model ya da sunucu bu kartlarda emin olamadı — okunamayan "
                          + "bir el yazısı, ya da birbirini kapsayan şıklar. Kart "
                          + "desteye girdi; doğruluğunu bir kez kontrol et.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+
+            if !fesCards.isEmpty {
+                Section {
+                    ForEach(fesCards) { card in
+                        row(card)
+                    }
+                    .onDelete { deleteCards(fesCards, at: $0) }
+                } header: {
+                    sectionHeader("FES kartlar")
+                } footer: {
+                    Text("Tekrar'da ya da Egzersiz'de birkaç kez yanlış ya da kararsız "
+                         + "işaretlenmiş kartlar. Doğru cevapladıkça kendiliğinden listeden çıkar.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -340,6 +366,15 @@ struct CardDetailView: View {
                 LabeledContent("Sonraki", value: card.dueDate.formatted(.dateTime.day().month().year()))
                 LabeledContent("Tekrar sayısı", value: "\(card.reviewCount)")
                 LabeledContent("Unutma", value: "\(card.lapseCount)")
+                // docs/ADR-008: a durable "keeps tripping me up" signal, fed by
+                // both Tekrar and Egzersiz — shown only once the card actually
+                // crosses the threshold, not as a running score nobody asked for.
+                if FesScore.isFes(score: card.fesScore) {
+                    LabeledContent("FES") {
+                        Label("\(card.fesNegativeCount) kez yanlış/kararsız", systemImage: "flame.fill")
+                            .foregroundStyle(Cizgi.warning)
+                    }
+                }
             } header: { sectionHeader("Tekrar") }
 
             // Legacy safety: a card left as needsReview from before Faz 6 can

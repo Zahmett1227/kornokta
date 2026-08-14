@@ -42,6 +42,46 @@ final class BackupExporterTests: XCTestCase {
         XCTAssertEqual(restored.cards.first?.subject, "Patoloji")
     }
 
+    /// Version 6 (docs/ADR-008): exported as already-finalized, not
+    /// recomputed on the way back in — `fesInitializedAt` surviving the round
+    /// trip is what tells the receiving device's backfill migration to leave
+    /// this card alone.
+    func testFesRecordSurvivesAFullExportRestoreRoundTrip() throws {
+        let initializedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let record = BackupExporter.CardRecord(
+            id: UUID(), type: "direct_recall", front: "Soru", back: "Yanıt",
+            explanation: nil, sourceQuote: nil, subject: "Patoloji",
+            status: "active", dueDate: Date(timeIntervalSince1970: 0),
+            stability: 1, difficulty: 5, reviewCount: 2, lapseCount: 0,
+            fesScore: 5, fesNegativeCount: 3, fesInitializedAt: initializedAt
+        )
+        let data = try BackupExporter.encode(cards: [record], exportedAt: Date(timeIntervalSince1970: 0))
+        let restored = try BackupExporter.decode(data)
+
+        XCTAssertEqual(restored.cards.first?.fesScore, 5)
+        XCTAssertEqual(restored.cards.first?.fesNegativeCount, 3)
+        XCTAssertEqual(restored.cards.first?.fesInitializedAt, initializedAt)
+    }
+
+    func testAPreFesBackupStillDecodesWithFesDefaults() throws {
+        // A version 5 file has none of the three FES keys. Defaulting to
+        // "never initialized" is correct, not just tolerated: it is exactly
+        // the signal that lets `FesBackfillMigration` attempt a best-effort
+        // replay from whatever `ReviewLog` history the same file restores.
+        let json = """
+        {"formatVersion":5,"exportedAt":"1970-01-01T00:00:00Z","cards":[{
+          "id":"00000000-0000-0000-0000-000000000001","type":"direct_recall",
+          "front":"Soru","back":"Yanıt","subject":"Patoloji","status":"active",
+          "dueDate":"1970-01-01T00:00:00Z","stability":1,"difficulty":5,
+          "reviewCount":0,"lapseCount":0
+        }]}
+        """
+        let restored = try BackupExporter.decode(Data(json.utf8))
+        XCTAssertEqual(restored.cards.first?.fesScore, 0)
+        XCTAssertEqual(restored.cards.first?.fesNegativeCount, 0)
+        XCTAssertNil(restored.cards.first?.fesInitializedAt)
+    }
+
     func testAPreTopicBackupStillDecodesWithNoTopic() throws {
         // A version 3 file has no `topic` key at all. It has to restore as the
         // subset it always was, not fail — the same contract every field added

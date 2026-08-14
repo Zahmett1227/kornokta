@@ -21,10 +21,10 @@ import Foundation
 /// defined fallback, so an old backup restores as the subset it always was
 /// rather than failing.
 public enum BackupExporter {
-    /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2).
-    /// Older files still restore: every field added after version 1 is decoded
-    /// with `decodeIfPresent`.
-    public static let formatVersion = 5
+    /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2);
+    /// 6 adds the FES record (docs/ADR-008). Older files still restore: every
+    /// field added after version 1 is decoded with `decodeIfPresent`.
+    public static let formatVersion = 6
 
     /// One graded review, as recorded at the time (§16.7).
     public struct ReviewRecord: Codable, Sendable, Equatable {
@@ -107,6 +107,17 @@ public enum BackupExporter {
         /// When Egzersiz last touched FSRS state (docs/ADR-007) — restoring
         /// without it would disarm the one-day practice freeze.
         public let lastPracticedAt: Date?
+        // --- added in version 6 ---
+        /// FES sicili (docs/ADR-008), exported as already-finalized.
+        /// `fesInitializedAt` non-nil tells `FesBackfillMigration` not to
+        /// replay this card's history again on the receiving device — which
+        /// matters because `ExerciseAttempt` never travels in a backup (see
+        /// `ExerciseRun`), so a replay after restore would silently drop
+        /// every Egzersiz-sourced signal the original score included and
+        /// only see the restored `ReviewLog` half of the picture.
+        public let fesScore: Int
+        public let fesNegativeCount: Int
+        public let fesInitializedAt: Date?
 
         public init(
             id: UUID,
@@ -132,7 +143,10 @@ public enum BackupExporter {
             lowConfidence: Bool = false,
             topic: String? = nil,
             softLapseCount: Int = 0,
-            lastPracticedAt: Date? = nil
+            lastPracticedAt: Date? = nil,
+            fesScore: Int = 0,
+            fesNegativeCount: Int = 0,
+            fesInitializedAt: Date? = nil
         ) {
             self.id = id
             self.type = type
@@ -158,6 +172,9 @@ public enum BackupExporter {
             self.topic = topic
             self.softLapseCount = softLapseCount
             self.lastPracticedAt = lastPracticedAt
+            self.fesScore = fesScore
+            self.fesNegativeCount = fesNegativeCount
+            self.fesInitializedAt = fesInitializedAt
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -189,6 +206,9 @@ public enum BackupExporter {
             topic = try values.decodeIfPresent(String.self, forKey: .topic)
             softLapseCount = try values.decodeIfPresent(Int.self, forKey: .softLapseCount) ?? 0
             lastPracticedAt = try values.decodeIfPresent(Date.self, forKey: .lastPracticedAt)
+            fesScore = try values.decodeIfPresent(Int.self, forKey: .fesScore) ?? 0
+            fesNegativeCount = try values.decodeIfPresent(Int.self, forKey: .fesNegativeCount) ?? 0
+            fesInitializedAt = try values.decodeIfPresent(Date.self, forKey: .fesInitializedAt)
         }
     }
 

@@ -299,6 +299,21 @@ public final class Card {
     public var lastPracticedAt: Date?
     public var lastReviewedAt: Date?
 
+    /// FES: a durable "keeps tripping me up" score fed by both Tekrar and
+    /// Egzersiz (docs/ADR-008, `FesScore`). Unlike `ExercisePracticeWeight`,
+    /// never decays with time — clamping keeps it bounded instead. Defaulted
+    /// so existing decks migrate with nothing to decide; `fesInitializedAt`
+    /// is what tells `FesBackfillMigration` which cards still need their
+    /// history replayed into this field.
+    public var fesScore: Int = 0
+    /// Lifetime count of wrong/unsure answers. Never decreases — shown in the
+    /// card detail alongside the (recoverable) `fesScore`.
+    public var fesNegativeCount: Int = 0
+    /// When `fesScore`/`fesNegativeCount` were last set from this card's full
+    /// review/practice history. `nil` means never — a card from before FES
+    /// existed, or one that just arrived via a pre-v6 backup restore.
+    public var fesInitializedAt: Date?
+
     public var knowledgeUnit: KnowledgeUnit?
 
     @Relationship(deleteRule: .cascade, inverse: \ReviewLog.card)
@@ -584,6 +599,11 @@ public final class ExerciseRun {
     /// had picked "Tümü" or "Konusuz", but that ambiguity is exactly the bug
     /// this rename fixes and no migration can recover it after the fact.
     @Attribute(originalName: "topic") public var topicFilterRaw: String?
+    /// The other four filter dimensions (docs/ADR-008), as JSON
+    /// (`ExerciseFilter.storageValue`). `subject`/`topicFilterRaw` above stay
+    /// authoritative for ders/konu and are kept in sync by the `filter`
+    /// setter below — this column only carries what they cannot.
+    public var filterJSON: String?
     /// String UUIDs keep the exact shuffled order durable across relaunches.
     public var queuedCardIds: [String]
     public var position: Int
@@ -601,6 +621,24 @@ public final class ExerciseRun {
     public var topicFilter: TopicFilter {
         get { TopicFilter.fromStorage(topicFilterRaw) }
         set { topicFilterRaw = newValue.storageValue }
+    }
+
+    /// The full six-dimension filter (docs/ADR-008). Reading prefers
+    /// `filterJSON`; a run started before this field existed (an in-flight
+    /// update) has none, so the getter falls back to the two columns that
+    /// have always been there. Writing keeps all three in sync, so an older
+    /// build reading only `subject`/`topicFilterRaw` still sees a sensible —
+    /// if narrower — filter for a run this build started.
+    public var filter: ExerciseFilter {
+        get {
+            guard let filterJSON else { return ExerciseFilter(subject: subject, topic: topicFilter) }
+            return ExerciseFilter.fromStorage(filterJSON)
+        }
+        set {
+            subject = newValue.subject
+            topicFilterRaw = newValue.topic.storageValue
+            filterJSON = newValue.storageValue
+        }
     }
 
     public init(

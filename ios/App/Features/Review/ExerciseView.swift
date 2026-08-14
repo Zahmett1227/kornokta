@@ -29,29 +29,52 @@ struct ExerciseView: View {
     @State private var selectedOption: Int?
     @State private var shownAt = Date()
     @State private var editingCard: Card?
-    @State private var subjectFilter: String?
-    @State private var topicFilter: TopicFilter = .all
-    /// 0 means every eligible card; the other values are quick, predictable
-    /// session sizes rather than a free-form number field.
-    @State private var requestedCardCount = 20
+    /// The six-dimension filter (docs/ADR-008); ders/konu keep the same
+    /// `TopicFilter` contract Bilgilerim uses.
+    @State private var filter = ExerciseFilter()
+    @State private var isShowingSetupSheet = false
+    /// How many cards (or how much time) "Egzersize başla" should draw.
+    @State private var budget: ExerciseBudget = .cards(20)
+    /// Which segment ("Kart"/"Süre") the presets row below is showing.
+    ///
+    /// Its own state, not derived from `budget`: `.all` is shared by both
+    /// kinds ("Tümü" appears in each preset row), so deriving it from
+    /// `budget` alone made picking "Tümü" while on "Süre" silently snap the
+    /// segmented control back to "Kart" (Codex review, PR #41, third pass).
+    @State private var budgetKind: BudgetKind = .cards
+    @State private var secondsPerCard = ReviewPace.fallbackSecondsPerCard
     @State private var isConfirmingEarlyFinish = false
     /// A filter requested from another screen that arrived mid-run, parked
     /// until the user says what should happen to the run.
     @State private var pendingTarget: AppNavigator.ExerciseTarget.Filter?
+    /// How many cards crossed the FES threshold (either way) this session —
+    /// reset per session, not read from `Card` after the fact, since nothing
+    /// else records a card's FES status *before* the run started.
+    @State private var fesEnteredCount = 0
+    @State private var fesLeftCount = 0
 
     /// Suspended cards stay out — the user has said they do not want to see
     /// them. Everything else is fair game regardless of its due date, which is
     /// the whole difference from `ReviewView`.
     private var eligibleCards: [Card] {
-        allCards.filter { card in
-            card.status != .suspended
-                && LibraryCardFilter.matches(
-                    subject: card.knowledgeUnit?.subject,
-                    topic: card.knowledgeUnit?.topic,
-                    subjectFilter: subjectFilter,
-                    topicFilter: topicFilter
-                )
+        let now = Date()
+        return allCards.filter { card in
+            card.status != .suspended && filter.matches(candidate(for: card), now: now)
         }
+    }
+
+    private func candidate(for card: Card) -> ExerciseCandidate {
+        ExerciseCandidate(
+            id: card.id,
+            subject: card.knowledgeUnit?.subject,
+            topic: card.knowledgeUnit?.topic,
+            type: card.type,
+            reviewCount: card.reviewCount,
+            dueDate: card.dueDate,
+            lowConfidence: card.lowConfidence,
+            createdAt: card.createdAt,
+            fesScore: card.fesScore
+        )
     }
 
     private var currentCard: Card? {
@@ -65,13 +88,16 @@ struct ExerciseView: View {
         }
     }
 
-    /// The cards there is evidence against, weakest first. Selection *and*
-    /// ordering live in `WeakPointRanking` so the decay rules that keep a
-    /// relearned card from being drilled for ever are covered by `swift test`
-    /// rather than only by looking at the screen.
-    private var weakCards: [Card] {
-        let cards = eligibleCards
-        let ranked = WeakPointRanking.weakOnly(
+    /// FES cards (docs/ADR-008), most urgent first. Membership is
+    /// `Card.fesScore` — durable, never decays. Ordering reuses
+    /// `WeakPointRanking.rank` (recency-weighted practice evidence) without
+    /// its own decaying `isWeak` filter overriding FES's membership rule: a
+    /// card whose last miss fell outside `ExercisePracticeWeight`'s 30-day
+    /// window would otherwise silently drop out of a list FES exists to
+    /// keep durable.
+    private var fesCards: [Card] {
+        let cards = eligibleCards.filter { FesScore.isFes(score: $0.fesScore) }
+        let ranked = WeakPointRanking.rank(
             cards.map {
                 WeakPointCandidate(
                     cardId: $0.id,
@@ -86,6 +112,12 @@ struct ExerciseView: View {
         )
         let byId = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return ranked.compactMap { byId[$0.cardId] }
+    }
+
+    /// Bilgilerim's "Gözden geçir" set, narrowed by the active filter — the
+    /// same cards, reachable as a quick start here too.
+    private var reviewCards: [Card] {
+        eligibleCards.filter(\.lowConfidence)
     }
 
     private var pendingTargetMessage: String {
@@ -169,13 +201,25 @@ struct ExerciseView: View {
                         .disabled(session?.isFinished ?? true)
                         .accessibilityLabel("Kartı düzenle")
                     } else if session == nil {
-                        SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                        Button {
+                            isShowingSetupSheet = true
+                        } label: {
+                            Label(
+                                "Filtrele",
+                                systemImage: filter.isActive
+                                    ? "line.3.horizontal.decrease.circle.fill"
+                                    : "line.3.horizontal.decrease.circle"
+                            )
+                        }
                     }
                 }
             }
         }
         .sheet(item: $editingCard) { card in
             CardEditorView(card: card)
+        }
+        .sheet(isPresented: $isShowingSetupSheet) {
+            ExerciseSetupSheet(filter: $filter, allCards: allCards)
         }
         .confirmationDialog(
             "Egzersizi bitir?",
@@ -204,6 +248,7 @@ struct ExerciseView: View {
         .onAppear {
             pruneExpiredHistory()
             restoreActiveRunIfNeeded()
+            secondsPerCard = measuredSecondsPerCard()
             navigator.isTabBarHidden = isSessionActive
             applyIncomingTarget()
         }
@@ -221,16 +266,18 @@ struct ExerciseView: View {
     @ViewBuilder
     private var startScreen: some View {
         let count = eligibleCards.count
-        // Computed once per render on purpose: `weakCards` walks every attempt
-        // ever recorded, and the start screen reads it for the count, the
-        // disabled state and the tap.
-        let weak = weakCards
+        // Computed once per render on purpose: `fesCards`/`reviewCards` walk
+        // the filtered deck, and the start screen reads each for its count,
+        // its disabled state and its tap.
+        let fes = fesCards
+        let review = reviewCards
         ScrollView {
             VStack(alignment: .leading, spacing: Cizgi.Space.xl) {
                 ScreenHero(
                     eyebrow: "Günlük çalışma alanı",
                     title: "Bilgiyi aktif kullan",
-                    subtitle: "Dilediğin konuyu karışık çalış. Egzersiz sonuçları tekrar planını değiştirmez.",
+                    subtitle: "Dilediğin konuyu karışık çalış. Yanıtların FSRS'i yalnız "
+                        + "korumalı bir köprüyle, sınırlı biçimde etkiler (ADR-007).",
                     systemImage: "brain.head.profile"
                 )
 
@@ -251,50 +298,82 @@ struct ExerciseView: View {
                         .disabled(count == 0)
                         .opacity(count == 0 ? 0.45 : 1)
 
-                        // Offered only when the deck actually has weak cards.
-                        // Padding the run out to 20 with cards the user has
-                        // never got wrong would make the label a lie and bury
-                        // the few that do need work.
+                        // Offered only when the deck actually has FES cards
+                        // (docs/ADR-008). Padding the run out with cards the
+                        // user has never got wrong would make the label a lie
+                        // and bury the few that actually need work.
                         FeatureActionCard(
-                            title: "Zayıf noktalar",
-                            subtitle: weak.isEmpty
-                                ? "Şimdilik zayıf kart yok"
-                                : "\(weak.count) unutulan / düşük güvenli kart",
-                            systemImage: "scope"
+                            title: "FES kartlar",
+                            subtitle: fes.isEmpty
+                                ? "Şimdilik FES kart yok"
+                                : "\(fes.count) kart seni zorluyor",
+                            systemImage: "flame.fill"
                         ) {
-                            start(cards: weak, limit: 20, mode: .weak)
+                            start(cards: fes, limit: nil, mode: .weak)
                         }
-                        .disabled(weak.isEmpty)
-                        .opacity(weak.isEmpty ? 0.45 : 1)
+                        .disabled(fes.isEmpty)
+                        .opacity(fes.isEmpty ? 0.45 : 1)
+
+                        FeatureActionCard(
+                            title: "Gözden geçir",
+                            subtitle: review.isEmpty
+                                ? "Gözden geçirilecek kart yok"
+                                : "\(review.count) şüpheli kart",
+                            systemImage: "exclamationmark.triangle.fill"
+                        ) {
+                            start(cards: review, limit: nil, mode: .free)
+                        }
+                        .disabled(review.isEmpty)
+                        .opacity(review.isEmpty ? 0.45 : 1)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-                    CizgiSectionTitle(
-                        "Egzersizini kur",
-                        subtitle: "Ders ve konu filtresini sağ üstteki menüden değiştirebilirsin."
-                    )
+                    HStack(alignment: .firstTextBaseline) {
+                        CizgiSectionTitle(
+                            "Egzersizini kur",
+                            subtitle: filter.isActive
+                                ? "Uyguladığın filtreler aşağıda."
+                                : "İstersen ders, konu, kart tipi, durum, tarih ya da FES'e göre daralt."
+                        )
+                        Spacer()
+                        Button("Filtreleri düzenle") { isShowingSetupSheet = true }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Cizgi.accent)
+                    }
 
-                    ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
+                    ExerciseFilterChips(filter: $filter)
 
                     CardSurface {
                         VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-                            HStack {
-                                Label("\(count) kart hazır", systemImage: "rectangle.stack.fill")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Cizgi.ink)
-                                Spacer()
-                                if let subjectFilter {
-                                    TagChip(subjectFilter, systemImage: "book")
+                            Label("\(count) kart hazır", systemImage: "rectangle.stack.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Cizgi.ink)
+
+                            Picker("Bütçe türü", selection: $budgetKind) {
+                                Text("Kart").tag(BudgetKind.cards)
+                                Text("Süre").tag(BudgetKind.minutes)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .onChange(of: budgetKind) { _, newKind in
+                                switch newKind {
+                                case .cards: budget = .cards(ExerciseBudget.cardPresets[1])
+                                case .minutes: budget = .minutes(ExerciseBudget.minutePresets[0])
                                 }
                             }
 
-                            Picker("Kart sayısı", selection: $requestedCardCount) {
-                                Text("10").tag(10)
-                                Text("20").tag(20)
-                                Text("Tümü").tag(0)
+                            ChipFlowRow(budgetOptions) { option in
+                                SelectableChip(title: budgetLabel(option), isSelected: budget == option) {
+                                    budget = option
+                                }
                             }
-                            .pickerStyle(.segmented)
+
+                            if budgetKind == .minutes, let estimated = budget.limit(secondsPerCard: secondsPerCard) {
+                                Text("≈ \(estimated) kart")
+                                    .font(.caption)
+                                    .foregroundStyle(Cizgi.muted)
+                            }
 
                             if count == 0 {
                                 Text("Bu filtreye uyan kart yok.")
@@ -304,30 +383,30 @@ struct ExerciseView: View {
                                 Button("Egzersize başla") {
                                     start(
                                         cards: eligibleCards,
-                                        limit: requestedCardCount == 0 ? nil : requestedCardCount,
+                                        limit: budget.limit(secondsPerCard: secondsPerCard),
                                         mode: .free
                                     )
                                 }
                                 .buttonStyle(CizgiPrimaryButtonStyle())
                             }
+
+                            // Rewritten more than once, each time because the
+                            // screen promised more independence than the code
+                            // delivered (Codex, PR #36: the ADR-007 bridge
+                            // really can adjust scheduling). Say what actually
+                            // happens — a false "nothing changes" is a
+                            // guarantee the user opts in under.
+                            Text(
+                                "Yanıtların ayrı bir Egzersiz geçmişine yazılır ve \"FES kartlar\" "
+                                    + "seçimini besler. Erken doğrular kartı sessizce güçlendirebilir, "
+                                    + "erken yanlışlar kartı öne çekebilir (ADR-007); tekrar geçmişin "
+                                    + "(ReviewLog) hiç değişmez."
+                            )
+                            .font(.caption)
+                            .foregroundStyle(Cizgi.muted)
                         }
                     }
                 }
-
-                Label(
-                    // Rewritten twice, both times because the screen promised
-                    // more independence than the code delivered (Codex, PR #36:
-                    // the ADR-007 bridge really can adjust scheduling). Say
-                    // what actually happens — a false "nothing changes" is a
-                    // guarantee the user opts in under.
-                    "Yanıtların ayrı bir Egzersiz geçmişine yazılır ve \"Zayıf noktalar\" "
-                        + "seçimini besler. Erken doğrular kartı sessizce güçlendirebilir, "
-                        + "erken yanlışlar kartı öne çekebilir (ADR-007); tekrar geçmişin "
-                        + "(ReviewLog) hiç değişmez.",
-                    systemImage: "checkmark.shield"
-                )
-                .font(.footnote)
-                .foregroundStyle(Cizgi.muted)
 
                 if !completedRuns.isEmpty {
                     VStack(alignment: .leading, spacing: Cizgi.Space.md) {
@@ -343,6 +422,25 @@ struct ExerciseView: View {
             }
             .padding(.horizontal, Cizgi.Space.lg)
             .padding(.vertical, Cizgi.Space.md)
+        }
+    }
+
+    private enum BudgetKind: Hashable {
+        case cards, minutes
+    }
+
+    private var budgetOptions: [ExerciseBudget] {
+        switch budgetKind {
+        case .cards: return ExerciseBudget.cardPresets.map { .cards($0) } + [.all]
+        case .minutes: return ExerciseBudget.minutePresets.map { .minutes($0) } + [.all]
+        }
+    }
+
+    private func budgetLabel(_ budget: ExerciseBudget) -> String {
+        switch budget {
+        case .cards(let count): return "\(count)"
+        case .minutes(let minutes): return "\(minutes) dk"
+        case .all: return "Tümü"
         }
     }
 
@@ -386,7 +484,7 @@ struct ExerciseView: View {
         switch mode {
         case .free: return "Serbest Egzersiz"
         case .quick: return "Hızlı Egzersiz"
-        case .weak: return "Zayıf Noktalar"
+        case .weak: return "FES Egzersizi"
         }
     }
 
@@ -394,24 +492,42 @@ struct ExerciseView: View {
         switch mode {
         case .free: return "shuffle"
         case .quick: return "bolt.fill"
-        case .weak: return "scope"
+        case .weak: return "flame.fill"
         }
     }
 
     @ViewBuilder
     private var completionScreen: some View {
         let summary = session?.summary ?? ExerciseSummary(knew: 0, unsure: 0, missed: 0)
+        let accuracy = summary.answered > 0 ? Double(summary.knew) / Double(summary.answered) : 0
         VStack(spacing: Cizgi.Space.xl) {
             VStack(spacing: Cizgi.Space.md) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(Cizgi.accent)
+                ZStack {
+                    RingGauge(progress: accuracy, tint: Cizgi.accent, lineWidth: 10)
+                        .frame(width: 96, height: 96)
+                    VStack(spacing: 0) {
+                        Text("\(Int((accuracy * 100).rounded()))%")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(Cizgi.ink)
+                        Text("doğru")
+                            .font(.caption2)
+                            .foregroundStyle(Cizgi.muted)
+                    }
+                }
                 Text("Egzersiz bitti")
                     .font(.title3.weight(.bold))
                     .foregroundStyle(Cizgi.ink)
                 Text("\(summary.answered) kart yanıtlandı.")
                     .font(.subheadline)
                     .foregroundStyle(Cizgi.muted)
+                // FES sicilinin bu oturumda gerçekten hareket ettiğini
+                // göstermek için — sicilin kendisi görünmez kalırsa neden
+                // tutulduğu hissedilmez.
+                if fesEnteredCount > 0 || fesLeftCount > 0 {
+                    Text(fesDeltaText)
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
             }
 
             HStack(spacing: Cizgi.Space.sm) {
@@ -428,6 +544,13 @@ struct ExerciseView: View {
         }
         .padding(.horizontal, Cizgi.Space.xl)
         .padding(Cizgi.Space.xl)
+    }
+
+    private var fesDeltaText: String {
+        var parts: [String] = []
+        if fesEnteredCount > 0 { parts.append("\(fesEnteredCount) kart FES'e girdi") }
+        if fesLeftCount > 0 { parts.append("\(fesLeftCount) kart FES'ten çıktı") }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: Card
@@ -472,6 +595,13 @@ struct ExerciseView: View {
                     }
                     if card.lowConfidence {
                         TagChip("Gözden geçir", systemImage: "exclamationmark.triangle.fill")
+                    }
+                    // Only after the answer is revealed — showing it earlier
+                    // would hint "this one's hard" before the user has tried
+                    // to recall it, which is exactly the measurement FES's
+                    // own signal depends on not being contaminated.
+                    if isAnswerVisible, FesScore.isFes(score: card.fesScore) {
+                        TagChip("FES", systemImage: "flame.fill")
                     }
                 }
 
@@ -626,14 +756,22 @@ struct ExerciseView: View {
     /// cards every single time — "Hızlı 10" would never show card eleven.
     private func start(cards: [Card], limit: Int?, mode: ExerciseMode) {
         var generator = SystemRandomNumberGenerator()
+        let ranked = mode == .weak
         let selected = ExerciseSelection.pick(
             from: cards.map(\.id),
             limit: limit,
-            ranked: mode == .weak,
+            ranked: ranked,
             using: &generator
         )
-        let newSession = ExerciseSession(cardIds: selected, using: &generator)
+        // A ranked pool (FES) chose this order on purpose — the plain
+        // shuffling init would throw away exactly what `ranked: true` was
+        // for, most urgent first (Codex review, PR #41, fifth pass).
+        let newSession = ranked
+            ? ExerciseSession(queue: selected, position: 0)
+            : ExerciseSession(cardIds: selected, using: &generator)
         session = newSession
+        fesEnteredCount = 0
+        fesLeftCount = 0
         beginRun(for: newSession, mode: mode)
         resetCardState()
     }
@@ -643,6 +781,8 @@ struct ExerciseView: View {
         var generator = SystemRandomNumberGenerator()
         restarted.restart(using: &generator)
         session = restarted
+        fesEnteredCount = 0
+        fesLeftCount = 0
         beginRun(for: restarted, mode: currentRun?.mode ?? .free)
         resetCardState()
     }
@@ -694,6 +834,7 @@ struct ExerciseView: View {
         // enough to due — count as a real lapse. All policy lives in
         // `EarlyPractice`; the card is only ever touched with what it returns.
         if let card = allCards.first(where: { $0.id == cardId }) {
+            applyFesScore(result: result, to: card, at: answeredAt)
             applyEarlyPractice(result: result, to: card, at: answeredAt)
         }
 
@@ -705,6 +846,29 @@ struct ExerciseView: View {
         }
         try? context.save()
         resetCardState()
+    }
+
+    /// FES sicili (docs/ADR-008): every answer counts, `unsure` included, and
+    /// independent of `EarlyPractice`'s due/frozen gates — pure bookkeeping
+    /// that never touches FSRS state. The save rides `recordAndAdvance`'s
+    /// existing `context.save()`.
+    private func applyFesScore(result: ExerciseResult, to card: Card, at now: Date) {
+        let wasFes = FesScore.isFes(score: card.fesScore)
+        let signal = FesScore.signal(for: result)
+        card.fesScore = FesScore.apply(signal, to: card.fesScore)
+        if signal.isNegative { card.fesNegativeCount += 1 }
+        // A live update is itself authoritative — see the matching comment in
+        // `ReviewView.grade`. Without this, a card created and answered only
+        // in Egzersiz during one session carries a real score next to a
+        // `nil` marker; exporting it in that window and restoring elsewhere
+        // replays an empty history (`ExerciseAttempt` never travels in a
+        // backup) and silently zeroes the score right back out (Codex
+        // review, PR #41).
+        card.fesInitializedAt = now
+
+        let isFesNow = FesScore.isFes(score: card.fesScore)
+        if !wasFes, isFesNow { fesEnteredCount += 1 }
+        if wasFes, !isFesNow { fesLeftCount += 1 }
     }
 
     /// Applies exactly what `EarlyPractice.update` allows, nothing more. The
@@ -762,6 +926,22 @@ struct ExerciseView: View {
         resetCardState()
     }
 
+    /// The pace this user actually practises at, from `ExerciseAttempt`'s own
+    /// response times — `ReviewView.measuredSecondsPerCard`'s counterpart,
+    /// same sample size and fallback, different table. Kept separate from
+    /// Tekrar's measurement on purpose: practice and graded review are
+    /// different rhythms, and mixing the two samples would let a fast
+    /// practice streak understate a genuinely slower review pace or the
+    /// other way round.
+    private func measuredSecondsPerCard() -> Double {
+        var descriptor = FetchDescriptor<ExerciseAttempt>(
+            sortBy: [SortDescriptor(\.answeredAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = ReviewPace.sampleSize
+        let recent = (try? context.fetch(descriptor)) ?? []
+        return ReviewPace.secondsPerCard(recentResponseTimesMs: recent.map(\.responseTimeMs))
+    }
+
     private func resetCardState() {
         isAnswerVisible = false
         selectedOption = nil
@@ -769,12 +949,10 @@ struct ExerciseView: View {
     }
 
     private func beginRun(for session: ExerciseSession, mode: ExerciseMode) {
-        let run = ExerciseRun(
-            mode: mode,
-            subject: subjectFilter,
-            topicFilter: topicFilter,
-            queuedCardIds: session.queue
-        )
+        let run = ExerciseRun(mode: mode, queuedCardIds: session.queue)
+        // Single assignment so `subject`/`topicFilterRaw` and `filterJSON`
+        // can never drift apart — see `ExerciseRun.filter`'s setter.
+        run.filter = filter
         context.insert(run)
         try? context.save()
         currentRun = run
@@ -809,8 +987,7 @@ struct ExerciseView: View {
         )
         session = restored
         currentRun = run
-        subjectFilter = run.subject
-        topicFilter = run.topicFilter
+        filter = run.filter
         if restored.isFinished {
             run.finishedAt = .now
             try? context.save()
@@ -826,7 +1003,7 @@ struct ExerciseView: View {
 
         // A jump with no filter (the link on the review screen) is only asking
         // to be taken here.
-        guard let filter = target.filter else { return }
+        guard let requestedFilter = target.filter else { return }
 
         // With a run in progress, applying the filter alone would be a lie: the
         // chips would read "Farmakoloji" over a queue of Patoloji cards the
@@ -834,27 +1011,30 @@ struct ExerciseView: View {
         // pick, so ask rather than silently dropping either their request or
         // the run they are in the middle of.
         if isSessionActive {
-            pendingTarget = filter
+            pendingTarget = requestedFilter
         } else {
-            apply(filter)
+            apply(requestedFilter)
         }
     }
 
-    private func apply(_ filter: AppNavigator.ExerciseTarget.Filter) {
-        subjectFilter = filter.subject
-        topicFilter = filter.topic
+    /// A cross-feature jump replaces the whole filter, not just ders/konu:
+    /// leftover kart tipi/durum/tarih/FES selections from a previous session
+    /// would make "bu dersten Egzersiz" from Bilgi Haritası silently narrower
+    /// than what was asked for.
+    private func apply(_ target: AppNavigator.ExerciseTarget.Filter) {
+        filter = ExerciseFilter(subject: target.subject, topic: target.topic)
     }
 
     /// Closes the current run and lands on the start screen with the requested
     /// filter, ready to begin. `finishEarly` first so the abandoned run is
     /// stored complete and never reopened on the next launch.
     private func restartWithPendingTarget() {
-        guard let filter = pendingTarget else { return }
+        guard let requestedFilter = pendingTarget else { return }
         pendingTarget = nil
         finishEarly()
         session = nil
         currentRun = nil
-        apply(filter)
+        apply(requestedFilter)
         resetCardState()
     }
 }

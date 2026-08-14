@@ -457,7 +457,14 @@ struct SettingsView: View {
                     // entirely in "Konusuz" and no topic filter reproduces it.
                     topic: card.knowledgeUnit?.topic,
                     softLapseCount: card.softLapseCount,
-                    lastPracticedAt: card.lastPracticedAt
+                    lastPracticedAt: card.lastPracticedAt,
+                    // docs/ADR-008: exported as already-finalized (see
+                    // `CardRecord.fesInitializedAt`'s doc comment) — Egzersiz's
+                    // own history never travels in this file, so the receiving
+                    // device cannot recompute this from scratch.
+                    fesScore: card.fesScore,
+                    fesNegativeCount: card.fesNegativeCount,
+                    fesInitializedAt: card.fesInitializedAt
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -512,6 +519,16 @@ struct SettingsView: View {
                 throw error
             }
 
+            // A restored pre-v6 card arrives with `fesInitializedAt == nil`.
+            // Without this call, studying it before the next cold start would
+            // let the live-update paths in `ReviewView.grade`/
+            // `ExerciseView.applyFesScore` stamp that field over a score that
+            // never replayed the just-restored `ReviewLog` history — a real
+            // and permanent loss, not a defensive no-op (Codex review, PR #41,
+            // second pass). Running it here, on this restore's own context,
+            // closes the gap before the user can ever touch the card.
+            FesBackfillMigration.runIfNeeded(context: context)
+
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
                 : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."
@@ -547,6 +564,12 @@ struct SettingsView: View {
         card.softLapseCount = record.softLapseCount
         card.lastPracticedAt = record.lastPracticedAt
         card.lastReviewedAt = record.lastReviewedAt
+        card.fesScore = record.fesScore
+        card.fesNegativeCount = record.fesNegativeCount
+        // `nil` on a pre-v6 backup is correct as-is: it tells
+        // `FesBackfillMigration` to replay this card from its restored
+        // `ReviewLog` history, which is the honest best effort available.
+        card.fesInitializedAt = record.fesInitializedAt
         card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
 
         // A backup can carry pre-picker subjects ("patoloji", free text) that
