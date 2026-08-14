@@ -245,17 +245,21 @@ olunca kod varsayılanı aynı oranda (1,5×) 8192→12288'e çekildi (`config.t
 `.env.example`); sahibi canlıdaki `OPENAI_MAX_OUTPUT_TOKENS`'ı da elle 48000'e
 çekip redeploy etti (yukarıdaki "Model" notu güncel).
 
-**Açık iş (Codex, PR #42 P1):** `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT`'in
-kendisi canlıda `.env.example`'dan bağımsız, elle `=12` olarak girilmiş
-olabilir — girilmişse `numeric()` o değeri yeni kod varsayılanına (18) tercih
-eder, `OpenAICardGenerator` her isteği yine 12'ye kırpar (§21.3) ve bu PR
-canlıda hiçbir şeyi değiştirmemiş olur. Claude'un Vercel ortam değişkenlerini
-**okuma** erişimi de yok (yalnız repo/PR üzerinden çalışıyor), o yüzden
-sahibinin Vercel projesinin ortam değişkenleri listesinde
-`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` diye bir satır olup olmadığına bakması
-gerekiyor: varsa 18'e çekilmeli ya da tamamen silinmeli (silinirse kod
-varsayılanı zaten geçerli olur), yoksa (hiç girilmemişse) ek bir şey
-gerekmez.
+**Kapanan risk (Codex, PR #42 P1 — 2026-08-14):** kart tavanı canlıda elle
+girilmiş olsaydı `numeric()` onu kod varsayılanına tercih eder,
+`OpenAICardGenerator` her isteği yine eski sayıya kırpar (§21.3) ve bu
+değişiklik canlıda hiçbir şeyi değiştirmemiş olurdu. Sahibi Vercel'in ortam
+değişkeni listesini kontrol etti: **`OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT`
+girilmemiş** — yani tavan hep kod varsayılanından geliyor ve 18 dağıtımla
+birlikte geçerli oluyor. Bu değişkeni ileride Vercel'e eklemek, `config.ts`'i
+sessizce devre dışı bırakmak demektir; ekleneceği gün iki yer birlikte
+güncellenmeli.
+
+**Ortam değişkeni notu (2026-08-14 envanteri):** canlıda `DOCUMENTAI_*`,
+`GOOGLE_PROJECT_ID` ve `GOOGLE_CREDENTIALS_JSON` hâlâ duruyor. Bunlar
+deterministik hattın (ADR-005 tıraşı, 2026-08-09) kalıntısı; kod artık
+hiçbirini okumuyor. Zararsız ama `GOOGLE_CREDENTIALS_JSON` gerçek bir
+kimlik bilgisi — bir gün temizlik yapılacaksa oradan başlanmalı.
 
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
