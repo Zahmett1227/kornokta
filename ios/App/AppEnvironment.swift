@@ -177,6 +177,8 @@ struct AppSettings: Codable, Equatable {
     var keepOriginalPage: Bool = true
 
     static let storageKey = "cizgi.settings.v1"
+    /// Guards the one-time `maxCardsPerPage` 12→18 migration in `load()`.
+    private static let maxCardsPerPageMigrationFlagKey = "cizgi.migration.maxCardsPerPage12to18.v1"
 
     private enum CodingKeys: String, CodingKey {
         case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
@@ -210,7 +212,27 @@ struct AppSettings: Codable, Equatable {
             let data = UserDefaults.standard.data(forKey: storageKey),
             let decoded = try? JSONDecoder().decode(AppSettings.self, from: data)
         else { return AppSettings() }
-        return decoded
+        return migratingMaxCardsPerPageIfNeeded(decoded)
+    }
+
+    /// One-time migration (2026-08-14, Codex PR #42 P1): `save()` always
+    /// writes every field, so any install that ever opened Settings before
+    /// this change already has an explicit 12 on disk — the `?? 18` fallback
+    /// in `init(from:)` only fires when the key is *absent*, which is never
+    /// true for an existing install. Bumps a persisted 12 to 18 exactly once;
+    /// gated by a flag rather than "is it 12" so a user who deliberately
+    /// dials back to 12 *after* this runs stays at 12 on every later launch.
+    private static func migratingMaxCardsPerPageIfNeeded(
+        _ settings: AppSettings,
+        defaults: UserDefaults = .standard
+    ) -> AppSettings {
+        guard !defaults.bool(forKey: maxCardsPerPageMigrationFlagKey) else { return settings }
+        defaults.set(true, forKey: maxCardsPerPageMigrationFlagKey)
+        guard settings.maxCardsPerPage == 12 else { return settings }
+        var migrated = settings
+        migrated.maxCardsPerPage = 18
+        migrated.save()
+        return migrated
     }
 
     func save() {
