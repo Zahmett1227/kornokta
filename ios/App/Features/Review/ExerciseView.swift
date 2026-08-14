@@ -835,7 +835,7 @@ struct ExerciseView: View {
         // enough to due — count as a real lapse. All policy lives in
         // `EarlyPractice`; the card is only ever touched with what it returns.
         if let card = allCards.first(where: { $0.id == cardId }) {
-            applyFesScore(result: result, to: card)
+            applyFesScore(result: result, to: card, at: answeredAt)
             applyEarlyPractice(result: result, to: card, at: answeredAt)
         }
 
@@ -853,11 +853,19 @@ struct ExerciseView: View {
     /// independent of `EarlyPractice`'s due/frozen gates — pure bookkeeping
     /// that never touches FSRS state. The save rides `recordAndAdvance`'s
     /// existing `context.save()`.
-    private func applyFesScore(result: ExerciseResult, to card: Card) {
+    private func applyFesScore(result: ExerciseResult, to card: Card, at now: Date) {
         let wasFes = FesScore.isFes(score: card.fesScore)
         let signal = FesScore.signal(for: result)
         card.fesScore = FesScore.apply(signal, to: card.fesScore)
         if signal.isNegative { card.fesNegativeCount += 1 }
+        // A live update is itself authoritative — see the matching comment in
+        // `ReviewView.grade`. Without this, a card created and answered only
+        // in Egzersiz during one session carries a real score next to a
+        // `nil` marker; exporting it in that window and restoring elsewhere
+        // replays an empty history (`ExerciseAttempt` never travels in a
+        // backup) and silently zeroes the score right back out (Codex
+        // review, PR #41).
+        card.fesInitializedAt = now
 
         let isFesNow = FesScore.isFes(score: card.fesScore)
         if !wasFes, isFesNow { fesEnteredCount += 1 }
