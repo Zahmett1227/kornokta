@@ -254,6 +254,77 @@ struct FeatureActionCard: View {
     }
 }
 
+/// A toggleable filter chip. Same capsule shape as `TagChip`, but selectable —
+/// used for the multi-select rows in `ExerciseSetupSheet` (kart tipi, kart
+/// durumu).
+struct SelectableChip: View {
+    let title: String
+    var systemImage: String?
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let systemImage { Image(systemName: systemImage) }
+                Text(title)
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(isSelected ? Cizgi.paper : Cizgi.ink)
+            .padding(.horizontal, Cizgi.Space.sm)
+            .padding(.vertical, Cizgi.Space.xs)
+            .background(isSelected ? Cizgi.accent : Cizgi.surfaceMuted, in: Capsule())
+            .overlay(
+                Capsule().stroke(isSelected ? Color.clear : Cizgi.hairline, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// A wrapping row of chips. An adaptive grid rather than a custom `Layout`
+/// conformance — a handful of short labels never needs more control than that.
+struct ChipFlowRow<Data: RandomAccessCollection, Content: View>: View where Data.Element: Hashable {
+    let data: Data
+    let content: (Data.Element) -> Content
+
+    init(_ data: Data, @ViewBuilder content: @escaping (Data.Element) -> Content) {
+        self.data = data
+        self.content = content
+    }
+
+    var body: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 96), spacing: Cizgi.Space.xs)],
+            alignment: .leading,
+            spacing: Cizgi.Space.xs
+        ) {
+            ForEach(Array(data), id: \.self) { item in
+                content(item)
+            }
+        }
+    }
+}
+
+/// A compact ring showing a fraction, e.g. Egzersiz's completion accuracy.
+struct RingGauge: View {
+    /// 0...1.
+    let progress: Double
+    let tint: Color
+    var lineWidth: CGFloat = 8
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Cizgi.hairline, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: max(0, min(1, progress)))
+                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+    }
+}
+
 // MARK: - Button styles
 
 /// The primary amber action button.
@@ -315,6 +386,68 @@ extension CardType {
         case .distinction: return "arrow.left.and.right"
         case .exceptionTrap: return "exclamationmark.triangle"
         case .multipleChoice: return "list.bullet.circle"
+        }
+    }
+}
+
+// MARK: - Exercise filter display (docs/ADR-008 çevresinde eklendi)
+
+extension CardStateFilter {
+    var displayName: String {
+        switch self {
+        case .unstudied: return "Hiç çalışılmamış"
+        case .due: return "Vadesi gelmiş"
+        case .needsReview: return "Gözden geçir"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .unstudied: return "circle.dashed"
+        case .due: return "clock.badge.exclamationmark"
+        case .needsReview: return "exclamationmark.triangle.fill"
+        }
+    }
+}
+
+extension CardRecency {
+    var displayName: String {
+        switch self {
+        case .all: return "Tümü"
+        case .last7Days: return "Son 7 gün"
+        case .last30Days: return "Son 30 gün"
+        }
+    }
+}
+
+/// A chip's label and icon — Core only carries which dimension is active, not
+/// how to say it in Turkish. One switch here instead of one per call site
+/// (`ExerciseFilterChips`, the setup sheet's live summary).
+extension FilterDimension {
+    var label: String {
+        switch self {
+        case .subject(let name): return name
+        case .topic(let filter):
+            switch filter {
+            case .all: return "Tüm konular"
+            case .none: return "Konusuz"
+            case .topic(let name): return name
+            }
+        case .cardType(let type): return type.displayName
+        case .state(let state): return state.displayName
+        case .recency(let recency): return recency.displayName
+        case .fesOnly: return "FES"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .subject: return "book"
+        case .topic(let filter): return filter == .none ? "tag.slash" : "tag"
+        case .cardType(let type): return type.icon
+        case .state(let state): return state.icon
+        case .recency: return "calendar"
+        case .fesOnly: return "flame.fill"
         }
     }
 }

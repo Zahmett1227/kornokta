@@ -82,6 +82,27 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    (`Card.softLapseCount`, en fazla 1 gün öne çekme); vadeye yakın yanlış →
    gerçek FSRS "Unuttum"; vadesi gelmiş kart ve "Kararsızdım" hiç dokunmaz;
    `ReviewLog` Egzersiz'den asla yazılmaz.
+8. **FES** (ADR-008, 2026-08-14): Tekrar'ın dört derecesi (Unuttum +2 · Zor +1 ·
+   Bildim/Kolay −2) ve Egzersiz'in üç sonucu (Bilemedim +2 · Kararsızdım +1 ·
+   Biliyordum −2) ortak, **kalıcı** bir ağırlıklı skoru besler (`Card.fesScore`,
+   `[0,12]` kırpılı, eşik 3 — `FesScore.swift`). ADR-007'nin köprüsünden
+   bağımsız: FES saf muhasebe, hiçbir zamanlama kararını etkilemez ve
+   `EarlyPractice`'in due/frozen kapılarına tabi değildir. Eşiği aşan kart
+   Egzersiz'in "FES kartlar" hızlı başlangıcında (üyelik FES, sıra
+   `WeakPointRanking.rank`), Bilgilerim'de ayrı bir bölümde ve kart
+   detayında görünür; öncesi değil **cevap açıldıktan sonra** (ölçümü
+   bozmasın diye). Geçmiş kartlar `FesBackfillMigration` ile karta özel
+   `fesInitializedAt` alanına bakılarak (bir UserDefaults bayrağı değil —
+   yeni kart da pre-v6 yedekten gelen kart da `nil` ile başlar ve
+   kendiliğinden işlenir) bir kerelik geriye oynatılır.
+9. **Egzersiz kurulumu altı boyutlu** (ADR-008): ders, konu (mevcut
+   `TopicFilter`), kart tipi, kart durumu (`unstudied`/`due`/`needsReview`),
+   eklenme tarihi, FES — `ExerciseFilter.swift`, ayrı bir "Egzersizi kur"
+   sheet'inde (`ExerciseSetupSheet`, taslak + Uygula deseni, canlı sayaç).
+   Bütçe kart sayısı kademeleri **ya da süre** olabilir (`ExerciseBudget`);
+   süre, Tekrar'ın `ReviewPace`'i (varsayılmayan, ölçülen kart-başı süre)
+   Egzersiz'in kendi `ExerciseAttempt.responseTimeMs` örnekleriyle beslenerek
+   kart sayısına çevrilir — çekirdekte hiçbir değişiklik gerekmedi.
 
 ### Ders/konu sınıflandırması, Egzersiz ve Bilgi Haritası (kalıcı sözleşmeler)
 
@@ -130,10 +151,15 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 - **Bilgi Haritası:** kanonik ders/konu kapsamı; tanınmayan ad asla kanonik
   düğüm üretmez ama sayılır ("Konusuz" / "tanınmayan konu" /
   "sınıflandırılmamış" kovaları) — ekrandaki satırların toplamı desteye eşit.
-- **Yedek biçimi v5:** `CardRecord` = kart + FSRS durumu + tüm `ReviewLog`
-  geçmişi + şıklar + `lowConfidence` + `topic` (v4) + `softLapseCount` (v5).
-  Eski dosyalar `decodeIfPresent` ile okunur; geri yükleme yalnızca ekler ve
-  eski ders adlarını normalize eder.
+- **Yedek biçimi v6:** `CardRecord` = kart + FSRS durumu + tüm `ReviewLog`
+  geçmişi + şıklar + `lowConfidence` + `topic` (v4) + `softLapseCount` (v5) +
+  FES sicili (v6: `fesScore`/`fesNegativeCount`/`fesInitializedAt`). Eski
+  dosyalar `decodeIfPresent` ile okunur; geri yükleme yalnızca ekler ve eski
+  ders adlarını normalize eder. **FES üçlüsü zaten-sonuçlanmış yazılır**,
+  alıcı cihazda yeniden hesaplanmaz — `ExerciseRun`/`ExerciseAttempt` hiçbir
+  sürümde yedeğe girmediği için bir replay yalnız `ReviewLog` yarısını görür.
+- **FES sicili ve altı boyutlu Egzersiz filtresi:** ADR-008. Ana akışın 8-9.
+  maddelerine bakın.
 
 ## Şu an neredeyiz (2026-08-11)
 
@@ -159,6 +185,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Tur A2 — `luna@low` vs `luna@high` (2026-08-12 akşamı, prompt v2.6) | ✅ Koşuldu ve kör değerlendirildi. **`@high` 4 sayfada üstün, 1 eşit, 1 geride**; üstünlük el yazısı ve kapsamada. Bedeli: reasoning 685→72 017 token (105×), $0.005→$0.020/sayfa, 21→112 sn. İkisinde de "yanlış ama emin" sıfır. Ayrıntı `docs/PLAN-model-karsilastirma.md` → "Tur A2 sonucu". **Model kararı sahibinde açık** (`luna@high` önerilen) |
 | Prompt v2.6 doğrulaması | ✅ İki bağımsız koşudan: sayfaya atıf yapan soru **82/360 → 0/239** (kural 8 tuttu, pahalı kademede de); çok-fikirli kart değişmedi (kural 5 bağlamadı, sonraki turda yeniden yazılacak) |
 | Tur A3 — `luna@medium` vs `luna@high` vs `sol@low` (aynı prompt sürümünde ilk dürüst kıyas) | ✅ Koşuldu ve kör değerlendirildi. **`medium` elendi** (turun tek sessiz hatası + tek uydurma kartı ondan; el yazısında 3 sayfada sonuncu). `sol@low` ↔ `luna@high` kalitede yakın, maliyette **7,5 kat** uzak ($0.1394 vs $0.0186/sayfa). **Karar: `luna@high`** — sahibinin ölçeğinde ~$240 yerine ~$32 |
+| FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 Kod yazıldı (yedek v6, `FesBackfillMigration` dahil), yerel `xcodebuild` + `swift test` yeşil. **Henüz commit edilmedi**; cihaz doğrulaması açık |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -224,6 +251,12 @@ boş defterle geçti).
 - **`docs/ADR-007`** — GÜNCEL YÖN: Egzersiz FSRS'i yalnız `EarlyPractice`
   köprüsünden besler. `ExerciseView.recordAndAdvance`/`EarlyPractice.swift`'e
   dokunmadan önce oku.
+- **`docs/ADR-008`** — GÜNCEL YÖN: FES sicili (kalıcı, iki kaynaklı) ve
+  Egzersiz'in altı boyutlu filtresi/bütçesi. `FesScore.swift`,
+  `ExerciseFilter.swift`, `ExerciseBudget.swift`, `FesBackfillMigration.swift`'e
+  dokunmadan önce oku — özellikle FES'in **neden saklanan, hesaplanan
+  olmadığı** (`ExerciseAttempt` 90 günde siliniyor) ve neden
+  `ExercisePracticeWeight`'in yerine değil yanına girdiği.
 - **`docs/ADR-001`** — Türkçe normalizasyon (İ/ı, NFC, diyakritik katlama);
   `providers/turkish.ts` ↔ `MultipleChoice.comparisonKey` hâlâ buna dayanır.
 - **`docs/ADR-002/003/004`** — tarihsel: OCR seçimi, uzlaştırma kapısı,
@@ -276,7 +309,7 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 
 ## Doküman haritası
 
-Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/007`,
+Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/007/008`,
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -340,7 +373,8 @@ biten koşu "Son Egzersizler"e düşüyor.
    diyaloğu çıkmalı.
 8. **Erişilebilirlik yazı boyutu (en büyük iki kademe):** alt barda etiketler
    kalkıp yalnız ikonlar kalmalı.
-9. **Yedek al → geri yükle (v5):** `softLapseCount` dahil durum korunuyor mu.
+9. **Yedek al → geri yükle (v6):** `softLapseCount` ve FES sicili
+   (`fesScore`/`fesNegativeCount`) dahil durum korunuyor mu.
 10. **"İkinci görüş iste" (2026-08-11):** önce Vercel'e `GEMINI_API_KEY` gir.
     "Gözden geçir"deki bir kartın detayında düğmeye bas — verdikt + "İkinci
     okuma (Gemini)" metni gelmeli; anahtarı bilerek silip denersen hata
@@ -349,6 +383,26 @@ biten koşu "Son Egzersizler"e düşüyor.
     bırakıp yalnız prompt + sunucu doğrulamasına güvenmek
     (`providers/gemini.ts` RESPONSE_SCHEMA).
 11. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçli sona bırakıldı.
+12. **FES sicili ve geçmiş replay'i (ADR-008, en kritik — uygulama hiç
+    açılmama riski).** Uygulamayı aç: `Card`'a eklenen üç alan
+    declaration-time default'lu olduğu için açılmalı, ama bu tam olarak bir
+    kez yaşanmış bir hata sınıfı (`ModelRun.attempt`, §"Migration sırası"
+    kuralının ruhu) — kontrol şart. Birkaç kez yanlış/kararsız işaretlenmiş
+    eski bir kart ilk açılışta Bilgilerim → "FES kartlar" bölümünde ve kart
+    detayında görünmeli.
+13. **Egzersiz kurulum sheet'i.** "Filtrele" ikonuna dokun; ders, konu, kart
+    tipi, kart durumu, eklenme tarihi, FES'i tek tek dene — sheet'teki canlı
+    "N kart hazır" sayacı her dokunuşta değişmeli. "Uygula"dan sonra ana
+    ekrandaki chip'ler tutmalı, her chip'in "x"i yalnız kendi boyutunu
+    silmeli. "Sıfırla" hepsini temizlemeli.
+14. **Egzersiz bütçesi — Kart / Süre.** "Süre" segmentini seç, bir kademe
+    dene; altındaki "≈ N kart" tahmini makul mü (ilk kullanımda 12 sn/kart
+    varsayımıyla; birkaç Egzersiz'den sonra ölçülen hızla değişmeli).
+15. **"FES kartlar" hızlı başlangıcı.** Birkaç kartı bilerek yanlış/kararsız
+    yanıtla → eşiği aşınca Egzersiz'in "FES kartlar" kutucuğunda, Bilgilerim'de
+    ve kart detayında görünmeli; ardından birkaç kez doğru yanıtla → listeden
+    kendiliğinden çıkmalı. Egzersiz sonuç ekranındaki "N kart FES'e girdi/çıktı"
+    satırı doğru mu.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

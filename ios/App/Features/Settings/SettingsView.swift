@@ -457,7 +457,14 @@ struct SettingsView: View {
                     // entirely in "Konusuz" and no topic filter reproduces it.
                     topic: card.knowledgeUnit?.topic,
                     softLapseCount: card.softLapseCount,
-                    lastPracticedAt: card.lastPracticedAt
+                    lastPracticedAt: card.lastPracticedAt,
+                    // docs/ADR-008: exported as already-finalized (see
+                    // `CardRecord.fesInitializedAt`'s doc comment) — Egzersiz's
+                    // own history never travels in this file, so the receiving
+                    // device cannot recompute this from scratch.
+                    fesScore: card.fesScore,
+                    fesNegativeCount: card.fesNegativeCount,
+                    fesInitializedAt: card.fesInitializedAt
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -547,6 +554,12 @@ struct SettingsView: View {
         card.softLapseCount = record.softLapseCount
         card.lastPracticedAt = record.lastPracticedAt
         card.lastReviewedAt = record.lastReviewedAt
+        card.fesScore = record.fesScore
+        card.fesNegativeCount = record.fesNegativeCount
+        // `nil` on a pre-v6 backup is correct as-is: it tells
+        // `FesBackfillMigration` to replay this card from its restored
+        // `ReviewLog` history, which is the honest best effort available.
+        card.fesInitializedAt = record.fesInitializedAt
         card.updatedAt = record.updatedAt == .distantPast ? card.createdAt : record.updatedAt
 
         // A backup can carry pre-picker subjects ("patoloji", free text) that

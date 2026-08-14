@@ -46,7 +46,10 @@ final class BackendCardProviderTests: XCTestCase {
     }
 
     private func usage() -> RemoteUsage {
-        RemoteUsage(provider: "openai", model: "gpt-5.6-sol", inputTokens: 1012, outputTokens: 571, estimatedCostUSD: 0)
+        RemoteUsage(
+            provider: "openai", model: "gpt-5.6-sol", inputTokens: 1012, outputTokens: 571,
+            estimatedCostUSD: 0, cachedInputTokens: nil, reasoningTokens: nil
+        )
     }
 
     private func success(
@@ -165,7 +168,7 @@ final class BackendCardProviderTests: XCTestCase {
             cards: [card(lowConfidence: false)],
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
         )
-        XCTAssertFalse(try BackendCardProvider.map(confident, elapsedMs: 100).cards[0].lowConfidence)
+        XCTAssertFalse(try BackendCardProvider.map(confident, elapsedMs: 100, accounting: []).cards[0].lowConfidence)
     }
 
     func testAutoAcceptedCardIsKeptAndActive() throws {
@@ -235,7 +238,7 @@ final class BackendCardProviderTests: XCTestCase {
         }
         """
         let decoded = try JSONDecoder().decode(RemoteCardsSuccess.self, from: Data(json.utf8))
-        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 10)
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 10, accounting: [])
 
         XCTAssertEqual(knowledge.cards.count, 1)
         XCTAssertEqual(knowledge.cards[0].type, .directRecall)
@@ -379,7 +382,7 @@ final class BackendCardProviderTests: XCTestCase {
         error: String? = nil,
         retryable: Bool? = nil
     ) -> RemoteJobView {
-        RemoteJobView(jobId: "job-1", status: status, result: result, error: error, retryable: retryable)
+        RemoteJobView(jobId: "job-1", status: status, result: result, error: error, retryable: retryable, usage: nil)
     }
 
     private func readySuccess() -> RemoteCardsSuccess {
