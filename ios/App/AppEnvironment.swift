@@ -156,8 +156,8 @@ struct AppSettings: Codable, Equatable {
     /// was written for the pre-Faz-6 "one passage → ≤4 cards" flow and was never
     /// actually sent to the server, so every install has a stored 2 in it —
     /// wiring it up would have silently capped every page at two cards and
-    /// undone B3's deliberate raise to 12.
-    var maxCardsPerPage: Int = 12
+    /// undone B3's deliberate raise to 12 (since raised to 18, 2026-08-14).
+    var maxCardsPerPage: Int = 18
     /// Five-option cards (§13.3). Stored as the wire value so the setting and
     /// the request body cannot drift apart.
     var multipleChoiceModeRaw: String = MultipleChoiceMode.mixed.rawValue
@@ -194,7 +194,7 @@ struct AppSettings: Codable, Equatable {
         backendURL = try values.decodeIfPresent(String.self, forKey: .backendURL) ?? ""
         defaultSubject = try values.decodeIfPresent(String.self, forKey: .defaultSubject) ?? ""
         maxCardsPerPassage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPassage) ?? 2
-        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 12
+        maxCardsPerPage = try values.decodeIfPresent(Int.self, forKey: .maxCardsPerPage) ?? 18
         multipleChoiceModeRaw = try values.decodeIfPresent(String.self, forKey: .multipleChoiceModeRaw)
             ?? MultipleChoiceMode.mixed.rawValue
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true

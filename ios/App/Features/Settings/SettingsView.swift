@@ -49,7 +49,7 @@ struct SettingsView: View {
                             get: { environment.settings.maxCardsPerPage },
                             set: { environment.settings.maxCardsPerPage = $0; environment.settings.save() }
                         ),
-                        in: 1...12
+                        in: 1...18
                     )
 
                     Picker("Beş şıklı kart", selection: Binding(

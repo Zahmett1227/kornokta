@@ -270,8 +270,9 @@ export function loadConfig(): Config {
       // handwritten notes; capping at 4 made the model spend its whole budget on
       // the first, most basic printed facts and drop every handwritten insight
       // (second device test). Raised to 12 so a marked page's distinct points
-      // each get a card. Now really "max cards per page"; env-overridable (§0.6).
-      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 12, 1),
+      // each get a card, then to 18 (2026-08-14, owner request). Now really
+      // "max cards per page"; env-overridable (§0.6).
+      maxCardsPerKnowledgeUnit: numeric("OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT", 18, 1),
       // Faz 7 (§13.3): five-option cards. "mixed" by default — see the field's
       // own comment for why not "all".
       multipleChoiceMode: oneOf("OPENAI_MULTIPLE_CHOICE_MODE", MULTIPLE_CHOICE_MODES, "mixed"),
