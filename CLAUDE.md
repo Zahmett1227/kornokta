@@ -175,7 +175,15 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   turda eklendi: prompt onu üç yerin hiçbirinde, tarama listesinde bile
   anmıyordu. Kademenin üyeleri ve tarandığı testle kilitli; sıra kilidi
   üyelere değil **kademe adına** bakıyor (üye eklemek "sıra bozuldu" demek
-  değil). İki kural da testle kilitli ve kilitler **kural 3'ün /
+  değil). **Değişmez (üçüncü turda kilitlendi):** üye listesi tam **iki**
+  yerde yaşar — tarama listesi (ne aranacak) ve 3(b) (nasıl sıralanır).
+  *Uygulama* noktalarının (1. kuralın kapısı, bitiş kontrolü, bağlayıcı kural)
+  hiçbiri üye saymaz, kademeye adıyla atıf yapar. Üçüncü tur tam buradan
+  geldi: 1. kural bir **kapı** ("cevap hayırsa VAZGEÇ") ve yeniden
+  adlandırmadan sağ çıkmış kısmi listesi yüzünden yalnız artı/ünlemle
+  işaretlenmiş bir pasajı, öncelik kuralı onu hiç görmeden eleyebiliyordu.
+  Kilit `not.toContain` değil harf-sınırlı regex kullanır — Türkçe'de "kartı"
+  içinde "artı" geçer. İki kural da testle kilitli ve kilitler **kural 3'ün /
   kontrolün kendi bloğuna sabitli** (aynı blok-dilimleme gerekçesi).
 - **Şema v2.2 / prompt v2.5:** karta opsiyonel `topic`. Kanonik şemada enum
   yok; enum yalnız model-yüzlü dinamik şemada (`buildModelResponseSchema` →

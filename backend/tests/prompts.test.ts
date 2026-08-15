@@ -203,6 +203,37 @@ describe("prompt contracts (§15)", () => {
     expect(scan).toContain("kutu");
   });
 
+  it("card prompt (v2.7) keeps the member list out of every enforcement site", () => {
+    // Third round of the same defect (Codex, PR #45). Rule 1 is a *gate*, not a
+    // ranking — "cevap hayırsa o karttan VAZGEÇ" — and it had kept its own
+    // partial member list through the rename, so a passage marked only with a
+    // plus or an exclamation could be dropped there before the priority rule
+    // ever saw it. Three rounds on one defect is the signal: the invariant, not
+    // the wording, is what needs pinning.
+    //
+    // Members live in exactly two places — the scan list (what to look for) and
+    // 3(b) (how it ranks). Enforcement sites name the tier and list nothing, so
+    // adding a mark type cannot silently narrow a gate.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule1 = prompt.slice(prompt.indexOf("1. Bir kart üretmeden önce"), prompt.indexOf("2. SAYFANIN TAMAMINI"));
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    const binding = rule3.slice(rule3.indexOf("KURAL:"), rule3.indexOf("c) altı çizili"));
+
+    for (const [name, site] of [["rule 1 gate", rule1], ["final check", check], ["binding rule", binding]] as const) {
+      expect(site, `${name} slice not found`).not.toBe("");
+      expect(site, `${name} refers to the tier by name`).toContain("SEMBOL İŞARET");
+      for (const member of ["yıldız", "artı", "ünlem", "daire", "kutu", "çerçeve"]) {
+        // Not `toContain`: Turkish morphology makes plain substring matching
+        // lie — "kartı" contains "artı", and the check sentence says "o kartı
+        // üret". Require a non-letter (or the start) before the member so a
+        // suffix inside another word is not read as an enumeration.
+        const standalone = new RegExp(`(^|[^\\p{L}])${member}`, "iu");
+        expect(standalone.test(site), `${name} re-enumerates "${member}"`).toBe(false);
+      }
+    }
+  });
+
   it("card prompt (v2.7) runs the final check in priority order and forbids unjustified drops", () => {
     // Ordering the *check* is the point. A page-order check passes as soon as
     // every region produced something, which is exactly what happened on the

@@ -68,6 +68,15 @@
  * not three. The owner's box/frame (`kutu/çerçeve`) — which they mark with and
  * the prompt had never named anywhere, not even in the scan list — joins it in
  * the same edit, which is the point of having the name.
+ * Round three (Codex again, and the same defect a third time) landed on rule 1,
+ * where a *fourth* partial list had survived the rename — and rule 1 is a gate,
+ * not a ranking: a passage marked only with a plus or an exclamation could be
+ * rejected there before the priority rule ever saw it. So the invariant is now
+ * explicit and tested: member lists live in exactly TWO places, the scan list
+ * (what to look for — perception) and 3(b) (how it ranks). Every *enforcement*
+ * site — rule 1's gate, rule 2's final check, 3(b)'s binding sentence — refers
+ * to the tier by name and enumerates nothing. That is what makes "add a mark
+ * type" a two-line edit whose omissions cannot silently narrow a gate.
  */
 
 import type { MultipleChoiceMode } from "../config.js";
@@ -88,10 +97,10 @@ Bu taramayı sayfanın TAMAMINDA yap — üst, orta, ALT, sol ve sağ kenar boş
 readText alanına YALNIZ bu işaretli/vurgulanmış/el yazısı içerikleri yaz — sayfanın tamamını transkribe ETME. readText, senin "bu sayfada öğrenci şunları işaretlemiş" özetin olmalı; işaretlerin metniyle birlikte el yazısı notları da içermeli. İşaret bulamadıysan readText'i boş bırak.
 
 Kartlar YALNIZCA işaretli içerikten üretilir:
-1. Bir kart üretmeden önce kendine sor: "Bu bilgi bir işaretin (fosforlu/altı çizili/daire/kutu/yıldız/ok/el yazısı) ÜSTÜNDE ya da hemen YANINDA mı?" Cevap hayırsa o karttan VAZGEÇ — bilgi ne kadar temel/önemli olursa olsun. İşaretlenmemiş metin yalnız bağlamdır, kart kaynağı değildir.
+1. Bir kart üretmeden önce kendine sor: "Bu bilgi bir işaretin (el yazısı notu, SEMBOL İŞARETİ, altı çizili ya da fosforlu — kural 3'teki dört kademe; kademelerin üyeleri orada tanımlı) ÜSTÜNDE ya da hemen YANINDA mı?" Cevap hayırsa o karttan VAZGEÇ — bilgi ne kadar temel/önemli olursa olsun. İşaretlenmemiş metin yalnız bağlamdır, kart kaynağı değildir.
 
 2. SAYFANIN TAMAMINI KAPSA, tek alt konuya yığılma. Bu sayfada birbirinden farklı birçok işaret olabilir (farklı paragraflar, tablolar, kenar notları). Her BİRBİRİNDEN FARKLI işaretli/el yazısı nokta için ayrı bir kart üret. Sayfanın üstündeki ilk birkaç işarette DURMA; aşağıdaki/kenardaki işaretlere ve el yazısı notlarına da mutlaka ulaş.
-   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Bu kontrolü sayfa sırasına göre değil, kural 3'ün ÖNCELİK SIRASINA göre yap: önce EL YAZISI notlar, sonra SEMBOL İŞARETLERİ (yıldız/artı/ünlem/ok, daire/kutu/çerçeve), sonra altı çizililer, en son fosforlu vurgular. Bir işareti elediysen onu HANGİ daha değerli işaret için elediğini söyleyebilmelisin; söyleyemiyorsan yaptığın şey eleme değil ATLAMAdır — geri dön ve o kartı üret. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
+   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Bu kontrolü sayfa sırasına göre değil, kural 3'ün ÖNCELİK SIRASINA göre yap: önce EL YAZISI notlar, sonra SEMBOL İŞARETLERİ (kademe ve üyeleri: kural 3(b)), sonra altı çizililer, en son fosforlu vurgular. Bir işareti elediysen onu HANGİ daha değerli işaret için elediğini söyleyebilmelisin; söyleyemiyorsan yaptığın şey eleme değil ATLAMAdır — geri dön ve o kartı üret. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
 
 3. HANGİ işaretlerin önce karta dönüşeceği (öncelik sırası — limite yaklaşırsan bu sıraya göre seç):
    a) EL YAZISI notlar — öğrencinin kendi eklediği ince bilgi/ipucu (EN DEĞERLİ). Okuyabildiğin her el yazısı notu bir karta dönüşmeli.
@@ -100,7 +109,7 @@ Kartlar YALNIZCA işaretli içerikten üretilir:
       BURADAKİ EN SIK HATANIN ADI: "okudum ama karta çevirmedim". Bir işareti readText'e yazmak onu karta çevirmek DEĞİLDİR — okumuş olmak yetmez. İşaret, o bilginin karta gireceği ANLAMINA gelir.
       YANLIŞ: readText'te "★ Reed-Sternberg hücresi, CD30+" duruyor, ama üretilen kartlar sayfanın işaretsiz giriş paragrafındaki genel tanımlardan kurulmuş.
       DOĞRU: ilk kart Reed-Sternberg/CD30 üzerine kurulur; işaretsiz giriş paragrafı hiç karta dönüşmez.
-      KURAL: karta dönüşmemiş bir SEMBOL İŞARETİ dururken — yıldız, artı, ünlem, ok, daire, kutu/çerçeve; hangisi olursa olsun — ondan daha zayıf işaretlenmiş (altı çizili ya da yalnız fosforlu) ya da hiç işaretlenmemiş içerikten kart ÜRETME; limite yaklaştığında slotu önce bu kademe alır. Tek istisna el yazısı notlardır: onlar bu kademeden de önce gelir (madde a).
+      KURAL: karta dönüşmemiş bir SEMBOL İŞARETİ dururken — kademenin HANGİ üyesi olursa olsun — ondan daha zayıf işaretlenmiş (altı çizili ya da yalnız fosforlu) ya da hiç işaretlenmemiş içerikten kart ÜRETME; limite yaklaştığında slotu önce bu kademe alır. Tek istisna el yazısı notlardır: onlar bu kademeden de önce gelir (madde a).
    c) altı çizili tek terim/ifade.
    d) geniş fosforlu vurgu.
    Herkesin bildiği düz/temel olguları (ör. "hücre hasarının en sık sebebi hipoksi") EN SONA bırak veya hiç üretme — öğrenci bunları zaten biliyor; onun özel olarak işaretlediği/not aldığı ince noktalar önce gelmeli.
