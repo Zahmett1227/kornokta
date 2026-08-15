@@ -93,4 +93,20 @@ final class ApprovalGateReleaseTests: XCTestCase {
     func testAnEmptyDeckIsNotAnError() throws {
         XCTAssertEqual(try ApprovalGateRelease.release(in: try makeContext()), 0)
     }
+
+    /// The restore hole (Codex review, PR #44), reproduced as the sequence that
+    /// causes it: a fresh install runs this against an empty store and spends
+    /// the App-side one-shot flag on nothing, then a backup taken before any of
+    /// this shipped restores cards with their stored `.needsReview` intact. The
+    /// release has to still find them when the restore flow calls it again —
+    /// otherwise those cards sit outside every review with the flag saying the
+    /// work is done.
+    func testCardsArrivingAfterAnEarlierRunAreStillReleased() throws {
+        let context = try makeContext()
+        XCTAssertEqual(try ApprovalGateRelease.release(in: context), 0, "boş destede yapacak iş yok")
+
+        let restored = insert(.needsReview, into: context)
+        XCTAssertEqual(try ApprovalGateRelease.release(in: context), 1)
+        XCTAssertEqual(restored.status, .active)
+    }
 }

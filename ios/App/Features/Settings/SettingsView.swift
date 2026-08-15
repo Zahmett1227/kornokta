@@ -529,6 +529,26 @@ struct SettingsView: View {
             // closes the gap before the user can ever touch the card.
             FesBackfillMigration.runIfNeeded(context: context)
 
+            // The same shape of gap, for the approval gate (Codex review, PR
+            // #44). `insert` restores each card's stored status verbatim, so a
+            // backup taken before `ApprovalGateMigration` ran carries
+            // `.needsReview` cards back in — and that migration's one-shot flag
+            // is already set, on a fresh install by an empty-store run that had
+            // nothing to do. `ReviewScheduler` schedules `.active` only, so
+            // those cards would land outside every review with no way back.
+            // The release is idempotent, so running it on this context costs a
+            // fetch and closes the hole.
+            do {
+                if try ApprovalGateRelease.release(in: context) > 0 {
+                    try context.save()
+                }
+            } catch {
+                // The restore itself is already committed and is what the
+                // summary below reports; a card left at the gate is recoverable
+                // from its own detail screen, so this must not fail the restore.
+                context.rollback()
+            }
+
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
                 : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."

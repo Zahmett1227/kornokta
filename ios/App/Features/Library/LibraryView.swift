@@ -49,10 +49,12 @@ struct LibraryView: View {
                 front: card.front,
                 back: card.back,
                 explanation: card.explanation,
-                optionTexts: (card.options ?? []).map(\.text),
                 tags: card.knowledgeUnit?.tags ?? [],
                 subject: card.knowledgeUnit?.subject,
-                topic: card.knowledgeUnit?.topic
+                topic: card.knowledgeUnit?.topic,
+                // Autoclosure: `options` decodes JSON, so it is read only for
+                // cards nothing cheaper matched, and never with no query.
+                optionTexts: (card.options ?? []).map(\.text)
             )
         }
     }
@@ -62,35 +64,6 @@ struct LibraryView: View {
     private var emptyResultMessage: String {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         return query.isEmpty ? "Bu filtreye uyan kart yok." : "“\(query)” için kart yok."
-    }
-
-    private var activeCount: Int { cards.filter { $0.status == .active }.count }
-    private var suspendedCount: Int { cards.filter { $0.status == .suspended }.count }
-    /// Cards the server could not fully vouch for (§13.3 rule 6).
-    ///
-    /// Faz 6 removed the approval gate and §13.3 wants one on a suspicious
-    /// question. This is the compromise the plan settled on: the card is active
-    /// and reviewable, and it is *listed* here rather than held back — flagging
-    /// instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
-    private var needsSecondLook: [Card] {
-        cards.filter { SecondLook.isPending(lowConfidence: $0.lowConfidence, status: $0.status) }
-    }
-
-    /// FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
-    /// merged into it — a low-confidence card is the model doubting itself,
-    /// a FES card is *this user* repeatedly getting it wrong or unsure. Same
-    /// shape, different evidence.
-    private var fesCards: [Card] {
-        cards
-            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
-            .sorted { $0.fesScore > $1.fesScore }
-    }
-
-    private var mostForgotten: [Card] {
-        cards.filter { $0.lapseCount > 0 }
-            .sorted { $0.lapseCount > $1.lapseCount }
-            .prefix(5)
-            .map { $0 }
     }
 
     var body: some View {
@@ -162,12 +135,48 @@ struct LibraryView: View {
     }
 
     private var list: some View {
-        List {
+        cardList(cards)
+    }
+
+    /// The visible set arrives as a parameter rather than being read back out
+    /// of `cards` per section.
+    ///
+    /// `cards` is a computed property, so each of the eight places this screen
+    /// used to read it re-ran the whole filter. That was tolerable while the
+    /// filter was two string comparisons; it is not now that it folds Turkish
+    /// case and can decode a card's options, both on every keystroke.
+    private func cardList(_ visible: [Card]) -> some View {
+        let activeCount = visible.filter { $0.status == .active }.count
+        let suspendedCount = visible.filter { $0.status == .suspended }.count
+
+        // Cards the server could not fully vouch for (§13.3 rule 6). Faz 6
+        // removed the approval gate and §13.3 wants one on a suspicious
+        // question; the compromise the plan settled on is that the card is
+        // active and reviewable and *listed* here rather than held back —
+        // flagging instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
+        let needsSecondLook = visible.filter {
+            SecondLook.isPending(lowConfidence: $0.lowConfidence, status: $0.status)
+        }
+
+        // FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
+        // merged into it — a low-confidence card is the model doubting itself,
+        // a FES card is *this user* repeatedly getting it wrong or unsure.
+        // Same shape, different evidence.
+        let fesCards = visible
+            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
+            .sorted { $0.fesScore > $1.fesScore }
+
+        let mostForgotten = visible.filter { $0.lapseCount > 0 }
+            .sorted { $0.lapseCount > $1.lapseCount }
+            .prefix(5)
+            .map { $0 }
+
+        return List {
             Section {
                 VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
                     ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
                     HStack(spacing: Cizgi.Space.sm) {
-                        StatTile(value: "\(cards.count)", label: "Toplam")
+                        StatTile(value: "\(visible.count)", label: "Toplam")
                         StatTile(value: "\(activeCount)", label: "Aktif")
                         StatTile(value: "\(suspendedCount)", label: "Askıda")
                     }
@@ -178,7 +187,7 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
             }
 
-            if cards.isEmpty {
+            if visible.isEmpty {
                 Section {
                     Text(emptyResultMessage)
                         .font(.subheadline)
@@ -246,10 +255,10 @@ struct LibraryView: View {
             }
 
             Section {
-                ForEach(cards) { card in
+                ForEach(visible) { card in
                     row(card)
                 }
-                .onDelete { deleteCards(cards, at: $0) }
+                .onDelete { deleteCards(visible, at: $0) }
             } header: {
                 sectionHeader("Son eklenenler")
             }

@@ -98,9 +98,33 @@ final class CardSearchTests: XCTestCase {
     func testATermInNoFieldDoesNotMatch() {
         XCTAssertFalse(CardSearch.matches(
             query: "kardiyoloji", front: "Soru", back: "Cevap",
-            explanation: "Açıklama", optionTexts: ["A", "B"], tags: ["etiket"],
-            subject: "Patoloji", topic: "İnflamasyon"
+            explanation: "Açıklama", tags: ["etiket"],
+            subject: "Patoloji", topic: "İnflamasyon", optionTexts: ["A", "B"]
         ))
+    }
+
+    // MARK: The option decode is not paid for unless it is needed
+
+    /// `Card.options` parses JSON out of `optionsRaw` on every read, so the
+    /// texts arrive as an autoclosure. These pin the two cases where the whole
+    /// deck would otherwise be parsed for nothing — on this screen the filter
+    /// runs for every card, on every keystroke.
+    func testOptionsAreNotDecodedForAnEmptyQuery() {
+        var decoded = false
+        _ = CardSearch.matches(
+            query: "", front: "Soru", back: "Cevap", explanation: nil,
+            optionTexts: { decoded = true; return ["Şık"] }()
+        )
+        XCTAssertFalse(decoded, "sorgu boşken şıklara hiç bakılmamalı")
+    }
+
+    func testOptionsAreNotDecodedOnceAnEarlierFieldMatches() {
+        var decoded = false
+        XCTAssertTrue(CardSearch.matches(
+            query: "nekroz", front: "Koagülatif nekroz nedir?", back: "Cevap",
+            explanation: nil, optionTexts: { decoded = true; return ["Şık"] }()
+        ))
+        XCTAssertFalse(decoded, "soru zaten eşleştiyse şıklar çözülmemeli")
     }
 
     // MARK: Empty query

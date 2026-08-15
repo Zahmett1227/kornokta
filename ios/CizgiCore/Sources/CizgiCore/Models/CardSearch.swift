@@ -65,21 +65,26 @@ public enum CardSearch {
         front: String,
         back: String,
         explanation: String?,
-        optionTexts: [String] = [],
         tags: [String] = [],
         subject: String? = nil,
-        topic: String? = nil
+        topic: String? = nil,
+        optionTexts: @autoclosure () -> [String] = []
     ) -> Bool {
         let needle = fold(query.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !needle.isEmpty else { return true }
 
         var haystacks: [String] = [front, back]
         if let explanation { haystacks.append(explanation) }
-        haystacks.append(contentsOf: optionTexts)
         haystacks.append(contentsOf: tags)
         if let subject { haystacks.append(subject) }
         if let topic { haystacks.append(topic) }
+        if haystacks.contains(where: { !$0.isEmpty && fold($0).contains(needle) }) { return true }
 
-        return haystacks.contains { !$0.isEmpty && fold($0).contains(needle) }
+        // Last, and behind an autoclosure, because it is the only expensive
+        // field: `Card.options` decodes JSON out of `optionsRaw` on every read.
+        // Evaluated eagerly it would parse the whole deck on every keystroke —
+        // including keystrokes that already matched on the question, and
+        // including no query at all, where the guard above returns first.
+        return optionTexts().contains { !$0.isEmpty && fold($0).contains(needle) }
     }
 }
