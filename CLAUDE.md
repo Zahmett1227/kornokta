@@ -495,9 +495,13 @@ gösterir (2026-08-13 tartışması).
     birbirini tutmalı: Toplam = Aktif + Askıda. Bugün tutmuyor (631 = 606 + 0
     değil); farkı yaratan, 2026-08-04'ten kalma 25 `needsReview` kart. Göçten
     sonra bunlar Tekrar'a girmeli — vadeleri geçmiş olduğu için **hepsi bir
-    anda** gelir, beklenen davranış budur. Tek seferlik
-    (`cizgi.migration.approvalGate.v1`); bir kez doğrulandıktan sonra tekrar
-    koşmaz.
+    anda** gelir, beklenen davranış budur. Açılışta tek seferlik
+    (`cizgi.migration.approvalGate.v1`), **ayrıca her geri yüklemede**: yedek
+    kartın saklı durumunu aynen getirdiği için, bayrak harcandıktan sonra geri
+    yüklenen bir `.needsReview` kart aksi hâlde kalıcı olarak Tekrar'ın dışında
+    kalırdı (Codex, PR #44). Ayrı bir madde olarak da denenmeli: **eski bir
+    yedeği geri yükle** → geri gelen kartlar Tekrar'a girmeli, Toplam = Aktif +
+    Askıda yine tutmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
