@@ -235,6 +235,28 @@ struct PageDetailView: View {
         .buttonStyle(.plain)
         .foregroundStyle(Cizgi.ink)
         .accessibilityHint("Kartı düzenle")
+        .swipeActions(edge: .trailing) {
+            Button("Sil", role: .destructive) { delete(card) }
+        }
+    }
+
+    /// Deleting a single card the owner is looking at — the same act as the
+    /// swipe in Bilgilerim (`LibraryView.deleteCards`), and unconfirmed for the
+    /// same reason. The dialog on the queue *list* guards something else: that
+    /// swipe takes a whole page's cards and their review history at once, which
+    /// is not what one row here can do. `Card → ReviewLog` still cascades
+    /// (`Models.swift`), so this card's own history goes with it.
+    ///
+    /// A `KnowledgeUnit` left holding no cards is allowed to stay, exactly as it
+    /// is when the last card is deleted from Bilgilerim: the unit carries the
+    /// model's reading (`canonicalClaim`) that "Kaynağı göster" prints, and
+    /// pruning it is a separate decision from deleting a card.
+    private func delete(_ card: Card) {
+        context.delete(card)
+        // `try?` here is the app-wide pattern (24 call sites); giving these two
+        // screens an error surface the neighbouring buttons don't have is the
+        // inconsistency PR #44 deliberately avoided.
+        try? context.save()
     }
 
     /// Only on a page the queue has finished with: while it is still working,

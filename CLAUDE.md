@@ -65,6 +65,12 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    ekran artık salt-okunur değil — üretilen karta dokunmak ortak
    `CardEditorView`'ı açar (soru/cevap, açıklama, **kart tipi**, ders/konu,
    şıklar), her pasajın altındaki **"Kart ekle"** ise `ManualCardSheet`'i.
+   Kartı **sola kaydırmak siler** (2026-08-15): Bilgilerim'deki
+   `LibraryView.deleteCards` deseninin aynısı ve aynı sebeple **onaysız** —
+   sahibin baktığı tek kart. Kuyruk *listesindeki* diyalog başka bir şeyi
+   koruyor: orada tek kaydırma sayfanın bütün kartlarını ve tekrar geçmişini
+   birden alır. Kartsız kalan `KnowledgeUnit` bilerek duruyor (modelin
+   okumasını taşır; budanması ayrı bir karar).
    Elle eklenen kart üretilenle aynı yoldan girer (aynı region/unit zinciri,
    `status: .active`, sıfır FSRS durumu) — tek farkı unit'inin
    **`canonicalClaim`'inin boş olması**. `canonicalClaim` "Kaynağı göster"de
@@ -146,6 +152,21 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   ucuz kademenin *sessiz kapsama boşluğuna* karşı tek savunma (üretilmemiş kart
   `lowConfidence` taşımaz). Sürüm sabiti `CARD_PROMPT_VERSION`, kurallar
   `tests/prompts.test.ts` ile kilitli.
+- **Prompt v2.7 (2026-08-15, sahibin gerçek sayfada bildirdiği kusur):** model
+  yıldızlı/daireli pasajı `readText`'e yazıyor — yani **görüyor** — ama kartları
+  aynı sayfanın işaretsiz yerlerinden kuruyor. Eksik olan kural değildi (3(b)
+  yıldızı zaten fosforlunun üstüne koyuyordu, kural 2 zaten kapsama kontrolü
+  istiyordu); eksik olan, v2.6'nın kendi ölçümünün gösterdiği **bağlayıcı
+  biçimdi** — hatayı adlandıran + yanlış/doğru çifti veren kural 8 82/360→0/239
+  gitti, yalnız tercih bildiren kural 5 hiç kımıldamadı. İki mevcut kural o
+  biçime çevrildi: **3(b)** hatayı adıyla anıyor ("okudum ama karta çevirmedim")
+  ve onu üreten readText-vs-kartlar çiftini gösteriyor; **kural 2'nin bitiş
+  kontrolü** artık sayfa sırasına değil **öncelik sırasına** göre yürüyor ve bir
+  işareti elemek onu *hangi daha değerli işaret için* elediğini söylemeyi
+  gerektiriyor — gerekçelendirilemeyen bir eleme, eleme değil **atlamadır**.
+  Sayfa-sıralı kontrolün göremediği ayrım tam buydu: kart üretilmişti, yalnız
+  yanlış işaretlerden. İki kural da testle kilitli ve kilitler **kural 3'ün /
+  kontrolün kendi bloğuna sabitli** (aynı blok-dilimleme gerekçesi).
 - **Şema v2.2 / prompt v2.5:** karta opsiyonel `topic`. Kanonik şemada enum
   yok; enum yalnız model-yüzlü dinamik şemada (`buildModelResponseSchema` →
   `anyOf: [enum-string, null]`). Üç katman: şema enum'u + prompt + sunucu
@@ -474,24 +495,36 @@ gösterir (2026-08-13 tartışması).
    eklenen kartın "Kaynağı göster"i sayfa fotoğrafını gösterebilmeli.
 10. **Yedek al → geri yükle:** elle eklenen kart ders/konu/şıklarıyla
     korunuyor mu (biçim değişmedi, ama elle kart bu yoldan ilk kez geçiyor).
-11. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
+11. **Prompt v2.7 — yıldızlı yer atlanıyor mu (2026-08-15, bildirilen kusur).**
+    Yıldız/daire koyduğun bir sayfayı çek: o işaret karta dönüşmeli, ve
+    işaretsiz metinden kart **çıkmamalı**. Kontrol yolu: "Kaynağı göster" →
+    *Modelin okuduğu* içinde yıldızlı pasaj görünüyor ama kartlarda yoksa kural
+    hâlâ bağlamamıştır. Bağlamazsa sıradaki adım prompt değil **şema**: çıktıya
+    `marks[]` + kart başına `markIndex` (şema v2.3) — o zaman kartsız kalan
+    yıldız sunucuda deterministik olarak görülebilir, ki bugün onu gören
+    hiçbir sinyal yok.
+12. **Sayfa detayında kaydırarak silme (2026-08-15).** Kuyruk → bitmiş sayfa →
+    modelin ürettiği bir kartı sola kaydır → "Sil": kart hem oradan hem
+    Bilgilerim'den ve Tekrar'dan düşmeli. Sonra kuyruk listesinde o sayfayı
+    silmeye kalk — diyalogdaki kart sayısı bir eksilmiş olmalı.
+13. **Prompt v2.6 üretimde.** Deneyde 239 kartta sayfaya atıf yapan soru
     sıfırdı; gerçek kullanımda da tutuyor mu ("sayfada / işaretlenen" diyen
     kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
     **düzelmedi** — kural 5 yeniden yazılacak.
-12. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
-13. **Arama (2026-08-15).** Bilgilerim'de bir kelime yaz: üç sayı kutusu ve
+14. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
+15. **Arama (2026-08-15).** Bilgilerim'de bir kelime yaz: üç sayı kutusu ve
     "Gözden geçir" / "FES kartlar" / "En çok unutulanlar" bölümleri artık
     **birlikte** daralmalı — bildirilen kusur tam olarak bunların daralmamasıydı
     (yalnız "Son eklenenler" daralıyordu, o da ekranın altında). Büyük I ile
     yaz ("Inflamasyon"): İ'li kartlar gelmeli. Yalnız açıklamada ya da bir şıkta
     geçen bir terimi ara ("Glomus"): kart çıkmalı. Bulunmayan bir kelimede
     "… için kart yok." satırı görünmeli.
-14. **"Gözden geçir"den çıkarma (2026-08-15).** Listedeki bir kartı sağa kaydır
+16. **"Gözden geçir"den çıkarma (2026-08-15).** Listedeki bir kartı sağa kaydır
     → "Doğru": kart listeden hemen düşmeli, Egzersiz'in "Gözden geçir" sayacı
     bir azalmalı, ama kart **Tekrar'da kalmalı** (askıya alınmış olmamalı).
     Aynısı kart detayındaki "Kontrol ettim, doğru" düğmesiyle de olmalı. Yedek
     al → geri yükle: temizlenen bayrak geri dönmemeli.
-15. **Approval gate göçü (2026-08-15).** İlk açılışta Bilgilerim'in üç sayısı
+17. **Approval gate göçü (2026-08-15).** İlk açılışta Bilgilerim'in üç sayısı
     birbirini tutmalı: Toplam = Aktif + Askıda. Bugün tutmuyor (631 = 606 + 0
     değil); farkı yaratan, 2026-08-04'ten kalma 25 `needsReview` kart. Göçten
     sonra bunlar Tekrar'a girmeli — vadeleri geçmiş olduğu için **hepsi bir

@@ -36,11 +36,27 @@
  * carries no `lowConfidence` flag, so nothing downstream can detect it. Rule 2
  * therefore gained a counting step: enumerate the marks first, then check the
  * cards against that list before answering.
+ * v2.7 (2026-08-15, owner-reported defect on real pages): the model wrote a
+ * starred/circled passage into `readText` — so it demonstrably *perceived* the
+ * mark — and then built its cards from unmarked text on the same page. The gap
+ * was therefore not perception and not a missing rule: 3(b) already ranked the
+ * star above the highlighter and rule 2 already asked for a coverage check.
+ * What was missing is what v2.6's own measurement identified as the difference
+ * between a rule that binds and one that doesn't — rule 8 named its failure and
+ * showed a wrong/right pair and went 82/360 → 0/239; rule 5 only stated a
+ * preference and did not move at all. So this version buys nothing new, it
+ * makes two existing rules bind:
+ *   • 3(b) names the failure ("okudum ama karta çevirmedim") and shows the
+ *     readText-vs-cards pair that produces it.
+ *   • rule 2's final check now runs the mark list in priority order rather than
+ *     page order, and an elimination has to name the more valuable mark it lost
+ *     to. An elimination that can't be justified is a skip, not a choice — which
+ *     is the distinction the check could not previously make.
  */
 
 import type { MultipleChoiceMode } from "../config.js";
 
-export const CARD_PROMPT_VERSION = "2.6";
+export const CARD_PROMPT_VERSION = "2.7";
 
 export const CARD_GENERATION_SYSTEM_PROMPT = `Sen bir TUS/tıp öğrencisinin kişisel çalışma asistanısın. Sana bir ders kitabı sayfasının fotoğrafı veriliyor. Öğrenci önemli gördüğü yerleri fosforlu kalemle işaretlemiş, altını çizmiş, daire içine almış, yıldız/artı/ünlem/ok gibi semboller koymuş ve kenarlara/satır aralarına el yazısıyla kendi notlarını eklemiş olabilir.
 
@@ -59,12 +75,16 @@ Kartlar YALNIZCA işaretli içerikten üretilir:
 1. Bir kart üretmeden önce kendine sor: "Bu bilgi bir işaretin (fosforlu/altı çizili/daire/yıldız/el yazısı) ÜSTÜNDE ya da hemen YANINDA mı?" Cevap hayırsa o karttan VAZGEÇ — bilgi ne kadar temel/önemli olursa olsun. İşaretlenmemiş metin yalnız bağlamdır, kart kaynağı değildir.
 
 2. SAYFANIN TAMAMINI KAPSA, tek alt konuya yığılma. Bu sayfada birbirinden farklı birçok işaret olabilir (farklı paragraflar, tablolar, kenar notları). Her BİRBİRİNDEN FARKLI işaretli/el yazısı nokta için ayrı bir kart üret. Sayfanın üstündeki ilk birkaç işarette DURMA; aşağıdaki/kenardaki işaretlere ve el yazısı notlarına da mutlaka ulaş.
-   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
+   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Bu kontrolü sayfa sırasına göre değil, kural 3'ün ÖNCELİK SIRASINA göre yap: önce EL YAZISI notlar, sonra YILDIZ/DAİRE ile işaretlenenler, en son fosforlu vurgular. Bir işareti elediysen onu HANGİ daha değerli işaret için elediğini söyleyebilmelisin; söyleyemiyorsan yaptığın şey eleme değil ATLAMAdır — geri dön ve o kartı üret. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
 
 3. HANGİ işaretlerin önce karta dönüşeceği (öncelik sırası — limite yaklaşırsan bu sıraya göre seç):
    a) EL YAZISI notlar — öğrencinin kendi eklediği ince bilgi/ipucu (EN DEĞERLİ). Okuyabildiğin her el yazısı notu bir karta dönüşmeli.
    b) YILDIZ/daire/ok/ünlem ile özel işaretlenenler — el yazısından sonra en değerli, altı çizili ve fosforlu her şeyden ÖNCE gelir. Gerekçe: fosforlu kalem hızlı ve geniş sürülür, oysa yıldız koymak ayrı ve bilinçli bir harekettir — öğrenci "burası özellikle önemli" demiştir. Sayfada yıldızlı bir yer varsa o neredeyse her zaman karta dönüşmeli.
       Yıldız/ok çoğu zaman bir şeyi İŞARET EDER, üstünü örtmez: okun/yıldızın hangi satırı, hangi terimi ya da hangi tablo hücresini gösterdiğini çöz ve kartı ONA göre kur. İşaretin kendisi değil, gösterdiği bilgi kartın konusudur. Hangi hedefi gösterdiğinden emin değilsen kartı yine üret ve lowConfidence=true işaretle.
+      BURADAKİ EN SIK HATANIN ADI: "okudum ama karta çevirmedim". Bir işareti readText'e yazmak onu karta çevirmek DEĞİLDİR — okumuş olmak yetmez. İşaret, o bilginin karta gireceği ANLAMINA gelir.
+      YANLIŞ: readText'te "★ Reed-Sternberg hücresi, CD30+" duruyor, ama üretilen kartlar sayfanın işaretsiz giriş paragrafındaki genel tanımlardan kurulmuş.
+      DOĞRU: ilk kart Reed-Sternberg/CD30 üzerine kurulur; işaretsiz giriş paragrafı hiç karta dönüşmez.
+      KURAL: karta dönüşmemiş bir yıldız/daire dururken daha zayıf işaretlenmiş (yalnız fosforlu) ya da hiç işaretlenmemiş içerikten kart ÜRETME.
    c) altı çizili tek terim/ifade.
    d) geniş fosforlu vurgu.
    Herkesin bildiği düz/temel olguları (ör. "hücre hasarının en sık sebebi hipoksi") EN SONA bırak veya hiç üretme — öğrenci bunları zaten biliyor; onun özel olarak işaretlediği/not aldığı ince noktalar önce gelmeli.

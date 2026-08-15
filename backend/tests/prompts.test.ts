@@ -83,8 +83,8 @@ describe("prompt contracts (§15)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("hipo/hiper");
   });
 
-  it("card prompt is at v2.6 (self-contained cards, one idea, full-page scan)", () => {
-    expect(CARD_PROMPT_VERSION).toBe("2.6");
+  it("card prompt is at v2.7 (self-contained cards, one idea, full-page scan, marks bind)", () => {
+    expect(CARD_PROMPT_VERSION).toBe("2.7");
   });
 
   it("card prompt (v2.6) forbids referring to the page inside the card", () => {
@@ -140,6 +140,37 @@ describe("prompt contracts (§15)", () => {
     // carry no lowConfidence flag, so nothing downstream can notice them.
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("kenar boşlukları");
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Bitirmeden önce KONTROL ET");
+  });
+
+  it("card prompt (v2.7) names read-but-not-carded and shows the pair that produces it", () => {
+    // The reported defect: the starred passage is in readText — perceived —
+    // and the cards come from unmarked text anyway. v2.6's measurement is the
+    // reason this is written as a named failure plus a wrong/right pair rather
+    // than a stronger preference: that is the form that moved rule 8 from
+    // 82/360 to 0/239, while rule 5's bare prohibition moved nothing.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    expect(rule3).toContain("okudum ama karta çevirmedim");
+    // The pair lives inside rule 3 — not merely somewhere in the prompt, which
+    // is also true of rule 8's own YANLIŞ/DOĞRU pair hundreds of characters
+    // away (the mistake this file already made once, see the ordering test).
+    expect(rule3).toContain("YANLIŞ:");
+    expect(rule3).toContain("DOĞRU:");
+    // The operative sentence: an uncarded star outranks anything weaker.
+    expect(rule3).toContain("kart ÜRETME");
+  });
+
+  it("card prompt (v2.7) runs the final check in priority order and forbids unjustified drops", () => {
+    // Ordering the *check* is the point. A page-order check passes as soon as
+    // every region produced something, which is exactly what happened on the
+    // reported page: cards existed, they were just built from the wrong marks.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+    expect(check).not.toBe("");
+    expect(check).toContain("ÖNCELİK SIRASINA");
+    // Dropping a mark is legitimate only against a named better one; the
+    // difference between a choice and a skip is the justification.
+    expect(check).toContain("ATLAMA");
   });
 
   it("topic instruction names the subject, lists topics verbatim, and allows null (v2.5)", () => {
