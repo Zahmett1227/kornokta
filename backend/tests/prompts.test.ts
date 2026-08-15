@@ -83,8 +83,8 @@ describe("prompt contracts (§15)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("hipo/hiper");
   });
 
-  it("card prompt is at v2.6 (self-contained cards, one idea, full-page scan)", () => {
-    expect(CARD_PROMPT_VERSION).toBe("2.6");
+  it("card prompt is at v2.7 (self-contained cards, one idea, full-page scan, marks bind)", () => {
+    expect(CARD_PROMPT_VERSION).toBe("2.7");
   });
 
   it("card prompt (v2.6) forbids referring to the page inside the card", () => {
@@ -127,7 +127,11 @@ describe("prompt contracts (§15)", () => {
     const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
     expect(rule3).not.toBe("");
 
-    const positions = ["EL YAZISI notlar", "YILDIZ/daire/ok/ünlem", "altı çizili tek terim", "geniş fosforlu vurgu"]
+    // The star tier is matched by its name rather than its member list: the
+    // list moved once already (v2.7 round two added kutu/çerçeve) and a marker
+    // that enumerates members turns every such addition into a test failure
+    // that says "order broke" when the order did not.
+    const positions = ["EL YAZISI notlar", "SEMBOL İŞARETLERİ", "altı çizili tek terim", "geniş fosforlu vurgu"]
       .map((item) => rule3.indexOf(item));
     // -1 would sort as "first" and quietly satisfy the ordering below, so a
     // deleted item has to fail here rather than pass as a bad comparison.
@@ -140,6 +144,107 @@ describe("prompt contracts (§15)", () => {
     // carry no lowConfidence flag, so nothing downstream can notice them.
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("kenar boşlukları");
     expect(CARD_GENERATION_SYSTEM_PROMPT).toContain("Bitirmeden önce KONTROL ET");
+  });
+
+  it("card prompt (v2.7) names read-but-not-carded and shows the pair that produces it", () => {
+    // The reported defect: the starred passage is in readText — perceived —
+    // and the cards come from unmarked text anyway. v2.6's measurement is the
+    // reason this is written as a named failure plus a wrong/right pair rather
+    // than a stronger preference: that is the form that moved rule 8 from
+    // 82/360 to 0/239, while rule 5's bare prohibition moved nothing.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    expect(rule3).toContain("okudum ama karta çevirmedim");
+    // The pair lives inside rule 3 — not merely somewhere in the prompt, which
+    // is also true of rule 8's own YANLIŞ/DOĞRU pair hundreds of characters
+    // away (the mistake this file already made once, see the ordering test).
+    expect(rule3).toContain("YANLIŞ:");
+    expect(rule3).toContain("DOĞRU:");
+    // The operative sentence: an uncarded star outranks anything weaker.
+    expect(rule3).toContain("kart ÜRETME");
+
+    // "Weaker" has to name EVERY lower tier, not just the highlighter. Its
+    // first draft said "(yalnız fosforlu)", which on a page holding both a
+    // star and an underline left the underline free to take the slot while
+    // the star stayed uncarded — the reported failure exactly, one tier up
+    // (Codex, PR #45). The parenthetical reads as the definition of the class,
+    // so an omission there is not a wording detail.
+    const binding = rule3.slice(rule3.indexOf("KURAL:"));
+    expect(binding).not.toBe("");
+    expect(binding).toContain("altı çizili");
+    expect(binding).toContain("fosforlu");
+  });
+
+  it("card prompt (v2.7) enforces the star tier by name, and the tier holds every symbol", () => {
+    // Round two of the same defect (Codex, PR #45): item (b) covered
+    // star/plus/exclamation/arrow/circle, but the check and the binding
+    // sentence each re-listed the tier as "yıldız/daire" — so an arrow-marked
+    // passage was inside the priority list and outside its enforcement.
+    // Naming the tier once and referring to it by name is what makes adding a
+    // mark type one edit instead of three, so the name is the contract here.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+
+    // Both enforcement sites reference the tier by name, not by re-listing it.
+    expect(check).toContain("SEMBOL İŞARETLERİ");
+    expect(rule3.slice(rule3.indexOf("KURAL:"))).toContain("SEMBOL İŞARET");
+
+    // And the tier itself names every mark the owner actually uses. `kutu` is
+    // here because it was in none of the three places — not the priority list,
+    // not the binding rule, not even the scan list — while being one of the
+    // marks the defect was reported about.
+    const tier = rule3.slice(rule3.indexOf("SEMBOL İŞARETLERİ"), rule3.indexOf("c) altı çizili"));
+    for (const mark of ["yıldız", "artı", "ünlem", "ok", "daire", "kutu"]) {
+      expect(tier).toContain(mark);
+    }
+    // A mark that is prioritised but never scanned for cannot be found at all.
+    const scan = prompt.slice(prompt.indexOf("ÖNCE İŞARETLERİ BUL"), prompt.indexOf("readText alanına"));
+    expect(scan).toContain("kutu");
+  });
+
+  it("card prompt (v2.7) keeps the member list out of every enforcement site", () => {
+    // Third round of the same defect (Codex, PR #45). Rule 1 is a *gate*, not a
+    // ranking — "cevap hayırsa o karttan VAZGEÇ" — and it had kept its own
+    // partial member list through the rename, so a passage marked only with a
+    // plus or an exclamation could be dropped there before the priority rule
+    // ever saw it. Three rounds on one defect is the signal: the invariant, not
+    // the wording, is what needs pinning.
+    //
+    // Members live in exactly two places — the scan list (what to look for) and
+    // 3(b) (how it ranks). Enforcement sites name the tier and list nothing, so
+    // adding a mark type cannot silently narrow a gate.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule1 = prompt.slice(prompt.indexOf("1. Bir kart üretmeden önce"), prompt.indexOf("2. SAYFANIN TAMAMINI"));
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    const binding = rule3.slice(rule3.indexOf("KURAL:"), rule3.indexOf("c) altı çizili"));
+
+    for (const [name, site] of [["rule 1 gate", rule1], ["final check", check], ["binding rule", binding]] as const) {
+      expect(site, `${name} slice not found`).not.toBe("");
+      expect(site, `${name} refers to the tier by name`).toContain("SEMBOL İŞARET");
+      for (const member of ["yıldız", "artı", "ünlem", "daire", "kutu", "çerçeve"]) {
+        // Not `toContain`: Turkish morphology makes plain substring matching
+        // lie — "kartı" contains "artı", and the check sentence says "o kartı
+        // üret". Require a non-letter (or the start) before the member so a
+        // suffix inside another word is not read as an enumeration.
+        const standalone = new RegExp(`(^|[^\\p{L}])${member}`, "iu");
+        expect(standalone.test(site), `${name} re-enumerates "${member}"`).toBe(false);
+      }
+    }
+  });
+
+  it("card prompt (v2.7) runs the final check in priority order and forbids unjustified drops", () => {
+    // Ordering the *check* is the point. A page-order check passes as soon as
+    // every region produced something, which is exactly what happened on the
+    // reported page: cards existed, they were just built from the wrong marks.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+    expect(check).not.toBe("");
+    expect(check).toContain("ÖNCELİK SIRASINA");
+    // Dropping a mark is legitimate only against a named better one; the
+    // difference between a choice and a skip is the justification.
+    expect(check).toContain("ATLAMA");
   });
 
   it("topic instruction names the subject, lists topics verbatim, and allows null (v2.5)", () => {
