@@ -165,7 +165,17 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   işareti elemek onu *hangi daha değerli işaret için* elediğini söylemeyi
   gerektiriyor — gerekçelendirilemeyen bir eleme, eleme değil **atlamadır**.
   Sayfa-sıralı kontrolün göremediği ayrım tam buydu: kart üretilmişti, yalnız
-  yanlış işaretlerden. İki kural da testle kilitli ve kilitler **kural 3'ün /
+  yanlış işaretlerden. **Kademe adlandırıldı (Codex'in iki turunun ürünü):**
+  yıldız/artı/ünlem/ok ve daire/kutu/çerçeve artık tek bir adın altında —
+  **`SEMBOL İŞARETLERİ`** — ve hem bitiş kontrolü hem bağlayıcı kural kademeyi
+  *adıyla* anıyor. Sebebi: küme üç yerde tekrar edilince kayıyordu (öncelik
+  listesi oku sayıyordu, iki uygulama noktası yalnız "yıldız/daire" diyordu —
+  yani ok işaretli pasaj listenin içinde, korumanın dışındaydı). Yeni işaret
+  tipi eklemek artık tek düzenleme. Sahibin kullandığı **kutu/çerçeve** bu
+  turda eklendi: prompt onu üç yerin hiçbirinde, tarama listesinde bile
+  anmıyordu. Kademenin üyeleri ve tarandığı testle kilitli; sıra kilidi
+  üyelere değil **kademe adına** bakıyor (üye eklemek "sıra bozuldu" demek
+  değil). İki kural da testle kilitli ve kilitler **kural 3'ün /
   kontrolün kendi bloğuna sabitli** (aynı blok-dilimleme gerekçesi).
 - **Şema v2.2 / prompt v2.5:** karta opsiyonel `topic`. Kanonik şemada enum
   yok; enum yalnız model-yüzlü dinamik şemada (`buildModelResponseSchema` →

@@ -127,7 +127,11 @@ describe("prompt contracts (§15)", () => {
     const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
     expect(rule3).not.toBe("");
 
-    const positions = ["EL YAZISI notlar", "YILDIZ/daire/ok/ünlem", "altı çizili tek terim", "geniş fosforlu vurgu"]
+    // The star tier is matched by its name rather than its member list: the
+    // list moved once already (v2.7 round two added kutu/çerçeve) and a marker
+    // that enumerates members turns every such addition into a test failure
+    // that says "order broke" when the order did not.
+    const positions = ["EL YAZISI notlar", "SEMBOL İŞARETLERİ", "altı çizili tek terim", "geniş fosforlu vurgu"]
       .map((item) => rule3.indexOf(item));
     // -1 would sort as "first" and quietly satisfy the ordering below, so a
     // deleted item has to fail here rather than pass as a bad comparison.
@@ -169,6 +173,34 @@ describe("prompt contracts (§15)", () => {
     expect(binding).not.toBe("");
     expect(binding).toContain("altı çizili");
     expect(binding).toContain("fosforlu");
+  });
+
+  it("card prompt (v2.7) enforces the star tier by name, and the tier holds every symbol", () => {
+    // Round two of the same defect (Codex, PR #45): item (b) covered
+    // star/plus/exclamation/arrow/circle, but the check and the binding
+    // sentence each re-listed the tier as "yıldız/daire" — so an arrow-marked
+    // passage was inside the priority list and outside its enforcement.
+    // Naming the tier once and referring to it by name is what makes adding a
+    // mark type one edit instead of three, so the name is the contract here.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule3 = prompt.slice(prompt.indexOf("3. HANGİ işaretlerin"), prompt.indexOf("4. El yazısını"));
+    const check = prompt.slice(prompt.indexOf("Bitirmeden önce KONTROL ET"), prompt.indexOf("3. HANGİ işaretlerin"));
+
+    // Both enforcement sites reference the tier by name, not by re-listing it.
+    expect(check).toContain("SEMBOL İŞARETLERİ");
+    expect(rule3.slice(rule3.indexOf("KURAL:"))).toContain("SEMBOL İŞARET");
+
+    // And the tier itself names every mark the owner actually uses. `kutu` is
+    // here because it was in none of the three places — not the priority list,
+    // not the binding rule, not even the scan list — while being one of the
+    // marks the defect was reported about.
+    const tier = rule3.slice(rule3.indexOf("SEMBOL İŞARETLERİ"), rule3.indexOf("c) altı çizili"));
+    for (const mark of ["yıldız", "artı", "ünlem", "ok", "daire", "kutu"]) {
+      expect(tier).toContain(mark);
+    }
+    // A mark that is prioritised but never scanned for cannot be found at all.
+    const scan = prompt.slice(prompt.indexOf("ÖNCE İŞARETLERİ BUL"), prompt.indexOf("readText alanına"));
+    expect(scan).toContain("kutu");
   });
 
   it("card prompt (v2.7) runs the final check in priority order and forbids unjustified drops", () => {
