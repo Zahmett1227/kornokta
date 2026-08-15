@@ -571,6 +571,19 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
    bunu tamamen görünmez kılardı. Asimetri yalnız backend'de: iOS zaten geçici
    sayıyor (`StateMachine.swift:126`).
 
+6. **`try? context.save()` hatayı yutuyor — 24 çağrı, tek karar gerekiyor.**
+   Codex bulgusu (P2, PR #44 üçüncü tur). Depo geçici olarak yazılamazsa
+   kaydetme hatası düşüyor, ama bellekteki değişiklik duruyor: ekran işlemi
+   başarılı göstermiş oluyor ve uygulama sonraki otomatik kaydetmeden önce
+   sonlanırsa işlem kayboluyor. Bulgu "Gözden geçir"deki "Doğru" için
+   yazıldı ama orada özel bir şey yok — aynı desen "Askıya al", "Sil",
+   "Etkinleştir", `deleteCards` ve diğerlerinde, uygulama genelinde **24
+   yerde** var. Bu yüzden PR #44'te bilerek düzeltilmedi: yalnız iki çağrıyı
+   hata gösterir yapmak, yan yana duran düğmelerin biri hata verip diğeri
+   yutan tutarsız bir ekran bırakırdı. Sonuç veri kaybı değil — en kötü
+   hâlde işlem geri alınır ve kullanıcı tekrarlar — ama doğru düzeltme
+   hepsi için ortak bir hata yüzeyi kurmak, tek tek yamamak değil.
+
 ### Aday sonraki özellikler
 
 Öneri, taahhüt değil; sırayı kullanıcı seçer.
