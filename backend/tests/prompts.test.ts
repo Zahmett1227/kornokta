@@ -158,6 +158,17 @@ describe("prompt contracts (§15)", () => {
     expect(rule3).toContain("DOĞRU:");
     // The operative sentence: an uncarded star outranks anything weaker.
     expect(rule3).toContain("kart ÜRETME");
+
+    // "Weaker" has to name EVERY lower tier, not just the highlighter. Its
+    // first draft said "(yalnız fosforlu)", which on a page holding both a
+    // star and an underline left the underline free to take the slot while
+    // the star stayed uncarded — the reported failure exactly, one tier up
+    // (Codex, PR #45). The parenthetical reads as the definition of the class,
+    // so an omission there is not a wording detail.
+    const binding = rule3.slice(rule3.indexOf("KURAL:"));
+    expect(binding).not.toBe("");
+    expect(binding).toContain("altı çizili");
+    expect(binding).toContain("fosforlu");
   });
 
   it("card prompt (v2.7) runs the final check in priority order and forbids unjustified drops", () => {

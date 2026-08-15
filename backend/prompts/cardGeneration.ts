@@ -52,6 +52,12 @@
  *     page order, and an elimination has to name the more valuable mark it lost
  *     to. An elimination that can't be justified is a skip, not a choice — which
  *     is the distinction the check could not previously make.
+ * Both of those say "weaker mark", and both first said it while naming only the
+ * highlighter (Codex, PR #45). On a page holding a star *and* an underline at
+ * the cap, that wording left the underline free to take the slot with the star
+ * still uncarded — the reported failure again, one tier up. A rule whose whole
+ * job is to bind a priority order cannot enumerate that order incompletely, so
+ * both now name every lower tier, and the enumeration is pinned by test.
  */
 
 import type { MultipleChoiceMode } from "../config.js";
@@ -75,7 +81,7 @@ Kartlar YALNIZCA işaretli içerikten üretilir:
 1. Bir kart üretmeden önce kendine sor: "Bu bilgi bir işaretin (fosforlu/altı çizili/daire/yıldız/el yazısı) ÜSTÜNDE ya da hemen YANINDA mı?" Cevap hayırsa o karttan VAZGEÇ — bilgi ne kadar temel/önemli olursa olsun. İşaretlenmemiş metin yalnız bağlamdır, kart kaynağı değildir.
 
 2. SAYFANIN TAMAMINI KAPSA, tek alt konuya yığılma. Bu sayfada birbirinden farklı birçok işaret olabilir (farklı paragraflar, tablolar, kenar notları). Her BİRBİRİNDEN FARKLI işaretli/el yazısı nokta için ayrı bir kart üret. Sayfanın üstündeki ilk birkaç işarette DURMA; aşağıdaki/kenardaki işaretlere ve el yazısı notlarına da mutlaka ulaş.
-   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Bu kontrolü sayfa sırasına göre değil, kural 3'ün ÖNCELİK SIRASINA göre yap: önce EL YAZISI notlar, sonra YILDIZ/DAİRE ile işaretlenenler, en son fosforlu vurgular. Bir işareti elediysen onu HANGİ daha değerli işaret için elediğini söyleyebilmelisin; söyleyemiyorsan yaptığın şey eleme değil ATLAMAdır — geri dön ve o kartı üret. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
+   Bitirmeden önce KONTROL ET: yukarıda tespit ettiğin işaretlerin listesini gözden geçir ve her birinin ya bir karta dönüştüğünü ya da limit yüzünden bilinçli olarak elendiğini doğrula. Bu kontrolü sayfa sırasına göre değil, kural 3'ün ÖNCELİK SIRASINA göre yap: önce EL YAZISI notlar, sonra YILDIZ/DAİRE ile işaretlenenler, sonra altı çizililer, en son fosforlu vurgular. Bir işareti elediysen onu HANGİ daha değerli işaret için elediğini söyleyebilmelisin; söyleyemiyorsan yaptığın şey eleme değil ATLAMAdır — geri dön ve o kartı üret. Sayfanın alt yarısından ve kenar boşluklarından hiç kart çıkmadıysa, orayı yeterince taramamışsındır — geri dön.
 
 3. HANGİ işaretlerin önce karta dönüşeceği (öncelik sırası — limite yaklaşırsan bu sıraya göre seç):
    a) EL YAZISI notlar — öğrencinin kendi eklediği ince bilgi/ipucu (EN DEĞERLİ). Okuyabildiğin her el yazısı notu bir karta dönüşmeli.
@@ -84,7 +90,7 @@ Kartlar YALNIZCA işaretli içerikten üretilir:
       BURADAKİ EN SIK HATANIN ADI: "okudum ama karta çevirmedim". Bir işareti readText'e yazmak onu karta çevirmek DEĞİLDİR — okumuş olmak yetmez. İşaret, o bilginin karta gireceği ANLAMINA gelir.
       YANLIŞ: readText'te "★ Reed-Sternberg hücresi, CD30+" duruyor, ama üretilen kartlar sayfanın işaretsiz giriş paragrafındaki genel tanımlardan kurulmuş.
       DOĞRU: ilk kart Reed-Sternberg/CD30 üzerine kurulur; işaretsiz giriş paragrafı hiç karta dönüşmez.
-      KURAL: karta dönüşmemiş bir yıldız/daire dururken daha zayıf işaretlenmiş (yalnız fosforlu) ya da hiç işaretlenmemiş içerikten kart ÜRETME.
+      KURAL: karta dönüşmemiş bir yıldız/daire dururken ondan daha zayıf işaretlenmiş (altı çizili ya da yalnız fosforlu) ya da hiç işaretlenmemiş içerikten kart ÜRETME — limite yaklaştığında slotu önce yıldız/daire alır. Bu kuralın tek istisnası el yazısı notlardır: onlar yıldız/daireden de önce gelir (madde a).
    c) altı çizili tek terim/ifade.
    d) geniş fosforlu vurgu.
    Herkesin bildiği düz/temel olguları (ör. "hücre hasarının en sık sebebi hipoksi") EN SONA bırak veya hiç üretme — öğrenci bunları zaten biliyor; onun özel olarak işaretlediği/not aldığı ince noktalar önce gelmeli.
