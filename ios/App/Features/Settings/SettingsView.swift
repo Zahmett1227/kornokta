@@ -543,10 +543,22 @@ struct SettingsView: View {
                     try context.save()
                 }
             } catch {
-                // The restore itself is already committed and is what the
-                // summary below reports; a card left at the gate is recoverable
-                // from its own detail screen, so this must not fail the restore.
+                // Failing the whole restore here would misreport it: the cards
+                // are already committed by the save above. But swallowing it
+                // would be worse, because nothing would ever retry (Codex
+                // review, PR #44, second pass). Re-importing the same backup
+                // skips these cards as duplicates, and on a fresh install the
+                // startup migration has already spent its one-shot flag on an
+                // empty store — so the cards would sit outside every review
+                // with only the per-card "Etkinleştir" button left.
+                //
+                // Clearing that flag hands the work back to the migration,
+                // which is already built to retry: the release is idempotent
+                // and runs again on the next cold start. A store that is still
+                // unwritable then simply leaves the flag clear and tries again
+                // after that.
                 context.rollback()
+                UserDefaults.standard.removeObject(forKey: ApprovalGateMigration.flagKey)
             }
 
             restoreSummary = plan.skipped.isEmpty
