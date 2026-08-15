@@ -26,26 +26,42 @@ struct LibraryView: View {
     /// filtered screen that still showed unfiltered totals and "en çok
     /// unutulanlar" would be reporting on a deck the user is not looking at.
     ///
+    /// The search text is part of that rule as of 2026-08-15, and was not
+    /// before. It lived in a separate `filtered` property that only "Son
+    /// eklenenler" read, so typing a word left the three tiles and the three
+    /// sections above it showing the whole deck — on screen, indistinguishable
+    /// from a search box that does nothing, which is exactly how it was
+    /// reported.
+    ///
     /// Filtered in memory rather than with `#Predicate`, on purpose: subject
-    /// and topic live on an optional relationship, and this deck is hundreds
-    /// of cards — the same choice the existing text search already makes.
+    /// and topic live on an optional relationship, `CardSearch` folds Turkish
+    /// case in a way SQLite will not, and this deck is hundreds of cards.
     private var cards: [Card] {
-        allCards.filter {
+        allCards.filter { card in
             LibraryCardFilter.matches(
-                subject: $0.knowledgeUnit?.subject,
-                topic: $0.knowledgeUnit?.topic,
+                subject: card.knowledgeUnit?.subject,
+                topic: card.knowledgeUnit?.topic,
                 subjectFilter: subjectFilter,
                 topicFilter: topicFilter
+            )
+            && CardSearch.matches(
+                query: searchText,
+                front: card.front,
+                back: card.back,
+                explanation: card.explanation,
+                optionTexts: (card.options ?? []).map(\.text),
+                tags: card.knowledgeUnit?.tags ?? [],
+                subject: card.knowledgeUnit?.subject,
+                topic: card.knowledgeUnit?.topic
             )
         }
     }
 
-    private var filtered: [Card] {
-        guard !searchText.isEmpty else { return cards }
-        return cards.filter {
-            $0.front.localizedCaseInsensitiveContains(searchText)
-                || $0.back.localizedCaseInsensitiveContains(searchText)
-        }
+    /// Naming what came up empty. With both a filter and a search able to empty
+    /// the list, a fixed "Bu filtreye uyan kart yok." pointed at the wrong one.
+    private var emptyResultMessage: String {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? "Bu filtreye uyan kart yok." : "“\(query)” için kart yok."
     }
 
     private var activeCount: Int { cards.filter { $0.status == .active }.count }
@@ -57,7 +73,7 @@ struct LibraryView: View {
     /// and reviewable, and it is *listed* here rather than held back — flagging
     /// instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
     private var needsSecondLook: [Card] {
-        cards.filter { $0.lowConfidence && $0.status != .suspended }
+        cards.filter { SecondLook.isPending(lowConfidence: $0.lowConfidence, status: $0.status) }
     }
 
     /// FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
@@ -164,7 +180,7 @@ struct LibraryView: View {
 
             if cards.isEmpty {
                 Section {
-                    Text("Bu filtreye uyan kart yok.")
+                    Text(emptyResultMessage)
                         .font(.subheadline)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -174,6 +190,19 @@ struct LibraryView: View {
                 Section {
                     ForEach(needsSecondLook) { card in
                         row(card)
+                            // The one-gesture exit. The detail screen carries
+                            // the same action spelled out, but a list the owner
+                            // works through card by card should not cost four
+                            // taps per card to clear.
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    card.resolveSecondLook()
+                                    try? context.save()
+                                } label: {
+                                    Label("Doğru", systemImage: "checkmark.seal")
+                                }
+                                .tint(Cizgi.success)
+                            }
                     }
                     .onDelete { deleteCards(needsSecondLook, at: $0) }
                 } header: {
@@ -181,7 +210,9 @@ struct LibraryView: View {
                 } footer: {
                     Text("Model ya da sunucu bu kartlarda emin olamadı — okunamayan "
                          + "bir el yazısı, ya da birbirini kapsayan şıklar. Kart "
-                         + "desteye girdi; doğruluğunu bir kez kontrol et.")
+                         + "desteye girdi; doğruluğunu bir kez kontrol et. "
+                         + "Doğruysa sağa kaydırıp işaretle — kart listeden çıkar, "
+                         + "tekrar sırasında kalır.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -215,10 +246,10 @@ struct LibraryView: View {
             }
 
             Section {
-                ForEach(filtered) { card in
+                ForEach(cards) { card in
                     row(card)
                 }
-                .onDelete { deleteCards(filtered, at: $0) }
+                .onDelete { deleteCards(cards, at: $0) }
             } header: {
                 sectionHeader("Son eklenenler")
             }
@@ -337,6 +368,32 @@ struct CardDetailView: View {
                 } header: { sectionHeader("Şıklar") }
             }
 
+            // The exit from "Gözden geçir" (CizgiCore's `SecondLook`). Until
+            // this shipped, nothing outside `Card.init` ever wrote
+            // `lowConfidence`, so a card the owner had checked and found sound
+            // stayed flagged forever — on this screen, in Bilgilerim's list, in
+            // Egzersiz's quick start and in Tekrar's badge. The only ways off
+            // the list were suspending or deleting the card, and both take it
+            // out of review, which is the opposite of what checking it means.
+            if card.lowConfidence {
+                Section {
+                    Button {
+                        card.resolveSecondLook()
+                        try? context.save()
+                    } label: {
+                        Label("Kontrol ettim, doğru", systemImage: "checkmark.seal")
+                    }
+                } header: {
+                    sectionHeader("Gözden geçir")
+                } footer: {
+                    Text("Model bu kartta emin olamadı. Doğruluğunu kontrol "
+                         + "ettiysen işaretle: kart listeden çıkar, tekrar "
+                         + "sırasındaki yerini korur.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+
             // §10.4's surviving idea (2026-08-11): only on cards the model
             // itself doubted — the one moment an independent re-read helps.
             if card.lowConfidence {
@@ -426,5 +483,19 @@ struct CardDetailView: View {
             .font(.subheadline.weight(.bold))
             .foregroundStyle(Cizgi.ink)
             .textCase(nil)
+    }
+}
+
+private extension Card {
+    /// The only writer of `lowConfidence` outside `Card.init`, so the swipe on
+    /// the list row and the button on the detail screen cannot resolve a card
+    /// two different ways.
+    ///
+    /// Deliberately narrow: `status` is untouched, so the card stays in the
+    /// deck and keeps its place in the FSRS queue, and no scheduling field is
+    /// written — clearing the model's doubt is not a review.
+    func resolveSecondLook() {
+        lowConfidence = false
+        updatedAt = .now
     }
 }
