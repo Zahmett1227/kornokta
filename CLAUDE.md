@@ -479,6 +479,29 @@ gösterir (2026-08-13 tartışması).
     kart var mı) birkaç hafta içinde bakılmalı. Çok-fikirli kart ise deneyde
     **düzelmedi** — kural 5 yeniden yazılacak.
 12. **Zayıf nokta sönümlemesi** — haftalar sürer, bilinçle sona bırakıldı.
+13. **Arama (2026-08-15).** Bilgilerim'de bir kelime yaz: üç sayı kutusu ve
+    "Gözden geçir" / "FES kartlar" / "En çok unutulanlar" bölümleri artık
+    **birlikte** daralmalı — bildirilen kusur tam olarak bunların daralmamasıydı
+    (yalnız "Son eklenenler" daralıyordu, o da ekranın altında). Büyük I ile
+    yaz ("Inflamasyon"): İ'li kartlar gelmeli. Yalnız açıklamada ya da bir şıkta
+    geçen bir terimi ara ("Glomus"): kart çıkmalı. Bulunmayan bir kelimede
+    "… için kart yok." satırı görünmeli.
+14. **"Gözden geçir"den çıkarma (2026-08-15).** Listedeki bir kartı sağa kaydır
+    → "Doğru": kart listeden hemen düşmeli, Egzersiz'in "Gözden geçir" sayacı
+    bir azalmalı, ama kart **Tekrar'da kalmalı** (askıya alınmış olmamalı).
+    Aynısı kart detayındaki "Kontrol ettim, doğru" düğmesiyle de olmalı. Yedek
+    al → geri yükle: temizlenen bayrak geri dönmemeli.
+15. **Approval gate göçü (2026-08-15).** İlk açılışta Bilgilerim'in üç sayısı
+    birbirini tutmalı: Toplam = Aktif + Askıda. Bugün tutmuyor (631 = 606 + 0
+    değil); farkı yaratan, 2026-08-04'ten kalma 25 `needsReview` kart. Göçten
+    sonra bunlar Tekrar'a girmeli — vadeleri geçmiş olduğu için **hepsi bir
+    anda** gelir, beklenen davranış budur. Açılışta tek seferlik
+    (`cizgi.migration.approvalGate.v1`), **ayrıca her geri yüklemede**: yedek
+    kartın saklı durumunu aynen getirdiği için, bayrak harcandıktan sonra geri
+    yüklenen bir `.needsReview` kart aksi hâlde kalıcı olarak Tekrar'ın dışında
+    kalırdı (Codex, PR #44). Ayrı bir madde olarak da denenmeli: **eski bir
+    yedeği geri yükle** → geri gelen kartlar Tekrar'a girmeli, Toplam = Aktif +
+    Askıda yine tutmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
@@ -521,6 +544,45 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
    görülünce yazılıyor; v2'den önce silinmiş tek bir kart, migration'ın her
    açılışta tüm desteyi taramasına yol açar. Maliyet bugün küçük (tek fetch)
    ama sınırsız; bir tamamlanma/yaş koşulu eklenmeli.
+3. **Kilitli telefon "cihaz anahtarı yok" gibi görünüyor** (2026-08-15, canlı
+   olay; sahibin kararıyla şimdilik bırakıldı). Anahtar
+   `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` ile yazılıyor
+   (`DeviceTokenStore.swift:72`), ama `read()` her `OSStatus`'u sessizce `nil`'e
+   çeviriyor (`:53`) — `errSecInteractionNotAllowed` (-25308, telefon kilitli)
+   ile `errSecItemNotFound` (-25300, anahtar hiç yok) ayırt edilemiyor.
+   `AppEnvironment.swift:106` her istekte taze okuduğundan, kuyruk arka planda
+   ilerlerken ekran kilitlenirse `BackendCardProvider.swift:54` "Cihaz anahtarı
+   ayarlanmamış." diyor ve sahibi hatalı biçimde Ayarlar'a yönlendiriyor; kilit
+   açılıp "Tekrar dene" denince aynı iş sorunsuz üretiyor. Düzeltme: `read()`
+   `OSStatus`'u korusun, kilit hâli kendi mesajını taşısın.
+4. **Anahtarın erişilebilirlik sınıfı arka plan işine uymuyor** (3'ün kökü,
+   **sahibin kararı bekliyor** — bu yüzden koda dokunulmadı). Yerindeki yorum
+   iki ayrı korumayı birbirine karıştırıyor: yedekten çıkarılmayı engelleyen
+   `ThisDeviceOnly`, kilitliyken okunmayı engelleyen ise `WhenUnlocked`. Kuyruk
+   arka planda çalıştığı için olağan seçim
+   `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` olurdu: yedek koruması
+   aynen kalır, kilitliyken üretim sürer. Güvenlik farkı küçük ama sıfır değil.
+5. **Backend 401'i kalıcı sayıyor.** `supabaseJobs.ts:251` `isTransientStatus`
+   yalnız ≥500, 408 ve 429'u geçici kabul ediyor. 2026-08-15'te tek seferlik bir
+   `PGRST303 "JWT issued at future"` sahibe hata olarak göründü ve elle tekrar
+   denemede kendiliğinden düzeldi — servis anahtarı statik bir JWT olduğundan
+   `iat` kayamaz, dolayısıyla oynayan taraf Supabase'in saati (doğrulanamadı;
+   Supabase kayıtlarına bu oturumdan erişilemedi). Tek otomatik yeniden deneme
+   bunu tamamen görünmez kılardı. Asimetri yalnız backend'de: iOS zaten geçici
+   sayıyor (`StateMachine.swift:126`).
+
+6. **`try? context.save()` hatayı yutuyor — 24 çağrı, tek karar gerekiyor.**
+   Codex bulgusu (P2, PR #44 üçüncü tur). Depo geçici olarak yazılamazsa
+   kaydetme hatası düşüyor, ama bellekteki değişiklik duruyor: ekran işlemi
+   başarılı göstermiş oluyor ve uygulama sonraki otomatik kaydetmeden önce
+   sonlanırsa işlem kayboluyor. Bulgu "Gözden geçir"deki "Doğru" için
+   yazıldı ama orada özel bir şey yok — aynı desen "Askıya al", "Sil",
+   "Etkinleştir", `deleteCards` ve diğerlerinde, uygulama genelinde **24
+   yerde** var. Bu yüzden PR #44'te bilerek düzeltilmedi: yalnız iki çağrıyı
+   hata gösterir yapmak, yan yana duran düğmelerin biri hata verip diğeri
+   yutan tutarsız bir ekran bırakırdı. Sonuç veri kaybı değil — en kötü
+   hâlde işlem geri alınır ve kullanıcı tekrarlar — ama doğru düzeltme
+   hepsi için ortak bir hata yüzeyi kurmak, tek tek yamamak değil.
 
 ### Aday sonraki özellikler
 

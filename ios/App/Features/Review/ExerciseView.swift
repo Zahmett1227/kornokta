@@ -117,7 +117,11 @@ struct ExerciseView: View {
     /// Bilgilerim's "Gözden geçir" set, narrowed by the active filter — the
     /// same cards, reachable as a quick start here too.
     private var reviewCards: [Card] {
-        eligibleCards.filter(\.lowConfidence)
+        // `eligibleCards` has already dropped suspended cards, so the status
+        // half of the rule is a no-op here — shared anyway, because the comment
+        // above claims these are the same cards Bilgilerim lists and nothing
+        // used to make that true.
+        eligibleCards.filter { SecondLook.isPending(lowConfidence: $0.lowConfidence, status: $0.status) }
     }
 
     private var pendingTargetMessage: String {

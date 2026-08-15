@@ -529,6 +529,38 @@ struct SettingsView: View {
             // closes the gap before the user can ever touch the card.
             FesBackfillMigration.runIfNeeded(context: context)
 
+            // The same shape of gap, for the approval gate (Codex review, PR
+            // #44). `insert` restores each card's stored status verbatim, so a
+            // backup taken before `ApprovalGateMigration` ran carries
+            // `.needsReview` cards back in — and that migration's one-shot flag
+            // is already set, on a fresh install by an empty-store run that had
+            // nothing to do. `ReviewScheduler` schedules `.active` only, so
+            // those cards would land outside every review with no way back.
+            // The release is idempotent, so running it on this context costs a
+            // fetch and closes the hole.
+            do {
+                if try ApprovalGateRelease.release(in: context) > 0 {
+                    try context.save()
+                }
+            } catch {
+                // Failing the whole restore here would misreport it: the cards
+                // are already committed by the save above. But swallowing it
+                // would be worse, because nothing would ever retry (Codex
+                // review, PR #44, second pass). Re-importing the same backup
+                // skips these cards as duplicates, and on a fresh install the
+                // startup migration has already spent its one-shot flag on an
+                // empty store — so the cards would sit outside every review
+                // with only the per-card "Etkinleştir" button left.
+                //
+                // Clearing that flag hands the work back to the migration,
+                // which is already built to retry: the release is idempotent
+                // and runs again on the next cold start. A store that is still
+                // unwritable then simply leaves the flag clear and tries again
+                // after that.
+                context.rollback()
+                UserDefaults.standard.removeObject(forKey: ApprovalGateMigration.flagKey)
+            }
+
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
                 : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."

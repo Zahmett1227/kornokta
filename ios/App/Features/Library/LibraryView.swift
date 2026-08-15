@@ -26,55 +26,44 @@ struct LibraryView: View {
     /// filtered screen that still showed unfiltered totals and "en çok
     /// unutulanlar" would be reporting on a deck the user is not looking at.
     ///
+    /// The search text is part of that rule as of 2026-08-15, and was not
+    /// before. It lived in a separate `filtered` property that only "Son
+    /// eklenenler" read, so typing a word left the three tiles and the three
+    /// sections above it showing the whole deck — on screen, indistinguishable
+    /// from a search box that does nothing, which is exactly how it was
+    /// reported.
+    ///
     /// Filtered in memory rather than with `#Predicate`, on purpose: subject
-    /// and topic live on an optional relationship, and this deck is hundreds
-    /// of cards — the same choice the existing text search already makes.
+    /// and topic live on an optional relationship, `CardSearch` folds Turkish
+    /// case in a way SQLite will not, and this deck is hundreds of cards.
     private var cards: [Card] {
-        allCards.filter {
+        allCards.filter { card in
             LibraryCardFilter.matches(
-                subject: $0.knowledgeUnit?.subject,
-                topic: $0.knowledgeUnit?.topic,
+                subject: card.knowledgeUnit?.subject,
+                topic: card.knowledgeUnit?.topic,
                 subjectFilter: subjectFilter,
                 topicFilter: topicFilter
+            )
+            && CardSearch.matches(
+                query: searchText,
+                front: card.front,
+                back: card.back,
+                explanation: card.explanation,
+                tags: card.knowledgeUnit?.tags ?? [],
+                subject: card.knowledgeUnit?.subject,
+                topic: card.knowledgeUnit?.topic,
+                // Autoclosure: `options` decodes JSON, so it is read only for
+                // cards nothing cheaper matched, and never with no query.
+                optionTexts: (card.options ?? []).map(\.text)
             )
         }
     }
 
-    private var filtered: [Card] {
-        guard !searchText.isEmpty else { return cards }
-        return cards.filter {
-            $0.front.localizedCaseInsensitiveContains(searchText)
-                || $0.back.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    private var activeCount: Int { cards.filter { $0.status == .active }.count }
-    private var suspendedCount: Int { cards.filter { $0.status == .suspended }.count }
-    /// Cards the server could not fully vouch for (§13.3 rule 6).
-    ///
-    /// Faz 6 removed the approval gate and §13.3 wants one on a suspicious
-    /// question. This is the compromise the plan settled on: the card is active
-    /// and reviewable, and it is *listed* here rather than held back — flagging
-    /// instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
-    private var needsSecondLook: [Card] {
-        cards.filter { $0.lowConfidence && $0.status != .suspended }
-    }
-
-    /// FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
-    /// merged into it — a low-confidence card is the model doubting itself,
-    /// a FES card is *this user* repeatedly getting it wrong or unsure. Same
-    /// shape, different evidence.
-    private var fesCards: [Card] {
-        cards
-            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
-            .sorted { $0.fesScore > $1.fesScore }
-    }
-
-    private var mostForgotten: [Card] {
-        cards.filter { $0.lapseCount > 0 }
-            .sorted { $0.lapseCount > $1.lapseCount }
-            .prefix(5)
-            .map { $0 }
+    /// Naming what came up empty. With both a filter and a search able to empty
+    /// the list, a fixed "Bu filtreye uyan kart yok." pointed at the wrong one.
+    private var emptyResultMessage: String {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? "Bu filtreye uyan kart yok." : "“\(query)” için kart yok."
     }
 
     var body: some View {
@@ -146,12 +135,48 @@ struct LibraryView: View {
     }
 
     private var list: some View {
-        List {
+        cardList(cards)
+    }
+
+    /// The visible set arrives as a parameter rather than being read back out
+    /// of `cards` per section.
+    ///
+    /// `cards` is a computed property, so each of the eight places this screen
+    /// used to read it re-ran the whole filter. That was tolerable while the
+    /// filter was two string comparisons; it is not now that it folds Turkish
+    /// case and can decode a card's options, both on every keystroke.
+    private func cardList(_ visible: [Card]) -> some View {
+        let activeCount = visible.filter { $0.status == .active }.count
+        let suspendedCount = visible.filter { $0.status == .suspended }.count
+
+        // Cards the server could not fully vouch for (§13.3 rule 6). Faz 6
+        // removed the approval gate and §13.3 wants one on a suspicious
+        // question; the compromise the plan settled on is that the card is
+        // active and reviewable and *listed* here rather than held back —
+        // flagging instead of blocking (docs/FAZ7-PLAN-coktan-secmeli.md §9).
+        let needsSecondLook = visible.filter {
+            SecondLook.isPending(lowConfidence: $0.lowConfidence, status: $0.status)
+        }
+
+        // FES cards (docs/ADR-008): kept alongside "Gözden geçir" rather than
+        // merged into it — a low-confidence card is the model doubting itself,
+        // a FES card is *this user* repeatedly getting it wrong or unsure.
+        // Same shape, different evidence.
+        let fesCards = visible
+            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
+            .sorted { $0.fesScore > $1.fesScore }
+
+        let mostForgotten = visible.filter { $0.lapseCount > 0 }
+            .sorted { $0.lapseCount > $1.lapseCount }
+            .prefix(5)
+            .map { $0 }
+
+        return List {
             Section {
                 VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
                     ActiveFilterChips(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
                     HStack(spacing: Cizgi.Space.sm) {
-                        StatTile(value: "\(cards.count)", label: "Toplam")
+                        StatTile(value: "\(visible.count)", label: "Toplam")
                         StatTile(value: "\(activeCount)", label: "Aktif")
                         StatTile(value: "\(suspendedCount)", label: "Askıda")
                     }
@@ -162,9 +187,9 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
             }
 
-            if cards.isEmpty {
+            if visible.isEmpty {
                 Section {
-                    Text("Bu filtreye uyan kart yok.")
+                    Text(emptyResultMessage)
                         .font(.subheadline)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -174,6 +199,19 @@ struct LibraryView: View {
                 Section {
                     ForEach(needsSecondLook) { card in
                         row(card)
+                            // The one-gesture exit. The detail screen carries
+                            // the same action spelled out, but a list the owner
+                            // works through card by card should not cost four
+                            // taps per card to clear.
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    card.resolveSecondLook()
+                                    try? context.save()
+                                } label: {
+                                    Label("Doğru", systemImage: "checkmark.seal")
+                                }
+                                .tint(Cizgi.success)
+                            }
                     }
                     .onDelete { deleteCards(needsSecondLook, at: $0) }
                 } header: {
@@ -181,7 +219,9 @@ struct LibraryView: View {
                 } footer: {
                     Text("Model ya da sunucu bu kartlarda emin olamadı — okunamayan "
                          + "bir el yazısı, ya da birbirini kapsayan şıklar. Kart "
-                         + "desteye girdi; doğruluğunu bir kez kontrol et.")
+                         + "desteye girdi; doğruluğunu bir kez kontrol et. "
+                         + "Doğruysa sağa kaydırıp işaretle — kart listeden çıkar, "
+                         + "tekrar sırasında kalır.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -215,10 +255,10 @@ struct LibraryView: View {
             }
 
             Section {
-                ForEach(filtered) { card in
+                ForEach(visible) { card in
                     row(card)
                 }
-                .onDelete { deleteCards(filtered, at: $0) }
+                .onDelete { deleteCards(visible, at: $0) }
             } header: {
                 sectionHeader("Son eklenenler")
             }
@@ -337,6 +377,32 @@ struct CardDetailView: View {
                 } header: { sectionHeader("Şıklar") }
             }
 
+            // The exit from "Gözden geçir" (CizgiCore's `SecondLook`). Until
+            // this shipped, nothing outside `Card.init` ever wrote
+            // `lowConfidence`, so a card the owner had checked and found sound
+            // stayed flagged forever — on this screen, in Bilgilerim's list, in
+            // Egzersiz's quick start and in Tekrar's badge. The only ways off
+            // the list were suspending or deleting the card, and both take it
+            // out of review, which is the opposite of what checking it means.
+            if card.lowConfidence {
+                Section {
+                    Button {
+                        card.resolveSecondLook()
+                        try? context.save()
+                    } label: {
+                        Label("Kontrol ettim, doğru", systemImage: "checkmark.seal")
+                    }
+                } header: {
+                    sectionHeader("Gözden geçir")
+                } footer: {
+                    Text("Model bu kartta emin olamadı. Doğruluğunu kontrol "
+                         + "ettiysen işaretle: kart listeden çıkar, tekrar "
+                         + "sırasındaki yerini korur.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+
             // §10.4's surviving idea (2026-08-11): only on cards the model
             // itself doubted — the one moment an independent re-read helps.
             if card.lowConfidence {
@@ -426,5 +492,19 @@ struct CardDetailView: View {
             .font(.subheadline.weight(.bold))
             .foregroundStyle(Cizgi.ink)
             .textCase(nil)
+    }
+}
+
+private extension Card {
+    /// The only writer of `lowConfidence` outside `Card.init`, so the swipe on
+    /// the list row and the button on the detail screen cannot resolve a card
+    /// two different ways.
+    ///
+    /// Deliberately narrow: `status` is untouched, so the card stays in the
+    /// deck and keeps its place in the FSRS queue, and no scheduling field is
+    /// written — clearing the model's doubt is not a review.
+    func resolveSecondLook() {
+        lowConfidence = false
+        updatedAt = .now
     }
 }

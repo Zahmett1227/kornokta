@@ -41,6 +41,9 @@ struct CizgiApp: App {
         // see `FesBackfillMigration`'s doc comment for why that second call
         // is load-bearing, not defensive.
         FesBackfillMigration.runIfNeeded(context: ModelContext(container))
+        // Independent of all three: releases the cards still waiting at the
+        // approval gate Faz 6 removed, so they finally reach the scheduler.
+        ApprovalGateMigration.runIfNeeded(container: container)
     }
 
     var body: some Scene {
