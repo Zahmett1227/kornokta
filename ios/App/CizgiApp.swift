@@ -44,6 +44,10 @@ struct CizgiApp: App {
         // Independent of all three: releases the cards still waiting at the
         // approval gate Faz 6 removed, so they finally reach the scheduler.
         ApprovalGateMigration.runIfNeeded(container: container)
+        // Independent of all of the above; ordered after ApprovalGate on
+        // purpose — a released duplicate should be suspended in the same
+        // launch, not reviewed once first.
+        DuplicateSuspendMigration.runIfNeeded(container: container)
     }
 
     var body: some Scene {
