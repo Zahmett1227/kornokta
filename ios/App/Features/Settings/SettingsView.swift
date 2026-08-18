@@ -561,6 +561,22 @@ struct SettingsView: View {
                 UserDefaults.standard.removeObject(forKey: ApprovalGateMigration.flagKey)
             }
 
+            // Same shape again, for the duplicate audit (Codex review, PR
+            // #46): the audited 2026-08-18 backup carries its 117 duplicates
+            // as `.active`, and on a fresh install the startup migration has
+            // already spent its one-shot flag on an empty store. The suspend
+            // step is idempotent, so re-running it here costs one fetch and
+            // keeps the restored deck the audited deck. Failure hands the
+            // work back to the startup migration exactly as above.
+            do {
+                if try DuplicateSuspendMigration.suspend(in: context) > 0 {
+                    try context.save()
+                }
+            } catch {
+                context.rollback()
+                UserDefaults.standard.removeObject(forKey: DuplicateSuspendMigration.flagKey)
+            }
+
             restoreSummary = plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
                 : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."

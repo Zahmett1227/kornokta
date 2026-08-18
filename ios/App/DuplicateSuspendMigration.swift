@@ -16,17 +16,20 @@ import CizgiCore
 /// ("Askıdan çıkar"). Only an `.active` card is touched — a status the user
 /// set by hand is never overridden.
 ///
-/// Runs once, guarded by a UserDefaults flag written only after a successful
-/// save — `SubjectBackfillMigration`'s pattern: a failed run rolls back and
-/// simply retries next launch. Deliberately NOT `TopicBackfillMigration`'s
-/// per-card seen-set: that design keeps rescanning the whole deck forever
-/// once a single listed card has been deleted (the known open issue in
-/// CLAUDE.md), and its reason to exist — cards arriving later via an
-/// additive restore — works against this migration, not for it: a restore
-/// re-introducing an already-suspended duplicate as `.active` months from
-/// now should not be silently re-suspended by a stale list, because by then
-/// the deck the list described no longer exists. A card missing today was
-/// deleted by the user, which is a stronger form of the same decision.
+/// Runs once at startup, guarded by a UserDefaults flag written only after a
+/// successful save — `SubjectBackfillMigration`'s pattern: a failed run rolls
+/// back and simply retries next launch. Deliberately NOT
+/// `TopicBackfillMigration`'s per-card seen-set: that design keeps rescanning
+/// the whole deck forever once a single listed card has been deleted (the
+/// known open issue in CLAUDE.md). The gap the seen-set existed for — cards
+/// arriving later via an additive restore, after a fresh install's empty-store
+/// run has already spent the one-shot flag — is closed the way
+/// `ApprovalGateMigration` closes the very same gap (Codex, PR #44 and #46):
+/// `SettingsView.restore` re-runs the idempotent `suspend(in:)` step on the
+/// restore's own context, so an audited duplicate restored as `.active` is
+/// suspended in the same breath that inserted it. A listed card the user
+/// un-suspends by hand afterwards stays un-suspended: re-importing the same
+/// backup skips existing ids, and neither entry point runs on it again.
 @MainActor
 enum DuplicateSuspendMigration {
     static let flagKey = "cizgi.migration.duplicateSuspend.deck2026_08_18.v1"
@@ -36,17 +39,29 @@ enum DuplicateSuspendMigration {
 
         let context = ModelContext(container)
         do {
-            let cards = try context.fetch(FetchDescriptor<Card>())
-            for card in cards where suspendIds.contains(card.id.uuidString.uppercased()) {
-                guard card.status == .active else { continue }
-                card.status = .suspended
-            }
+            try suspend(in: context)
             try context.save()
             defaults.set(true, forKey: flagKey)
         } catch {
             // Retried next launch; half-written state must not survive.
             context.rollback()
         }
+    }
+
+    /// The core step, callable from the restore flow as well: suspends every
+    /// listed card that is currently `.active` and returns how many changed.
+    /// Idempotent — a second run finds nothing left to do — and it never
+    /// saves; the caller owns the transaction.
+    @discardableResult
+    static func suspend(in context: ModelContext) throws -> Int {
+        let cards = try context.fetch(FetchDescriptor<Card>())
+        var changed = 0
+        for card in cards where suspendIds.contains(card.id.uuidString.uppercased()) {
+            guard card.status == .active else { continue }
+            card.status = .suspended
+            changed += 1
+        }
+        return changed
     }
 
     /// The audit's suspension list, grouped by the cards' topics as they
