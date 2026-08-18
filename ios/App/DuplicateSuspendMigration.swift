@@ -28,8 +28,11 @@ import CizgiCore
 /// `SettingsView.restore` re-runs the idempotent `suspend(in:)` step on the
 /// restore's own context, so an audited duplicate restored as `.active` is
 /// suspended in the same breath that inserted it. A listed card the user
-/// un-suspends by hand afterwards stays un-suspended: re-importing the same
-/// backup skips existing ids, and neither entry point runs on it again.
+/// un-suspends by hand afterwards stays un-suspended: the startup run has
+/// spent its flag, and the restore hook is limited to the records that
+/// restore actually inserted — a pre-existing card's status is the user's
+/// live choice, and no later additive restore may override it (Codex,
+/// PR #46, second pass).
 @MainActor
 enum DuplicateSuspendMigration {
     static let flagKey = "cizgi.migration.duplicateSuspend.deck2026_08_18.v1"
@@ -52,11 +55,25 @@ enum DuplicateSuspendMigration {
     /// listed card that is currently `.active` and returns how many changed.
     /// Idempotent — a second run finds nothing left to do — and it never
     /// saves; the caller owns the transaction.
+    ///
+    /// `limitedTo` narrows the sweep to specific card ids. The startup run
+    /// passes nil — on the ordinary path nothing has had a chance to be
+    /// un-suspended before the one-shot flag is spent. The restore hook
+    /// passes the ids it just inserted, and must: a whole-store sweep there
+    /// would re-suspend a card the user deliberately reactivated, on any
+    /// later restore that happens to insert one new card (Codex, PR #46,
+    /// second pass). One accepted wrinkle: a *failed* restore hook clears
+    /// the startup flag, and the retry is a nil sweep that can re-suspend a
+    /// reactivated card once. That trade is deliberate — the alternative,
+    /// not retrying at all, leaves restored duplicates active silently and
+    /// forever, while this failure mode is visible in Bilgilerim and one tap
+    /// undoes it.
     @discardableResult
-    static func suspend(in context: ModelContext) throws -> Int {
+    static func suspend(in context: ModelContext, limitedTo restoredIds: Set<UUID>? = nil) throws -> Int {
         let cards = try context.fetch(FetchDescriptor<Card>())
         var changed = 0
         for card in cards where suspendIds.contains(card.id.uuidString.uppercased()) {
+            if let restoredIds, !restoredIds.contains(card.id) { continue }
             guard card.status == .active else { continue }
             card.status = .suspended
             changed += 1

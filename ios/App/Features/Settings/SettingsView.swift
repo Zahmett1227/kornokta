@@ -564,12 +564,16 @@ struct SettingsView: View {
             // Same shape again, for the duplicate audit (Codex review, PR
             // #46): the audited 2026-08-18 backup carries its 117 duplicates
             // as `.active`, and on a fresh install the startup migration has
-            // already spent its one-shot flag on an empty store. The suspend
-            // step is idempotent, so re-running it here costs one fetch and
-            // keeps the restored deck the audited deck. Failure hands the
-            // work back to the startup migration exactly as above.
+            // already spent its one-shot flag on an empty store. Limited to
+            // the records this restore actually inserted — a pre-existing
+            // card's status is the user's live choice ("Askıdan çıkar"), and
+            // a whole-store sweep would override it on any unrelated restore
+            // that inserts a single new card (second pass of the same
+            // review). Failure hands the work back to the startup migration
+            // exactly as above.
             do {
-                if try DuplicateSuspendMigration.suspend(in: context) > 0 {
+                let restoredIds = Set(plan.toInsert.map(\.id))
+                if try DuplicateSuspendMigration.suspend(in: context, limitedTo: restoredIds) > 0 {
                     try context.save()
                 }
             } catch {
