@@ -126,6 +126,21 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    /// Client for the Karanlık Harita (`/api/dark-map`, docs/ADR-009).
+    ///
+    /// Built per use for the same reason as the second opinion above: a button
+    /// on a screen the user reaches rarely, so resolving here keeps an edited
+    /// URL or token current without joining `backendChanged()`'s rebuild list.
+    func makeDarkMapProvider() -> DarkMapProvider? {
+        guard let configuration = Self.resolvedBackendConfiguration(settings: settings, tokens: tokenStore)
+        else { return nil }
+        let tokens = tokenStore
+        return DarkMapProvider(
+            configuration: configuration,
+            tokenProvider: { tokens.read() }
+        )
+    }
+
     /// Re-reads the settings and rebuilds the cloud client. Called when the
     /// user edits the backend URL or the token.
     func backendChanged() {

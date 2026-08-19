@@ -147,11 +147,28 @@ struct UsageDetailView: View {
     static func subtitle(_ run: ModelRun) -> String {
         var parts: [String] = []
         if !run.model.isEmpty { parts.append(run.model) }
-        parts.append(run.purpose == "second_opinion" ? "ikinci görüş" : "kart üretimi")
+        parts.append(Self.purposeLabel(run.purpose))
         if run.attempt > 0 { parts.append("\(run.attempt). deneme") }
         parts.append("\(run.latencyMs / 1000) sn")
         parts.append(run.createdAt.formatted(.dateTime.day().month().hour().minute()))
         return parts.joined(separator: " · ")
+    }
+
+    /// Turkish name for a ledger entry's `purpose`.
+    ///
+    /// A switch rather than the ternary this replaced: with two purposes the
+    /// ternary was fine, but its `else` silently labelled *anything* new as
+    /// "kart üretimi", so a third purpose would have shown up on the cost screen
+    /// wearing the wrong name and nothing would have gone red. The default now
+    /// prints the raw value, which is ugly on purpose — an unlabelled purpose
+    /// should look like a missing case, not like card generation.
+    static func purposeLabel(_ purpose: String) -> String {
+        switch purpose {
+        case "card_generation": return "kart üretimi"
+        case "second_opinion": return "ikinci görüş"
+        case "dark_map": return "karanlık harita"
+        default: return purpose
+        }
     }
 
     static func tokenText(_ run: ModelRun) -> String {

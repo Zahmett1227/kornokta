@@ -166,9 +166,48 @@ export interface GeminiConfig {
   timeoutMs: number;
 }
 
+/**
+ * Karanlık Harita (`/api/dark-map`, docs/ADR-009).
+ *
+ * Its own budget block rather than borrowing `OpenAIConfig`'s, because the two
+ * calls have nothing in common but the vendor. Card generation sends a
+ * full-resolution page image and writes up to 18 cards; this one sends ~143
+ * lines of text and writes at most a dozen short judgements. Sharing
+ * `OPENAI_MAX_OUTPUT_TOKENS` would mean every future retune of the capture
+ * pipeline silently retuned this too, in a direction nobody measured.
+ *
+ * `reasoningEffort` and `maxOutputTokens` are deliberately adjacent so the rule
+ * CLAUDE.md records the hard way stays visible: **raising the effort without
+ * raising the ceiling makes every call fail at full price.** Tur A2's first
+ * attempt lost 6/6 that way.
+ *
+ * There is no Gemini-side twin of these knobs: the gate is only meaningful if
+ * both families answer the same question under the same budget, so both rankers
+ * read this one block.
+ */
+export interface DarkMapConfig {
+  /** Upper bound on topics either family may return. The list is a study order, not an inventory. */
+  maxZones: number;
+  /**
+   * Card questions forwarded per topic so the model can see the case counts
+   * cannot: twelve cards that all restate one definition. 0 disables the
+   * sampling entirely, leaving a pure counts table.
+   */
+  maxSampleFronts: number;
+  /** Own effort, own ceiling — see the interface note. */
+  reasoningEffort: string;
+  maxOutputTokens: number;
+  /**
+   * Two text-only calls the user is waiting on. Nothing like the multi-minute
+   * page generation, so this stays well under `vercel.json`'s ceiling.
+   */
+  timeoutMs: number;
+}
+
 export interface Config {
   openai: OpenAIConfig;
   gemini: GeminiConfig;
+  darkMap: DarkMapConfig;
   cost: CostConfig;
   supabase: SupabaseConfig;
 }
@@ -289,6 +328,21 @@ export function loadConfig(): Config {
       model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
       maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096, 1),
       timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
+    },
+    darkMap: {
+      // Twelve is a study list, not a report. A ranking long enough to include
+      // every thin topic is the coverage table again, and the whole point of
+      // spending two model calls is to get *fewer* rows than the table has.
+      maxZones: numeric("DARK_MAP_MAX_ZONES", 12, 1),
+      maxSampleFronts: numeric("DARK_MAP_MAX_SAMPLE_FRONTS", 4),
+      // "medium", not the capture pipeline's "high": this is a ranking over a
+      // short text table, and A3's finding that `medium` produced the round's
+      // only silent error was about *reading a page image*, which this call
+      // never does. Cheap to raise if the rankings read shallow — but raise the
+      // ceiling below with it.
+      reasoningEffort: optional("DARK_MAP_REASONING_EFFORT", "medium"),
+      maxOutputTokens: numeric("DARK_MAP_MAX_OUTPUT_TOKENS", 16384, 1),
+      timeoutMs: numeric("DARK_MAP_TIMEOUT_MS", 120_000, 1),
     },
     cost: {
       openaiUsdPerMillionInputTokens: openaiInputPrice,

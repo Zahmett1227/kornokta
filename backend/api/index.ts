@@ -12,10 +12,16 @@
 import { waitUntil } from "@vercel/functions";
 
 import { loadConfig } from "../config.js";
+import {
+  GeminiDarkMapRanker,
+  OpenAIDarkMapRanker,
+  type DarkMapRankerLike,
+} from "../providers/darkMap.js";
 import { GeminiSecondOpinion } from "../providers/gemini.js";
 import { OpenAICardGenerator } from "../providers/openai.js";
 import { SupabaseJobStore } from "../providers/supabaseJobs.js";
 import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
+import { handleDarkMapRequest, type DarkMapDependencies } from "./_darkMap.js";
 import { handleJobsRequest, type JobsDependencies } from "./_jobs.js";
 import { handleSecondOpinionRequest, type SecondOpinionDependencies } from "./_secondOpinion.js";
 
@@ -139,11 +145,53 @@ export function buildSecondOpinionDependencies(): SecondOpinionDependencies {
   return cachedSecondOpinion;
 }
 
+/**
+ * Built once per process. Needs `OPENAI_API_KEY`; `GEMINI_API_KEY` is optional
+ * *here* and nowhere else in this file.
+ *
+ * That asymmetry is the point of the whole route. The consensus gate wants two
+ * families, but a missing Gemini key must degrade the map rather than remove
+ * it: one ranker still produces a useful study order, and the response marks
+ * every zone `disputed` with `singleRater: true` so the phone can say which
+ * half is missing. Refusing outright would let one absent environment variable
+ * take down a feature that works fine at reduced confidence — the opposite of
+ * the isolation `/api/second-opinion` was given.
+ */
+let cachedDarkMap: DarkMapDependencies | null = null;
+
+export function buildDarkMapDependencies(): DarkMapDependencies {
+  if (cachedDarkMap) return cachedDarkMap;
+
+  const config = loadConfig();
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (!openaiKey) {
+    throw new Error("Eksik ortam değişkeni: OPENAI_API_KEY. backend/.env.example dosyasına bak.");
+  }
+
+  const rankers: DarkMapRankerLike[] = [
+    new OpenAIDarkMapRanker(config.openai, config.darkMap, openaiKey, config.cost),
+  ];
+
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (geminiKey) {
+    rankers.push(new GeminiDarkMapRanker(config.gemini, config.darkMap, geminiKey, config.cost));
+  }
+
+  cachedDarkMap = {
+    rankers,
+    darkMap: config.darkMap,
+    deviceToken: process.env.DEVICE_TOKEN,
+    log: (entry) => console.log(JSON.stringify(entry)),
+  };
+  return cachedDarkMap;
+}
+
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
   cachedCards = null;
   cachedJobs = null;
   cachedSecondOpinion = null;
+  cachedDarkMap = null;
 }
 
 /**
@@ -240,6 +288,21 @@ export async function handler(request: Request): Promise<Response> {
       );
     }
     return handleSecondOpinionRequest(request, dependencies);
+  }
+
+  // ADR-009: the Karanlık Harita. A fourth independent door — it reads no
+  // database, writes nothing, and holds no image, so it can fail alone.
+  if (url.pathname === "/api/dark-map" || url.pathname === "/dark-map") {
+    let dependencies: DarkMapDependencies;
+    try {
+      dependencies = buildDarkMapDependencies();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: (error as Error).message, retryable: false }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleDarkMapRequest(request, dependencies);
   }
 
   return new Response(JSON.stringify({ error: "Bulunamadı.", retryable: false }), {

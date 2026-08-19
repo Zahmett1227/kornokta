@@ -111,7 +111,38 @@ Tıraş sonrası hâlâ canlı olan çiftler:
 Kural değişmedi: yeni bir "aynı davranış iki yerde" durumu çıkarsa elle senkron
 tutma — üret ve testle kilitle.
 
+## Karanlık Harita — kapsamanın tersi (ADR-009)
+
+Ana akıştan bağımsız, ikinci bir yüzey. Ana akış "bu sayfada ne var" sorusunu
+kartlara çevirir; Karanlık Harita **hiç sayfası olmayan** kanonik konuları
+sorar — ana akışın tanım gereği göremediği boşluk.
+
+```
+Bilgi Haritası → "Karanlık Harita"
+   │
+   ├─ cihazda (ağsız, ücretsiz): DarkMapCoverage.build
+   │     aktif kartlar → kanonik (ders, konu) satırları → boş konular
+   │
+   └─ POST /api/dark-map  (istek üzerine, senkron)
+         │
+         ├─ coverage.ts   kanonik listeden sıfır doldurma + prompt tablosu
+         │
+         ├─ OpenAI  ─┐   aynı prompt, iki ayrı çağrı,
+         ├─ Gemini  ─┤   birbirini görmeden
+         │           │
+         └─ mergeRankings → confirmed (ikisi de) / disputed (biri)
+```
+
+Kritik özellik **şablonun kapalı olması**: 143 konunun tümleyeni bilinebilir,
+bu yüzden "neyi çalışmıyorum" bir kanı değil sorgudur. Model konu icat edemez —
+`topicKey` her iki yanıt şemasında enum'dur. Ayrıntı ve gerekçeler
+[`ADR-009`](ADR-009-karanlik-harita.md).
+
 ## Kanonik sözleşmeler
 
 - LLM çıktı sözleşmesi: [`backend/schemas/llm_output.schema.json`](../backend/schemas/llm_output.schema.json) (ANA-PLAN §14)
 - Model kimlikleri ve eşikler merkezi config'te tutulur, koda gömülmez (§0.6, §11.3).
+- Ders/konu şablonu: [`backend/schemas/subject_topics.json`](../backend/schemas/subject_topics.json)
+  — 11 ders, 143 konu. Kart sınıflandırmasının, Bilgi Haritası'nın, Egzersiz
+  filtresinin ve Karanlık Harita'nın **ortak kapalı kümesi**. Kimlik daima
+  (ders, konu) çiftidir: altı konu adı iki ders altında birden geçer.

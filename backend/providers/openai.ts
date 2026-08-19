@@ -158,7 +158,7 @@ interface ResponsesApiOutputItem {
   content?: ResponsesApiContentPart[];
 }
 
-interface ResponsesApiBody {
+export interface ResponsesApiBody {
   /** "completed" | "incomplete" | "failed" | ... */
   status?: string;
   incomplete_details?: { reason?: string };
@@ -173,8 +173,14 @@ interface ResponsesApiBody {
   error?: { message?: string };
 }
 
-/** Status codes worth another attempt (§17), same convention as `documentAI.ts`. */
-function isTransientStatus(status: number): boolean {
+/**
+ * Status codes worth another attempt (§17), same convention as `documentAI.ts`.
+ *
+ * Exported so a second OpenAI-backed provider (`darkMap.ts`) classifies
+ * failures identically rather than growing its own near-copy — the same
+ * "generate it, don't hand-sync it" rule the anti-drift pairs follow.
+ */
+export function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 
@@ -239,7 +245,7 @@ export function buildModelResponseSchema(
  * both generations the provider completed and charged for. Dropping the figure
  * on the way out is what used to make them look free.
  */
-function extractOutputText(body: ResponsesApiBody, usage: TokenUsage | null): string {
+export function extractOutputText(body: ResponsesApiBody, usage: TokenUsage | null): string {
   for (const item of body.output ?? []) {
     if (item.type !== "message") continue;
     for (const part of item.content ?? []) {
