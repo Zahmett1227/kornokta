@@ -83,8 +83,16 @@ export function estimateCostUSD(usage: TokenUsage, prices: TokenPrices): number 
   );
 }
 
-/** Every provider call this system can make. Kept narrow so the phone can switch on it. */
-export type CallPurpose = "card_generation" | "second_opinion";
+/**
+ * Every provider call this system can make. Kept narrow so the phone can switch
+ * on it.
+ *
+ * `dark_map` covers both of the Karanlık Harita's calls (docs/ADR-009) rather
+ * than splitting into per-family purposes: the two are one logical unit of work
+ * priced together, and `provider` already distinguishes them on the Kullanım
+ * screen. A user asking "what did that map cost?" wants one number.
+ */
+export type CallPurpose = "card_generation" | "second_opinion" | "dark_map";
 
 /**
  * One line of the ledger: a single provider call, priced, whatever became of it.

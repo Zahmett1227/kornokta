@@ -106,6 +106,11 @@ struct LibraryView: View {
             .navigationDestination(for: KnowledgeMapSubjectSummary.self) { summary in
                 KnowledgeSubjectView(summary: summary)
             }
+            .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
+                switch route {
+                case .darkMap: DarkMapView()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if contentMode == .cards {

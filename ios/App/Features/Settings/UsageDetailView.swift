@@ -156,6 +156,7 @@ struct UsageDetailView: View {
         case "card_generation": return "kart üretimi"
         case "second_opinion": return "ikinci görüş"
         case "coverage_audit": return "kapsama denetimi"
+        case "dark_map": return "karanlık harita"
         default: return purpose.isEmpty ? "kart üretimi" : purpose
         }
     }

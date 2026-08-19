@@ -20,6 +20,11 @@ const KEYS = [
   "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
   "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
   "GEMINI_USD_PER_MILLION_CACHED_INPUT_TOKENS",
+  "DARK_MAP_MAX_ZONES",
+  "DARK_MAP_MAX_SAMPLE_FRONTS",
+  "DARK_MAP_REASONING_EFFORT",
+  "DARK_MAP_MAX_OUTPUT_TOKENS",
+  "DARK_MAP_TIMEOUT_MS",
   "SUPABASE_URL",
   "SUPABASE_BUCKET",
   "SUPABASE_TIMEOUT_MS",
@@ -180,6 +185,42 @@ describe("loadConfig", () => {
   it("lets the Gemini model be swapped without a code change (§0.6)", () => {
     process.env.GEMINI_MODEL = "gemini-3.5-pro";
     expect(loadConfig().gemini.model).toBe("gemini-3.5-pro");
+  });
+
+  it("defaults the Karanlık Harita settings (docs/ADR-009)", () => {
+    const { darkMap } = loadConfig();
+    // A study order, not an inventory: a ranking long enough to include every
+    // thin topic is the coverage table again, and two model calls should buy
+    // *fewer* rows than the table has.
+    expect(darkMap.maxZones).toBe(12);
+    expect(darkMap.maxSampleFronts).toBe(4);
+    expect(darkMap.reasoningEffort).toBe("medium");
+    expect(darkMap.maxOutputTokens).toBe(16384);
+    expect(darkMap.timeoutMs).toBe(120_000);
+  });
+
+  /**
+   * The block exists precisely so a capture-pipeline retune cannot silently
+   * retune a call that shares nothing with it but the vendor. If these ever
+   * start reading the OPENAI_* variables, that separation is gone.
+   */
+  it("keeps the dark map's budget independent of the capture pipeline's", () => {
+    process.env.OPENAI_MAX_OUTPUT_TOKENS = "48000";
+    process.env.OPENAI_REASONING_EFFORT = "high";
+    const { darkMap, openai } = loadConfig();
+    expect(openai.maxOutputTokens).toBe(48_000);
+    expect(darkMap.maxOutputTokens).toBe(16384);
+    expect(darkMap.reasoningEffort).toBe("medium");
+  });
+
+  it("lets sampling be turned off entirely, leaving a pure counts table", () => {
+    process.env.DARK_MAP_MAX_SAMPLE_FRONTS = "0";
+    expect(loadConfig().darkMap.maxSampleFronts).toBe(0);
+  });
+
+  it("refuses a zero zone ceiling, which would ask for a ranking of nothing", () => {
+    process.env.DARK_MAP_MAX_ZONES = "0";
+    expect(() => loadConfig()).toThrow(/DARK_MAP_MAX_ZONES/);
   });
 });
 
