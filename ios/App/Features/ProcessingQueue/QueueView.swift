@@ -162,6 +162,9 @@ struct PageDetailView: View {
     private struct AddCardTarget: Identifiable {
         let id = UUID()
         let region: TextRegion?
+        /// The mark this card is being written for, when the sheet was opened
+        /// from a coverage finding rather than from the passage's own button.
+        var prefill: String?
     }
 
     var body: some View {
@@ -211,11 +214,22 @@ struct PageDetailView: View {
                     addCardButton(for: nil)
                 }
             }
+
+            // Last, deliberately: it answers "what is NOT above?", and that
+            // question only means something once the photo, the reading and
+            // the cards have been seen (docs/PLAN-kapsama-sozlesmesi.md).
+            if page.processingState.isTerminal {
+                Section("Kartlaşmamış işaretler") {
+                    CoverageSection(page: page) { mark in
+                        addTarget = AddCardTarget(region: page.regions.first, prefill: mark.quote)
+                    }
+                }
+            }
         }
         .navigationTitle("Sayfa")
         .homeButtonToolbar()
         .sheet(item: $editingCard) { CardEditorView(card: $0) }
-        .sheet(item: $addTarget) { ManualCardSheet(page: page, region: $0.region) }
+        .sheet(item: $addTarget) { ManualCardSheet(page: page, region: $0.region, prefill: $0.prefill) }
     }
 
     private func cardRow(_ card: Card) -> some View {

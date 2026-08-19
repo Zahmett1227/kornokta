@@ -24,6 +24,10 @@ galeri ─┴→ yerel düzeltme + JPEG (galeride: yön + format normalize)
   → kartlar onaysız .active → SwiftData → FSRS-6 tekrarı
      (kartın bir kısmı beş şıklı olabilir; şüpheli olanlar bloklanmaz,
       "Gözden geçir" listesinde işaretlenir)
+  → kapsama (şema v2.3): modelin işaret defteri (marks[]) eksi kartların markId'si
+     = kartsız kalan işaretler → sayfa detayında listelenir, tek dokunuşla
+     elle karta çevrilir; /api/coverage (Gemini) bağımsız ikinci okuyucu olarak
+     defterin göremediğini — hiç görülmemiş işareti — arar
   → Egzersiz pratiği FSRS'i yalnız EarlyPractice köprüsünden besler (ADR-007):
      erken doğru → kısmi stabilite kredisi; erken yanlış → soft lapse;
      vadeye yakın yanlış → gerçek lapse
@@ -52,6 +56,13 @@ Omurga ilkeleri:
   RLS açık, policy yok; yalnız Vercel'deki `service_role` anahtarı geçer.
 - **Tekrar planlaması deterministik.** FSRS-6 ve Egzersiz köprüsü LLM'siz kodda;
   model yalnız görüntü yorumlama ve içerik üretiminde (§0.8).
+- **Kapsama: yargı modelde, muhasebe kodda.** Model ne gördüğünü beyan eder
+  (`marks[]`) ve her kartı bir işarete bağlar (`markId`); "hangi işaret
+  kartlaşmadı" sorusunu deterministik kod cevaplar (`providers/coverage.ts`).
+  Üç prompt sürümü aynı kusuru kuralla kapatmayı denedi ve hiçbiri
+  **ölçülemedi** — atlanan işaret hiçbir iz bırakmıyordu. Sözleşme o izi
+  üretir. İkinci okuyucu (`/api/coverage`, Gemini) defterin yapısal sınırı
+  içindir: bir defter, yazarının hiç görmediğini içermez.
 
 Beş şıklı (TUS tipi) kart (§13.3) bu akışın içinde yaşar: sözleşme
 (`options`/`correctOption`) şema v2.1'de, yapısal kontrol
@@ -83,7 +94,11 @@ Bilgi Haritası).
   kullanıcının istediği anda **Gemini'ye** — bilinçli olarak kartı üretenden
   bağımsız bir model ailesine — sayfayı yeniden okutup
   `supports|contradicts|unclear` verdikti alır; sonuç kaydedilmez, telefon o an
-  gösterir. Kalıcı veri kaynağı değildir — Supabase yalnız bir **iş kuyruğu ve
+  gösterir. Dördüncü kapı `/api/coverage` (2026-08-19,
+  [`PLAN-kapsama-sozlesmesi`](PLAN-kapsama-sozlesmesi.md)): aynı bağımsızlık
+  gerekçesiyle yine Gemini, ama bu kez tek kart değil **tüm sayfa** — "hangi
+  işaret hiç kartlaşmadı?". Kart üretmez; prompt yasaklar, şemada yer yoktur.
+  Bulguları da sunucuda kalmaz, telefonda saklanır (`CapturedPage.coverageJSON`). Kalıcı veri kaynağı değildir — Supabase yalnız bir **iş kuyruğu ve
   geçici görüntü kovasıdır**: görüntü iş bitince, sonuç metni 60 gün sonra
   silinir.
 - **Evals** (`evals/`): FSRS-6 referans algoritması (Swift portunun kilidi),
@@ -107,6 +122,11 @@ Tıraş sonrası hâlâ canlı olan çiftler:
 - **Şık karşılaştırma anahtarı**: sunucu `optionKey` ↔ cihaz `comparisonKey`,
   aynı vaka çiftleriyle iki tarafta test edilir. Bu çift PR #29'da iki kez
   ayrıştı — küçük bir tablonun bile elle senkron tutulamadığının kaydı.
+- **İşaret kademesi** (şema v2.3): `marks.items.kind` ↔ `MARK_KINDS` (TS) ↔
+  `MarkKind` (Swift), iki Python sözleşme testiyle. Burada **sıra da**
+  kilitlidir: kademe sırası prompt kural 3'ün öncelik merdivenidir ve hem
+  sunucunun hem telefonun "önce hangi atlanmış işaret gösterilsin" cevabını
+  belirler.
 
 Kural değişmedi: yeni bir "aynı davranış iki yerde" durumu çıkarsa elle senkron
 tutma — üret ve testle kilitle.

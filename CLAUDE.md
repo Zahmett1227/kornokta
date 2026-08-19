@@ -98,6 +98,30 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    `GEMINI_API_KEY` yoksa/Gemini çökse yalnız bu düğme etkilenir. Kota/kredi
    biterse hata mesajı bunu **adıyla** söyler; OpenAI 429 `insufficient_quota`
    da öyle (sahibinin şartı — "sorunu arayıp arayıp durmayalım").
+6b. **Kartlaşmamış işaretler görünür oldu (kapsama sözleşmesi, 2026-08-19 —
+   `docs/PLAN-kapsama-sozlesmesi.md`).** Sistemin göremediği tek kayıp,
+   işaretlenip hiç kartlaşmayan içerikti: üretilmemiş kartın `lowConfidence`'ı
+   olmaz. İki katman:
+   **(A)** Şema v2.3 — model kendi işaret defterini yazıyor (`marks[]`:
+   `id`/`kind`/`quote`) ve her kart hangi işaretten doğduğunu söylüyor
+   (`markId`). Sunucu farkı deterministik çıkarıyor
+   (`providers/coverage.ts`): *kartsız işaret* ve *işaretsiz kart* (= prompt
+   kural 1'in ihlali). Ek çağrı yok, `jobs` sütunu yok.
+   **(B)** `/api/coverage` — dördüncü kapı, **Gemini**: aynı sayfayı bağımsız
+   okuyup "bu işaret kartlaşmış mı?" diyor. A'nın **yapısal olarak**
+   göremediği sınıfı yakalar: modelin *hiç görmediği* işaret (kendi defterine
+   yazmadığı şey). Elle tetikli ("Kapsama denetle"), maliyeti `ModelRun`
+   (`purpose: "coverage_audit"`) ile deftere giriyor.
+   Telefonda: sayfa detayında **"Kartlaşmamış işaretler"** bölümü; satıra
+   dokunmak `ManualCardSheet`'i işaretin metniyle açıyor, sola kaydırmak
+   **"Yoksay"** diyor. Yoksayma kimliği işaretin *metninden* türetiliyor
+   (`PageMark.id`), çünkü modelin `m1` etiketi yalnız o yanıt içinde tekil —
+   yeniden üretimde başka bir pasajı gösterir ve yoksayma yanlış işareti
+   gizlerdi. **Sessizlik temiz kâğıt değildir:** v2.3 öncesi bir sayfa
+   "kapsama defteri olmadan üretilmiş" der, "her şey kapsandı" demez.
+   Prompt v2.8 kural 13'ün anti-teşvik cümlesi bilinçli: kartsız işaret
+   *kusur değil, kullanıcının görmesi gereken bilgi* — yoksa modelin temiz
+   görünmek için az işaret yazması işine gelirdi.
 7. **Egzersiz** (varsayılan açılış sekmesi) FSRS'ten ayrı puanlanır
    (`ExerciseRun`/`ExerciseAttempt`, 90 gün saklanır, yedeğe girmez) ama
    FSRS'i **korumalı köprüyle** besler (ADR-007): erken doğru → kısmi
@@ -244,6 +268,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 `main`'de (PR #41, squash `e934cb7`); Codex turları kapandı. Yerel `swift test` + `xcodegen`/`xcodebuild`, backend ve evals yeşildi; simülatörde kurulup açıldı — kritik risk olan "yeni migration açılışta çökertir mi" orada elendi. **Cihaz doğrulaması açık:** aşağıdaki doğrulama listesinin 1-5. maddeleri |
 | Sayfa başına kart tavanı 12→18 (2026-08-14) | ✅ `main`'de (PR #42). Sunucu tavanı (`config.ts`/`.env.example`), iOS varsayılanı + Stepper aralığı (`AppEnvironment`/`SettingsView`) ve çıktı token tavanı (aynı 1,5× oranla 8192→12288) **birlikte** değişti — istemci sunucu tavanını aşamadığı için (§21.3) yalnız birini değiştirmek hiçbir şey yapmazdı. Canlıda `OPENAI_MAX_OUTPUT_TOKENS` elle 48000'e çekilip redeploy edildi; `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` Vercel'e hiç girilmemiş, tavan kod varsayılanından geliyor. Codex'in iki gerçek iOS bulgusu düzeltildi: mevcut kurulumlarda UserDefaults'taki 12 için bayraklı tek seferlik göç, ve temiz kurulumda bayrağın hemen yazılması (yoksa kullanıcının sonradan bilerek seçtiği 12 sessizce 18'e çevrilirdi). **Cihaz doğrulaması açık:** yoğun işaretli bir sayfa gerçekten 12'den fazla kart üretiyor mu, ve Ayarlar'daki Stepper 18'e kadar çıkıyor mu |
 
+| Kapsama sözleşmesi — Katman A (şema v2.3) + Katman B (`/api/coverage`, Gemini) (2026-08-19) | 🟡 Dalda (`claude/project-analysis-innovation-idea-y4omre`); tasarım ve gerekçe `docs/PLAN-kapsama-sozlesmesi.md`. Backend 351 test + `tsc`, evals 509 test yeşil. **Swift bu ortamda derlenemedi** (araç zinciri yok) — `swift test` + `xcodegen generate` bir Mac'te/CI'da koşmalı. **Açmadan önce:** `GEMINI_USD_PER_MILLION_*` Vercel'e girilmeli (bugün 0; defter Gemini'yi bedava sayıyor). Cihaz doğrulaması aşağıdaki listenin 18-22. maddeleri |
 | Sayfa detayında kart ekleme + düzenleme (2026-08-15) | ✅ `main`'de (PR #43, squash `721ed19`). Kuyruktan açılan sayfa ekranı (`PageDetailView`) salt-okunur olmaktan çıktı: karta dokunmak ortak `CardEditorView`'ı açıyor, her pasajın altında **"Kart ekle"** var (`ManualCardSheet`). Gerekçe: modelin tehlikeli hatası yanlış kart değil **eksik** kart, ve üretilmemiş kart `lowConfidence` taşımadığı için onu hiçbir otomatik sinyal görmüyor — tek çare sayfaya bakarken elle eklemek. Ortak editör **kart tipi seçici** kazandı (Bilgilerim/Tekrar/Egzersiz de). Codex'in iki P2'si kapatıldı: elle kartın unit'i boş `canonicalClaim` taşıyor (yukarıdaki 4. madde) ve bu belge de o sözleşmeyi yazıyor. Yerel `swift test` (391), simülatör derlemesi, backend ve evals yeşil. **Cihaz doğrulaması açık:** aşağıdaki listenin 6-10. maddeleri |
 | Deste denetimi: kopya kartların askıya alınması (2026-08-18) | ✅ `main`'de (PR #46, squash `deef8dc`) ve **cihazda doğrulandı** (2026-08-18): ilk açılışta askıdaki kart sayısı 11 → **128**, tam beklendiği gibi. Sahibinin 2026-08-18 yedeği (1007 kart) baştan sona okundu: 996 aktif kartın **117'si** (%12) birebir/yakın kopya (74) ya da tutulan başka bir kartın cevabında tamamen kapsanan (43) — ana kaynak aynı sayfanın birden çok kez çekilmesi; en yoğun konu Solunum (142 kartın 49'u). Küme küme gerekçeli rapor + UUID listesi sahibinde (sohbette dosya olarak). Uygulama: `DuplicateSuspendMigration` — kimlik listesi gömülü, tek seferlik, **siler değil askıya alır** (`ReviewLog`/FES korunur, "Askıdan çıkar" ile tek tek geri alınır), yalnız `.active` karta dokunur. Bilinçli olarak `TopicBackfillMigration`'ın seen-set deseni DEĞİL (o desenin sonsuz-tarama açığı "Küçük ve gerçek kalanlar" 2'de kayıtlı): bayrak ilk başarılı kayıtta yazılır; temiz kurulum + sonradan restore boşluğu ise `ApprovalGateMigration`'la aynı biçimde kapalı — `SettingsView.restore`, idempotent `suspend(in:)` adımını restore'un kendi context'inde yeniden koşar (Codex, PR #46 P2). Denetimin yan ürünleri: içeriği şüpheli 3 kart (anjiyomiyolipom-ağrı, miksoma-McCune-Albright, HER2→"Luminal B" — `lowConfidence` olmadıkları için İkinci Görüş düğmesi çıkmaz, elle bakılmalı) ve metni düzeltilmeli ~25 kart (v2.6 öncesi "Pasaja göre…" kalıntıları) rapora yazıldı, koda dahil değil. Kalan mini kontrol (kritik değil, fırsat olunca): bir kartta "Askıdan çıkar" deneyip kartın aktif **kaldığını** görmek — bayrak yazıldığı için migration bir daha dokunmamalı |
 
@@ -380,6 +405,11 @@ Canlı çiftler ve kilitleri:
   `subjectTopics.test.ts`.
 - **Şık karşılaştırma anahtarı:** `optionKey` (TS) ↔ `comparisonKey` (Swift) —
   aynı vaka çiftleri iki tarafta test edilir.
+- **İşaret kademesi (şema v2.3):** şema `marks.items.kind` ↔ `MARK_KINDS` (TS)
+  ↔ `MarkKind` (Swift) — `test_ts_contract_sync.py` + `test_swift_contract_sync.py`.
+  Burada **sıra da sözleşmedir**: prompt kural 3'ün öncelik merdiveni (el yazısı
+  → sembol → altı çizili → fosforlu) hem sunucunun hem telefonun sıralamasını
+  belirler, testler sırayı da kilitler.
 
 Yeni bir "aynı davranış iki yerde" durumu çıkarsa aynı deseni uygula — elle
 senkron tutma, üret ve testle kilitle.
@@ -556,6 +586,28 @@ gösterir (2026-08-13 tartışması).
     kalırdı (Codex, PR #44). Ayrı bir madde olarak da denenmeli: **eski bir
     yedeği geri yükle** → geri gelen kartlar Tekrar'a girmeli, Toplam = Aktif +
     Askıda yine tutmalı.
+18. **Kapsama defteri gerçekten doluyor mu (Katman A, 2026-08-19).** Yeni bir
+    sayfa çek: sayfa detayının altındaki **"Kartlaşmamış işaretler"** bölümü ya
+    işaret listeliyor ya "bildirilen her işaret bir karta dönüşmüş" diyor
+    olmalı. **"kapsama defteri olmadan üretilmiş"** diyorsa model `marks`
+    alanını doldurmamıştır — o zaman sorun prompt'ta, ve bu belge bir kez daha
+    "kural yazmak yetmiyor"un kaydı olur.
+19. **İşaretten kart yazma.** Bir işarete dokun: `ManualCardSheet` "İşaretlenen"
+    bölümü + cevap alanı doldurulmuş olarak açılmalı. Soruyu yaz, kaydet →
+    kart Tekrar'da ve Bilgilerim'de **hemen** görünmeli.
+20. **"Yoksay" kalıcı mı.** Bir işareti sola kaydırıp Yoksay de → listeden
+    düşmeli. Sonra "Kapsama denetle"yi çalıştır: **yoksayılan işaret geri
+    gelmemeli** (kimlik işaretin metninden türetiliyor, modelin `m1` etiketinden
+    değil — asıl sınanan bu).
+21. **"Kapsama denetle" (Katman B, Gemini).** Düğme çalışıyor mu; özet satırı
+    ("N işaret gördü, k tanesine kart bulamadı") makul mü; Ayarlar → Kullanım'da
+    **"kapsama denetimi"** satırı gerçek USD ile görünüyor mu. **Ön koşul:**
+    `GEMINI_USD_PER_MILLION_*` Vercel'de doldurulmuş olmalı, yoksa satır $0.00
+    gösterir ve defter sessizce eksik okur.
+22. **Eski sayfa + göç.** v2.3 öncesi çekilmiş bir sayfayı aç: uygulama
+    açılmalı (SwiftData'ya `coverageJSON` eklendi — `ModelRun.attempt` dersi:
+    isteğe bağlı alan, varsayılan `nil`) ve o sayfa "kapsama defteri olmadan
+    üretilmiş" demeli — "temiz" değil.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 
@@ -642,18 +694,14 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 
 Öneri, taahhüt değil; sırayı kullanıcı seçer.
 
-- **Kapsama sözleşmesi** (2026-08-19, ayrıntılı tasarım:
-  `docs/PLAN-kapsama-sozlesmesi.md`): sessiz kapsama kaybını — işaretlenip hiç
-  kartlaşmayan içeriği — ilk kez **ölçülebilir** yapan iki katman. (A) Şema
-  v2.3: model kendi işaret defterini (`marks[]`) ve kart başına `markIndex`
-  yazar, sunucu "kartsız işaret" ve "işaretsiz kart" listelerini deterministik
-  çıkarır; ek çağrı ve migration yok. (B) `/api/coverage`: bağımsız ikinci
-  okuyucu (Gemini) aynı sayfayı denetler — A'nın göremediği sınıfı, yani
-  modelin *hiç görmediği* işareti yakalar. Aynı belgede iki büyük alternatif:
+- ~~**Kapsama sözleşmesi**~~ — **yazıldı** (2026-08-19, yukarıdaki durum
+  tablosuna ve ana akışın 6b maddesine bakın). Aynı belgedeki (`docs/PLAN-
+  kapsama-sozlesmesi.md`) iki büyük alternatif hâlâ aday:
   **Sentez Egzersizi** (kendi kartlarından TUS tipi vinyet, Gemini
-  doğrulamalı; yalnız FES'i besler, `EarlyPractice`'e asla dokunmaz) ve
-  **Deste Doktoru** (2026-08-18 denetiminin tekrarlanabilir hâli, tam deste
-  ≈$0.015).
+  doğrulamalı; yalnız FES'i besler, `EarlyPractice`'e asla dokunmaz — beş
+  kartlık bir vinyetteki yanlışı beş kartın vadesine dağıtmanın doğru yolu
+  yok) ve **Deste Doktoru** (2026-08-18 denetiminin tekrarlanabilir hâli:
+  kopya/kapsanan/**çelişen** kart taraması, tam deste ≈$0.015).
 - **Tekrar (FSRS) oturumuna ders/konu filtresi** ("bugün yalnız Farmakoloji").
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti →
   prompt iterasyonuna girdi.

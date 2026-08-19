@@ -75,6 +75,22 @@ public final class CapturedPage {
     /// intentionally held only on the phone and is cleared after successful
     /// persistence; the backend remains stateless (§7.2, §22).
     public var ocrSnapshotData: Data?
+    /// Coverage findings for this page as JSON (`PageCoverage.storageValue`,
+    /// docs/PLAN-kapsama-sozlesmesi.md): which marks the readers say never
+    /// became a card, and which of those the owner has dismissed.
+    ///
+    /// On the page rather than in a table of its own: nothing ever queries a
+    /// finding outside its page, and a second entity would only add a cascade
+    /// rule and a backup shape — the same reasoning `Card.optionsRaw` records.
+    ///
+    /// Optional, and that is the migration-safe shape: SwiftData's lightweight
+    /// migration never calls the initialiser, so an added column is filled from
+    /// the property itself — `nil` here, no decision to make. A *mandatory*
+    /// attribute without a default aborts that migration and the app then
+    /// refuses to open on a store it cannot repair, which is exactly what
+    /// shipping `ModelRun.attempt` did. Existing pages therefore migrate to
+    /// "no coverage information", which is the truth about them.
+    public var coverageJSON: String? = nil
 
     public var source: Source?
 

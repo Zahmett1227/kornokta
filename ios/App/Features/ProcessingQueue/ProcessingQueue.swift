@@ -427,6 +427,28 @@ final class ProcessingQueue: ObservableObject {
         backgroundTask = .invalid
     }
 
+    /// Stores what the generator says it read and never carded
+    /// (docs/PLAN-kapsama-sozlesmesi.md, Katman A).
+    ///
+    /// Only ever written on a `.ready` page and only when the server actually
+    /// sent a block: a nil overwrite would erase the findings of the run that
+    /// produced this page's cards, and the second run in a "Tekrar dene" race
+    /// arrives with the same result anyway.
+    ///
+    /// Dismissals are preserved across a regeneration, which is why this merges
+    /// rather than assigns: the owner already decided about those passages, and
+    /// a fresh generation re-reporting them would ask the same question again.
+    /// Identities are derived from the mark's text, so they survive the model
+    /// renumbering its own register (`PageMark.id`).
+    private func recordCoverage(_ coverage: PageCoverage?, on page: CapturedPage) {
+        guard let coverage else { return }
+        var merged = coverage
+        merged.dismissedMarkIds = PageCoverage.fromStorage(page.coverageJSON).dismissedMarkIds
+        // An audit belongs to the cards it was run against; a regeneration
+        // invalidates it, so it is deliberately not carried over.
+        page.coverageJSON = merged.storageValue
+    }
+
     private func apply(_ outcome: PipelineOutcome, to page: CapturedPage, context: ModelContext) {
         // The user's explicit stop wins over a result arriving late. `cancel`
         // is guarded by `canTransition` and "cancelled never moves again"
@@ -473,6 +495,7 @@ final class ProcessingQueue: ObservableObject {
                 )
             }
             page.processingState = .ready
+            recordCoverage(outcome.knowledge?.coverage, on: page)
             // Cleared for hygiene on rows written before the ADR-005 trim; the
             // vision flow itself never writes a snapshot.
             page.ocrSnapshotData = nil

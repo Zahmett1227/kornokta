@@ -126,6 +126,22 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    /// Client for the "Kapsama denetle" button (independent second reading of a
+    /// whole page, backend `/api/coverage` — docs/PLAN-kapsama-sozlesmesi.md).
+    ///
+    /// Built per use for the same reasons as the second opinion's: a rarely
+    /// reached detail screen, and an edited URL or token is always current
+    /// without this joining `backendChanged()`'s rebuild list.
+    func makeCoverageAuditProvider() -> CoverageAuditProvider? {
+        guard let configuration = Self.resolvedBackendConfiguration(settings: settings, tokens: tokenStore)
+        else { return nil }
+        let tokens = tokenStore
+        return CoverageAuditProvider(
+            configuration: configuration,
+            tokenProvider: { tokens.read() }
+        )
+    }
+
     /// Re-reads the settings and rebuilds the cloud client. Called when the
     /// user edits the backend URL or the token.
     func backendChanged() {

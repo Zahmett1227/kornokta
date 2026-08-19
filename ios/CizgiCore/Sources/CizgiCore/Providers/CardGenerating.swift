@@ -132,19 +132,29 @@ public struct GeneratedKnowledge: Sendable, Equatable {
     /// fails and retries, so anything keyed on "the call I personally watched
     /// succeed" reads low by however many attempts went unwitnessed.
     public let modelRuns: [ModelRunMetadata]
+    /// What the model says it saw and did *not* turn into a card (schema v2.3,
+    /// docs/PLAN-kapsama-sozlesmesi.md).
+    ///
+    /// `nil` from a provider that reports none — `MockCardProvider`, or a
+    /// backend older than the contract. That is deliberately different from an
+    /// empty `PageCoverage`: "nobody looked" and "nothing was missed" are not
+    /// the same answer, and only one of them is good news.
+    public let coverage: PageCoverage?
 
     public init(
         canonicalClaim: String,
         tags: [String] = [],
         sourceConcern: String? = nil,
         cards: [GeneratedCard],
-        modelRuns: [ModelRunMetadata] = []
+        modelRuns: [ModelRunMetadata] = [],
+        coverage: PageCoverage? = nil
     ) {
         self.canonicalClaim = canonicalClaim
         self.tags = tags
         self.sourceConcern = sourceConcern
         self.cards = cards
         self.modelRuns = modelRuns
+        self.coverage = coverage
     }
 }
 

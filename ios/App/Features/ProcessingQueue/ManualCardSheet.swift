@@ -20,6 +20,14 @@ struct ManualCardSheet: View {
     /// The passage the card is being added under. `nil` when the page produced
     /// none at all — a failed or empty job — in which case one is made on save.
     let region: TextRegion?
+    /// The marked text this card is being written for, when the sheet was
+    /// opened from a coverage finding (docs/PLAN-kapsama-sozlesmesi.md).
+    ///
+    /// Seeded into the *answer*, not the question, and shown above it. The
+    /// mark is what the book says; turning it into a question is the judgement
+    /// only the owner can make, and pre-writing a question would put words in
+    /// their mouth on the one screen built to avoid exactly that.
+    var prefill: String? = nil
 
     @State private var draft = ManualCardDraft()
     @State private var isLoaded = false
@@ -41,6 +49,23 @@ struct ManualCardSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                if let prefill, !prefill.isEmpty {
+                    Section {
+                        Text(prefill)
+                            .font(.footnote)
+                            .foregroundStyle(Cizgi.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    } header: {
+                        header("İşaretlenen")
+                    } footer: {
+                        Text("Bu işaret için kart üretilmemiş. Soruyu sen yaz; cevap alanı işaretin "
+                             + "metniyle dolduruldu.")
+                            .font(.footnote)
+                            .foregroundStyle(Cizgi.muted)
+                    }
+                }
+
                 Section {
                     TextEditor(text: $draft.front)
                         .frame(minHeight: 80)
@@ -107,6 +132,9 @@ struct ManualCardSheet: View {
             .onAppear {
                 guard !isLoaded else { return }
                 draft.subject = lockedSubject
+                if let prefill, draft.back.isEmpty {
+                    draft.back = prefill
+                }
                 isLoaded = true
             }
         }

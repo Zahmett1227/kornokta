@@ -1,9 +1,13 @@
 # Kapsama sözleşmesi — ucuzlayan modelle ne yapılmalı
 
-> **Durum: öneri, karar sahibinde (2026-08-19).** Bu belge bir iş emri değil;
-> "ucuz üretim + atıl duran ikinci model aile ile gerçekten değerli ne
-> yapılır?" sorusunun cevabı ve tasarımıdır. Kod yok, karar verilirse
-> ADR-009 olarak yazılmalı.
+> **Durum: Katman A ve Katman B yazıldı (2026-08-19).** Belge önce bir öneriydi;
+> sahibi "1 + 2" (her iki katman) dedi ve ikisi de uygulandı. Aşağıdaki tasarım
+> bölümleri olduğu gibi duruyor — gerekçe kaydı onlar. Uygulamada tasarımdan
+> sapan tek şey alan adı: kart başına `markIndex` yerine **`markId`** (modelin
+> saymasına değil, kendi yazdığı etikete dayanır).
+>
+> **Neyin bittiği ve neyin cihazda görülmesi gerektiği aşağıda "Uygulama
+> durumu" bölümünde.**
 
 ## Özet
 
@@ -102,12 +106,15 @@ farkına bakar.
 "marks": [                       // sayfada tespit edilen işaretler
   { "id": "m1",
     "kind": "handwriting|symbol|underline|highlight",
-    "quote": "...",              // işaretin üstündeki/yanındaki metin, birebir
-    "importance": 1-3 }
+    "quote": "..." }             // işaretin üstündeki/yanındaki metin, birebir
 ],
 // ve her kartta:
-"markIndex": "m1" | null         // bu kart hangi işaretten doğdu
+"markId": "m1" | null            // bu kart hangi işaretten doğdu
 ```
+
+> Uygulamada `importance` düştü: kademe (`kind`) zaten prompt kural 3'ün
+> öncelik merdiveni, ve ikinci bir önem alanı hem token hem de modelin
+> tutarsız olabileceği ikinci bir yargı demekti.
 
 Sunucu bunlardan **iki listeyi deterministik olarak** çıkarır:
 
@@ -206,6 +213,55 @@ sorusunu ilk kez ölçülebilir yapar: "kapsama bilinmiyor" tetiği, Sol'a
 yükseltmeyi gerçekten hak ediyor mu? Bugün o karar veri olmadan bekliyor.
 
 ---
+
+## 3b. Uygulama durumu (2026-08-19)
+
+**Yazıldı ve testli:**
+
+| Parça | Yer |
+|---|---|
+| Şema v2.3 (`marks[]` + `markId`) | `backend/schemas/llm_output.schema.json`, `llmOutputTypes.ts` |
+| Kartsız işaret / işaretsiz kart çıkarımı | `backend/providers/coverage.ts` (`deriveCoverage`, `coverageFromGate`) |
+| Onarım (bozuk işaret, boşta `markId`) | `sanitizeMarks`, `openai.ts` içinde `sanitizeTopics`'in yanında |
+| Prompt v2.8, kural 13 + anti-teşvik | `backend/prompts/cardGeneration.ts` |
+| Model-yüzlü katı şema (zorunlu-ve-nullable, `maxItems = 3 × kart tavanı`) | `buildModelResponseSchema` |
+| Bağımsız denetçi (Gemini) | `backend/prompts/coverageAudit.ts`, `providers/gemini.ts` → `GeminiCoverageAudit` |
+| Dördüncü kapı | `backend/api/_coverage.ts` + `api/index.ts` |
+| Kademe enum'u üç dilde kilitli | şema ↔ `MARK_KINDS` ↔ `MarkKind`; `evals/tests/test_*_contract_sync.py` |
+| Telefon çekirdeği (birleştirme, sıralama, yoksayma, depolama) | `CizgiCore/Models/Coverage.swift` + `CoverageTests` |
+| Denetim istemcisi | `CizgiCore/Providers/CoverageAuditProvider.swift` |
+| Sayfa detayında "Kartlaşmamış işaretler" + "Kapsama denetle" | `App/Features/ProcessingQueue/CoverageSection.swift` |
+| İşaretten kart yazma (önceden doldurulmuş) | `ManualCardSheet(prefill:)` |
+| Maliyet defteri | `ModelRun(purpose: "coverage_audit")`, Kullanım ekranında kendi adıyla |
+
+Yeşil: backend 351 test + `tsc`, evals 509 test. **Swift derlemesi bu ortamda
+yapılamadı** (araç zinciri yok) — `swift test` ve `xcodegen generate` bir
+Mac'te ya da CI'da koşmalı.
+
+**Açılmadan önce yapılacak iki şey (§3'ün ön koşulları, hâlâ geçerli):**
+
+1. **`GEMINI_USD_PER_MILLION_*` Vercel'e girilmeli.** Bugün 0 ve Kullanım her
+   Gemini çağrısını bedava sayıyor. Denetim elle tetiklendiği sürece sapma
+   küçük; otomatikleşince defter sistematik olarak yanlış okur.
+2. `GEMINI_COVERAGE_MAX_OUTPUT_TOKENS` (varsayılan 8192) kod varsayılanından
+   geliyor; Vercel'e girilirse kod varsayılanı devre dışı kalır — kart tavanı
+   değişkeninin 2026-08-14'te öğrettiği ders.
+
+**Cihazda görülmeden kapanmaz:**
+
+- Yeni bir sayfa çek → sayfa detayının altında "Kartlaşmamış işaretler"
+  bölümü çıkıyor mu; model gerçekten defter yazıyor mu (yazmıyorsa "kapsama
+  defteri olmadan üretilmiş" satırı görünür).
+- Bir işarete dokun → `ManualCardSheet` işaretin metniyle açılıyor mu; kaydedilen
+  kart Tekrar'da görünüyor mu.
+- Bir işareti "Yoksay" → listeden düşüyor; **denetimden sonra geri gelmiyor**.
+- "Kapsama denetle" → Gemini yanıtı geliyor mu; Ayarlar → Kullanım'da
+  "kapsama denetimi" satırı gerçek maliyetle görünüyor mu.
+- Eski (v2.3 öncesi) bir sayfayı aç → uygulama açılıyor mu (SwiftData'ya
+  `coverageJSON` eklendi) ve o sayfa "defter yok" diyor mu.
+
+**30 sayfadan sonra bakılacak üç sayı** (§3'ün "asıl ürün" tablosu): sayfa
+başına kartsız işaret, kabul/yoksay oranı, A ile B'nin kesişimi.
 
 ## 4. Diğer iki aday (aynı çerçeve, farklı yüzey)
 

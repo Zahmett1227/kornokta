@@ -144,10 +144,26 @@ struct UsageDetailView: View {
         }
     }
 
+    /// Turkish name for a ledger line's `purpose`.
+    ///
+    /// A `switch` rather than the old two-way ternary: with a third paid call
+    /// on the books (the coverage audit) an unmatched purpose was being
+    /// labelled "kart üretimi", which is worse than useless on a cost screen —
+    /// it would file every Gemini audit under the OpenAI generation the user is
+    /// trying to account for. An unknown purpose now travels as itself.
+    static func purposeLabel(_ purpose: String) -> String {
+        switch purpose {
+        case "card_generation": return "kart üretimi"
+        case "second_opinion": return "ikinci görüş"
+        case "coverage_audit": return "kapsama denetimi"
+        default: return purpose.isEmpty ? "kart üretimi" : purpose
+        }
+    }
+
     static func subtitle(_ run: ModelRun) -> String {
         var parts: [String] = []
         if !run.model.isEmpty { parts.append(run.model) }
-        parts.append(run.purpose == "second_opinion" ? "ikinci görüş" : "kart üretimi")
+        parts.append(Self.purposeLabel(run.purpose))
         if run.attempt > 0 { parts.append("\(run.attempt). deneme") }
         parts.append("\(run.latencyMs / 1000) sn")
         parts.append(run.createdAt.formatted(.dateTime.day().month().hour().minute()))
