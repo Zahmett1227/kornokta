@@ -158,6 +158,19 @@ export interface GeminiConfig {
    */
   maxOutputTokens: number;
   /**
+   * The coverage audit's own output ceiling (`/api/coverage`,
+   * docs/PLAN-kapsama-sozlesmesi.md Katman B).
+   *
+   * Separate from `maxOutputTokens` because the two answers are different
+   * sizes: a second opinion is a verdict plus one reading, while an audit is a
+   * register of every mark on the page with a verbatim quote each — a dense
+   * page can carry twenty. Sharing the second opinion's 4096 would truncate
+   * the audit into a `MAX_TOKENS` failure on exactly the pages worth auditing,
+   * and raising *that* one instead would quietly widen a ceiling sized for a
+   * different call.
+   */
+  coverageMaxOutputTokens: number;
+  /**
    * One synchronous read of one region — nothing like the multi-minute
    * full-page card generation, so this stays well under `vercel.json`'s
    * ceiling. The user is holding the phone waiting; past a minute the answer
@@ -288,6 +301,7 @@ export function loadConfig(): Config {
     gemini: {
       model: optional("GEMINI_MODEL", "gemini-3.5-flash"),
       maxOutputTokens: numeric("GEMINI_MAX_OUTPUT_TOKENS", 4096, 1),
+      coverageMaxOutputTokens: numeric("GEMINI_COVERAGE_MAX_OUTPUT_TOKENS", 8192, 1),
       timeoutMs: numeric("GEMINI_TIMEOUT_MS", 60_000, 1),
     },
     cost: {

@@ -12,10 +12,11 @@
 import { waitUntil } from "@vercel/functions";
 
 import { loadConfig } from "../config.js";
-import { GeminiSecondOpinion } from "../providers/gemini.js";
+import { GeminiCoverageAudit, GeminiSecondOpinion } from "../providers/gemini.js";
 import { OpenAICardGenerator } from "../providers/openai.js";
 import { SupabaseJobStore } from "../providers/supabaseJobs.js";
 import { handleCardsRequest, type CardsDependencies } from "./_cards.js";
+import { handleCoverageRequest, type CoverageDependencies } from "./_coverage.js";
 import { handleJobsRequest, type JobsDependencies } from "./_jobs.js";
 import { handleSecondOpinionRequest, type SecondOpinionDependencies } from "./_secondOpinion.js";
 
@@ -139,11 +140,37 @@ export function buildSecondOpinionDependencies(): SecondOpinionDependencies {
   return cachedSecondOpinion;
 }
 
+/**
+ * Built once per process; needs only `GEMINI_API_KEY`, like the second
+ * opinion. The two share a provider and a key and nothing else — this one asks
+ * what the first reader *missed*, which is a different question about the same
+ * photo (docs/PLAN-kapsama-sozlesmesi.md, Katman B).
+ */
+let cachedCoverage: CoverageDependencies | null = null;
+
+export function buildCoverageDependencies(): CoverageDependencies {
+  if (cachedCoverage) return cachedCoverage;
+
+  const config = loadConfig();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Eksik ortam değişkeni: GEMINI_API_KEY. backend/.env.example dosyasına bak.");
+  }
+
+  cachedCoverage = {
+    auditor: new GeminiCoverageAudit(config.gemini, apiKey, config.cost),
+    deviceToken: process.env.DEVICE_TOKEN,
+    log: (entry) => console.log(JSON.stringify(entry)),
+  };
+  return cachedCoverage;
+}
+
 /** Reset between tests; not used in production. */
 export function resetDependencies(): void {
   cachedCards = null;
   cachedJobs = null;
   cachedSecondOpinion = null;
+  cachedCoverage = null;
 }
 
 /**
@@ -240,6 +267,22 @@ export async function handler(request: Request): Promise<Response> {
       );
     }
     return handleSecondOpinionRequest(request, dependencies);
+  }
+
+  // 2026-08-19: the independent coverage audit (Katman B). A fourth door with
+  // the same isolation rule as the third — its missing key breaks only itself,
+  // and nothing in the capture pipeline waits on it.
+  if (url.pathname === "/api/coverage" || url.pathname === "/coverage") {
+    let dependencies: CoverageDependencies;
+    try {
+      dependencies = buildCoverageDependencies();
+    } catch (error) {
+      return new Response(
+        JSON.stringify({ error: (error as Error).message, retryable: false }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    return handleCoverageRequest(request, dependencies);
   }
 
   return new Response(JSON.stringify({ error: "Bulunamadı.", retryable: false }), {

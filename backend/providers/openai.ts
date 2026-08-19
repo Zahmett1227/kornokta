@@ -21,6 +21,7 @@
 
 import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction, topicInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
+import { sanitizeMarks } from "./coverage.js";
 import { sanitizeTopics, topicsFor } from "./subjectTopics.js";
 import {
   EMPTY_TOKEN_USAGE,
@@ -227,8 +228,22 @@ export function buildModelResponseSchema(
   for (const key of Object.keys(card.properties)) {
     if (!card.required.includes(key)) card.required.push(key);
   }
-  // The model has nothing to choose here: what it produces is v2.2.
-  clone.properties.schemaVersion = { type: "string", const: "2.2" };
+
+  // Schema v2.3's mark register. Optional in the canonical schema (a v2.0–v2.2
+  // payload predates it) and therefore absent from `required` — but strict mode
+  // has no optional properties, so asking for it means promoting it here, the
+  // same move `options`/`topic` already needed.
+  //
+  // The cap is generous rather than tight: a register is only worth having if
+  // it is complete, and a page really can carry more marks than it can carry
+  // cards (that is the whole finding — Tur A hit the card ceiling on 18 of 18
+  // pages). Three per card slot bounds a runaway list without narrowing the
+  // signal; the model still answers inside `max_output_tokens` either way.
+  if (!clone.required.includes("marks")) clone.required.push("marks");
+  (clone.properties.marks as { maxItems?: number }).maxItems = maxCardsPerKnowledgeUnit * 3;
+
+  // The model has nothing to choose here: what it produces is v2.3.
+  clone.properties.schemaVersion = { type: "string", const: "2.3" };
 
   return clone as Record<string, unknown>;
 }
@@ -568,6 +583,14 @@ export class OpenAICardGenerator {
         request.subject ?? null,
       );
     }
+
+    // Schema v2.3's register, held to the same rule as `topic`: a malformed
+    // mark or a `markId` pointing at nothing is repaired, never allowed to fail
+    // the page. A dangling reference is the one shape that would make the
+    // coverage report *lie* — the card looks bound, so a skipped mark counts as
+    // handled — so it is resolved to null, where it shows up honestly as an
+    // unmarked card (`providers/coverage.ts`).
+    sanitizeMarks(modelRecord);
 
     const rawUsage = usage ?? EMPTY_TOKEN_USAGE;
 

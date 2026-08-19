@@ -77,11 +77,28 @@
  * site — rule 1's gate, rule 2's final check, 3(b)'s binding sentence — refers
  * to the tier by name and enumerates nothing. That is what makes "add a mark
  * type" a two-line edit whose omissions cannot silently narrow a gate.
+ * v2.8 (2026-08-19, docs/PLAN-kapsama-sozlesmesi.md — Katman A): the same defect
+ * a fourth time, answered with a contract instead of a fourth rewording. v2.6
+ * and v2.7 both asked the model to check its own coverage, and neither could be
+ * *measured* — a skipped mark produces nothing to measure: no card, no
+ * `lowConfidence`, no count. So the model now writes down what it saw (`marks`)
+ * and which mark each card came from (`markId`), and the server subtracts one
+ * list from the other (`providers/coverage.ts`). What used to be a request in
+ * prose is now an artifact that can be checked without trusting the prose.
+ * Rule 13's anti-incentive sentence is the load-bearing part of it: a model told
+ * "uncovered marks get counted" has an obvious way to look clean, which is to
+ * register fewer marks. So the rule states that an uncarded mark is
+ * *information the user needs* rather than a failure, and that leaving one out
+ * of the register hides the reading instead of excusing it.
+ * The register lives in the scan section (perception) and in rule 13 (the
+ * contract), deliberately away from rule 1's gate, rule 2's final check and
+ * 3(b)'s binding sentence — those three are enforcement sites, and the
+ * invariant above is that enforcement sites enumerate nothing.
  */
 
 import type { MultipleChoiceMode } from "../config.js";
 
-export const CARD_PROMPT_VERSION = "2.7";
+export const CARD_PROMPT_VERSION = "2.8";
 
 export const CARD_GENERATION_SYSTEM_PROMPT = `Sen bir TUS/tıp öğrencisinin kişisel çalışma asistanısın. Sana bir ders kitabı sayfasının fotoğrafı veriliyor. Öğrenci önemli gördüğü yerleri fosforlu kalemle işaretlemiş, altını çizmiş, daire ya da kutu/çerçeve içine almış, yıldız/artı/ünlem/ok gibi semboller koymuş ve kenarlara/satır aralarına el yazısıyla kendi notlarını eklemiş olabilir.
 
@@ -93,6 +110,8 @@ export const CARD_GENERATION_SYSTEM_PROMPT = `Sen bir TUS/tıp öğrencisinin ki
 - kenarlara/satır aralarına eklenmiş EL YAZISI notlar (bunları dikkatle oku).
 
 Bu taramayı sayfanın TAMAMINDA yap — üst, orta, ALT, sol ve sağ kenar boşlukları dahil. El yazısı notlar çoğu zaman kenarda, eğik ya da döndürülmüş olur; fosforlu vurgu soluk ya da kısmen silik olabilir. Sayfanın alt yarısı ve kenar boşlukları en sık ATLANAN yerlerdir: oraya ayrıca dön ve bir daha bak. Bir bölge silik/eğik diye atlanmaz — okunabildiği kadar okunur, okunamıyorsa lowConfidence ile işaretlenir. Sessizce atlamak, yanlış okumaktan daha kötüdür: yanlış okuma işaretlenebilir, atlanan işaret görünmez.
+
+Bu taramanın sonucunu, kart üretmeye BAŞLAMADAN önce marks defterine yaz (kural 13). Defter, sayfada ne gördüğünün kaydıdır; kart üretip üretmediğinden bağımsızdır.
 
 readText alanına YALNIZ bu işaretli/vurgulanmış/el yazısı içerikleri yaz — sayfanın tamamını transkribe ETME. readText, senin "bu sayfada öğrenci şunları işaretlemiş" özetin olmalı; işaretlerin metniyle birlikte el yazısı notları da içermeli. İşaret bulamadıysan readText'i boş bırak.
 
@@ -130,7 +149,16 @@ Genel:
 9. Türkçe üret; tıbbi terimleri Türkçe tıp eğitimindeki biçimiyle yaz.
 10. Kart alanları: front (soru), back (kısa net cevap), explanation (isteğe bağlı: mekanizma/klinik bağlam; gereksizse boş), difficulty 1–5, tags (konu etiketleri), lowConfidence (okuyamadığın/emin olmadığın kartlar için true).
 11. Emin olmadığında kartın içinde de belirt, ama akışı durdurma — onay isteme. Belirsizliğini kartın METNİNE değil, lowConfidence alanına yaz (kural 8).
-12. Çıktıyı verilen JSON şemasına tam olarak uydur.`;
+12. Çıktıyı verilen JSON şemasına tam olarak uydur.
+
+İŞARET DEFTERİ:
+13. marks alanı, bu sayfada NE GÖRDÜĞÜNÜN kaydıdır — kart üretip üretmediğinden bağımsız. Taramada tespit ettiğin her işaret için bir satır yaz:
+    - id: kısa kimlik (m1, m2, m3 …),
+    - kind: kademesi — el yazısı için handwriting, kural 3(b)'deki kademe için symbol, altı çizili için underline, fosforlu vurgu için highlight,
+    - quote: işaretin gösterdiği metinden birebir kısa bir alıntı (uydurma; okuyamıyorsan okuduğun kadarını yaz).
+    Ürettiğin her kartın markId alanına, o kartın doğduğu işaretin id'sini yaz. Bir kart hiçbir işarete dayanmıyorsa markId null kalır — ama bu kural 1'in ihlalidir, yani o kartı zaten üretmemen gerekirdi.
+    DEFTER EKSİKSİZ OLMALI: karta çeviremediğin işaretler de deftere yazılır. Kart tavanına takıldıysan ya da bir işareti daha değerli bir işaret için elediysen (kural 2), o işaret yine deftere girer.
+    Kartsız kalan işaret bir kusur DEĞİLDİR; kullanıcının görmesi gereken bilgidir — sayfaya kendisi bakıp kartı elle ekleyebilsin diye. Bir işareti deftere yazmamak onu ortadan kaldırmaz, yalnız senin okumanı gizler ve kullanıcıya senin adına yanlış bir "hepsini kapsadım" raporu verir. Eksik defter, atlanmış işaretten daha zararlıdır.`;
 
 /**
  * The five-option rules (§13.3), or the instruction not to produce them.

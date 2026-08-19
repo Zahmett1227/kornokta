@@ -104,6 +104,67 @@ describe("POST /api/cards-vision", () => {
     expect(body.gate.verdicts).toHaveLength(1);
   });
 
+  it("reports coverage against the model's own mark register (schema v2.3)", async () => {
+    const output = validOutput({
+      schemaVersion: "2.3",
+      marks: [
+        { id: "m1", kind: "handwriting", quote: "el yazısı not" },
+        { id: "m2", kind: "symbol", quote: "yıldızlı pasaj" },
+      ],
+      cards: [
+        {
+          id: "card_1",
+          type: "direct_recall",
+          front: "Anaflakside ilk doz nedir?",
+          back: "0,5 mg IM adrenalin",
+          explanation: "",
+          difficulty: 2,
+          tags: [],
+          lowConfidence: false,
+          markId: "m1",
+        },
+      ],
+    });
+    const response = await handleCardsRequest(
+      post(VALID_BODY),
+      deps({ generator: stubGenerator(output).generator }),
+    );
+
+    const body = (await response.json()) as {
+      coverage: { reported: boolean; uncovered: Array<{ id: string }>; unmarkedCardIds: string[] };
+    };
+    // The whole point in one assertion: the starred passage was read and never
+    // carded, and until schema v2.3 nothing in the system could say so.
+    expect(body.coverage.reported).toBe(true);
+    expect(body.coverage.uncovered.map((mark) => mark.id)).toEqual(["m2"]);
+    expect(body.coverage.unmarkedCardIds).toEqual([]);
+  });
+
+  it("says 'no register' rather than 'nothing uncovered' for an older payload", async () => {
+    const response = await handleCardsRequest(post(VALID_BODY), deps());
+    const body = (await response.json()) as { coverage: { reported: boolean; uncovered: unknown[] } };
+    // A v2.0 output has no marks. Reporting that as an empty uncovered list is
+    // true but useless; `reported: false` is what keeps the phone from drawing
+    // a clean bill of health out of silence.
+    expect(body.coverage.reported).toBe(false);
+    expect(body.coverage.uncovered).toEqual([]);
+  });
+
+  it("logs coverage as counts only, never a mark's quote (§7.3)", async () => {
+    const output = validOutput({
+      schemaVersion: "2.3",
+      marks: [{ id: "m1", kind: "underline", quote: "gizli kalması gereken sayfa metni" }],
+    });
+    const dependencies = deps({ generator: stubGenerator(output).generator });
+    await handleCardsRequest(post(VALID_BODY), dependencies);
+
+    const entry = dependencies.logged.find((line) => line.event === "cards.ok");
+    expect(entry?.markCount).toBe(1);
+    expect(entry?.uncoveredMarkCount).toBe(1);
+    expect(entry?.unmarkedCardCount).toBe(1);
+    expect(JSON.stringify(dependencies.logged)).not.toContain("gizli kalması");
+  });
+
   it("returns the prompt version used, so the iOS ModelRun record (§16.8) has a real value to store", async () => {
     const response = await handleCardsRequest(post(VALID_BODY), deps());
     const body = (await response.json()) as { cardPromptVersion: string };
