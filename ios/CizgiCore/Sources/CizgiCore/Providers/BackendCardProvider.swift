@@ -440,7 +440,16 @@ public struct BackendCardProvider: CardGenerating {
         }
 
         guard !survivingCards.isEmpty else {
-            throw CardGenerationError.sourceInsufficient
+            // A page that produced no card is the page whose coverage matters
+            // most: every mark on it is uncovered by definition. Thrown as a
+            // `CardGenerationFailure` rather than a bare error so the register
+            // — and the ledger of what this attempt cost — survive the failure
+            // instead of being dropped with it.
+            throw CardGenerationFailure(
+                error: .sourceInsufficient,
+                accounting: accounting,
+                coverage: Self.coverage(of: decoded.coverage)
+            )
         }
 
         // v2 has no `knowledgeUnits`: the whole marked page is one implicit

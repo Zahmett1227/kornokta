@@ -46,6 +46,15 @@ public struct PipelineOutcome: Sendable, Equatable {
     /// worth recording: the call still happened and still cost money. Plural
     /// because one page can take several attempts, all of them billed.
     public let modelRuns: [ModelRunMetadata]
+    /// What the model says it read and never carded (schema v2.3,
+    /// docs/PLAN-kapsama-sozlesmesi.md).
+    ///
+    /// Carried here rather than only inside `knowledge`, for the same reason
+    /// `modelRuns` is: the page that produced *no* cards has no knowledge to
+    /// reach into, and it is the page whose coverage matters most — every mark
+    /// on it is uncovered by definition. Leaving it in `knowledge` alone meant
+    /// the one case worth reporting was the one case that reported nothing.
+    public let coverage: PageCoverage?
 
     public init(
         jobId: String,
@@ -57,7 +66,8 @@ public struct PipelineOutcome: Sendable, Equatable {
         generatedGroups: [GeneratedAnnotationGroup] = [],
         failure: FailureKind? = nil,
         failureDetail: String? = nil,
-        modelRuns: [ModelRunMetadata] = []
+        modelRuns: [ModelRunMetadata] = [],
+        coverage: PageCoverage? = nil
     ) {
         self.jobId = jobId
         self.finalState = finalState
@@ -69,6 +79,7 @@ public struct PipelineOutcome: Sendable, Equatable {
         self.failure = failure
         self.failureDetail = failureDetail
         self.modelRuns = modelRuns
+        self.coverage = coverage
     }
 }
 
@@ -155,8 +166,15 @@ public struct CapturePipeline: Sendable {
         } catch let failure as CardGenerationFailure {
             // The real provider's error: it carries the ledger of what the
             // failed attempt — and every attempt before it — already spent, so
-            // a page that never succeeds still records its cost.
-            return Self.failed(jobId: jobId, error: failure.error, accounting: failure.accounting)
+            // a page that never succeeds still records its cost. Since schema
+            // v2.3 it can also carry the mark register of a page that produced
+            // no cards, which is the page whose register is most worth having.
+            return Self.failed(
+                jobId: jobId,
+                error: failure.error,
+                accounting: failure.accounting,
+                coverage: failure.coverage
+            )
         } catch let error as CardGenerationError {
             // A bare case: the offline stand-in and the tests throw these, and
             // they have nothing to account for.
@@ -185,7 +203,8 @@ public struct CapturePipeline: Sendable {
             passage: knowledge.canonicalClaim,
             knowledge: knowledge,
             generatedGroups: [generated],
-            modelRuns: knowledge.modelRuns
+            modelRuns: knowledge.modelRuns,
+            coverage: knowledge.coverage
         )
     }
 
@@ -220,7 +239,8 @@ public struct CapturePipeline: Sendable {
     static func failed(
         jobId: String,
         error: CardGenerationError,
-        accounting: [ModelRunMetadata]
+        accounting: [ModelRunMetadata],
+        coverage: PageCoverage? = nil
     ) -> PipelineOutcome {
         let detail = Self.detail(of: error)
         if case .sourceInsufficient = error {
@@ -236,7 +256,8 @@ public struct CapturePipeline: Sendable {
                 jobId: jobId,
                 finalState: .permanentFailure,
                 failure: .noContent,
-                modelRuns: accounting
+                modelRuns: accounting,
+                coverage: coverage
             )
         }
         let kind = FailureDiagnosis.refine(

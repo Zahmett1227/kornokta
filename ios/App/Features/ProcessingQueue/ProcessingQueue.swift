@@ -463,6 +463,10 @@ final class ProcessingQueue: ObservableObject {
         // path through this method, and the failure paths are the ones the old
         // success-only accounting was blind to.
         recordAccounting(outcome.modelRuns, for: page, context: context)
+        // Same reasoning, same place: a page that produced *no* cards still has
+        // a mark register worth keeping, and it is the page where every mark is
+        // uncovered (docs/PLAN-kapsama-sozlesmesi.md).
+        recordCoverage(outcome.coverage, on: page)
 
         // Keep completed groups before returning a retryable failure. A later
         // retry receives their ids and generates only the unfinished groups.
@@ -495,7 +499,6 @@ final class ProcessingQueue: ObservableObject {
                 )
             }
             page.processingState = .ready
-            recordCoverage(outcome.knowledge?.coverage, on: page)
             // Cleared for hygiene on rows written before the ADR-005 trim; the
             // vision flow itself never writes a snapshot.
             page.ocrSnapshotData = nil

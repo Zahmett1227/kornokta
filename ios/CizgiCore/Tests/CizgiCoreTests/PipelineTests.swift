@@ -173,6 +173,27 @@ final class CapturePipelineTests: XCTestCase {
         XCTAssertEqual(outcome.failure, .noContent)
     }
 
+    func testCoverageSurvivesAPageThatProducedNoCards() async {
+        // The page with no cards is the page whose register matters most:
+        // every mark on it is uncovered by definition. It reaches the queue on
+        // the *failure* path, so the register has to travel there too — the
+        // same reason `modelRuns` sits on the outcome rather than inside
+        // `knowledge` (docs/PLAN-kapsama-sozlesmesi.md).
+        let coverage = PageCoverage(
+            reported: true,
+            uncovered: [PageMark(kind: .symbol, quote: "★ hiç kartlaşmadı", source: .generator)]
+        )
+        let generator = ThrowingVisionGenerator(
+            failure: CardGenerationFailure(error: .sourceInsufficient, accounting: [], coverage: coverage)
+        )
+
+        let outcome = await pipeline(generator: generator).run(jobId: "job-9", imageURL: imageURL)
+
+        XCTAssertEqual(outcome.finalState, .permanentFailure)
+        XCTAssertEqual(outcome.failure, .noContent)
+        XCTAssertEqual(outcome.coverage?.uncovered.map(\.quote), ["★ hiç kartlaşmadı"])
+    }
+
     func testGeneratorOutageIsTransient() async {
         let outcome = await pipeline(generator: FailingGenerator(error: .providerUnavailable("ağ yok")))
             .run(jobId: "job-6", imageURL: imageURL)

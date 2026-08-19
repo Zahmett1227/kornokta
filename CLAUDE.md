@@ -268,7 +268,7 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | FES sicili + Egzersiz'in altı boyutlu filtresi/bütçesi (ADR-008, 2026-08-14) | 🟡 `main`'de (PR #41, squash `e934cb7`); Codex turları kapandı. Yerel `swift test` + `xcodegen`/`xcodebuild`, backend ve evals yeşildi; simülatörde kurulup açıldı — kritik risk olan "yeni migration açılışta çökertir mi" orada elendi. **Cihaz doğrulaması açık:** aşağıdaki doğrulama listesinin 1-5. maddeleri |
 | Sayfa başına kart tavanı 12→18 (2026-08-14) | ✅ `main`'de (PR #42). Sunucu tavanı (`config.ts`/`.env.example`), iOS varsayılanı + Stepper aralığı (`AppEnvironment`/`SettingsView`) ve çıktı token tavanı (aynı 1,5× oranla 8192→12288) **birlikte** değişti — istemci sunucu tavanını aşamadığı için (§21.3) yalnız birini değiştirmek hiçbir şey yapmazdı. Canlıda `OPENAI_MAX_OUTPUT_TOKENS` elle 48000'e çekilip redeploy edildi; `OPENAI_MAX_CARDS_PER_KNOWLEDGE_UNIT` Vercel'e hiç girilmemiş, tavan kod varsayılanından geliyor. Codex'in iki gerçek iOS bulgusu düzeltildi: mevcut kurulumlarda UserDefaults'taki 12 için bayraklı tek seferlik göç, ve temiz kurulumda bayrağın hemen yazılması (yoksa kullanıcının sonradan bilerek seçtiği 12 sessizce 18'e çevrilirdi). **Cihaz doğrulaması açık:** yoğun işaretli bir sayfa gerçekten 12'den fazla kart üretiyor mu, ve Ayarlar'daki Stepper 18'e kadar çıkıyor mu |
 
-| Kapsama sözleşmesi — Katman A (şema v2.3) + Katman B (`/api/coverage`, Gemini) (2026-08-19) | 🟡 Dalda (`claude/project-analysis-innovation-idea-y4omre`); tasarım ve gerekçe `docs/PLAN-kapsama-sozlesmesi.md`. Backend 351 test + `tsc`, evals 509 test yeşil. **Swift bu ortamda derlenemedi** (araç zinciri yok) — `swift test` + `xcodegen generate` bir Mac'te/CI'da koşmalı. **Açmadan önce:** `GEMINI_USD_PER_MILLION_*` Vercel'e girilmeli (bugün 0; defter Gemini'yi bedava sayıyor). Cihaz doğrulaması aşağıdaki listenin 18-22. maddeleri |
+| Kapsama sözleşmesi — Katman A (şema v2.3) + Katman B (`/api/coverage`, Gemini) (2026-08-19) | 🟡 Dalda (`claude/project-analysis-innovation-idea-y4omre`); tasarım ve gerekçe `docs/PLAN-kapsama-sozlesmesi.md`. Backend 351 test + `tsc`, evals 509 test yeşil. Swift tarafı **indirilen araç zinciriyle dilim paketinde gerçekten koşturuldu** (76 test: `CoverageTests`, `CoverageAuditProviderTests`, `BackendCardProviderTests`, `PipelineTests`) — doğrulanmayan tek şey SwiftUI görünümleri ve SwiftData modeli; onlar için `swift test` + `xcodegen generate` bir Mac'te/CI'da koşmalı. **Açmadan önce:** `GEMINI_USD_PER_MILLION_*` Vercel'e girilmeli (bugün 0; defter Gemini'yi bedava sayıyor). Cihaz doğrulaması aşağıdaki listenin 18-22. maddeleri |
 | Sayfa detayında kart ekleme + düzenleme (2026-08-15) | ✅ `main`'de (PR #43, squash `721ed19`). Kuyruktan açılan sayfa ekranı (`PageDetailView`) salt-okunur olmaktan çıktı: karta dokunmak ortak `CardEditorView`'ı açıyor, her pasajın altında **"Kart ekle"** var (`ManualCardSheet`). Gerekçe: modelin tehlikeli hatası yanlış kart değil **eksik** kart, ve üretilmemiş kart `lowConfidence` taşımadığı için onu hiçbir otomatik sinyal görmüyor — tek çare sayfaya bakarken elle eklemek. Ortak editör **kart tipi seçici** kazandı (Bilgilerim/Tekrar/Egzersiz de). Codex'in iki P2'si kapatıldı: elle kartın unit'i boş `canonicalClaim` taşıyor (yukarıdaki 4. madde) ve bu belge de o sözleşmeyi yazıyor. Yerel `swift test` (391), simülatör derlemesi, backend ve evals yeşil. **Cihaz doğrulaması açık:** aşağıdaki listenin 6-10. maddeleri |
 | Deste denetimi: kopya kartların askıya alınması (2026-08-18) | ✅ `main`'de (PR #46, squash `deef8dc`) ve **cihazda doğrulandı** (2026-08-18): ilk açılışta askıdaki kart sayısı 11 → **128**, tam beklendiği gibi. Sahibinin 2026-08-18 yedeği (1007 kart) baştan sona okundu: 996 aktif kartın **117'si** (%12) birebir/yakın kopya (74) ya da tutulan başka bir kartın cevabında tamamen kapsanan (43) — ana kaynak aynı sayfanın birden çok kez çekilmesi; en yoğun konu Solunum (142 kartın 49'u). Küme küme gerekçeli rapor + UUID listesi sahibinde (sohbette dosya olarak). Uygulama: `DuplicateSuspendMigration` — kimlik listesi gömülü, tek seferlik, **siler değil askıya alır** (`ReviewLog`/FES korunur, "Askıdan çıkar" ile tek tek geri alınır), yalnız `.active` karta dokunur. Bilinçli olarak `TopicBackfillMigration`'ın seen-set deseni DEĞİL (o desenin sonsuz-tarama açığı "Küçük ve gerçek kalanlar" 2'de kayıtlı): bayrak ilk başarılı kayıtta yazılır; temiz kurulum + sonradan restore boşluğu ise `ApprovalGateMigration`'la aynı biçimde kapalı — `SettingsView.restore`, idempotent `suspend(in:)` adımını restore'un kendi context'inde yeniden koşar (Codex, PR #46 P2). Denetimin yan ürünleri: içeriği şüpheli 3 kart (anjiyomiyolipom-ağrı, miksoma-McCune-Albright, HER2→"Luminal B" — `lowConfidence` olmadıkları için İkinci Görüş düğmesi çıkmaz, elle bakılmalı) ve metni düzeltilmeli ~25 kart (v2.6 öncesi "Pasaja göre…" kalıntıları) rapora yazıldı, koda dahil değil. Kalan mini kontrol (kritik değil, fırsat olunca): bir kartta "Askıdan çıkar" deneyip kartın aktif **kaldığını** görmek — bayrak yazıldığı için migration bir daha dokunmamalı |
 
@@ -294,12 +294,26 @@ gerçek kapı yerelde `npm test` + `npm run typecheck` ve bir Mac'te
 `swift test`. Kota yenilendiğinde ilk iş `main`'i bir kez yeşile koşturup bu
 notu silmek.
 
-**Bu ortamın kalıcı sınırı:** Linux'ta `CizgiCore` derlenmiyor (CoreGraphics,
-SwiftData); SwiftUI dosyaları yalnız `swiftc -parse` ile denetlenebiliyor — bu
-sözdizimi kontrolüdür, tip hatası yakalamaz. Foundation-only mantık, indirilen
-bir Swift araç zinciriyle izole bir pakette gerçekten koşturulabilir (ADR-007'nin
-12 testi böyle doğrulandı). App hedefi ve tam paket için tek gerçek kapı
-CI'daki macOS işi ya da bir Mac derlemesi.
+**Bu ortamın kalıcı sınırı:** Linux'ta `CizgiCore` **bütün olarak** derlenmiyor
+(CoreGraphics, SwiftData); SwiftUI dosyaları ve App hedefi yalnız
+`swiftc -parse` ile denetlenebiliyor — bu sözdizimi kontrolüdür, tip hatası
+yakalamaz. App hedefi ve tam paket için tek gerçek kapı CI'daki macOS işi ya da
+bir Mac derlemesi.
+
+**Ama sınır sanıldığından dar (2026-08-19'da ölçüldü).** İndirilen bir Swift
+araç zinciriyle (`swift-6.0.3-RELEASE-ubuntu24.04`, ~450 MB) **dilim paketi**
+kurulup gerçek `swift test` koşturulabiliyor: CizgiCore'un Foundation-only
+dosyalarını `/tmp` altında bir SwiftPM paketine kopyala, CoreGraphics/SwiftData
+gerektiren birkaç dosyayı dışarıda bırak (`Models.swift`, `UploadImage.swift`,
+`ImageStore.swift`, `PixelBuffer/PerceptualHash`, `Bundle.module` okuyan
+`FSRSWeights`/`SubjectTopicSchema`), `URLSession` kullanan dosyaların başına
+`#if canImport(FoundationNetworking) import FoundationNetworking #endif` ekle
+ve eksik tipler için küçük shim yaz (`PreparedUpload`/`UploadImageEncoder`).
+Kapsama sözleşmesi işinde bu yolla **76 test** gerçekten koşturuldu
+(`CoverageTests`, `CoverageAuditProviderTests`, `BackendCardProviderTests`,
+`PipelineTests`, `MultipleChoiceTests`…) — yani sağlayıcı/kuyruk/model mantığı
+Mac beklemeden **tip düzeyinde** doğrulanabiliyor. Doğrulanamayan tek şey
+SwiftUI görünümleri ve SwiftData modelleri.
 
 **Dağıtım:** Backend Vercel'de canlı (`kornokta-nu.vercel.app`), Root Directory
 `backend`. Gerekli env değişkenleri `.env.example`'da; iş kuyruğu için

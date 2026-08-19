@@ -234,9 +234,14 @@ yükseltmeyi gerçekten hak ediyor mu? Bugün o karar veri olmadan bekliyor.
 | İşaretten kart yazma (önceden doldurulmuş) | `ManualCardSheet(prefill:)` |
 | Maliyet defteri | `ModelRun(purpose: "coverage_audit")`, Kullanım ekranında kendi adıyla |
 
-Yeşil: backend 351 test + `tsc`, evals 509 test. **Swift derlemesi bu ortamda
-yapılamadı** (araç zinciri yok) — `swift test` ve `xcodegen generate` bir
-Mac'te ya da CI'da koşmalı.
+Yeşil: backend 351 test + `tsc`, evals 509 test. Swift tarafı bu ortamda
+**gerçekten koşturuldu**: indirilen bir araç zinciriyle (6.0.3) kurulan dilim
+paketlerinde 76 test geçti — `CoverageTests` (13), `CoverageAuditProviderTests`
+(4), `BackendCardProviderTests` (35), `PipelineTests` (19) ve dahil olan
+diğerleri. Yöntem CLAUDE.md'nin "Bu ortamın kalıcı sınırı" notunda.
+**Doğrulanmayan:** SwiftUI görünümleri (`CoverageSection`, `PageDetailView`,
+`ManualCardSheet`) ve SwiftData modeli — onlar yalnız `swiftc -parse`'tan
+geçti; `swift test` + `xcodegen generate` bir Mac'te ya da CI'da koşmalı.
 
 **Açılmadan önce yapılacak iki şey (§3'ün ön koşulları, hâlâ geçerli):**
 

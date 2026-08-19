@@ -252,14 +252,40 @@ final class BackendCardProviderTests: XCTestCase {
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "reject")]
         )
         XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
-            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
+            XCTAssertEqual((error as? CardGenerationFailure)?.error, .sourceInsufficient)
         }
     }
 
     func testNoCardsAtAllIsTreatedAsSourceInsufficient() {
         let decoded = success(cards: [], verdicts: [])
         XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
-            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
+            XCTAssertEqual((error as? CardGenerationFailure)?.error, .sourceInsufficient)
+        }
+    }
+
+    /// The page that produced nothing is the page whose register matters most —
+    /// every mark on it is uncovered by definition. Before this it was thrown
+    /// away with the error, together with what the attempt had cost.
+    func testAPageWithNoCardsStillCarriesItsRegisterAndItsCost() {
+        let spent = ModelRunMetadata(
+            requestId: "req-1", attempt: 1, provider: "openai", model: "m",
+            purpose: "card_generation", promptVersion: "2.8", latencyMs: 10,
+            inputTokens: 1000, outputTokens: 20, estimatedCostUSD: 0.01
+        )
+        let decoded = success(
+            cards: [],
+            verdicts: [],
+            coverage: RemoteCoverage(
+                reported: true,
+                uncovered: [RemoteMark(id: "m1", kind: "symbol", quote: "★ hiç kartlaşmadı")],
+                unmarkedCardIds: []
+            )
+        )
+        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [spent])) { error in
+            let failure = error as? CardGenerationFailure
+            XCTAssertEqual(failure?.error, .sourceInsufficient)
+            XCTAssertEqual(failure?.coverage?.uncovered.map(\.quote), ["★ hiç kartlaşmadı"])
+            XCTAssertEqual(failure?.accounting.count, 1)
         }
     }
 
