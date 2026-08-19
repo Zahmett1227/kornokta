@@ -150,20 +150,35 @@ public enum DarkMapCoverage {
         return Payload(rows: rows, unclassifiedCards: unclassified, inactiveCards: inactive)
     }
 
+    /// Written as explicit statements rather than a `map/filter/sorted/prefix`
+    /// chain on purpose. The chained version type-checked so slowly it looked
+    /// like a hung build — a long inferred pipeline ending in the heavily
+    /// overloaded `String.init` is a known Swift inference blowup, and the
+    /// compiler gives no hint that *that* is what it is doing.
     private static func samples(from group: [Card], limit: Int) -> [String] {
         guard limit > 0 else { return [] }
-        return
-            group
-            .map { $0.front.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            // `count` on a Swift String is grapheme clusters, which is the right
-            // notion of "longer" for Turkish text: "ğ" and "İ" must not count
-            // double just because they take more UTF-8 bytes.
-            .sorted { lhs, rhs in
-                lhs.count == rhs.count ? lhs < rhs : lhs.count > rhs.count
-            }
-            .prefix(limit)
-            .map(String.init)
+
+        var trimmed: [String] = []
+        trimmed.reserveCapacity(group.count)
+        for card in group {
+            let front = card.front.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !front.isEmpty { trimmed.append(front) }
+        }
+
+        // `count` on a Swift String is grapheme clusters, which is the right
+        // notion of "longer" for Turkish text: "ğ" and "İ" must not count double
+        // just because they take more UTF-8 bytes. The length tie-break on the
+        // text itself keeps the choice stable across runs, which is what lets
+        // two identical decks produce byte-identical payloads.
+        trimmed.sort { (lhs: String, rhs: String) -> Bool in
+            let left = lhs.count
+            let right = rhs.count
+            if left != right { return left > right }
+            return lhs < rhs
+        }
+
+        if trimmed.count > limit { trimmed.removeLast(trimmed.count - limit) }
+        return trimmed
     }
 
     /// Separator matches the backend's `TOPIC_KEY_SEPARATOR`. Local to this
