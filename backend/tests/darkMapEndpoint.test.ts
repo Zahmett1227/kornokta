@@ -317,9 +317,47 @@ describe("handleDarkMapRequest — the ledger", () => {
         stubRanker("gemini", new GeminiError("Gemini anahtarı reddedildi (403)", 403, false)),
       ]),
     );
-    // Both failed, so the response is an error — the ledger still had to be
-    // built, which is what the log entry below proves.
     expect(response.status).toBe(503);
+    const body = (await response.json()) as { usage?: Array<Record<string, unknown>> };
+    const byProvider = Object.fromEntries((body.usage ?? []).map((e) => [e.provider, e]));
+    // Our own timeout: the request reached the model and was billed, amount
+    // unknown.
+    expect(byProvider.openai).toMatchObject({ billing: "unmeasured", failureReason: "timeout" });
+    // Rejected before any generation: genuinely free.
+    expect(byProvider.gemini).toMatchObject({ billing: "none" });
+  });
+
+  /**
+   * The hole this closes: two rankers can each burn their whole output budget
+   * and then truncate — billed in full, nothing returned. An error body that
+   * dropped the ledger would leave that spend invisible on Ayarlar → Kullanım,
+   * which is the exact under-reporting `tokenUsage.ts` was written to end.
+   */
+  it("carries the ledger out with a both-failed error", async () => {
+    const spent = { inputTokens: 3000, cachedInputTokens: 0, outputTokens: 16384, reasoningTokens: 16000 };
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE }),
+      deps([
+        stubRanker("openai", new OpenAIError("kesildi", undefined, true, spent, "incomplete_max_output_tokens")),
+        stubRanker("gemini", new OpenAIError("kesildi", undefined, true, spent, "incomplete_max_output_tokens")),
+      ]),
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { usage?: Array<Record<string, unknown>> };
+    expect(body.usage).toHaveLength(2);
+    for (const entry of body.usage ?? []) {
+      expect(entry).toMatchObject({ purpose: "dark_map", outcome: "failure", billing: "measured" });
+    }
+  });
+
+  /** A guard failure reached no model, so there is nothing to report. */
+  it("omits the ledger from a failure that never called a model", async () => {
+    const response = await handleDarkMapRequest(
+      post({ coverage: COVERAGE }),
+      deps([stubRanker("openai", ranking([DERMA]))]),
+    );
+    expect(response.status).toBe(400);
+    expect((await response.json()) as Record<string, unknown>).not.toHaveProperty("usage");
   });
 
   it("prices failures that reported usage", async () => {

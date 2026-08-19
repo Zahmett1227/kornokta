@@ -126,7 +126,15 @@ public enum DarkMapError: Error, LocalizedError, Equatable {
     /// The server's message travels verbatim — it already names the real
     /// suspect (an exhausted quota, a rejected key) and rewording it here would
     /// undo exactly that.
-    case server(String, retryable: Bool)
+    ///
+    /// `usage` carries what the failed calls cost. Empty for the guard failures
+    /// that never reach a model, non-empty when both rankers ran and failed —
+    /// and that case is why the associated value exists at all: two rankers can
+    /// burn their whole output budget and then truncate, which is billed in
+    /// full. An error that dropped the ledger would leave that spend invisible
+    /// on Ayarlar → Kullanım, the exact under-reporting `tokenUsage.ts` was
+    /// written to end.
+    case server(String, retryable: Bool, usage: [ModelRunMetadata])
     case invalidResponse(String)
 
     public var errorDescription: String? {
@@ -137,7 +145,7 @@ public enum DarkMapError: Error, LocalizedError, Equatable {
             return "Ders/konu şablonu okunamadı; karanlık harita çıkarılamaz."
         case .transport(let message):
             return "Bağlantı kurulamadı: \(message)"
-        case .server(let message, _):
+        case .server(let message, _, _):
             return message
         case .invalidResponse(let message):
             return "Sunucu yanıtı çözümlenemedi: \(message)"
@@ -148,8 +156,14 @@ public enum DarkMapError: Error, LocalizedError, Equatable {
         switch self {
         case .notConfigured, .schemaUnavailable, .invalidResponse: return false
         case .transport: return true
-        case .server(_, let retryable): return retryable
+        case .server(_, let retryable, _): return retryable
         }
+    }
+
+    /// The ledger a failed request still owes Ayarlar → Kullanım.
+    public var usage: [ModelRunMetadata] {
+        guard case .server(_, _, let usage) = self else { return [] }
+        return usage
     }
 }
 
@@ -227,7 +241,8 @@ public struct DarkMapProvider: Sendable {
             let failure = try? JSONDecoder().decode(FailureBody.self, from: data)
             throw DarkMapError.server(
                 failure?.error ?? "Sunucu hatası (\(http.statusCode)).",
-                retryable: failure?.retryable ?? (http.statusCode >= 500)
+                retryable: failure?.retryable ?? (http.statusCode >= 500),
+                usage: Self.ledger(requestId: requestId, entries: failure?.usage ?? [])
             )
         }
         return try Self.parse(data)
@@ -288,26 +303,34 @@ public struct DarkMapProvider: Sendable {
             // Both calls are billed whatever the verdict, so both have to reach
             // Ayarlar → Kullanım. A paid call that never lands there
             // permanently under-reports cost (Codex, PR #39).
-            usage: (decoded.usage ?? []).map { entry in
-                ModelRunMetadata(
-                    requestId: decoded.requestId,
-                    attempt: entry.attempt,
-                    provider: entry.provider,
-                    model: entry.model,
-                    purpose: entry.purpose,
-                    promptVersion: entry.promptVersion,
-                    latencyMs: entry.latencyMs,
-                    inputTokens: entry.usage.inputTokens,
-                    cachedInputTokens: entry.usage.cachedInputTokens,
-                    outputTokens: entry.usage.outputTokens,
-                    reasoningTokens: entry.usage.reasoningTokens,
-                    estimatedCostUSD: entry.estimatedCostUSD,
-                    success: entry.outcome == "success",
-                    billing: entry.billing,
-                    failureReason: entry.failureReason
-                )
-            }
+            usage: ledger(requestId: decoded.requestId, entries: decoded.usage ?? [])
         )
+    }
+
+    /// Shared by the success and failure paths, because the ledger is owed on
+    /// both. Kept as one function so a future field cannot be mapped on one path
+    /// and forgotten on the other — which is how the accounting holes this
+    /// project already closed came about.
+    static func ledger(requestId: String, entries: [RemoteCallAccounting]) -> [ModelRunMetadata] {
+        entries.map { entry in
+            ModelRunMetadata(
+                requestId: requestId,
+                attempt: entry.attempt,
+                provider: entry.provider,
+                model: entry.model,
+                purpose: entry.purpose,
+                promptVersion: entry.promptVersion,
+                latencyMs: entry.latencyMs,
+                inputTokens: entry.usage.inputTokens,
+                cachedInputTokens: entry.usage.cachedInputTokens,
+                outputTokens: entry.usage.outputTokens,
+                reasoningTokens: entry.usage.reasoningTokens,
+                estimatedCostUSD: entry.estimatedCostUSD,
+                success: entry.outcome == "success",
+                billing: entry.billing,
+                failureReason: entry.failureReason
+            )
+        }
     }
 
     private struct RequestBody: Encodable {
@@ -320,6 +343,9 @@ public struct DarkMapProvider: Sendable {
     private struct FailureBody: Decodable {
         let error: String
         let retryable: Bool
+        /// Absent on the guard failures that reach no model; present when both
+        /// rankers ran and failed. See `DarkMapError.server`.
+        let usage: [RemoteCallAccounting]?
     }
 }
 

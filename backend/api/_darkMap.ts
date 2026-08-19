@@ -97,6 +97,21 @@ export interface DarkMapSuccess {
 export interface DarkMapFailure {
   error: string;
   retryable: boolean;
+  /**
+   * What the failed calls cost, when there were any.
+   *
+   * Present only on the both-families-failed path, and the reason it is present
+   * at all is the one `tokenUsage.ts` was written for: "failed calls were not
+   * recorded, so the ledger was guaranteed to read low by an unknown amount". A
+   * dark map where both rankers burned their whole output budget and then
+   * truncated costs real money; dropping the ledger with the error would make
+   * that spend invisible on Ayarlar → Kullanım — the precise failure this
+   * project already fixed once.
+   *
+   * Absent on the guard failures above (bad token, no requestId, empty
+   * universe), which reach no model and cost nothing.
+   */
+  usage?: CallAccounting[];
 }
 
 export interface DarkMapDependencies {
@@ -123,8 +138,16 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-function fail(message: string, status: number, retryable: boolean): Response {
-  return json({ error: message, retryable } satisfies DarkMapFailure, status);
+function fail(
+  message: string,
+  status: number,
+  retryable: boolean,
+  usage?: CallAccounting[],
+): Response {
+  return json(
+    { error: message, retryable, ...(usage?.length ? { usage } : {}) } satisfies DarkMapFailure,
+    status,
+  );
 }
 
 /**
@@ -359,6 +382,8 @@ export async function handleDarkMapRequest(
       raters.map((rater) => `${rater.family}: ${rater.error ?? "bilinmeyen hata"}`).join(" · "),
       retryable ? 503 : 502,
       retryable,
+      // Carried out with the error on purpose — see `DarkMapFailure.usage`.
+      usage,
     );
   }
 

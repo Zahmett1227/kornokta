@@ -345,8 +345,8 @@ final class DarkMapErrorTests: XCTestCase {
         XCTAssertFalse(DarkMapError.notConfigured.retryable)
         XCTAssertFalse(DarkMapError.schemaUnavailable.retryable)
         XCTAssertTrue(DarkMapError.transport("kopuk").retryable)
-        XCTAssertTrue(DarkMapError.server("503", retryable: true).retryable)
-        XCTAssertFalse(DarkMapError.server("403", retryable: false).retryable)
+        XCTAssertTrue(DarkMapError.server("503", retryable: true, usage: []).retryable)
+        XCTAssertFalse(DarkMapError.server("403", retryable: false, usage: []).retryable)
         XCTAssertFalse(DarkMapError.invalidResponse("bozuk").retryable)
     }
 
@@ -354,6 +354,28 @@ final class DarkMapErrorTests: XCTestCase {
     /// tükenmiş…"); rewording it here would undo exactly that.
     func testServerMessageTravelsVerbatim() {
         let message = "Gemini kotası/kredisi tükenmiş görünüyor (429 RESOURCE_EXHAUSTED)."
-        XCTAssertEqual(DarkMapError.server(message, retryable: true).errorDescription, message)
+        XCTAssertEqual(
+            DarkMapError.server(message, retryable: true, usage: []).errorDescription,
+            message
+        )
+    }
+
+    /// Only `.server` can carry a ledger; the rest never reached a model.
+    func testOnlyServerFailuresCarryALedger() {
+        let run = ModelRunMetadata(
+            requestId: "r",
+            provider: "openai",
+            model: "m",
+            purpose: "dark_map",
+            promptVersion: "1.0",
+            latencyMs: 10,
+            inputTokens: 1,
+            outputTokens: 2,
+            estimatedCostUSD: 0.1,
+            success: false
+        )
+        XCTAssertEqual(DarkMapError.server("x", retryable: true, usage: [run]).usage, [run])
+        XCTAssertTrue(DarkMapError.transport("kopuk").usage.isEmpty)
+        XCTAssertTrue(DarkMapError.notConfigured.usage.isEmpty)
     }
 }

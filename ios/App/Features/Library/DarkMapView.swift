@@ -411,46 +411,50 @@ struct DarkMapView: View {
         do {
             let result = try await provider.request(requestId: requestId, coverage: payload.rows)
 
-            // Both calls are billed whatever came back, so both reach Ayarlar →
-            // Kullanım. The server already priced them; the phone only stores.
-            for run in result.usage {
-                context.insert(ModelRun(
-                    requestId: run.requestId,
-                    // No page behind this call, so the request id doubles as the
-                    // ledger's job id — the dedup key is (jobId, purpose,
-                    // attempt) and each map gets a fresh uuid.
-                    jobId: requestId,
-                    attempt: run.attempt,
-                    provider: run.provider,
-                    model: run.model,
-                    purpose: run.purpose,
-                    promptVersion: run.promptVersion,
-                    latencyMs: run.latencyMs,
-                    inputTokens: run.inputTokens,
-                    cachedInputTokens: run.cachedInputTokens,
-                    outputTokens: run.outputTokens,
-                    reasoningTokens: run.reasoningTokens,
-                    estimatedCostUSD: run.estimatedCostUSD,
-                    success: run.success,
-                    billing: run.billing,
-                    failureReason: run.failureReason
-                ))
-            }
-            try? context.save()
-
+            record(result.usage, jobId: requestId)
             phase = .loaded(result)
         } catch let error as DarkMapError {
-            // No ledger line here on purpose, unlike the second opinion. That
-            // one is a single call whose cost the phone alone can witness; this
-            // endpoint answers 200 with a per-family ledger even when one family
-            // failed, and only fails outright when *both* did — a case the
-            // server has already classified as billed-or-not and cannot report
-            // through an error body. Writing a guessed line would be inventing a
-            // number (§0.6).
+            // The failure path records too. Both rankers can burn their whole
+            // output budget and then truncate — billed in full, nothing
+            // returned — and that is exactly the spend Ayarlar → Kullanım exists
+            // to make visible. `usage` is empty for the guard failures that
+            // never reached a model, so this writes nothing when nothing was
+            // spent rather than inventing a zero-token line (§0.6).
+            record(error.usage, jobId: requestId)
             phase = .failed(message: error.localizedDescription, retryable: error.retryable)
         } catch {
             phase = .failed(message: error.localizedDescription, retryable: true)
         }
+    }
+
+    /// Writes the server's own priced ledger to `ModelRun`. The phone stores; it
+    /// never prices, because only the server knows which model actually ran.
+    private func record(_ runs: [ModelRunMetadata], jobId: String) {
+        guard !runs.isEmpty else { return }
+        for run in runs {
+            context.insert(ModelRun(
+                requestId: run.requestId,
+                // No page behind this call, so the request id doubles as the
+                // ledger's job id — the dedup key is (jobId, purpose, attempt)
+                // and each map gets a fresh uuid.
+                jobId: jobId,
+                attempt: run.attempt,
+                provider: run.provider,
+                model: run.model,
+                purpose: run.purpose,
+                promptVersion: run.promptVersion,
+                latencyMs: run.latencyMs,
+                inputTokens: run.inputTokens,
+                cachedInputTokens: run.cachedInputTokens,
+                outputTokens: run.outputTokens,
+                reasoningTokens: run.reasoningTokens,
+                estimatedCostUSD: run.estimatedCostUSD,
+                success: run.success,
+                billing: run.billing,
+                failureReason: run.failureReason
+            ))
+        }
+        try? context.save()
     }
 
     // MARK: - Labels
