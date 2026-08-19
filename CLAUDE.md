@@ -663,7 +663,7 @@ gösterir (2026-08-13 tartışması).
 18. **Karanlık Harita — deterministik yarı (ADR-009, 2026-08-19).** Bilgilerim →
     Bilgi Haritası → "Karanlık Harita" kartına dokun. Ekran **daha hiçbir şeye
     basmadan** üç sayı göstermeli (kapsanan / boş / toplam konu) ve altta "Hiç
-    kart olmayan konular" bölümü dolu olmalı. Bunlar cihazda hesaplanır: **uçak
+    kartı olmayan konular" bölümü dolu olmalı. Bunlar cihazda hesaplanır: **uçak
     modunda da çalışmalı.** Bilgi Haritası'ndaki **giriş kartının** söylediği
     sayı ("N konuda tek kartın yok") ile bu ekrandaki **"boş konu"** sayısı
     birebir aynı olmalı — tutmuyorsa iki yüzey aynı desteyi farklı sayıyor

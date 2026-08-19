@@ -146,7 +146,7 @@ struct KnowledgeMapView: View {
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Cizgi.muted)
                 }
-                Text("\(dark) konuda tek kartın yok.")
+                Text("\(dark) konuda tek aktif kartın yok.")
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(Cizgi.ink)
                 Text(

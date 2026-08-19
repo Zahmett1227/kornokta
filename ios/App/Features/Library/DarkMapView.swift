@@ -12,9 +12,12 @@ import SwiftUI
 /// The screen keeps the two halves of the answer visually apart, because they
 /// have different warranties:
 ///
-/// - **Boş konular** is arithmetic over the bundled schema. It needs no
-///   network, costs nothing, and is shown before anything is pressed. It cannot
-///   be wrong about *whether* a topic is empty.
+/// - **Aktif kartı olmayan konular** is arithmetic over the bundled schema. It
+///   needs no network, costs nothing, and is shown before anything is pressed.
+///   It cannot be wrong about *whether* a topic holds an active card. Every
+///   label on this half names that predicate rather than saying "no cards":
+///   a topic whose cards are all suspended belongs here, and it is not empty
+///   (Codex, PR #49).
 /// - **Öncelik sırası** is two model families' judgement about which of the thin
 ///   topics actually cost points on TUS. It costs money, needs a button, and can
 ///   be wrong — so each row carries who said it and whether the other family
@@ -103,9 +106,9 @@ struct DarkMapView: View {
 
         Section {
             HStack {
-                statTile(value: "\(covered)", label: "kapsanan konu")
+                statTile(value: "\(covered)", label: "aktif kartlı")
                 Divider()
-                statTile(value: "\(total - covered)", label: "boş konu")
+                statTile(value: "\(total - covered)", label: "aktif kartsız")
                 Divider()
                 statTile(value: "\(total)", label: "toplam konu")
             }
@@ -133,7 +136,16 @@ struct DarkMapView: View {
         } header: {
             Text("Kapsama")
         } footer: {
-            Text("Bu üç sayı cihazda hesaplanır; model çağrısı gerektirmez.")
+            // Names the predicate once, for all three tiles. Without it "boş"
+            // reads as "no cards at all", which is false for a topic whose
+            // cards are all suspended — and this screen deliberately treats
+            // those as not-studied while Bilgi Haritası still counts them as
+            // deck (Codex, PR #49).
+            Text(
+                "Bir konu, en az bir aktif kartı varsa kapsanmış sayılır; askıdaki ve taslak "
+                    + "kartlar çalışılmıyor sayılır. Bu üç sayı cihazda hesaplanır, model "
+                    + "çağrısı gerektirmez."
+            )
         }
     }
 
@@ -378,7 +390,7 @@ struct DarkMapView: View {
                     }
                 }
             } header: {
-                Text("Hiç kart olmayan konular")
+                Text("Aktif kartı olmayan konular")
             } footer: {
                 Text("Şablondaki konulardan destende tek aktif kartı bulunmayanlar. Sayım cihazda yapılır.")
             }
