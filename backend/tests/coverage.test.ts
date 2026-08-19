@@ -241,6 +241,33 @@ describe("sanitizeMarks", () => {
     expect(ids).toContain("m1~3");
   });
 
+  it("does not collide with a raw id that appears later in the register", () => {
+    // Codex, PR #47: the duplicate is renamed before the register's own
+    // `m1~2` has been read, so the synthetic id landed on top of a real one —
+    // two marks sharing one *resolvable* id, and a single card able to hide
+    // both. Every raw id is reserved up front now.
+    const output: Record<string, unknown> = {
+      marks: [
+        { id: "m1", kind: "symbol", quote: "bir" },
+        { id: "m1", kind: "symbol", quote: "iki" },
+        { id: "m1~2", kind: "symbol", quote: "üç" },
+      ],
+      cards: [card("c1", "m1~2")],
+    };
+    sanitizeMarks(output);
+
+    const ids = (output.marks as Mark[]).map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(3);
+    // The model's own `m1~2` keeps its id and stays resolvable; the renamed
+    // duplicate had to go somewhere else.
+    expect(ids).toEqual(["m1", "m1~3", "m1~2"]);
+    expect((output.cards as Array<{ markId?: unknown }>)[0]?.markId).toBe("m1~2");
+
+    const report = deriveCoverage(output as never);
+    // Exactly one mark is covered by that card — never both.
+    expect(report.uncovered.map((entry) => entry.quote)).toEqual(["bir", "iki"]);
+  });
+
   it("trims ids on both sides so whitespace cannot break the join", () => {
     const output: Record<string, unknown> = {
       marks: [{ id: " m1 ", kind: "underline", quote: " alıntı " }],

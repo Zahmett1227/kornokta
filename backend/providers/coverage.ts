@@ -107,16 +107,27 @@ export function sanitizeMarks(output: Record<string, unknown>): void {
   /** Ids a card may still point at. A reused id is deliberately absent. */
   let resolvable: Set<string> | null = null;
   if (Array.isArray(output.marks)) {
+    const cleaned = output.marks
+      .map((candidate) => cleanMark(candidate))
+      .filter((mark): mark is Mark => mark !== null);
+
     /** Ids exactly as the model wrote them, first occurrence only. */
     const asWritten = new Set<string>();
     /** Ids the model reused, so no card may be credited to either copy. */
     const ambiguous = new Set<string>();
-    /** Every id now in use, synthetic ones included — uniqueness only. */
-    const taken = new Set<string>();
+    /**
+     * Every id that must stay unique — **all** raw ids up front, plus each
+     * synthetic one as it is minted.
+     *
+     * Seeded from the whole register before any renaming, because a raw id can
+     * appear *after* the duplicate that would otherwise be renamed onto it:
+     * `m1, m1, m1~2` renamed the second `m1` to `m1~2` and then the model's own
+     * `m1~2` collided with it, leaving two marks sharing one resolvable id and
+     * one card able to hide both (Codex, PR #47).
+     */
+    const taken = new Set(cleaned.map((mark) => mark.id));
     const marks: Mark[] = [];
-    for (const candidate of output.marks) {
-      const mark = cleanMark(candidate);
-      if (!mark) continue;
+    for (const mark of cleaned) {
       if (asWritten.has(mark.id)) {
         // Kept, not dropped — it is a real mark on a real page. Re-keyed so the
         // register can hold both, and the original id is poisoned for
@@ -126,7 +137,6 @@ export function sanitizeMarks(output: Record<string, unknown>): void {
         continue;
       }
       asWritten.add(mark.id);
-      taken.add(mark.id);
       marks.push(mark);
     }
     output.marks = marks;
