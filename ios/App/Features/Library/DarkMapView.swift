@@ -57,7 +57,7 @@ struct DarkMapView: View {
 
                 switch phase {
                 case .idle:
-                    runSection(title: "Öncelik sırasını çıkar")
+                    runSection(title: "Öncelik sırasını çıkar", payload: payload)
                 case .loading:
                     loadingSection
                 case .failed(let message, let retryable):
@@ -148,7 +148,7 @@ struct DarkMapView: View {
     // MARK: - Model half
 
     @ViewBuilder
-    private func runSection(title: String) -> some View {
+    private func runSection(title: String, payload: DarkMapCoverage.Payload) -> some View {
         Section {
             Button(title) {
                 Task { await run() }
@@ -159,6 +159,21 @@ struct DarkMapView: View {
                 Text("Backend ayarlı değil (Ayarlar → Backend).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+            } else if payload.rows.isEmpty {
+                // Said before the button, not after it: the ranking still runs
+                // and is still useful, it just has nothing personal to lean on.
+                // The two causes are distinguished because only one of them is
+                // something the user can act on.
+                Label(
+                    payload.unclassifiedCards > 0
+                        ? "Sınıflandırılmış aktif kartın yok, o yüzden sıralama yalnız TUS "
+                            + "ağırlığına bakacak. Kartlara ders/konu atadıkça kişiselleşir."
+                        : "Deste boş görünüyor, o yüzden sıralama yalnız TUS ağırlığına bakacak — "
+                            + "yani \"nereden başlamalı\" sorusunun cevabı.",
+                    systemImage: "info.circle"
+                )
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             }
         } header: {
             Text("Öncelik sırası")
@@ -397,13 +412,19 @@ struct DarkMapView: View {
             return
         }
         let payload = DarkMapCoverage.build(cards: allCards.map(Self.coverageCard), schema: schema)
-        guard !payload.rows.isEmpty else {
-            phase = .failed(
-                message: "Sınıflandırılmış tek kart yok; önce kartlara ders/konu atanmalı.",
-                retryable: false
-            )
-            return
-        }
+
+        // No guard on an empty `rows`. It used to refuse here with "önce
+        // kartlara ders/konu atanmalı", which is a *cause* the phone cannot
+        // actually know: rows are also empty when every card is suspended, or
+        // when the deck is new — and in both cases the sentence is simply false
+        // (Codex, PR #49).
+        //
+        // Refusing was wrong on its own terms too. The server zero-fills all 143
+        // canonical topics from an empty `coverage`, so the ranking it returns
+        // is "what TUS leans on hardest, none of which you hold" — which is the
+        // single most useful thing this feature can tell someone starting out.
+        // The un-personalised case is explained in `runSection` instead, before
+        // the button rather than after it.
 
         phase = .loading
         let requestId = UUID().uuidString

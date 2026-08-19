@@ -98,6 +98,21 @@ export interface DarkMapFailure {
   error: string;
   retryable: boolean;
   /**
+   * The deterministic half, whenever it was computed.
+   *
+   * This module's own header promises that `untouched` is "produced before any
+   * model is called and returned even if both of them fail", and the failure
+   * path was quietly breaking that promise — the arithmetic had already run and
+   * was being thrown away with the error (Codex, PR #49). The phone does not
+   * miss it (it computes the same list locally from the bundled schema, which
+   * is why the screen works offline), but a contract that only holds on the
+   * success path is not the contract that was written down.
+   *
+   * Absent on the guard failures that return before any coverage is built.
+   */
+  untouched?: Array<{ subject: string; topic: string }>;
+  totals?: DarkMapSuccess["totals"];
+  /**
    * What the failed calls cost, when there were any.
    *
    * Present only on the both-families-failed path, and the reason it is present
@@ -131,6 +146,26 @@ export interface DarkMapDependencies {
   now?: () => Date;
 }
 
+/**
+ * The deterministic half, shaped once.
+ *
+ * Success and failure both emit it, so it is built here rather than inline —
+ * two copies of this projection would be two things to keep in step, and the
+ * failure copy is the one nobody looks at until it is wrong.
+ */
+function untouchedRows(built: CoverageBuild): Array<{ subject: string; topic: string }> {
+  return built.untouched.map(({ subject, topic }) => ({ subject, topic }));
+}
+
+function totalsOf(built: CoverageBuild): DarkMapSuccess["totals"] {
+  return {
+    canonicalTopics: built.coverage.length,
+    coveredTopics: built.coverage.length - built.untouched.length,
+    untouchedTopics: built.untouched.length,
+    totalCards: built.totalCards,
+  };
+}
+
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -142,10 +177,13 @@ function fail(
   message: string,
   status: number,
   retryable: boolean,
-  usage?: CallAccounting[],
+  extra: Omit<DarkMapFailure, "error" | "retryable"> = {},
 ): Response {
+  const usage = extra.usage?.length ? { usage: extra.usage } : {};
+  const deterministic =
+    extra.untouched && extra.totals ? { untouched: extra.untouched, totals: extra.totals } : {};
   return json(
-    { error: message, retryable, ...(usage?.length ? { usage } : {}) } satisfies DarkMapFailure,
+    { error: message, retryable, ...deterministic, ...usage } satisfies DarkMapFailure,
     status,
   );
 }
@@ -391,8 +429,10 @@ export async function handleDarkMapRequest(
       raters.map((rater) => `${rater.family}: ${rater.error ?? "bilinmeyen hata"}`).join(" · "),
       retryable ? 503 : 502,
       retryable,
-      // Carried out with the error on purpose — see `DarkMapFailure.usage`.
-      usage,
+      // Both carried out with the error on purpose — see `DarkMapFailure`. The
+      // ranking is what failed; the arithmetic beside it succeeded and is no
+      // less true for the model calls having died.
+      { usage, untouched: untouchedRows(built), totals: totalsOf(built) },
     );
   }
 
@@ -418,14 +458,9 @@ export async function handleDarkMapRequest(
     {
       requestId,
       promptVersion: DARK_MAP_PROMPT_VERSION,
-      untouched: built.untouched.map(({ subject, topic }) => ({ subject, topic })),
+      untouched: untouchedRows(built),
       zones,
-      totals: {
-        canonicalTopics: built.coverage.length,
-        coveredTopics: built.coverage.length - built.untouched.length,
-        untouchedTopics: built.untouched.length,
-        totalCards: built.totalCards,
-      },
+      totals: totalsOf(built),
       raters,
       singleRater: successful.length < 2,
       droppedUnknownFromClient: built.droppedUnknown,

@@ -496,3 +496,81 @@ describe("merged zone ceiling (Codex, PR #49)", () => {
     expect(body.zones[0]!.topicKey).toBe(DERMA);
   });
 });
+
+describe("deterministic half on the failure path (Codex, PR #49)", () => {
+  /**
+   * The module header promises `untouched` is "produced before any model is
+   * called and returned even if both of them fail". The failure path was
+   * throwing that already-computed arithmetic away with the error.
+   */
+  it("carries untouched and totals out with a both-failed error", async () => {
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE }),
+      deps([
+        stubRanker("openai", new OpenAIError("500", 500, true, undefined, "http_500")),
+        stubRanker("gemini", new GeminiError("503", 503, true)),
+      ]),
+    );
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as {
+      untouched?: Array<{ subject: string; topic: string }>;
+      totals?: Record<string, number>;
+    };
+    expect(body.totals).toMatchObject({
+      canonicalTopics: 143,
+      coveredTopics: 2,
+      untouchedTopics: 141,
+      totalCards: 9,
+    });
+    expect(body.untouched).toHaveLength(141);
+    // The pair, not the bare name — same trap the success path guards.
+    expect(body.untouched).toContainEqual({ subject: "Genel Cerrahi", topic: "Deri Hastalıkları" });
+  });
+
+  /** Success and failure must project the deterministic half identically. */
+  it("shapes it the same way the success path does", async () => {
+    const ok = (await (
+      await handleDarkMapRequest(
+        post({ requestId: "r1", coverage: COVERAGE }),
+        deps([stubRanker("openai", ranking([DERMA]))]),
+      )
+    ).json()) as DarkMapSuccess;
+    const failed = (await (
+      await handleDarkMapRequest(
+        post({ requestId: "r1", coverage: COVERAGE }),
+        deps([stubRanker("openai", new GeminiError("503", 503, true))]),
+      )
+    ).json()) as { untouched: unknown; totals: unknown };
+    expect(failed.totals).toEqual(ok.totals);
+    expect(failed.untouched).toEqual(ok.untouched);
+  });
+
+  /** A guard failure built no coverage, so there is nothing honest to report. */
+  it("omits it when the request never got as far as building coverage", async () => {
+    const response = await handleDarkMapRequest(
+      post({ coverage: COVERAGE }),
+      deps([stubRanker("openai", ranking([DERMA]))]),
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("untouched");
+    expect(body).not.toHaveProperty("totals");
+  });
+
+  /**
+   * An empty deck is a legitimate request, not an error: the server zero-fills
+   * all 143 canonical topics and ranks by TUS weight alone. The phone used to
+   * refuse to even ask (Codex, PR #49).
+   */
+  it("ranks a completely empty coverage list", async () => {
+    const ranker = stubRanker("openai", ranking([DERMA]));
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: [] }),
+      deps([ranker]),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as DarkMapSuccess;
+    expect(body.totals).toMatchObject({ coveredTopics: 0, untouchedTopics: 143, totalCards: 0 });
+    expect(ranker.seen[0]!.coverage).toHaveLength(143);
+  });
+});

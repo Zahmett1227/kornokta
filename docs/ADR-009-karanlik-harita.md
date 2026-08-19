@@ -150,7 +150,9 @@ gerekçenin ve kart sorusunun log'a düşmediğini ayrıca kilitliyor).
    82/360→0/239 gidiyor. Kural 1–4 bu biçimde yazıldı ve `darkMapPrompt.test.ts`
    biçimi blok blok kilitliyor. Yine de gerçek ölçüm cihazda.
 
-## Codex incelemesi (PR #49) — dört P2, dördü de düzeltildi
+## Codex incelemesi (PR #49) — üç tur, yedi P2, hepsi düzeltildi
+
+### Tur 1 — dört bulgu
 
 1. **Şema kanonik listeye değil, isteğin kendi tablosuna bağlanmalı.** `subjects`
    daraltıldığında enum yine 143 konu sunuyordu; model dışarıda bırakılmış bir
@@ -181,6 +183,36 @@ Yan ürün: filtreli istekte prompt modele "Kanonik şablonda N konu var" diyord
 N daraltılmış sayı olduğu için bu yanlıştı, ve kapalı-küme çerçevesi bütün
 prompt'un dayandığı şey olduğu için yanlış olması önemliydi. "Aşağıdaki tabloda
 N konu var" oldu.
+
+### Tur 2 — bir bulgu
+
+5. **Giriş kartı ile ekran aynı desteyi farklı sayıyordu.** Bilgi Haritası'ndaki
+   giriş kartı `coveredTopicCount`'u (tüm kartlar), açtığı ekran ise
+   `DarkMapCoverage`'ı (yalnız aktif kartlar) kullanıyordu; kartlarının hepsi
+   askıya alınmış bir konu birine göre kapsanmış, diğerine göre boştu — **sayı
+   dokununca değişiyordu.** Bu destede somut: `DuplicateSuspendMigration` 117
+   kartı askıya aldı. Tanımlardan biri yanlış değildi (tile *desteyi*, harita
+   *çalışılanı* anlatır); yanlış olan giriş kartının birini hesaplayıp
+   diğerinin ekranına götürmesiydi. Tek tanım `KnowledgeMapSummary.
+   activeCoveredTopicCount`'a çekildi ve `DarkMapCoverageAgreementTests` ile
+   kilitlendi.
+
+### Tur 3 — iki bulgu
+
+6. **Boş/tamamen askıda deste engelleniyordu, üstelik yanlış sebeple.** Ekran
+   "önce kartlara ders/konu atanmalı" diyerek çağrıyı reddediyordu; oysa satırlar
+   deste boşken ya da her kart askıdayken de boştur ve o cümle o hâllerde
+   **yanlıştır**. Reddetmek kendi içinde de hatalıydı: sunucu boş `coverage`'ı
+   143 konuya sıfır doldurup yalnız TUS ağırlığına göre sıralar, ki bu yeni
+   başlayan biri için bu özelliğin verebileceği en yararlı cevaptır. Engel
+   kaldırıldı; kişiselleşmemiş durum düğmeden **önce** açıklanıyor.
+7. **Hata yolu deterministik yarıyı düşürüyordu.** Bu modülün kendi başlığı
+   `untouched` için "model çağrısından önce üretilir ve iki çağrı da düşse bile
+   döner" diyor; hata yolu bu sözü sessizce çiğniyordu. Telefon bunu ıskalamaz
+   (aynı listeyi cihazda üretir — ekranın uçak modunda çalışmasının sebebi de
+   bu), ama yalnız başarı yolunda tutan bir sözleşme yazılan sözleşme değildir.
+   `untouched` + `totals` artık hata gövdesinde de var, ve iki yol aynı
+   projeksiyon fonksiyonlarını paylaşıyor.
 
 ## Değerlendirilen alternatifler
 
