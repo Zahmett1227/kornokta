@@ -118,9 +118,9 @@ farkına bakar.
 
 Sunucu bunlardan **iki listeyi deterministik olarak** çıkarır:
 
-1. **Kartsız işaret** — `marks` içinde olup hiçbir kartın `markIndex`'i
+1. **Kartsız işaret** — `marks` içinde olup hiçbir kartın `markId`'si
    göstermediği işaret. Aranan sinyal budur.
-2. **İşaretsiz kart** — `markIndex: null` ile gelen kart. Bu, prompt kural
+2. **İşaretsiz kart** — `markId: null` ile gelen kart. Bu, prompt kural
    1'in ("işaretsiz metinden kart üretme") ihlalidir ve bugün onu da gören
    hiçbir şey yok. Bedavaya gelen ikinci bir sinyal.
 
@@ -134,8 +134,8 @@ kartta yok.)
 - **Maliyet:** sayfa başına ~300–600 ek çıktı token'ı ≈ **$0.0005**. Çıktı
   tavanı canlıda 48000; sıkışma riski yok.
 - **Risk ve sınırlaması:** katı şemaya alan eklemek ana akışı etkiler. Üç
-  koruma: `marks` **boş dizi olabilir** (işaret yoksa iş düşmez); `markIndex`
-  **null olabilir**; tanınmayan/geçersiz `markIndex` sunucuda null'a çevrilir
+  koruma: `marks` **boş dizi olabilir** (işaret yoksa iş düşmez); `markId`
+  **null olabilir**; tanınmayan/geçersiz `markId` sunucuda null'a çevrilir
   ve **iş asla düşürülmez** — `sanitizeTopics`'in aynısı, aynı sebeple.
 - **Migration gerektirmez:** yalnız `jobs.result` içeriği büyür, yeni sütun
   yok. (CLAUDE.md'nin "sütun eklenirse dağıtımdan önce canlıya uygula"
