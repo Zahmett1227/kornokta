@@ -204,6 +204,27 @@ describe("sanitizeMarks", () => {
     expect(report.unmarkedCardIds).toEqual(["c1"]);
   });
 
+  it("never lets a card resolve to a synthetic id", () => {
+    // The re-keyed id is ours, not the model's: a card naming `m1~2` named
+    // nothing. Resolving it would attach that card to a mark the model never
+    // referenced and hide the mark from `uncovered` (Codex, PR #47) — the same
+    // silent narrowing the re-keying exists to prevent.
+    const output: Record<string, unknown> = {
+      marks: [
+        { id: "m1", kind: "symbol", quote: "ilk pasaj" },
+        { id: "m1", kind: "symbol", quote: "ikinci pasaj" },
+      ],
+      cards: [card("c1", "m1~2")],
+    };
+    sanitizeMarks(output);
+
+    expect((output.marks as Mark[]).map((entry) => entry.id)).toEqual(["m1", "m1~2"]);
+    expect((output.cards as Array<{ markId?: unknown }>)[0]?.markId).toBeNull();
+
+    const report = deriveCoverage(output as never);
+    expect(report.uncovered).toHaveLength(2);
+  });
+
   it("does not collide with an id the model itself emitted", () => {
     const output: Record<string, unknown> = {
       marks: [

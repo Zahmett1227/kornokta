@@ -107,25 +107,35 @@ export function sanitizeMarks(output: Record<string, unknown>): void {
   /** Ids a card may still point at. A reused id is deliberately absent. */
   let resolvable: Set<string> | null = null;
   if (Array.isArray(output.marks)) {
-    const claimed = new Set<string>();
+    /** Ids exactly as the model wrote them, first occurrence only. */
+    const asWritten = new Set<string>();
+    /** Ids the model reused, so no card may be credited to either copy. */
     const ambiguous = new Set<string>();
+    /** Every id now in use, synthetic ones included — uniqueness only. */
+    const taken = new Set<string>();
     const marks: Mark[] = [];
     for (const candidate of output.marks) {
       const mark = cleanMark(candidate);
       if (!mark) continue;
-      if (claimed.has(mark.id)) {
+      if (asWritten.has(mark.id)) {
         // Kept, not dropped — it is a real mark on a real page. Re-keyed so the
         // register can hold both, and the original id is poisoned for
         // referencing: neither copy may be credited to a card that named it.
         ambiguous.add(mark.id);
-        marks.push({ ...mark, id: uniqueId(mark.id, claimed) });
+        marks.push({ ...mark, id: uniqueId(mark.id, taken) });
         continue;
       }
-      claimed.add(mark.id);
+      asWritten.add(mark.id);
+      taken.add(mark.id);
       marks.push(mark);
     }
     output.marks = marks;
-    resolvable = new Set([...claimed].filter((id) => !ambiguous.has(id)));
+    // Built from what the model actually wrote, never from `taken`: a synthetic
+    // id is ours, not the model's, so a card naming it named nothing. Letting
+    // one resolve would attach that card to a mark the model never referenced
+    // and hide the mark from `uncovered` (Codex, PR #47) — the same silent
+    // narrowing the re-keying exists to prevent.
+    resolvable = new Set([...asWritten].filter((id) => !ambiguous.has(id)));
   }
 
   if (!Array.isArray(output.cards)) return;

@@ -95,10 +95,6 @@ public struct CoverageFinding: Identifiable, Equatable, Sendable {
         self.mark = mark
         self.occurrences = max(1, occurrences)
     }
-
-    func countingAnotherOccurrence() -> CoverageFinding {
-        CoverageFinding(mark: mark, occurrences: occurrences + 1)
-    }
 }
 
 /// What one page's coverage looks like right now.
@@ -178,7 +174,15 @@ public struct PageCoverage: Codable, Equatable, Sendable {
         // the same passage twice (Codex, PR #47). "Yoksay" is a decision about
         // the passage, so it has to be recognised however it is worded.
         let dismissedQuotes = dismissedMarkIds.map(PageCoverage.quote(inMarkId:))
-        var seen: [(quote: String, source: PageMark.Source, index: Int)] = []
+        // One entry per passage, carrying what *each* reader said about it.
+        // Per-reader counts rather than a single running total: the same reader
+        // listing a passage twice is two marks (the owner really did highlight
+        // that drug name in two places), while the other reader listing it is
+        // the same mark seen twice. A single counter cannot tell those apart —
+        // and a single remembered `source` got it wrong the other way round,
+        // since the generator's row always seeds the entry first and then
+        // swallowed both of the auditor's copies (Codex, PR #47).
+        var seen: [(quote: String, counts: [PageMark.Source: Int], index: Int)] = []
         var findings: [CoverageFinding] = []
 
         for mark in uncovered + (audit?.uncovered ?? []) {
@@ -188,24 +192,26 @@ public struct PageCoverage: Codable, Equatable, Sendable {
             // handwriting identically, and one of them quoting a few words more
             // does not make it a second mark. Equality here would show the
             // owner the same passage twice and cost two dismissals.
-            if let match = seen.first(where: { PageCoverage.overlaps($0.quote, folded) }) {
-                // The same reader listing the passage twice is two *marks* — the
-                // owner really did highlight that drug name in two places — while
-                // the other reader listing it is the same mark seen twice. The
-                // first is counted rather than dropped: silently swallowing a
-                // real mark is the loss this whole layer exists to end (Codex,
-                // PR #47). It is still one row, because both rows would carry the
-                // same words and the same tier, leaving nothing to act on
-                // differently — and because the identity a dismissal is stored
-                // under is that text, so a second row could not be dismissed
-                // separately anyway. What the count buys is that the second
-                // occurrence is *stated* instead of hidden.
-                if match.source == mark.source {
-                    findings[match.index] = findings[match.index].countingAnotherOccurrence()
-                }
+            if let matchIndex = seen.firstIndex(where: { PageCoverage.overlaps($0.quote, folded) }) {
+                seen[matchIndex].counts[mark.source, default: 0] += 1
+                let row = seen[matchIndex].index
+                // The higher of the two readers' counts, not their sum: if one
+                // says the passage is marked twice, that is the claim being
+                // reported — adding the other reader's sighting on top would
+                // tell the owner they marked it three times.
+                //
+                // Still one row, because both rows would carry the same words
+                // and the same tier, leaving nothing to act on differently, and
+                // because a dismissal is stored under that text — a second row
+                // could not be dismissed separately anyway. What the count buys
+                // is that the extra occurrence is *stated* instead of dropped.
+                findings[row] = CoverageFinding(
+                    mark: findings[row].mark,
+                    occurrences: seen[matchIndex].counts.values.max() ?? 1
+                )
                 continue
             }
-            seen.append((quote: folded, source: mark.source, index: findings.count))
+            seen.append((quote: folded, counts: [mark.source: 1], index: findings.count))
             findings.append(CoverageFinding(mark: mark, occurrences: 1))
         }
 

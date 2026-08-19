@@ -131,6 +131,49 @@ final class CoverageTests: XCTestCase {
         XCTAssertEqual(findings.map(\.occurrences), [2, 1])
     }
 
+    func testTheSecondReadersDuplicatesAreCountedToo() {
+        // Codex, PR #47: the generator's row always seeds the entry first, so a
+        // single remembered source swallowed both of the auditor's copies and
+        // the row still said "one place" while a reader had found two. Counts
+        // are kept per reader now, and the row reports the higher claim.
+        let coverage = PageCoverage(
+            reported: true,
+            uncovered: [mark("Adenozin infüzyonu", .highlight)],
+            audit: PageCoverage.Audit(
+                performedAt: Date(),
+                uncovered: [
+                    mark("Adenozin infüzyonu", .highlight, source: .auditor),
+                    mark("Adenozin infüzyonu", .highlight, source: .auditor),
+                ],
+                markCount: 2,
+                discarded: 0
+            )
+        )
+        let findings = coverage.openFindings
+        XCTAssertEqual(findings.count, 1)
+        XCTAssertEqual(findings[0].occurrences, 2)
+        // Still the generator's wording: it is the reading the cards were built
+        // from, and only the *count* came from the other reader.
+        XCTAssertEqual(findings[0].mark.source, .generator)
+    }
+
+    func testCountsAreTheHigherClaimNotTheSum() {
+        // Each reader is describing the same page. Adding their sightings would
+        // tell the owner they marked one passage three times when neither
+        // reader said anything of the sort.
+        let coverage = PageCoverage(
+            reported: true,
+            uncovered: [mark("iki yerde", .underline), mark("iki yerde", .underline)],
+            audit: PageCoverage.Audit(
+                performedAt: Date(),
+                uncovered: [mark("iki yerde", .underline, source: .auditor)],
+                markCount: 1,
+                discarded: 0
+            )
+        )
+        XCTAssertEqual(coverage.openFindings.map(\.occurrences), [2])
+    }
+
     func testTheOtherReaderSeeingItAgainIsNotASecondOccurrence() {
         // Across readers the same passage is one mark seen twice, not two
         // marks — that is reconciliation, and counting it would tell the owner
