@@ -98,15 +98,23 @@ public enum CoverageAuditError: Error, LocalizedError, Equatable {
 
     /// How the phone's ledger should record this failed call.
     ///
-    /// Only the server can answer it, so anything it did not classify is
-    /// `unmeasured`: a call that got far enough to fail on our side of the
-    /// wire may well have been generated and billed, and overstating a failure
-    /// is the safe direction — the same choice the cached-token price makes in
-    /// `config.ts`.
+    /// The server states it on every failure it produces, so an *absent*
+    /// verdict means the answer did not come from this contract at all — a
+    /// refusal from the composition root (a missing `GEMINI_API_KEY`), or a
+    /// deployment that has no `/api/coverage`. In every one of those cases no
+    /// audit ran and nothing was billed, so `none` is the truthful reading;
+    /// the first draft's `unmeasured` filed configuration errors as spend
+    /// (Codex, PR #47), which is a phantom line in the very screen this flag
+    /// exists to keep honest.
+    ///
+    /// `transport` and `invalidResponse` stay `unmeasured` on purpose: those
+    /// happen *after* the request left, so the model may well have generated
+    /// and been billed without us ever learning how much — and there,
+    /// overstating is the safe direction.
     public var billing: String {
         switch self {
         case .notConfigured: return ModelRunBilling.none
-        case .server(_, _, let billing): return billing ?? ModelRunBilling.unmeasured
+        case .server(_, _, let billing): return billing ?? ModelRunBilling.none
         case .transport, .invalidResponse: return ModelRunBilling.unmeasured
         }
     }

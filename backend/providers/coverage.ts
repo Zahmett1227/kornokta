@@ -81,12 +81,20 @@ function cleanMark(value: unknown): Mark | null {
  * place, before validation — exactly where `sanitizeTopics` sits and for the
  * same reason.
  *
- * Drops malformed or duplicate-id marks and nulls any `markId` that does not
- * point at a surviving mark. A dangling reference is the one thing that would
- * make the whole layer lie: the card looks bound, so its mark is counted as
- * covered, so a skipped mark is reported as handled. Silent narrowing of the
- * signal is worse than the missing field, so it is resolved to `null` — which
- * shows up honestly as an unmarked card.
+ * Drops malformed marks and nulls any `markId` that cannot be resolved. A
+ * dangling reference is the one thing that would make the whole layer lie: the
+ * card looks bound, so its mark is counted as covered, so a skipped mark is
+ * reported as handled. Silent narrowing of the signal is worse than the missing
+ * field, so it resolves to `null` — which shows up honestly as an unmarked card.
+ *
+ * A **duplicate id** is a slip the schema cannot forbid, and the first version
+ * handled it by keeping the first mark and dropping the rest (Codex, PR #47).
+ * That deleted a mark that is physically on the page — the exact loss this
+ * layer exists to end — and worse, a card pointing at the reused id then
+ * credited whichever passage happened to come first. Both marks are kept now,
+ * the later ones re-keyed, and every reference to the ambiguous id is resolved
+ * to `null`: we genuinely cannot tell which passage the card came from, and
+ * saying so is the only answer that does not invent one.
  */
 export function sanitizeMarks(output: Record<string, unknown>): void {
   const rawMarks = output.marks;
@@ -96,18 +104,28 @@ export function sanitizeMarks(output: Record<string, unknown>): void {
     delete output.marks;
   }
 
-  let ids: Set<string> | null = null;
+  /** Ids a card may still point at. A reused id is deliberately absent. */
+  let resolvable: Set<string> | null = null;
   if (Array.isArray(output.marks)) {
-    const seen = new Set<string>();
+    const claimed = new Set<string>();
+    const ambiguous = new Set<string>();
     const marks: Mark[] = [];
     for (const candidate of output.marks) {
       const mark = cleanMark(candidate);
-      if (!mark || seen.has(mark.id)) continue;
-      seen.add(mark.id);
+      if (!mark) continue;
+      if (claimed.has(mark.id)) {
+        // Kept, not dropped — it is a real mark on a real page. Re-keyed so the
+        // register can hold both, and the original id is poisoned for
+        // referencing: neither copy may be credited to a card that named it.
+        ambiguous.add(mark.id);
+        marks.push({ ...mark, id: uniqueId(mark.id, claimed) });
+        continue;
+      }
+      claimed.add(mark.id);
       marks.push(mark);
     }
     output.marks = marks;
-    ids = seen;
+    resolvable = new Set([...claimed].filter((id) => !ambiguous.has(id)));
   }
 
   if (!Array.isArray(output.cards)) return;
@@ -115,12 +133,27 @@ export function sanitizeMarks(output: Record<string, unknown>): void {
     if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) continue;
     const card = candidate as { markId?: unknown };
     if (card.markId === undefined || card.markId === null) continue;
-    if (typeof card.markId !== "string" || !ids || !ids.has(card.markId.trim())) {
+    if (typeof card.markId !== "string" || !resolvable || !resolvable.has(card.markId.trim())) {
       card.markId = null;
       continue;
     }
     card.markId = card.markId.trim();
   }
+}
+
+/**
+ * A free id derived from a reused one (`m1` → `m1~2`), never colliding with an
+ * id already taken — including a `m1~2` the model itself happened to emit.
+ */
+function uniqueId(base: string, taken: Set<string>): string {
+  let suffix = 2;
+  let candidate = `${base}~${suffix}`;
+  while (taken.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}~${suffix}`;
+  }
+  taken.add(candidate);
+  return candidate;
 }
 
 export interface CoverageOptions {

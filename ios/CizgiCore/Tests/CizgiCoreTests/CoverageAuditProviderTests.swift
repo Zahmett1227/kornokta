@@ -71,18 +71,30 @@ final class CoverageAuditProviderTests: XCTestCase {
         XCTAssertFalse(billedButPermanent.retryable)
     }
 
-    func testUnclassifiedFailuresAreCountedAsPossiblyBilled() {
-        // An older server sends no verdict, and a failure on our side of the
-        // wire has none to send: a call that got that far may well have been
-        // generated and billed, so overstating is the safe direction.
+    func testAServerAnswerWithNoVerdictIsFree() {
+        // The server states the verdict on every failure it produces, so an
+        // absent one means the answer never came from an audit: a refusal from
+        // the composition root (missing GEMINI_API_KEY) or a deployment with no
+        // `/api/coverage` at all. Reading that as "possibly billed" put
+        // configuration errors in the cost screen as spend (Codex, PR #47).
         XCTAssertEqual(
-            CoverageAuditError.server("eski sunucu", retryable: true, billing: nil).billing,
-            ModelRunBilling.unmeasured
+            CoverageAuditError.server("Eksik ortam değişkeni: GEMINI_API_KEY.", retryable: false, billing: nil).billing,
+            ModelRunBilling.none
         )
-        XCTAssertEqual(CoverageAuditError.transport("ağ yok").billing, ModelRunBilling.unmeasured)
-        XCTAssertEqual(CoverageAuditError.invalidResponse("bozuk").billing, ModelRunBilling.unmeasured)
         // Nothing was ever sent, so nothing can have been billed.
         XCTAssertEqual(CoverageAuditError.notConfigured.billing, ModelRunBilling.none)
+    }
+
+    func testFailuresAfterTheRequestLeftStayPossiblyBilled() {
+        // These happen after the bytes were sent: the model may have generated
+        // and been billed without us ever learning the amount, and there
+        // overstating is the safe direction.
+        XCTAssertEqual(CoverageAuditError.transport("ağ koptu").billing, ModelRunBilling.unmeasured)
+        XCTAssertEqual(CoverageAuditError.invalidResponse("bozuk gövde").billing, ModelRunBilling.unmeasured)
+        XCTAssertEqual(
+            CoverageAuditError.server("üretim temiz bitmedi", retryable: false, billing: "unmeasured").billing,
+            ModelRunBilling.unmeasured
+        )
     }
 
     func testGarbageIsReportedAsAnInvalidResponse() {

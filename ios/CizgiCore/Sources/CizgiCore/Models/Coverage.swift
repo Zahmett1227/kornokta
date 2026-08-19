@@ -185,6 +185,12 @@ public struct PageCoverage: Codable, Equatable, Sendable {
     public var hasOpenFindings: Bool { !openFindings.isEmpty }
 
     /// Marks one finding as handled. Idempotent, so a double tap is harmless.
+    ///
+    /// Both ways of finishing with a mark land here: "Yoksay" (no card needed)
+    /// and writing the card it was asking for. One list rather than two,
+    /// because the list answers one question — does this mark still need a
+    /// card? — and a second store for "resolved" would be a second place for
+    /// that answer to fall out of step.
     public mutating func dismiss(_ mark: PageMark) {
         guard !dismissedMarkIds.contains(mark.id) else { return }
         dismissedMarkIds.append(mark.id)

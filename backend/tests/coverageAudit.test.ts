@@ -387,11 +387,18 @@ describe("POST /api/coverage", () => {
     expect(generatedBody.billing).toBe("unmeasured");
   });
 
-  it("omits billing from a refusal that never reached a provider", async () => {
-    // A malformed body costs nothing and has nothing to account for; sending
-    // `none` there would put a free ledger line where there was no call.
-    const response = await handleCoverageRequest(post({ ...VALID_BODY, cards: undefined }), deps());
-    const body = (await response.json()) as { billing?: string };
-    expect(body.billing).toBeUndefined();
+  it("calls a pre-provider refusal free rather than leaving the phone to guess", async () => {
+    // Every refusal in this file happens before Gemini is called. Omitting the
+    // field made the phone guess, and guessing "possibly billed" filed
+    // configuration errors as spend (Codex, PR #47).
+    for (const body of [
+      { ...VALID_BODY, cards: undefined },
+      { ...VALID_BODY, mimeType: "application/pdf" },
+      { ...VALID_BODY, requestId: "" },
+    ]) {
+      const response = await handleCoverageRequest(post(body), deps());
+      const parsed = (await response.json()) as { billing?: string };
+      expect(parsed.billing).toBe("none");
+    }
   });
 });

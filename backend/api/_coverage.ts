@@ -58,19 +58,18 @@ export interface CoverageFailure {
   /**
    * How this failure should be counted in the phone's ledger: `unmeasured` if
    * the request reached the model and may have been billed without saying how
-   * much, `none` if it was rejected before generating anything. Absent on the
-   * failures that never involved a provider at all (a bad body, a missing
-   * token) — nothing to account for there.
+   * much, `none` if nothing was ever generated — including every refusal this
+   * endpoint makes before calling a provider at all.
    *
-   * Sent rather than left to the phone to infer, because the only two signals
-   * the phone has are the HTTP status *we* chose and `retryable`, and neither
-   * carries this: a 429 is retryable and free, while a safety stop is
+   * Always sent, and sent rather than left to the phone to infer: the only two
+   * signals the phone has are the HTTP status *we* chose and `retryable`, and
+   * neither carries this. A 429 is retryable and free; a safety stop is
    * permanent and billed. Deriving billing from `retryable` got both of those
-   * backwards (Codex, PR #47) — and a wrong flag here is worse than none,
-   * since "ücretsiz" and "ölçülemedi" are exactly what the ledger exists to
-   * tell apart.
+   * backwards, and treating an absent field as "possibly billed" filed
+   * configuration errors as spend (Codex, PR #47) — "ücretsiz" and "ölçülemedi"
+   * are exactly what this flag exists to tell apart.
    */
-  billing?: string;
+  billing: string;
 }
 
 /** Structural, so a test can drive the endpoint without a key or a network. */
@@ -92,8 +91,24 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-function fail(message: string, status: number, retryable: boolean, billing?: string): Response {
-  return json({ error: message, retryable, ...(billing ? { billing } : {}) } satisfies CoverageFailure, status);
+/**
+ * `billing` defaults to `none` because every refusal in this file happens
+ * *before* a provider call — a bad body, a missing token, an unsupported mime
+ * type. Only the catch below overrides it, and only it can: it is the one place
+ * that knows whether Gemini rejected the request or died after generating.
+ *
+ * Sending `none` rather than omitting it is the fix to the second half of the
+ * same finding (Codex, PR #47): with the field absent the phone had to guess,
+ * and guessing "possibly billed" filed a configuration error under "ölçülemedi"
+ * — a phantom line in the cost screen for a call that never happened.
+ */
+function fail(
+  message: string,
+  status: number,
+  retryable: boolean,
+  billing: string = "none",
+): Response {
+  return json({ error: message, retryable, billing } satisfies CoverageFailure, status);
 }
 
 /**

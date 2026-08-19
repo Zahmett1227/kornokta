@@ -28,6 +28,15 @@ struct ManualCardSheet: View {
     /// only the owner can make, and pre-writing a question would put words in
     /// their mouth on the one screen built to avoid exactly that.
     var prefill: String? = nil
+    /// Called once the card is really in the store, before the sheet closes.
+    ///
+    /// The coverage list needs it: a finding the owner has just written a card
+    /// for is finished, and without this it stayed on the page as "kartlaşmamış"
+    /// for ever — the main path through that section left its own row behind
+    /// and demanded a separate "Yoksay" swipe (Codex, PR #47). Deliberately
+    /// fired after `context.save()`, not on tap: a card that failed to persist
+    /// has not resolved anything.
+    var onSaved: (() -> Void)? = nil
 
     @State private var draft = ManualCardDraft()
     @State private var isLoaded = false
@@ -288,6 +297,7 @@ struct ManualCardSheet: View {
         card.knowledgeUnit = unit
         context.insert(card)
         try? context.save()
+        onSaved?()
         dismiss()
     }
 

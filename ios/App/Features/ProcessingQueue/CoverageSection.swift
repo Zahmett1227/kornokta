@@ -101,8 +101,11 @@ struct CoverageSection: View {
                 .font(.footnote)
                 .foregroundStyle(Cizgi.muted)
         } else if !coverage.dismissedMarkIds.isEmpty {
+            // "Kapatıldı", not "yoksayıldı": the same list holds both ways of
+            // finishing with a mark — writing its card and deciding it does not
+            // need one — and the copy has to be true of both.
             Label(
-                "Açık işaret yok (\(coverage.dismissedMarkIds.count) işaret yoksayıldı).",
+                "Açık işaret yok (\(coverage.dismissedMarkIds.count) işaret kapatıldı).",
                 systemImage: "checkmark.circle"
             )
             .font(.footnote)

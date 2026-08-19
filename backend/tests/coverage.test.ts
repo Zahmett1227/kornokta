@@ -148,11 +148,10 @@ describe("sanitizeMarks", () => {
     expect(report.unmarkedCardIds).toEqual(["c1"]);
   });
 
-  it("drops malformed and duplicate marks instead of failing the page", () => {
+  it("drops malformed marks instead of failing the page", () => {
     const output: Record<string, unknown> = {
       marks: [
         mark("m1", "handwriting"),
-        { id: "m1", kind: "symbol", quote: "kopya kimlik" },
         { id: "m2", kind: "scribble", quote: "bilinmeyen kademe" },
         { id: "  ", kind: "symbol", quote: "boş kimlik" },
         { id: "m3", kind: "symbol", quote: "   " },
@@ -166,6 +165,59 @@ describe("sanitizeMarks", () => {
     // `m2` was dropped, so the card that pointed at it is now honestly unbound
     // rather than silently covering a mark that no longer exists.
     expect((output.cards as Array<{ markId?: unknown }>)[0]?.markId).toBeNull();
+  });
+
+  it("keeps both marks when the model reuses an id, and credits neither", () => {
+    // Codex, PR #47. Dropping the second one deleted a mark that is physically
+    // on the page — the loss this whole layer exists to end — and the card
+    // naming the reused id then credited whichever passage came first.
+    const output: Record<string, unknown> = {
+      marks: [
+        { id: "m1", kind: "handwriting", quote: "ilk pasaj" },
+        { id: "m1", kind: "symbol", quote: "bambaşka bir pasaj" },
+        { id: "m2", kind: "underline", quote: "tekil kimlik" },
+      ],
+      cards: [card("c1", "m1"), card("c2", "m2")],
+    };
+    sanitizeMarks(output);
+
+    const marks = output.marks as Mark[];
+    expect(marks.map((entry) => entry.quote)).toEqual([
+      "ilk pasaj",
+      "bambaşka bir pasaj",
+      "tekil kimlik",
+    ]);
+    // Re-keyed rather than dropped, and the ids stay unique so the register can
+    // still be joined against.
+    expect(new Set(marks.map((entry) => entry.id)).size).toBe(3);
+
+    const cards = output.cards as Array<{ markId?: unknown }>;
+    // The ambiguous reference resolves to nothing: which of the two passages
+    // the card came from is genuinely unknown, and picking one would invent it.
+    expect(cards[0]?.markId).toBeNull();
+    // An unambiguous reference is untouched.
+    expect(cards[1]?.markId).toBe("m2");
+
+    const report = deriveCoverage(output as never);
+    // Both physical marks stay visible; only the truly covered one drops out.
+    expect(report.uncovered.map((entry) => entry.quote)).toEqual(["ilk pasaj", "bambaşka bir pasaj"]);
+    expect(report.unmarkedCardIds).toEqual(["c1"]);
+  });
+
+  it("does not collide with an id the model itself emitted", () => {
+    const output: Record<string, unknown> = {
+      marks: [
+        { id: "m1", kind: "symbol", quote: "bir" },
+        { id: "m1~2", kind: "symbol", quote: "iki" },
+        { id: "m1", kind: "symbol", quote: "üç" },
+      ],
+      cards: [],
+    };
+    sanitizeMarks(output);
+
+    const ids = (output.marks as Mark[]).map((entry) => entry.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).toContain("m1~3");
   });
 
   it("trims ids on both sides so whitespace cannot break the join", () => {
