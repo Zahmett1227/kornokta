@@ -124,6 +124,19 @@ public enum DarkMapCoverage {
     /// costs a slightly larger request, never a wrong answer.
     public static let defaultSampleFronts = 4
 
+    /// Hard ceiling on one sampled question, in characters.
+    ///
+    /// Mirrors the server's `MAX_SAMPLE_FRONT_LENGTH`, and exists here for the
+    /// same reason the count ceiling does: not to be the guarantee — the server
+    /// re-applies its own, and is authoritative — but so the phone does not put
+    /// megabytes on the wire in the first place. The two caps may drift without
+    /// harm; the server's is always the binding one.
+    ///
+    /// It matters most *here* because `samples` deliberately takes the longest
+    /// questions, which is exactly the set a length cap would otherwise let
+    /// through unbounded (Codex, PR #49).
+    public static let maxSampleFrontLength = 240
+
     /// Groups the deck into canonical rows.
     ///
     /// Sample fronts are taken from the **longest** questions rather than the
@@ -209,7 +222,13 @@ public enum DarkMapCoverage {
         }
 
         if trimmed.count > limit { trimmed.removeLast(trimmed.count - limit) }
-        return trimmed
+        return trimmed.map(clamped)
+    }
+
+    /// Truncation is marked, so the model reads a cut sentence as cut.
+    private static func clamped(_ front: String) -> String {
+        guard front.count > maxSampleFrontLength else { return front }
+        return front.prefix(maxSampleFrontLength).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     /// Separator matches the backend's `TOPIC_KEY_SEPARATOR`. Local to this

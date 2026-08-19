@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CANONICAL_TOPIC_KEYS,
+  MAX_SAMPLE_FRONT_LENGTH,
   TOPIC_KEY_SEPARATOR,
   buildCoverage,
   isCanonicalTopicKey,
@@ -180,5 +181,49 @@ describe("renderCoverageTable", () => {
     expect(table).toContain("## Farmakoloji");
     expect(table).toContain("Farmakoloji|Genel Farmakoloji — 5 kart (2 şüpheli)");
     expect(table).toContain('örnek: "Yarılanma ömrü nedir?"');
+  });
+});
+
+describe("sample front length ceiling (Codex, PR #49)", () => {
+  /**
+   * The count ceiling alone was not enough: four fronts × 143 topics reach both
+   * paid prompts, and the phone deliberately samples the *longest* questions —
+   * so the two choices multiply. A handful of very long cards could push the
+   * request past a provider's limit and fail the map for the whole deck.
+   */
+  it("truncates an over-long front and marks the cut", () => {
+    const long = "a".repeat(MAX_SAMPLE_FRONT_LENGTH + 500);
+    const built = buildCoverage([
+      { subject: "Farmakoloji", topic: "Genel Farmakoloji", cardCount: 1, sampleFronts: [long] },
+    ]);
+    const front = built.coverage.find((row) => row.cardCount > 0)!.sampleFronts[0]!;
+    expect(front).toHaveLength(MAX_SAMPLE_FRONT_LENGTH + 1);
+    expect(front.endsWith("…")).toBe(true);
+  });
+
+  it("leaves a front at the limit untouched", () => {
+    const exact = "b".repeat(MAX_SAMPLE_FRONT_LENGTH);
+    const built = buildCoverage([
+      { subject: "Farmakoloji", topic: "Genel Farmakoloji", cardCount: 1, sampleFronts: [exact] },
+    ]);
+    expect(built.coverage.find((row) => row.cardCount > 0)!.sampleFronts[0]).toBe(exact);
+  });
+
+  /** The whole point: the prompt table cannot grow without bound. */
+  it("bounds the rendered table even when every front is huge", () => {
+    const long = "c".repeat(10_000);
+    const built = buildCoverage(
+      [
+        {
+          subject: "Farmakoloji",
+          topic: "Genel Farmakoloji",
+          cardCount: 4,
+          sampleFronts: [long, long, long, long],
+        },
+      ],
+      { subjects: ["Farmakoloji"] },
+    );
+    const table = renderCoverageTable(built.coverage);
+    expect(table.length).toBeLessThan(4 * (MAX_SAMPLE_FRONT_LENGTH + 16) + 600);
   });
 });

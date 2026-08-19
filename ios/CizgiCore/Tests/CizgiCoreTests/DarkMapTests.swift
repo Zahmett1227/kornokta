@@ -526,3 +526,44 @@ final class DarkMapEmptinessTests: XCTestCase {
         XCTAssertEqual(DarkMapCoverage.emptiness(of: payload), .unclassifiedOnly)
     }
 }
+
+/// The sampler takes the *longest* fronts, so an unbounded one is the case it
+/// most reliably finds (Codex, PR #49).
+final class DarkMapSampleLengthTests: XCTestCase {
+
+    func testTruncatesAnOverLongFrontAndMarksTheCut() {
+        let long = String(repeating: "a", count: DarkMapCoverage.maxSampleFrontLength + 500)
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon", front: long)],
+            schema: schema
+        )
+        let front = payload.rows[0].sampleFronts[0]
+        XCTAssertEqual(front.count, DarkMapCoverage.maxSampleFrontLength + 1)
+        XCTAssertTrue(front.hasSuffix("…"))
+    }
+
+    func testLeavesAFrontAtTheLimitUntouched() {
+        let exact = String(repeating: "b", count: DarkMapCoverage.maxSampleFrontLength)
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon", front: exact)],
+            schema: schema
+        )
+        XCTAssertEqual(payload.rows[0].sampleFronts[0], exact)
+    }
+
+    /// Truncation must not disturb the "longest first" ordering the sampler
+    /// exists for — the cut happens after the choice, not before it.
+    func testStillPrefersTheLongestFrontsBeforeTruncating() {
+        let huge = String(repeating: "x", count: 5_000)
+        let payload = DarkMapCoverage.build(
+            cards: [
+                card(subject: "Patoloji", topic: "Inflamasyon", front: "kısa"),
+                card(subject: "Patoloji", topic: "Inflamasyon", front: huge),
+            ],
+            schema: schema,
+            maxSampleFronts: 1
+        )
+        XCTAssertEqual(payload.rows[0].sampleFronts.count, 1)
+        XCTAssertTrue(payload.rows[0].sampleFronts[0].hasPrefix("xxx"))
+    }
+}

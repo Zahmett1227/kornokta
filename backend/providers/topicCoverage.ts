@@ -138,6 +138,31 @@ export interface BuildCoverageOptions {
 export const DEFAULT_MAX_SAMPLE_FRONTS = 4;
 
 /**
+ * Hard ceiling on one sampled question, in characters.
+ *
+ * The count ceiling alone was not enough. Four fronts × 143 topics reach both
+ * paid prompts, and the phone deliberately samples the *longest* questions
+ * (`DarkMapCoverage.samples` — the short ones are bare definitions and hide the
+ * very shallowness rule 4 asks the model to notice). Those two choices
+ * multiply: a handful of unusually long cards could push the request past a
+ * provider's limit and fail the map for the whole deck, or quietly inflate the
+ * cost of every run (Codex, PR #49).
+ *
+ * Generous for a question and small enough that 572 of them cannot matter. The
+ * phone applies the same cap before sending, but this one is the guarantee: a
+ * client is never trusted to bound what reaches a paid prompt (§21.3's rule
+ * applied to length instead of count).
+ */
+export const MAX_SAMPLE_FRONT_LENGTH = 240;
+
+/** Truncation is marked, so the model reads a cut sentence as cut. */
+function clampFront(front: string): string {
+  return front.length <= MAX_SAMPLE_FRONT_LENGTH
+    ? front
+    : `${front.slice(0, MAX_SAMPLE_FRONT_LENGTH).trimEnd()}…`;
+}
+
+/**
  * Folds the phone's counts onto the canonical list.
  *
  * Deliberately never throws and never rejects a whole request over one bad
@@ -195,7 +220,7 @@ export function buildCoverage(
         const additions = input.sampleFronts
           .filter((front): front is string => typeof front === "string" && front.trim().length > 0)
           .slice(0, room)
-          .map((front) => front.trim());
+          .map((front) => clampFront(front.trim()));
         row.sampleFronts = [...row.sampleFronts, ...additions];
       }
     }

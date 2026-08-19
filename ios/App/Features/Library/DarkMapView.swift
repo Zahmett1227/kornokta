@@ -96,13 +96,27 @@ struct DarkMapView: View {
         )
     }
 
+    /// The loaded result, when there is one — the server's own view of the same
+    /// question.
+    private var loaded: DarkMapResult? {
+        if case .loaded(let result) = phase { return result }
+        return nil
+    }
+
     @ViewBuilder
     private func localSummarySection(
         schema: SubjectTopicSchema,
         payload: DarkMapCoverage.Payload
     ) -> some View {
-        let total = schema.subjects.reduce(0) { $0 + $1.topics.count }
-        let covered = payload.coveredTopicCount
+        // One source per state, never a mix. Before a run the numbers come from
+        // the bundled schema, which is what makes this half work offline; after
+        // one they come from the server, which is authoritative about the
+        // canonical set the ranking was actually computed over. A deployed
+        // backend can be ahead of an installed app, and a stale client was
+        // hiding a newly added topic's gap even after a successful request
+        // (Codex, PR #49) — `result.untouched` was decoded and then never read.
+        let total = loaded?.totals.canonicalTopics ?? schema.subjects.reduce(0) { $0 + $1.topics.count }
+        let covered = loaded?.totals.coveredTopics ?? payload.coveredTopicCount
 
         Section {
             HStack {
@@ -142,9 +156,13 @@ struct DarkMapView: View {
             // those as not-studied while Bilgi Haritası still counts them as
             // deck (Codex, PR #49).
             Text(
-                "Bir konu, en az bir aktif kartı varsa kapsanmış sayılır; askıdaki ve taslak "
-                    + "kartlar çalışılmıyor sayılır. Bu üç sayı cihazda hesaplanır, model "
-                    + "çağrısı gerektirmez."
+                loaded == nil
+                    ? "Bir konu, en az bir aktif kartı varsa kapsanmış sayılır; askıdaki ve "
+                        + "taslak kartlar çalışılmıyor sayılır. Bu üç sayı cihazda hesaplanır, "
+                        + "model çağrısı gerektirmez."
+                    : "Bir konu, en az bir aktif kartı varsa kapsanmış sayılır; askıdaki ve "
+                        + "taslak kartlar çalışılmıyor sayılır. Bu üç sayı sunucunun yanıtından "
+                        + "geliyor."
             )
         }
     }
@@ -405,7 +423,13 @@ struct DarkMapView: View {
             } header: {
                 Text("Aktif kartı olmayan konular")
             } footer: {
-                Text("Şablondaki konulardan destende tek aktif kartı bulunmayanlar. Sayım cihazda yapılır.")
+                Text(
+                    loaded == nil
+                        ? "Şablondaki konulardan destende tek aktif kartı bulunmayanlar. Sayım "
+                            + "cihazda yapılır."
+                        : "Şablondaki konulardan destende tek aktif kartı bulunmayanlar. Liste "
+                            + "sunucunun yanıtından geliyor."
+                )
             }
         }
     }
@@ -418,6 +442,19 @@ struct DarkMapView: View {
         schema: SubjectTopicSchema,
         payload: DarkMapCoverage.Payload
     ) -> [UntouchedGroup] {
+        // Same rule as the tiles: the server's list once it has answered, the
+        // bundled schema before that. Grouping order follows the server's own
+        // ordering, which is schema order on its side.
+        if let untouched = loaded?.untouched {
+            var order: [String] = []
+            var bySubject: [String: [String]] = [:]
+            for row in untouched {
+                if bySubject[row.subject] == nil { order.append(row.subject) }
+                bySubject[row.subject, default: []].append(row.topic)
+            }
+            return order.map { UntouchedGroup(subject: $0, topics: bySubject[$0] ?? []) }
+        }
+
         let covered = Set(payload.rows.map { "\($0.subject)\u{1F}\($0.topic)" })
         return schema.subjects.compactMap { subject in
             let topics = subject.topics.filter { !covered.contains("\(subject.name)\u{1F}\($0)") }
