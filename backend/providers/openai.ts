@@ -21,6 +21,7 @@
 
 import { CARD_GENERATION_SYSTEM_PROMPT, multipleChoiceInstruction, topicInstruction } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA, validateLlmOutput } from "../schemas/validateLlmOutput.js";
+import { sanitizeMarks } from "./coverage.js";
 import { sanitizeTopics, topicsFor } from "./subjectTopics.js";
 import {
   EMPTY_TOKEN_USAGE,
@@ -179,6 +180,24 @@ function isTransientStatus(status: number): boolean {
 }
 
 /**
+ * Hard ceiling on the mark register (schema v2.3), deliberately **not** derived
+ * from the card cap.
+ *
+ * The first version scaled it with `maxCards`, which inverted the whole point:
+ * the register exists to report marks that did *not* become cards, so the fewer
+ * cards a user allows, the *more* uncovered marks there are to report. At
+ * `maxCards = 1` a page with ten markings could only register three of them and
+ * the other seven would vanish — silently absent rather than reported as
+ * uncovered, which is exactly the failure this layer was built to end (Codex,
+ * PR #47).
+ *
+ * 60 is generous against any real textbook page (Tur A's densest pages carried
+ * marks in the low tens) while still bounding a runaway list; the model answers
+ * inside `max_output_tokens` regardless.
+ */
+export const MARK_REGISTER_CEILING = 60;
+
+/**
  * A per-request variant of the §14 schema: `usage` and `requestId` removed
  * (see file header), and `cards` capped at the configured per-passage limit
  * (§11.3, §13.2) so the constraint is enforced by the provider's own
@@ -227,8 +246,16 @@ export function buildModelResponseSchema(
   for (const key of Object.keys(card.properties)) {
     if (!card.required.includes(key)) card.required.push(key);
   }
-  // The model has nothing to choose here: what it produces is v2.2.
-  clone.properties.schemaVersion = { type: "string", const: "2.2" };
+
+  // Schema v2.3's mark register. Optional in the canonical schema (a v2.0–v2.2
+  // payload predates it) and therefore absent from `required` — but strict mode
+  // has no optional properties, so asking for it means promoting it here, the
+  // same move `options`/`topic` already needed.
+  if (!clone.required.includes("marks")) clone.required.push("marks");
+  (clone.properties.marks as { maxItems?: number }).maxItems = MARK_REGISTER_CEILING;
+
+  // The model has nothing to choose here: what it produces is v2.3.
+  clone.properties.schemaVersion = { type: "string", const: "2.3" };
 
   return clone as Record<string, unknown>;
 }
@@ -568,6 +595,14 @@ export class OpenAICardGenerator {
         request.subject ?? null,
       );
     }
+
+    // Schema v2.3's register, held to the same rule as `topic`: a malformed
+    // mark or a `markId` pointing at nothing is repaired, never allowed to fail
+    // the page. A dangling reference is the one shape that would make the
+    // coverage report *lie* — the card looks bound, so a skipped mark counts as
+    // handled — so it is resolved to null, where it shows up honestly as an
+    // unmarked card (`providers/coverage.ts`).
+    sanitizeMarks(modelRecord);
 
     const rawUsage = usage ?? EMPTY_TOKEN_USAGE;
 

@@ -80,4 +80,18 @@ describe("handler", () => {
       expect(((await response.json()) as { error: string }).error).toContain("GEMINI_API_KEY");
     }
   });
+
+  it("routes /api/coverage with the same isolation contract (2026-08-19)", async () => {
+    // The fourth door (docs/PLAN-kapsama-sozlesmesi.md, Katman B). Wired, and
+    // when its key is missing it refuses by name — alone. Card generation must
+    // not be able to notice that this route is unconfigured.
+    const response = await handler(
+      new Request("http://127.0.0.1:8787/api/coverage", { method: "POST" }),
+    );
+    expect(response.status).not.toBe(404);
+    if (!process.env.GEMINI_API_KEY) {
+      expect(response.status).toBe(500);
+      expect(((await response.json()) as { error: string }).error).toContain("GEMINI_API_KEY");
+    }
+  });
 });

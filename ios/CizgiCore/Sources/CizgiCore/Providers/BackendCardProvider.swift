@@ -440,7 +440,16 @@ public struct BackendCardProvider: CardGenerating {
         }
 
         guard !survivingCards.isEmpty else {
-            throw CardGenerationError.sourceInsufficient
+            // A page that produced no card is the page whose coverage matters
+            // most: every mark on it is uncovered by definition. Thrown as a
+            // `CardGenerationFailure` rather than a bare error so the register
+            // — and the ledger of what this attempt cost — survive the failure
+            // instead of being dropped with it.
+            throw CardGenerationFailure(
+                error: .sourceInsufficient,
+                accounting: accounting,
+                coverage: Self.coverage(of: decoded.coverage)
+            )
         }
 
         // v2 has no `knowledgeUnits`: the whole marked page is one implicit
@@ -491,7 +500,36 @@ public struct BackendCardProvider: CardGenerating {
             tags: tags,
             sourceConcern: concern,
             cards: survivingCards,
-            modelRuns: runs
+            modelRuns: runs,
+            coverage: Self.coverage(of: decoded.coverage)
+        )
+    }
+
+    /// The server's coverage accounting, in the phone's own shape.
+    ///
+    /// Nothing is recomputed here, for the reason `accounting(of:)` gives: the
+    /// server is the only party that sees the model's register and the gate's
+    /// rejections together, and a second derivation would be a second answer to
+    /// a settled question.
+    ///
+    /// `nil` for a backend that sends no block at all — which is a different
+    /// state from a block saying `reported: false`, though both mean "no
+    /// findings": one is an old server, the other a model that skipped the
+    /// register. Only the second is worth re-auditing, and the audit button is
+    /// offered either way.
+    static func coverage(of remote: RemoteCoverage?) -> PageCoverage? {
+        guard let remote else { return nil }
+        return PageCoverage(
+            reported: remote.reported,
+            uncovered: remote.uncovered.compactMap { mark in
+                // A tier this build has not heard of drops that one mark and
+                // keeps the rest, exactly like an unknown card type does. The
+                // alternative — failing the decode — would cost the page all
+                // its cards over an audit extra.
+                guard let kind = MarkKind(rawValue: mark.kind) else { return nil }
+                return PageMark(kind: kind, quote: mark.quote, source: .generator)
+            },
+            unmarkedCardIds: remote.unmarkedCardIds
         )
     }
 
@@ -578,7 +616,69 @@ struct RemoteJobsResponse: Decodable {
 struct RemoteCardsSuccess: Decodable {
     let output: RemoteCardsOutput
     let gate: RemoteCardGateReport
+    /// Schema v2.3's coverage accounting. `decodeIfPresent`, like every field
+    /// added after a build shipped: a job row written by an older deployment
+    /// (and results live for 60 days) carries no such block.
+    let coverage: RemoteCoverage?
     let cardPromptVersion: String
+}
+
+extension RemoteCardsSuccess {
+    private enum CodingKeys: String, CodingKey {
+        case output, gate, coverage, cardPromptVersion
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            output: try values.decode(RemoteCardsOutput.self, forKey: .output),
+            gate: try values.decode(RemoteCardGateReport.self, forKey: .gate),
+            coverage: try values.decodeIfPresent(RemoteCoverage.self, forKey: .coverage),
+            cardPromptVersion: try values.decode(String.self, forKey: .cardPromptVersion)
+        )
+    }
+}
+
+/// `CardsSuccess.coverage` on the server (`providers/coverage.ts`).
+///
+/// The server's own `marks` array is deliberately not decoded: the phone shows
+/// what is *missing*, and the full register is an audit artifact the page
+/// screen has no use for. Extra keys are ignored by `Decodable`, so leaving it
+/// out costs nothing and keeps the stored blob small.
+struct RemoteCoverage: Decodable {
+    let reported: Bool
+    let uncovered: [RemoteMark]
+    let unmarkedCardIds: [String]
+}
+
+/// In an extension so the memberwise initialiser survives — the tests build
+/// these by hand, same reason as `RemoteCard`.
+extension RemoteCoverage {
+    private enum CodingKeys: String, CodingKey {
+        case reported, uncovered, unmarkedCardIds
+    }
+
+    /// Every field defaulted rather than required. The block is an extra on a
+    /// response whose real payload is the cards: a half-written coverage object
+    /// must degrade to "no findings", never take a page's cards down with it.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            reported: (try? values.decode(Bool.self, forKey: .reported)) ?? false,
+            uncovered: (try? values.decode([RemoteMark].self, forKey: .uncovered)) ?? [],
+            unmarkedCardIds: (try? values.decode([String].self, forKey: .unmarkedCardIds)) ?? []
+        )
+    }
+}
+
+struct RemoteMark: Decodable {
+    /// The model's own label ("m1"). Decoded but not used as identity — see
+    /// `PageMark.id` for why a per-response label cannot survive a regeneration.
+    let id: String
+    /// Plain string, not `MarkKind`: an unknown tier must drop one mark, not
+    /// fail the whole response (same rule as `RemoteCard.type`).
+    let kind: String
+    let quote: String
 }
 
 struct RemoteCardsOutput: Decodable {

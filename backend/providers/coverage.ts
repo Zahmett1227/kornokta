@@ -1,0 +1,255 @@
+/**
+ * Coverage accounting (schema v2.3 — docs/PLAN-kapsama-sozlesmesi.md, Katman A).
+ *
+ * The one failure this project could never see: a mark the student made that
+ * never became a card. A wrong card is visible — it carries `lowConfidence`, it
+ * has a "Gözden geçir" bucket and a second-opinion button, and reading it once
+ * is enough to notice. A missing card has none of that. It has no flag because
+ * it has no card, and the page photo that could prove it is deleted from the
+ * server after 60 days.
+ *
+ * Three prompt versions tried to fix this by asking (v2.6's counting step,
+ * v2.7's three rounds of binding language) and none of them could be *measured*,
+ * because nothing produced a number. This module is the measurement. The model
+ * now writes down what it saw (`marks`) and which mark each card came from
+ * (`markId`); the difference between those two lists is computed here, in plain
+ * deterministic code, and no longer depends on the prompt's good intentions.
+ * Judgement stays with the model, bookkeeping moves to the code (§0.8's spirit).
+ *
+ * Two lists come out, and both were invisible before:
+ *   - `uncovered` — marks with no surviving card. The signal.
+ *   - `unmarkedCardIds` — cards bound to no mark at all, which is prompt rule
+ *     1's own violation ("işaretlenmemiş metin kart kaynağı değildir").
+ *
+ * Nothing here fails a job. A model that ignores the new fields produces
+ * `reported: false` and the page behaves exactly as it did before v2.3 —
+ * the same rule `sanitizeTopics` follows, for the same reason: a classification
+ * nicety must never cost a paid capture.
+ */
+
+import { MARK_KINDS, type Card, type LlmOutput, type Mark, type MarkKind } from "../schemas/llmOutputTypes.js";
+
+/**
+ * How valuable a skipped mark is, low number first.
+ *
+ * Straight from prompt rule 3's ladder — handwriting, then the symbol tier,
+ * then underline, then highlighter — so "en değerli atlanan işaret" is the
+ * first row the owner sees rather than whatever happened to be topmost on the
+ * page. `MARK_KINDS`'s own order is the single source of that ranking; an
+ * unknown kind sorts last instead of throwing.
+ */
+export function markPriority(kind: string): number {
+  const index = (MARK_KINDS as readonly string[]).indexOf(kind);
+  return index < 0 ? MARK_KINDS.length : index;
+}
+
+export interface CoverageReport {
+  /**
+   * Whether the model reported a register at all.
+   *
+   * `false` means "no information", which is emphatically not the same as
+   * "nothing uncovered": an older deployment, a model that ignored the field,
+   * or a v2.2 payload all land here, and an empty `uncovered` list would
+   * otherwise read as a clean bill of health.
+   */
+  reported: boolean;
+  /** Every mark the model reported, sanitized and deduplicated. */
+  marks: Mark[];
+  /** Marks no surviving card claims, most valuable tier first. */
+  uncovered: Mark[];
+  /**
+   * Ids of surviving cards bound to no mark. Ids only — card text is never
+   * copied into a report that ends up in a log line (§7.3).
+   */
+  unmarkedCardIds: string[];
+}
+
+/** A mark with a usable id, a known tier and a non-empty quote, or `null`. */
+function cleanMark(value: unknown): Mark | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as { id?: unknown; kind?: unknown; quote?: unknown };
+  if (typeof record.id !== "string" || !record.id.trim()) return null;
+  if (typeof record.quote !== "string" || !record.quote.trim()) return null;
+  if (typeof record.kind !== "string" || !(MARK_KINDS as readonly string[]).includes(record.kind)) {
+    return null;
+  }
+  return { id: record.id.trim(), kind: record.kind as MarkKind, quote: record.quote.trim() };
+}
+
+/**
+ * Forces the v2.3 fields into a shape the rest of the server can trust, in
+ * place, before validation — exactly where `sanitizeTopics` sits and for the
+ * same reason.
+ *
+ * Drops malformed marks and nulls any `markId` that cannot be resolved. A
+ * dangling reference is the one thing that would make the whole layer lie: the
+ * card looks bound, so its mark is counted as covered, so a skipped mark is
+ * reported as handled. Silent narrowing of the signal is worse than the missing
+ * field, so it resolves to `null` — which shows up honestly as an unmarked card.
+ *
+ * A **duplicate id** is a slip the schema cannot forbid, and the first version
+ * handled it by keeping the first mark and dropping the rest (Codex, PR #47).
+ * That deleted a mark that is physically on the page — the exact loss this
+ * layer exists to end — and worse, a card pointing at the reused id then
+ * credited whichever passage happened to come first. Both marks are kept now,
+ * the later ones re-keyed, and every reference to the ambiguous id is resolved
+ * to `null`: we genuinely cannot tell which passage the card came from, and
+ * saying so is the only answer that does not invent one.
+ */
+export function sanitizeMarks(output: Record<string, unknown>): void {
+  const rawMarks = output.marks;
+  if (rawMarks !== undefined && !Array.isArray(rawMarks)) {
+    // Not an array at all: the field is unusable, and leaving it would fail
+    // schema validation for the whole page over an audit extra.
+    delete output.marks;
+  }
+
+  /** Ids a card may still point at. A reused id is deliberately absent. */
+  let resolvable: Set<string> | null = null;
+  if (Array.isArray(output.marks)) {
+    const cleaned = output.marks
+      .map((candidate) => cleanMark(candidate))
+      .filter((mark): mark is Mark => mark !== null);
+
+    /** Ids exactly as the model wrote them, first occurrence only. */
+    const asWritten = new Set<string>();
+    /** Ids the model reused, so no card may be credited to either copy. */
+    const ambiguous = new Set<string>();
+    /**
+     * Every id that must stay unique — **all** raw ids up front, plus each
+     * synthetic one as it is minted.
+     *
+     * Seeded from the whole register before any renaming, because a raw id can
+     * appear *after* the duplicate that would otherwise be renamed onto it:
+     * `m1, m1, m1~2` renamed the second `m1` to `m1~2` and then the model's own
+     * `m1~2` collided with it, leaving two marks sharing one resolvable id and
+     * one card able to hide both (Codex, PR #47).
+     */
+    const taken = new Set(cleaned.map((mark) => mark.id));
+    const marks: Mark[] = [];
+    for (const mark of cleaned) {
+      if (asWritten.has(mark.id)) {
+        // Kept, not dropped — it is a real mark on a real page. Re-keyed so the
+        // register can hold both, and the original id is poisoned for
+        // referencing: neither copy may be credited to a card that named it.
+        ambiguous.add(mark.id);
+        marks.push({ ...mark, id: uniqueId(mark.id, taken) });
+        continue;
+      }
+      asWritten.add(mark.id);
+      marks.push(mark);
+    }
+    output.marks = marks;
+    // Built from what the model actually wrote, never from `taken`: a synthetic
+    // id is ours, not the model's, so a card naming it named nothing. Letting
+    // one resolve would attach that card to a mark the model never referenced
+    // and hide the mark from `uncovered` (Codex, PR #47) — the same silent
+    // narrowing the re-keying exists to prevent.
+    resolvable = new Set([...asWritten].filter((id) => !ambiguous.has(id)));
+  }
+
+  if (!Array.isArray(output.cards)) return;
+  for (const candidate of output.cards) {
+    if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) continue;
+    const card = candidate as { markId?: unknown };
+    if (card.markId === undefined || card.markId === null) continue;
+    if (typeof card.markId !== "string" || !resolvable || !resolvable.has(card.markId.trim())) {
+      card.markId = null;
+      continue;
+    }
+    card.markId = card.markId.trim();
+  }
+}
+
+/**
+ * A free id derived from a reused one (`m1` → `m1~2`), never colliding with an
+ * id already taken — including a `m1~2` the model itself happened to emit.
+ */
+function uniqueId(base: string, taken: Set<string>): string {
+  let suffix = 2;
+  let candidate = `${base}~${suffix}`;
+  while (taken.has(candidate)) {
+    suffix += 1;
+    candidate = `${base}~${suffix}`;
+  }
+  taken.add(candidate);
+  return candidate;
+}
+
+export interface CoverageOptions {
+  /**
+   * Cards the gate rejected (the surplus over the per-page cap, a broken
+   * card). They never reach the deck, so a mark they were the only claimant of
+   * is *not* covered — counting them would hide precisely the case the card
+   * ceiling creates, which is the one Tur A found on 18 of 18 pages.
+   */
+  rejectedCardIds?: readonly string[];
+}
+
+/**
+ * Compares the model's mark register against the cards that will actually be
+ * stored.
+ *
+ * Takes the two fields it needs rather than the whole output, so a caller
+ * cannot accidentally make this depend on `usage` or `readText` and a test can
+ * build the input by hand.
+ */
+export function deriveCoverage(
+  output: Pick<LlmOutput, "cards"> & { marks?: readonly Mark[] },
+  options: CoverageOptions = {},
+): CoverageReport {
+  const marks = [...(output.marks ?? [])];
+  const rejected = new Set(options.rejectedCardIds ?? []);
+  const surviving: Card[] = output.cards.filter((card) => !rejected.has(card.id));
+
+  const claimed = new Set<string>();
+  const unmarkedCardIds: string[] = [];
+  for (const card of surviving) {
+    const markId = typeof card.markId === "string" ? card.markId.trim() : "";
+    if (markId) {
+      claimed.add(markId);
+    } else {
+      unmarkedCardIds.push(card.id);
+    }
+  }
+
+  const uncovered = marks
+    .filter((mark) => !claimed.has(mark.id))
+    // `map`+`sort`+`map` rather than a bare `sort`: `Array.prototype.sort` is
+    // only guaranteed stable by index, and two marks of the same tier must keep
+    // the order the model listed them in (roughly page order) instead of an
+    // arbitrary one.
+    .map((mark, index) => ({ mark, index }))
+    .sort((a, b) => {
+      const priority = markPriority(a.mark.kind) - markPriority(b.mark.kind);
+      return priority !== 0 ? priority : a.index - b.index;
+    })
+    .map((entry) => entry.mark);
+
+  return {
+    reported: output.marks !== undefined,
+    marks,
+    uncovered,
+    unmarkedCardIds,
+  };
+}
+
+/**
+ * The same derivation with "which cards survive" answered by the gate.
+ *
+ * Exists so the two endpoints that produce a result body (`/api/cards-vision`
+ * and the `/api/jobs` worker) cannot answer that question differently. They
+ * already build `output`/`gate` in lockstep; a second copy of "reject means it
+ * does not count as coverage" is precisely the drift this repo keeps a
+ * discipline against.
+ */
+export function coverageFromGate(
+  output: Pick<LlmOutput, "cards"> & { marks?: readonly Mark[] },
+  gate: { verdicts: ReadonlyArray<{ cardId: string; decision: string }> },
+): CoverageReport {
+  return deriveCoverage(output, {
+    rejectedCardIds: gate.verdicts
+      .filter((verdict) => verdict.decision === "reject")
+      .map((verdict) => verdict.cardId),
+  });
+}

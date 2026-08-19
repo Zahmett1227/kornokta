@@ -72,6 +72,54 @@ public enum CardStatus: String, Codable, Sendable {
     case needsReview = "needs_review"
 }
 
+/// A mark's tier, from the canonical §14 contract (schema v2.3,
+/// docs/PLAN-kapsama-sozlesmesi.md).
+///
+/// The fourth "same facts in three languages" pair in this repo: this enum, the
+/// schema's `marks.items.kind` enum and `MARK_KINDS` in `llmOutputTypes.ts` are
+/// one list, locked by `evals/tests/test_swift_contract_sync.py` and its TS
+/// sibling. Both readers — the generator's own register and the independent
+/// auditor — speak it, which is what makes their two answers mergeable.
+///
+/// **Declaration order is the priority ladder** of prompt rule 3: a handwritten
+/// note is the most valuable thing the model can skip, a highlighter stroke the
+/// least. `PageCoverage` sorts by it, so reordering these cases reorders what
+/// the owner is shown first.
+///
+/// Deliberately separate from `SelectionType`, which looks similar and is not:
+/// that one records how a *stored passage* was selected (including `.manual`,
+/// which no model ever reports) and predates the vision pivot. Merging them
+/// would tie a wire contract to a SwiftData column's history.
+public enum MarkKind: String, Codable, Sendable, CaseIterable {
+    /// The student's own margin/interline note — the most valuable tier.
+    case handwriting
+    /// Star, plus, exclamation, arrow, circle, box or frame — the prompt's
+    /// `SEMBOL İŞARETLERİ` tier, named once there and once here.
+    case symbol
+    case underline
+    case highlight
+
+    /// Turkish label for the coverage list.
+    public var label: String {
+        switch self {
+        case .handwriting: return "El yazısı"
+        case .symbol: return "Sembol"
+        case .underline: return "Altı çizili"
+        case .highlight: return "Fosforlu"
+        }
+    }
+
+    /// SF Symbol for the row, matching the tone of the rest of the app.
+    public var icon: String {
+        switch self {
+        case .handwriting: return "hand.draw"
+        case .symbol: return "star"
+        case .underline: return "underline"
+        case .highlight: return "highlighter"
+        }
+    }
+}
+
 /// The four grades the user gives during review (§18.2).
 public enum ReviewRating: String, Codable, Sendable, CaseIterable {
     case again

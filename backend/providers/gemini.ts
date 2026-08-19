@@ -1,14 +1,21 @@
 /**
- * Gemini second-opinion provider (`/api/second-opinion`, ANA-PLAN §10.4's
- * surviving idea in its Faz 6 form).
+ * Gemini readers. Two of them, one provider, one shared rule: they read a page
+ * the *other* model already read, and they never write cards.
  *
- * One job: given a marked page photo and one card the vision model flagged
- * `lowConfidence`, independently re-read the relevant region and say whether
- * the page supports the card. Deliberately a different provider *family* than
- * the card generator — asking OpenAI to check OpenAI shares one vision
- * stack's failure modes, and independence is the entire value of a second
- * opinion. Never generates cards; the prompt forbids it and the schema has
- * nowhere to put one.
+ * `GeminiSecondOpinion` (`/api/second-opinion`, ANA-PLAN §10.4's surviving idea
+ * in its Faz 6 form) takes one card the vision model flagged `lowConfidence`
+ * and says whether the page supports it.
+ *
+ * `GeminiCoverageAudit` (`/api/coverage`, docs/PLAN-kapsama-sozlesmesi.md
+ * Katman B) takes the page and *all* its cards and says which marks no card
+ * covers. Schema v2.3 already has the generator keep its own register, which
+ * catches "read it and did not card it"; this catches the class that register
+ * structurally cannot hold — a mark its author never saw.
+ *
+ * Both are deliberately a different provider *family* than the card generator.
+ * Asking OpenAI to check OpenAI shares one vision stack's failure modes, and
+ * independence is the entire value of a second reading. Neither generates
+ * cards: the prompts forbid it and the schemas have nowhere to put one.
  *
  * Privacy (§7.3): same discipline as `openai.ts` — no image bytes, no
  * transcription and no card text in a log line or an error message. Failures
@@ -17,9 +24,16 @@
  */
 
 import {
+  COVERAGE_AUDIT_PROMPT,
+  COVERAGE_AUDIT_PROMPT_VERSION,
+  buildCoverageAuditInstruction,
+} from "../prompts/coverageAudit.js";
+import {
   HANDWRITING_SECOND_OPINION_PROMPT,
   HANDWRITING_SECOND_OPINION_PROMPT_VERSION,
 } from "../prompts/handwritingSecondOpinion.js";
+import { markPriority } from "./coverage.js";
+import { MARK_KINDS, type MarkKind } from "../schemas/llmOutputTypes.js";
 import {
   EMPTY_TOKEN_USAGE,
   estimateCostUSD,
@@ -28,7 +42,7 @@ import {
 } from "./tokenUsage.js";
 import type { CostConfig, GeminiConfig } from "../config.js";
 
-export { HANDWRITING_SECOND_OPINION_PROMPT_VERSION };
+export { COVERAGE_AUDIT_PROMPT_VERSION, HANDWRITING_SECOND_OPINION_PROMPT_VERSION };
 
 export class GeminiError extends Error {
   constructor(
@@ -231,30 +245,52 @@ function describeHttpFailure(status: number, body: GenerateContentBody | undefin
   return new GeminiError(`Gemini ${status}: ${detail}`, status, isTransientStatus(status));
 }
 
-export class GeminiSecondOpinion {
-  readonly name = "Gemini";
-
-  constructor(
-    private readonly config: GeminiConfig,
-    private readonly apiKey: string,
-    private readonly cost: GeminiCostConfig,
-    private readonly transport: GeminiTransport = geminiFetchTransport,
-  ) {}
-
-  private endpoint(): string {
-    return `https://generativelanguage.googleapis.com/v1beta/models/${this.config.model}:generateContent`;
-  }
-
-  async secondOpinion(request: SecondOpinionRequest): Promise<SecondOpinionResult> {
-    const body = {
-      systemInstruction: {
-        parts: [{ text: HANDWRITING_SECOND_OPINION_PROMPT }],
-      },
+/**
+ * One `generateContent` call: build the body, make the request, and turn
+ * everything that is not a clean JSON answer into a `GeminiError`.
+ *
+ * Shared by both readers this file exposes. Extracted when the coverage audit
+ * arrived rather than copied, because what lives here is not boilerplate — it
+ * is a list of ways a 2xx response can still be worthless (a `blockReason`, a
+ * `MAX_TOKENS` truncation, a `finishReason` that is not `STOP`, schema-valid
+ * JSON left behind by a policy stop). Each one was learned once; a second copy
+ * would be a second chance to forget one.
+ */
+async function generateContent(
+  transport: GeminiTransport,
+  apiKey: string,
+  request: {
+    model: string;
+    maxOutputTokens: number;
+    /**
+     * Which environment variable set `maxOutputTokens`, so a truncation names
+     * the knob the reader must actually turn.
+     *
+     * Threaded through rather than hardcoded because the two callers have two
+     * different ceilings: a shared message saying "GEMINI_MAX_OUTPUT_TOKENS"
+     * would send someone to raise a variable that has no effect on the call
+     * that failed — the same class of wasted hunt the owner's "name the real
+     * suspect" rule exists to prevent.
+     */
+    budgetVariable: string;
+    timeoutMs: number;
+    systemPrompt: string;
+    instruction: string;
+    image: Uint8Array;
+    mimeType: string;
+    responseSchema: unknown;
+  },
+): Promise<{ payload: unknown; tokens: TokenUsage }> {
+  const response = await transport.post(
+    `https://generativelanguage.googleapis.com/v1beta/models/${request.model}:generateContent`,
+    apiKey,
+    {
+      systemInstruction: { parts: [{ text: request.systemPrompt }] },
       contents: [
         {
           role: "user",
           parts: [
-            { text: buildSecondOpinionInstruction(request) },
+            { text: request.instruction },
             {
               inlineData: {
                 mimeType: request.mimeType,
@@ -265,79 +301,102 @@ export class GeminiSecondOpinion {
         },
       ],
       generationConfig: {
-        // A transcription verdict wants fidelity, not creativity.
+        // Reading a page wants fidelity, not creativity — true for a
+        // transcription verdict and for a mark register alike.
         temperature: 0,
-        maxOutputTokens: this.config.maxOutputTokens,
+        maxOutputTokens: request.maxOutputTokens,
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
+        responseSchema: request.responseSchema,
       },
-    };
+    },
+    request.timeoutMs,
+  );
 
-    const response = await this.transport.post(
-      this.endpoint(),
-      this.apiKey,
-      body,
-      this.config.timeoutMs,
+  const parsedBody = response.body as GenerateContentBody | undefined;
+
+  if (response.status < 200 || response.status >= 300) {
+    throw describeHttpFailure(response.status, parsedBody);
+  }
+
+  if (parsedBody?.promptFeedback?.blockReason) {
+    throw new GeminiError(
+      `Gemini istemi engelledi: ${parsedBody.promptFeedback.blockReason}`,
+      undefined,
+      false,
     );
-    const parsedBody = response.body as GenerateContentBody | undefined;
+  }
 
-    if (response.status < 200 || response.status >= 300) {
-      throw describeHttpFailure(response.status, parsedBody);
-    }
+  const candidate = parsedBody?.candidates?.[0];
+  if (!candidate) {
+    throw new GeminiError("Yanıtta aday (candidate) yok.", undefined, true);
+  }
+  if (candidate.finishReason === "MAX_TOKENS") {
+    // Same lesson as OpenAI's `status:"incomplete"`: a thinking-capable
+    // model spends hidden tokens from this budget, so the truncation names
+    // the knob rather than surfacing as a JSON parse error below.
+    throw new GeminiError(
+      `Model yanıtı tamamlayamadı (MAX_TOKENS): ${request.budgetVariable} bu model için ` +
+        "yetersiz olabilir (düşünme token'ları da bu bütçeden düşülüyor).",
+      undefined,
+      true,
+    );
+  }
+  if (candidate.finishReason && candidate.finishReason !== "STOP") {
+    // SAFETY, RECITATION, BLOCKLIST… can leave schema-valid JSON behind, and
+    // parsing it would present a policy-terminated fragment as a trustworthy
+    // answer (Codex, PR #39). Anything that did not stop cleanly is an
+    // unsuccessful call, not content. Permanent: the same page would trip the
+    // same filter again.
+    throw new GeminiError(
+      `Model üretimi temiz bitmedi (finishReason: ${candidate.finishReason}); içerik güvenilmez sayıldı.`,
+      undefined,
+      false,
+    );
+  }
 
-    if (parsedBody?.promptFeedback?.blockReason) {
-      throw new GeminiError(
-        `Gemini istemi engelledi: ${parsedBody.promptFeedback.blockReason}`,
-        undefined,
-        false,
-      );
-    }
+  const text = candidate.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+  if (!text.trim()) {
+    throw new GeminiError(
+      `Yanıtta üretilmiş metin yok (finishReason: ${candidate.finishReason ?? "bilinmiyor"}).`,
+      undefined,
+      false,
+    );
+  }
 
-    const candidate = parsedBody?.candidates?.[0];
-    if (!candidate) {
-      throw new GeminiError("Yanıtta aday (candidate) yok.", undefined, true);
-    }
-    if (candidate.finishReason === "MAX_TOKENS") {
-      // Same lesson as OpenAI's `status:"incomplete"`: a thinking-capable
-      // model spends hidden tokens from this budget, so the truncation names
-      // the knob rather than surfacing as a JSON parse error below.
-      throw new GeminiError(
-        "Model yanıtı tamamlayamadı (MAX_TOKENS): GEMINI_MAX_OUTPUT_TOKENS bu model için " +
-          "yetersiz olabilir (düşünme token'ları da bu bütçeden düşülüyor).",
-        undefined,
-        true,
-      );
-    }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new GeminiError("Model yanıtı geçerli JSON değil.", undefined, false);
+  }
 
-    if (candidate.finishReason && candidate.finishReason !== "STOP") {
-      // SAFETY, RECITATION, BLOCKLIST… can leave schema-valid JSON behind, and
-      // parsing it would present a policy-terminated fragment as a trustworthy
-      // medical verdict (Codex, PR #39). Anything that did not stop cleanly is
-      // an unsuccessful call, not content. Permanent: the same page and card
-      // would trip the same filter again.
-      throw new GeminiError(
-        `Model üretimi temiz bitmedi (finishReason: ${candidate.finishReason}); içerik güvenilmez sayıldı.`,
-        undefined,
-        false,
-      );
-    }
+  return { payload, tokens: readGeminiUsage(parsedBody) ?? EMPTY_TOKEN_USAGE };
+}
 
-    const text = candidate.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-    if (!text.trim()) {
-      throw new GeminiError(
-        `Yanıtta üretilmiş metin yok (finishReason: ${candidate.finishReason ?? "bilinmiyor"}).`,
-        undefined,
-        false,
-      );
-    }
+export class GeminiSecondOpinion {
+  readonly name = "Gemini";
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new GeminiError("Model yanıtı geçerli JSON değil.", undefined, false);
-    }
-    const record = parsed as { verdict?: unknown; reading?: unknown; note?: unknown };
+  constructor(
+    private readonly config: GeminiConfig,
+    private readonly apiKey: string,
+    private readonly cost: GeminiCostConfig,
+    private readonly transport: GeminiTransport = geminiFetchTransport,
+  ) {}
+
+  async secondOpinion(request: SecondOpinionRequest): Promise<SecondOpinionResult> {
+    const { payload, tokens } = await generateContent(this.transport, this.apiKey, {
+      model: this.config.model,
+      maxOutputTokens: this.config.maxOutputTokens,
+      budgetVariable: "GEMINI_MAX_OUTPUT_TOKENS",
+      timeoutMs: this.config.timeoutMs,
+      systemPrompt: HANDWRITING_SECOND_OPINION_PROMPT,
+      instruction: buildSecondOpinionInstruction(request),
+      image: request.image,
+      mimeType: request.mimeType,
+      responseSchema: RESPONSE_SCHEMA,
+    });
+
+    const record = payload as { verdict?: unknown; reading?: unknown; note?: unknown };
     const verdict = record.verdict;
     if (
       typeof verdict !== "string" ||
@@ -353,7 +412,6 @@ export class GeminiSecondOpinion {
       throw new GeminiError("Model yanıtında reading alanı yok.", undefined, false);
     }
 
-    const tokens = readGeminiUsage(parsedBody) ?? EMPTY_TOKEN_USAGE;
     const note = typeof record.note === "string" && record.note.trim() ? record.note.trim() : undefined;
 
     return {
@@ -371,4 +429,191 @@ export class GeminiSecondOpinion {
       },
     };
   }
+}
+
+export interface CoverageAuditRequest {
+  /** Assigned by the caller, echoed back — same rule as everywhere else here. */
+  requestId: string;
+  /** The full marked page; the auditor locates the marks itself. */
+  image: Uint8Array;
+  mimeType: string;
+  /**
+   * The cards this page produced, in order — `coveredByCardIndex` refers to
+   * this array. Only question and answer travel: the auditor is asked what is
+   * *missing*, not whether a card is right, so it has no use for the rest.
+   */
+  cards: ReadonlyArray<{ front: string; back: string }>;
+}
+
+/** One mark the independent reader saw, and the card (if any) it says covers it. */
+export interface AuditedMark {
+  kind: MarkKind;
+  /** Verbatim page text, as the auditor read it. */
+  quote: string;
+  /** Index into `CoverageAuditRequest.cards`, or `null` for "no card covers this". */
+  coveredByCardIndex: number | null;
+}
+
+export interface CoverageAuditResult {
+  /** Every mark the auditor reported, malformed rows removed. */
+  marks: AuditedMark[];
+  /**
+   * The answer this endpoint exists for: marks with no covering card, ordered
+   * by the same tier ranking the generator's own register uses
+   * (`providers/coverage.ts`), so the most valuable omission is first.
+   */
+  uncovered: AuditedMark[];
+  /**
+   * How many rows were dropped as unusable (unknown tier, empty quote, an
+   * index pointing at no card).
+   *
+   * Counted rather than silently discarded, and *not* folded into `uncovered`:
+   * a malformed row is the auditor being confused about one mark, and turning
+   * that into "this mark was skipped" would manufacture the very false
+   * positive the prompt spends a rule avoiding. It is reported so a systematic
+   * problem shows up as a number instead of as quiet under-reporting.
+   */
+  discarded: number;
+  /** Same shape as the second opinion's, so the phone's ledger decoder is the same one. */
+  usage: SecondOpinionResult["usage"];
+}
+
+/**
+ * What the auditor must return. Gemini's `responseSchema` speaks the OpenAPI
+ * subset (uppercase type names), not JSON Schema.
+ *
+ * `kind` is constrained to `MARK_KINDS` — the generator's own four tiers, the
+ * same list the canonical schema and the Swift enum hold. Two readers of one
+ * page describing marks in two vocabularies would make the two registers
+ * impossible to merge on the phone, which is the entire point of running both.
+ */
+const COVERAGE_RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    marks: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          kind: { type: "STRING", enum: [...MARK_KINDS] },
+          quote: { type: "STRING" },
+          coveredByCardIndex: { type: "INTEGER", nullable: true },
+        },
+        // `coveredByCardIndex` is required-and-nullable, not optional, and the
+        // difference is the whole answer: leaving it out let a schema-valid row
+        // arrive with only `kind` and `quote`, which read exactly like an
+        // explicit `null` and reported a covered mark as uncovered (Codex,
+        // PR #47). A false "you skipped this" costs the owner a decision every
+        // time, which is the one thing this endpoint must not manufacture — so
+        // the model has to say `null` deliberately rather than by omission.
+        required: ["kind", "quote", "coveredByCardIndex"],
+      },
+    },
+  },
+  required: ["marks"],
+} as const;
+
+/**
+ * The independent coverage audit (`/api/coverage`, docs/PLAN-kapsama-sozlesmesi.md
+ * Katman B).
+ *
+ * A second class rather than a second method on `GeminiSecondOpinion`, for the
+ * reason that file header gives about the second opinion itself: each of these
+ * has exactly one job, and the two jobs are different questions about the same
+ * photo — "is this card supported?" versus "what did the first reader miss?".
+ * They share a provider and a transport, not a purpose.
+ */
+export class GeminiCoverageAudit {
+  readonly name = "Gemini";
+
+  constructor(
+    private readonly config: GeminiConfig,
+    private readonly apiKey: string,
+    private readonly cost: GeminiCostConfig,
+    private readonly transport: GeminiTransport = geminiFetchTransport,
+  ) {}
+
+  async audit(request: CoverageAuditRequest): Promise<CoverageAuditResult> {
+    const { payload, tokens } = await generateContent(this.transport, this.apiKey, {
+      model: this.config.model,
+      // Its own ceiling: a register of twenty marks with verbatim quotes is a
+      // much longer answer than a one-line verdict, and the thinking tokens
+      // come out of the same budget (config.ts's `coverageMaxOutputTokens`).
+      maxOutputTokens: this.config.coverageMaxOutputTokens,
+      budgetVariable: "GEMINI_COVERAGE_MAX_OUTPUT_TOKENS",
+      timeoutMs: this.config.timeoutMs,
+      systemPrompt: COVERAGE_AUDIT_PROMPT,
+      instruction: buildCoverageAuditInstruction(request.requestId, request.cards),
+      image: request.image,
+      mimeType: request.mimeType,
+      responseSchema: COVERAGE_RESPONSE_SCHEMA,
+    });
+
+    const rows = (payload as { marks?: unknown }).marks;
+    if (!Array.isArray(rows)) {
+      throw new GeminiError("Model yanıtında marks listesi yok.", undefined, false);
+    }
+
+    const marks: AuditedMark[] = [];
+    let discarded = 0;
+    for (const row of rows) {
+      const mark = readAuditedMark(row, request.cards.length);
+      if (mark) marks.push(mark);
+      else discarded += 1;
+    }
+
+    return {
+      marks,
+      uncovered: sortByTier(marks.filter((mark) => mark.coveredByCardIndex === null)),
+      discarded,
+      usage: {
+        provider: "gemini",
+        model: this.config.model,
+        inputTokens: tokens.inputTokens,
+        cachedInputTokens: tokens.cachedInputTokens,
+        outputTokens: tokens.outputTokens,
+        reasoningTokens: tokens.reasoningTokens,
+        estimatedCostUSD: estimateGeminiCostUSD(tokens, this.cost),
+      },
+    };
+  }
+}
+
+/** One row of the auditor's answer, or `null` when it cannot be trusted. */
+function readAuditedMark(value: unknown, cardCount: number): AuditedMark | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as { kind?: unknown; quote?: unknown; coveredByCardIndex?: unknown };
+  if (typeof record.kind !== "string" || !(MARK_KINDS as readonly string[]).includes(record.kind)) {
+    return null;
+  }
+  if (typeof record.quote !== "string" || !record.quote.trim()) return null;
+
+  const index = record.coveredByCardIndex;
+  // An explicit `null` is the auditor saying "no card covers this" — the
+  // finding. A *missing* field is not the same statement: the schema requires
+  // it, so its absence means the row is malformed, and reading that as
+  // "uncovered" would invent a finding out of a formatting slip. Dropped and
+  // counted instead, like every other unusable row.
+  if (index === undefined) return null;
+  if (index === null) {
+    return { kind: record.kind as MarkKind, quote: record.quote.trim(), coveredByCardIndex: null };
+  }
+  // An index pointing at no card is the auditor losing track of the list, not
+  // evidence about the mark — see `CoverageAuditResult.discarded` for why that
+  // is dropped rather than read as "uncovered".
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0 || index >= cardCount) {
+    return null;
+  }
+  return { kind: record.kind as MarkKind, quote: record.quote.trim(), coveredByCardIndex: index };
+}
+
+/** Most valuable tier first, order within a tier preserved (`markPriority`). */
+function sortByTier(marks: AuditedMark[]): AuditedMark[] {
+  return marks
+    .map((mark, index) => ({ mark, index }))
+    .sort((a, b) => {
+      const priority = markPriority(a.mark.kind) - markPriority(b.mark.kind);
+      return priority !== 0 ? priority : a.index - b.index;
+    })
+    .map((entry) => entry.mark);
 }

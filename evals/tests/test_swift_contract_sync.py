@@ -64,6 +64,7 @@ def test_parser_finds_the_enums(swift_source):
     # Raw values are preferred over case names where they differ.
     assert "ocr_disagreement" in swift_enum_values(swift_source, "RiskFlag")
     assert "direct_recall" in swift_enum_values(swift_source, "CardType")
+    assert len(swift_enum_values(swift_source, "MarkKind")) == 4
 
 
 def test_risk_flags_match_the_schema(swift_source, schema):
@@ -82,10 +83,40 @@ def test_card_types_match_the_schema(swift_source, schema):
     assert set(canonical) - set(swift) == set(), "Şemada olup Swift'te olmayan kart tipi"
 
 
+def test_mark_kinds_match_the_schema(swift_source, schema):
+    """Schema v2.3's mark tiers, the fourth list living in three languages.
+
+    Both readers speak it — the generator's own register and the independent
+    auditor — so a tier that exists on one side and not the other cannot be
+    merged into one coverage list on the phone: `MarkKind(rawValue:)` returns
+    nil and the mark is silently dropped, which is precisely the failure the
+    whole coverage layer exists to end.
+    """
+    swift = swift_enum_values(swift_source, "MarkKind")
+    canonical = schema["properties"]["marks"]["items"]["properties"]["kind"]["enum"]
+
+    assert set(swift) - set(canonical) == set(), "Swift'te olup şemada olmayan işaret kademesi"
+    assert set(canonical) - set(swift) == set(), "Şemada olup Swift'te olmayan işaret kademesi"
+
+
+def test_mark_kind_order_is_the_priority_ladder(swift_source, schema):
+    """Order is meaning here, not presentation.
+
+    Prompt rule 3 ranks handwriting above the symbol tier above underline above
+    highlighter, and both the Swift side and the server sort uncovered marks by
+    that order — so the most valuable thing the model skipped is the first row
+    the owner sees. Declaration order *is* the contract; a reshuffle on either
+    side silently reorders that list.
+    """
+    ladder = ["handwriting", "symbol", "underline", "highlight"]
+    assert swift_enum_values(swift_source, "MarkKind") == ladder
+    assert schema["properties"]["marks"]["items"]["properties"]["kind"]["enum"] == ladder
+
+
 def test_raw_values_are_snake_case(swift_source):
     """The wire format is snake_case (§14); a stray camelCase raw value would
     decode to nil on the device without any error."""
-    for enum_name in ("RiskFlag", "CardType", "ProcessingState", "SelectionType", "CardStatus"):
+    for enum_name in ("RiskFlag", "CardType", "ProcessingState", "SelectionType", "CardStatus", "MarkKind"):
         for value in swift_enum_values(swift_source, enum_name):
             assert value == value.lower(), f"{enum_name}: `{value}` snake_case değil"
 
@@ -93,6 +124,6 @@ def test_raw_values_are_snake_case(swift_source):
 def test_raw_values_are_unique_within_each_enum(swift_source):
     """Two cases sharing a raw value makes `init(rawValue:)` unreachable for one
     of them, which no compiler warning catches."""
-    for enum_name in ("RiskFlag", "CardType", "ProcessingState", "SelectionType", "CardStatus"):
+    for enum_name in ("RiskFlag", "CardType", "ProcessingState", "SelectionType", "CardStatus", "MarkKind"):
         values = swift_enum_values(swift_source, enum_name)
         assert len(values) == len(set(values)), f"{enum_name} içinde tekrar eden ham değer"

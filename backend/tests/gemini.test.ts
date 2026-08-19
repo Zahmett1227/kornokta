@@ -14,6 +14,7 @@ import {
 const CONFIG: GeminiConfig = {
   model: "gemini-3.5-flash",
   maxOutputTokens: 4096,
+  coverageMaxOutputTokens: 8192,
   timeoutMs: 1_000,
 };
 

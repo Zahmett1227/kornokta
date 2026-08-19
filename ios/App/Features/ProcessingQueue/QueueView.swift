@@ -162,6 +162,14 @@ struct PageDetailView: View {
     private struct AddCardTarget: Identifiable {
         let id = UUID()
         let region: TextRegion?
+        /// The coverage finding this card is being written for, when the sheet
+        /// was opened from one rather than from the passage's own button. Kept
+        /// whole (not just its text) so the finding can be closed once the card
+        /// is really saved.
+        var mark: PageMark?
+
+        /// What to seed the answer field with — the mark's own words.
+        var prefill: String? { mark?.quote }
     }
 
     var body: some View {
@@ -211,11 +219,30 @@ struct PageDetailView: View {
                     addCardButton(for: nil)
                 }
             }
+
+            // Last, deliberately: it answers "what is NOT above?", and that
+            // question only means something once the photo, the reading and
+            // the cards have been seen (docs/PLAN-kapsama-sozlesmesi.md).
+            if page.processingState.isTerminal {
+                Section("Kartlaşmamış işaretler") {
+                    CoverageSection(page: page) { mark in
+                        addTarget = AddCardTarget(region: page.regions.first, mark: mark)
+                    }
+                }
+            }
         }
         .navigationTitle("Sayfa")
         .homeButtonToolbar()
         .sheet(item: $editingCard) { CardEditorView(card: $0) }
-        .sheet(item: $addTarget) { ManualCardSheet(page: page, region: $0.region) }
+        .sheet(item: $addTarget) { target in
+            ManualCardSheet(page: page, region: target.region, prefill: target.prefill) {
+                // The finding is done the moment its card exists. Without this
+                // the list never shrank along the path it was built for: write
+                // the card, and the row still sat there asking to be swiped
+                // away (Codex, PR #47).
+                if let mark = target.mark { close(mark) }
+            }
+        }
     }
 
     private func cardRow(_ card: Card) -> some View {
@@ -256,6 +283,20 @@ struct PageDetailView: View {
         // `try?` here is the app-wide pattern (24 call sites); giving these two
         // screens an error surface the neighbouring buttons don't have is the
         // inconsistency PR #44 deliberately avoided.
+        try? context.save()
+    }
+
+    /// Takes a coverage finding off the page's open list once it has been dealt
+    /// with — here, by the card the owner just wrote for it.
+    ///
+    /// The same store the swipe writes (`CoverageSection.dismiss`), because both
+    /// answer the one question the list asks — "does this mark still need a
+    /// card?" — and a second list for "resolved" would be a second place for the
+    /// answer to fall out of step.
+    private func close(_ mark: PageMark) {
+        var coverage = PageCoverage.fromStorage(page.coverageJSON)
+        coverage.dismiss(mark)
+        page.coverageJSON = coverage.storageValue
         try? context.save()
     }
 

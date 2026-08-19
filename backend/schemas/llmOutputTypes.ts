@@ -51,6 +51,43 @@ export const CARD_TYPES = [
 export type CardType = (typeof CARD_TYPES)[number];
 
 /**
+ * Mark tiers (schema v2.3, docs/PLAN-kapsama-sozlesmesi.md Katman A).
+ *
+ * **Order is meaning here, not presentation.** It is prompt rule 3's priority
+ * ladder — handwriting first, then the symbol tier, then underline, then
+ * highlighter — and `providers/coverage.ts` sorts uncovered marks by it, so the
+ * most valuable thing the model skipped is the first thing the owner sees.
+ * Reordering this array silently reorders that list.
+ *
+ * `as const` for the same reason `CARD_TYPES` is: a runtime value list the
+ * Python sync test can compare against the schema (and against the Swift
+ * `MarkKind` enum), rather than a type that vanishes at compile time.
+ */
+export const MARK_KINDS = [
+  "handwriting",
+  "symbol",
+  "underline",
+  "highlight",
+] as const;
+
+export type MarkKind = (typeof MARK_KINDS)[number];
+
+/**
+ * One mark the model reports having seen (schema v2.3), card or no card.
+ *
+ * The whole point is the "no card" half: an ungenerated card carries no
+ * `lowConfidence`, so before this list existed nothing downstream could tell a
+ * page whose marks were all covered from one where half of them were skipped.
+ */
+export interface Mark {
+  /** Model-assigned short id ("m1"); cards point at it via `markId`. */
+  id: string;
+  kind: MarkKind;
+  /** The marked text, verbatim from the page. */
+  quote: string;
+}
+
+/**
  * Not part of the v2 `LlmOutput`. Retained because the handwriting
  * second-opinion path (`providers/gemini.ts`, kept on disk for ADR-005's
  * rollback) reuses this shape for its uncertain-span payload.
@@ -107,6 +144,16 @@ export interface Card {
    * variant, and `sanitizeTopics` nulls anything off-list afterwards.
    */
   topic?: string | null;
+  /**
+   * Which mark in `LlmOutput.marks` this card came from (schema v2.3), or
+   * `null` when the model bound it to none — which is prompt rule 1's own
+   * violation ("işaretlenmemiş metin kart kaynağı değildir") and is counted as
+   * such in `providers/coverage.ts`.
+   *
+   * Optional in the canonical schema (a v2.0–v2.2 payload predates it);
+   * required-and-nullable in the model-facing variant, like `topic`.
+   */
+  markId?: string | null;
 }
 
 export interface Usage {
@@ -118,10 +165,16 @@ export interface Usage {
 }
 
 export interface LlmOutput {
-  schemaVersion: "2.0" | "2.1" | "2.2";
+  schemaVersion: "2.0" | "2.1" | "2.2" | "2.3";
   requestId: string;
   /** The raw text the model read off the marked content — audit only (§6.3). */
   readText: string;
   cards: Card[];
+  /**
+   * The model's own mark register (schema v2.3). Absent on an older payload;
+   * an empty array means "I found no marks on this page", which is a real and
+   * different answer from "I did not report".
+   */
+  marks?: Mark[];
   usage: Usage;
 }

@@ -26,6 +26,7 @@ import {
   type CardGenerationResult,
 } from "../providers/openai.js";
 import { runCardGate, type CardDecision, type CardGateReport, type CardVerdict } from "../providers/cardGate.js";
+import { coverageFromGate, type CoverageReport } from "../providers/coverage.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SUBJECTS } from "../providers/subjectTopics.js";
 import type { LlmOutput } from "../schemas/llmOutputTypes.js";
@@ -119,6 +120,17 @@ export interface CardsSuccess {
   jobId: string;
   output: LlmOutput;
   gate: CardGateReport;
+  /**
+   * Schema v2.3's coverage accounting (docs/PLAN-kapsama-sozlesmesi.md).
+   *
+   * Derived here rather than on the phone for the same reason the cost ledger
+   * is: the server is the only party that sees the model's register *and* the
+   * gate's rejections in the same breath, and a phone that re-derived it would
+   * be inventing a second answer to a settled question. Always present, so the
+   * decoder never has to guess whether an absent block means "clean page" or
+   * "older server" — `reported` carries that distinction explicitly.
+   */
+  coverage: CoverageReport;
   /**
    * Not part of the §14 canonical schema (`output` stays exactly what §14
    * defines), but the iOS `ModelRun` record (§16.8) has its own
@@ -289,6 +301,11 @@ export async function handleCardsRequest(
     const gate = runCardGate(sanitized, {
       maxCardsPerKnowledgeUnit: maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
+    // After the gate on purpose: a card rejected for the per-page ceiling never
+    // reaches the deck, so the mark it was the only claimant of is *not*
+    // covered. That is not a corner case — Tur A hit the ceiling on 18 of 18
+    // pages, which is exactly where uncovered marks come from.
+    const coverage = coverageFromGate(sanitized, gate);
 
     // Metrics only. No card text, no transcription (§7.3) — counts and a
     // decision breakdown are what make "why was I asked to confirm?"
@@ -299,6 +316,13 @@ export async function handleCardsRequest(
       bytes: image.length,
       cardCount: sanitized.cards.length,
       decisions: summarizeDecisions(gate.verdicts),
+      // Counts only — a mark's `quote` is page content and never reaches a log
+      // line (§7.3). These three are the numbers the whole layer exists to
+      // produce: how many marks the model registered, how many it left
+      // uncarded, and how many cards it bound to no mark at all.
+      markCount: coverage.marks.length,
+      uncoveredMarkCount: coverage.uncovered.length,
+      unmarkedCardCount: coverage.unmarkedCardIds.length,
       // Counts only, never option text (§7.3).
       multipleChoiceNotes: checked.notes.length,
       inputTokens: rawUsage.inputTokens,
@@ -311,7 +335,13 @@ export async function handleCardsRequest(
     });
 
     return json(
-      { jobId, output: sanitized, gate, cardPromptVersion: CARD_PROMPT_VERSION } satisfies CardsSuccess,
+      {
+        jobId,
+        output: sanitized,
+        gate,
+        coverage,
+        cardPromptVersion: CARD_PROMPT_VERSION,
+      } satisfies CardsSuccess,
       200,
     );
   } catch (error) {

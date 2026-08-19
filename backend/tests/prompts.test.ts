@@ -83,8 +83,45 @@ describe("prompt contracts (§15)", () => {
     expect(HANDWRITING_SECOND_OPINION_PROMPT).toContain("hipo/hiper");
   });
 
-  it("card prompt is at v2.7 (self-contained cards, one idea, full-page scan, marks bind)", () => {
-    expect(CARD_PROMPT_VERSION).toBe("2.7");
+  it("card prompt is at v2.8 (self-contained cards, one idea, full-page scan, mark register)", () => {
+    expect(CARD_PROMPT_VERSION).toBe("2.8");
+  });
+
+  it("card prompt (v2.8) asks for a mark register keyed to the schema's own tiers", () => {
+    // Schema v2.3's contract, in the prompt's own words. The four `kind`
+    // values are the schema enum and the Swift enum; if the prompt names a
+    // fifth (or renames one), the model emits a value strict decoding will
+    // refuse and `sanitizeMarks` will drop — a register that quietly loses
+    // marks is worse than no register.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule13 = prompt.slice(prompt.indexOf("13. marks alanı"));
+    expect(rule13).not.toBe("");
+    for (const kind of ["handwriting", "symbol", "underline", "highlight"]) {
+      expect(rule13).toContain(kind);
+    }
+    // The binding half: a card says which mark it came from, and a card bound
+    // to nothing is named as rule 1's violation rather than left as an option.
+    expect(rule13).toContain("markId");
+    expect(rule13).toContain("kural 1'in ihlalidir");
+    // Perception and contract are separate places (the invariant): the scan
+    // section is what sends the model to the register in the first place.
+    const scan = prompt.slice(prompt.indexOf("ÖNCE İŞARETLERİ BUL"), prompt.indexOf("readText alanına"));
+    expect(scan).toContain("marks");
+  });
+
+  it("card prompt (v2.8) removes the incentive to under-report marks", () => {
+    // The load-bearing sentence. A model told that uncovered marks are counted
+    // has one cheap way to look clean: register fewer marks. Nothing in the
+    // schema can catch that — an unlisted mark is indistinguishable from a
+    // page that never had one — so the only defence is the rule saying an
+    // uncarded mark is information the user needs, not a failure to hide.
+    const prompt = CARD_GENERATION_SYSTEM_PROMPT;
+    const rule13 = prompt.slice(prompt.indexOf("13. marks alanı"));
+    expect(rule13).toContain("DEFTER EKSİKSİZ OLMALI");
+    expect(rule13).toContain("Kartsız kalan işaret bir kusur DEĞİLDİR");
+    // Marks eliminated by the card ceiling or by rule 2's priority still get
+    // registered — that is precisely the case the register exists to surface.
+    expect(rule13).toContain("tavanına");
   });
 
   it("card prompt (v2.6) forbids referring to the page inside the card", () => {

@@ -4,6 +4,7 @@ import type { OpenAIConfig } from "../config.js";
 import { CARD_GENERATION_SYSTEM_PROMPT } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA } from "../schemas/validateLlmOutput.js";
 import {
+  MARK_REGISTER_CEILING,
   OpenAICardGenerator,
   OpenAIError,
   buildModelResponseSchema,
@@ -256,12 +257,48 @@ describe("buildModelResponseSchema", () => {
     expect(card.required).toContain("correctOption");
   });
 
-  it("pins the model's schemaVersion to 2.2", () => {
+  it("pins the model's schemaVersion to 2.3", () => {
     const schema = buildModelResponseSchema(4) as {
       properties: { schemaVersion: { const?: string; type?: string } };
     };
-    expect(schema.properties.schemaVersion.const).toBe("2.2");
+    expect(schema.properties.schemaVersion.const).toBe("2.3");
     expect(schema.properties.schemaVersion.type).toBe("string");
+  });
+
+  it("asks for the mark register (schema v2.3)", () => {
+    const schema = buildModelResponseSchema(6) as {
+      required: string[];
+      properties: {
+        marks: { items: { required: string[]; properties: Record<string, unknown> } };
+        cards: { items: { required: string[] } };
+      };
+    };
+
+    // Optional in the canonical schema (a v2.0–v2.2 payload has no register),
+    // so strict mode only gets it if it is promoted here — the same move
+    // `topic` needed. Without the promotion OpenAI rejects the whole schema.
+    expect(schema.required).toContain("marks");
+    expect(schema.properties.cards.items.required).toContain("markId");
+    expect([...schema.properties.marks.items.required].sort()).toEqual(
+      Object.keys(schema.properties.marks.items.properties).sort(),
+    );
+  });
+
+  it("caps the register independently of the user's card setting (Codex, PR #47)", () => {
+    // The inversion this guards against: the register reports marks that did
+    // *not* become cards, so a lower card cap means MORE to report, not less.
+    // Scaling the register with `maxCards` made a one-card page able to
+    // register three marks — the rest vanishing silently, which is the exact
+    // failure this layer exists to end.
+    for (const maxCards of [1, 4, 18]) {
+      const schema = buildModelResponseSchema(maxCards) as {
+        properties: { marks: { maxItems?: number }; cards: { maxItems?: number } };
+      };
+      expect(schema.properties.marks.maxItems).toBe(MARK_REGISTER_CEILING);
+      // The card cap still tracks the request; only the register is decoupled.
+      expect(schema.properties.cards.maxItems).toBe(maxCards);
+    }
+    expect(MARK_REGISTER_CEILING).toBeGreaterThan(18);
   });
 
   it("constrains topic to the subject's list when one is given, nullable either way", () => {

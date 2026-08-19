@@ -15,6 +15,7 @@ const KEYS = [
   "MAX_USD_PER_CARD_GENERATION",
   "GEMINI_MODEL",
   "GEMINI_MAX_OUTPUT_TOKENS",
+  "GEMINI_COVERAGE_MAX_OUTPUT_TOKENS",
   "GEMINI_TIMEOUT_MS",
   "GEMINI_USD_PER_MILLION_INPUT_TOKENS",
   "GEMINI_USD_PER_MILLION_OUTPUT_TOKENS",
@@ -166,6 +167,10 @@ describe("loadConfig", () => {
     // Generous next to the short visible answer — hidden thinking tokens are
     // spent from this same budget (the status:"incomplete" lesson).
     expect(gemini.maxOutputTokens).toBe(4096);
+    // The coverage audit has its own, bigger ceiling: a register of every mark
+    // on a dense page with a verbatim quote each is a far longer answer than a
+    // verdict plus one reading (docs/PLAN-kapsama-sozlesmesi.md, Katman B).
+    expect(gemini.coverageMaxOutputTokens).toBe(8192);
     expect(gemini.timeoutMs).toBe(60_000);
     // Same rule as the OpenAI pair: 0 until a verified price is filled in.
     expect(cost.geminiUsdPerMillionInputTokens).toBe(0);
@@ -220,6 +225,7 @@ describe(".env.example", () => {
       // copies verbatim into a real .env / Vercel.
       GEMINI_MODEL: gemini.model,
       GEMINI_MAX_OUTPUT_TOKENS: gemini.maxOutputTokens,
+      GEMINI_COVERAGE_MAX_OUTPUT_TOKENS: gemini.coverageMaxOutputTokens,
       GEMINI_TIMEOUT_MS: gemini.timeoutMs,
     };
     const lines = template.split("\n");

@@ -29,6 +29,7 @@ import { CARD_PROMPT_VERSION } from "../prompts/cardGeneration.js";
 import { OpenAIError, estimateOpenAICostUSD, outputCeilingUsage } from "../providers/openai.js";
 import { EMPTY_TOKEN_USAGE, type CallAccounting, type TokenUsage } from "../providers/tokenUsage.js";
 import { runCardGate } from "../providers/cardGate.js";
+import { coverageFromGate } from "../providers/coverage.js";
 import { sanitizeMultipleChoice } from "../providers/multipleChoice.js";
 import { SupabaseError, type JobRow, type JobStoreLike, type SupabaseConfig } from "../providers/supabaseJobs.js";
 import {
@@ -636,6 +637,10 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
     const gate = runCardGate(output_, {
       maxCardsPerKnowledgeUnit: job.maxCards ?? deps.openai.maxCardsPerKnowledgeUnit,
     });
+    // Schema v2.3's coverage accounting, derived from the same pair the
+    // synchronous endpoint uses (`coverageFromGate`) so the two doors cannot
+    // disagree about what "covered" means.
+    const coverage = coverageFromGate(output_, gate);
 
     const accounting = accountingEntry({
       job,
@@ -657,6 +662,7 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
         jobId,
         output: output_,
         gate,
+        coverage,
         cardPromptVersion: CARD_PROMPT_VERSION,
       },
       [...job.usage, accounting],
@@ -676,6 +682,11 @@ export async function runJob(jobId: string, deps: JobsDependencies): Promise<voi
       cardCount: output_.cards.length,
       // Counts only, never option text (§7.3).
       multipleChoiceNotes: checked.notes.length,
+      // Same three coverage counts `/api/cards-vision` logs, and never a
+      // mark's `quote` — that is page content (§7.3).
+      markCount: coverage.marks.length,
+      uncoveredMarkCount: coverage.uncovered.length,
+      unmarkedCardCount: coverage.unmarkedCardIds.length,
       inputTokens: rawUsage.inputTokens,
       cachedInputTokens: rawUsage.cachedInputTokens,
       outputTokens: rawUsage.outputTokens,

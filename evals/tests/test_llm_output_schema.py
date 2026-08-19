@@ -121,6 +121,46 @@ class TestLlmOutputSchema:
         payload["schemaVersion"] = "1.0"
         assert errors_for(payload)
 
+    def test_mark_register_valid(self):
+        """Schema v2.3 (docs/PLAN-kapsama-sozlesmesi.md): the model's own
+        register of what it saw, plus each card's link into it."""
+        payload = sample_payload()
+        payload["schemaVersion"] = "2.3"
+        payload["marks"] = [
+            {"id": "m1", "kind": "handwriting", "quote": "hoca: EKG'de en erken bulgu"},
+            {"id": "m2", "kind": "symbol", "quote": "sivri T dalgası"},
+        ]
+        payload["cards"][0]["markId"] = "m1"
+        assert errors_for(payload) == []
+
+    def test_empty_register_valid(self):
+        """"No marks on this page" is a real answer, and a different one from
+        "no register" — which is why an empty list has to validate."""
+        payload = sample_payload()
+        payload["schemaVersion"] = "2.3"
+        payload["marks"] = []
+        payload["cards"][0]["markId"] = None
+        assert errors_for(payload) == []
+
+    def test_older_payload_without_a_register_still_valid(self):
+        """v2.0–v2.2 responses carry neither field; the canonical schema is the
+        contract for stored payloads too, so they must stay valid."""
+        assert errors_for(sample_payload()) == []
+
+    def test_unknown_mark_kind_rejected(self):
+        payload = sample_payload()
+        payload["schemaVersion"] = "2.3"
+        payload["marks"] = [{"id": "m1", "kind": "scribble", "quote": "x"}]
+        assert errors_for(payload)
+
+    def test_mark_without_a_quote_rejected(self):
+        # A mark the owner cannot recognise is not actionable: the quote is how
+        # they tell which passage the report is talking about.
+        payload = sample_payload()
+        payload["schemaVersion"] = "2.3"
+        payload["marks"] = [{"id": "m1", "kind": "symbol"}]
+        assert errors_for(payload)
+
     def test_risk_flag_def_retained_for_rollback(self):
         # The riskFlag $def is intentionally kept (SAFE_MODE / anti-drift sync
         # tests) even though the v2 card no longer references it.

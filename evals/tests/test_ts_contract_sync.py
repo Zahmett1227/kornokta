@@ -50,6 +50,25 @@ def test_parser_finds_the_arrays(ts_source):
     assert len(ts_const_array(ts_source, "CARD_TYPES")) > 2
     assert "ocr_disagreement" in ts_const_array(ts_source, "RISK_FLAGS")
     assert "direct_recall" in ts_const_array(ts_source, "CARD_TYPES")
+    assert ts_const_array(ts_source, "MARK_KINDS") == ["handwriting", "symbol", "underline", "highlight"]
+
+
+def test_mark_kinds_match_the_schema(ts_source, schema):
+    """Schema v2.3's mark tiers (docs/PLAN-kapsama-sozlesmesi.md).
+
+    `MARK_KINDS` is not decoration: `providers/coverage.ts` ranks uncovered
+    marks by its order and the Gemini auditor's response schema is built from
+    it, so a tier here that the canonical schema does not know is a value the
+    generator can never emit — and one the auditor emits and `sanitizeMarks`
+    then drops.
+    """
+    ts = ts_const_array(ts_source, "MARK_KINDS")
+    canonical = schema["properties"]["marks"]["items"]["properties"]["kind"]["enum"]
+
+    assert set(ts) - set(canonical) == set(), "TS'te olup şemada olmayan işaret kademesi"
+    assert set(canonical) - set(ts) == set(), "Şemada olup TS'te olmayan işaret kademesi"
+    # Order is the priority ladder of prompt rule 3, shared with the Swift enum.
+    assert ts == canonical
 
 
 def test_risk_flags_match_the_schema(ts_source, schema):

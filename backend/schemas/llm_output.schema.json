@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://cizgi.local/schemas/llm_output.schema.json",
   "title": "Kanonik LLM çıktı sözleşmesi (v2, Faz 6)",
-  "description": "ANA-PLAN §14, Faz 6 (docs/FAZ6-PLAN.md §6) ile sadeleştirildi: işaret-odaklı vision okuması. Kaynağa-sadakat muhasebesi (sourceQuote/sourceFaithful/enriched/transcription/knowledgeUnits) ana akıştan çıkarıldı; model işaretli sayfayı okuyup doğrudan zenginleştirilmiş kartlar üretir. Şema doğrulanmayan yanıt yine kaydedilmez.",
+  "description": "ANA-PLAN §14, Faz 6 (docs/FAZ6-PLAN.md §6) ile sadeleştirildi: işaret-odaklı vision okuması. Kaynağa-sadakat muhasebesi (sourceQuote/sourceFaithful/enriched/transcription/knowledgeUnits) ana akıştan çıkarıldı; model işaretli sayfayı okuyup doğrudan zenginleştirilmiş kartlar üretir. Şema doğrulanmayan yanıt yine kaydedilmez. v2.3 (docs/PLAN-kapsama-sozlesmesi.md): modelin kendi işaret defteri (`marks`) ve kart başına `markId` — kapsama artık prompt'un iyi niyetine değil, iki listenin farkına bakar.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "requestId", "readText", "cards", "usage"],
   "properties": {
-    "schemaVersion": { "type": "string", "enum": ["2.0", "2.1", "2.2"] },
+    "schemaVersion": { "type": "string", "enum": ["2.0", "2.1", "2.2", "2.3"] },
     "requestId": { "type": "string", "minLength": 1 },
     "readText": {
       "type": "string",
@@ -56,6 +56,36 @@
           "topic": {
             "description": "Şema v2.2: dersin kanonik konu listesinden (schemas/subject_topics.json) konu adı; ders bilinmiyorsa veya model emin değilse null. Kanonik şema ders-bağımsız olduğu için burada enum yok — enum kısıtı yalnız model-yüzlü dinamik şemada (buildModelResponseSchema) yaşar; sunucu geçersiz değeri null'a çevirir (sanitizeTopics), işi asla düşürmez. v2.0/v2.1 kartlarında yoktur, o yüzden zorunlu değildir.",
             "type": ["string", "null"]
+          },
+          "markId": {
+            "description": "Şema v2.3: bu kartın doğduğu işaretin kimliği (`marks[].id`). null = kart hiçbir işarete bağlanmadı, ki bu prompt kural 1'in ihlalidir ve sunucuda sayılır (providers/coverage.ts). Tanınmayan kimlik sunucuda null'a çevrilir (sanitizeMarks), iş asla düşürülmez — `topic` ile aynı disiplin. v2.0–v2.2 kartlarında yoktur, o yüzden zorunlu değildir.",
+            "type": ["string", "null"]
+          }
+        }
+      }
+    },
+    "marks": {
+      "description": "Şema v2.3 (docs/PLAN-kapsama-sozlesmesi.md, Katman A): modelin sayfada TESPİT ETTİĞİ işaretlerin defteri — kart üretilmiş olsun ya da olmasın. Var oluş sebebi tek bir hata sınıfı: işaretin okunup karta çevrilmemesi (prompt v2.7'nin üç turda kapatamadığı, sahibinin gerçek sayfada bildirdiği kusur). Kartlaşmamış işaret ancak bu liste ile `markId` karşılaştırılırsa GÖRÜLEBİLİR; üretilmemiş kartın lowConfidence'ı olmaz. Boş dizi geçerlidir (işaretsiz sayfa) ve alanın kendisi zorunlu değildir — v2.0–v2.2 yanıtlarında yoktur.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "quote"],
+        "properties": {
+          "id": {
+            "description": "Model tarafından verilen kısa kimlik (ör. \"m1\"). Kartlar buna `markId` ile atıf yapar. İndeks yerine kimlik: modelin saymasına değil, kendi yazdığı etikete dayanır.",
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "description": "İşaretin kademesi. Sıra prompt kural 3'ün öncelik sırasıdır (el yazısı > sembol > altı çizili > fosforlu) ve bu enum onu makine-okunur yapar.",
+            "type": "string",
+            "enum": ["handwriting", "symbol", "underline", "highlight"]
+          },
+          "quote": {
+            "description": "İşaretin ÜSTÜNDEKİ/yanındaki metin, sayfadan birebir. Kullanıcı sayfaya bakmadan hangi işaretten söz edildiğini buradan anlar; uydurulmuş bir alıntı denetimin tamamını değersiz kılar.",
+            "type": "string",
+            "minLength": 1
           }
         }
       }

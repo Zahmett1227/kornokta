@@ -102,9 +102,19 @@ public enum CardGenerationError: Error, Sendable, Equatable {
 public struct CardGenerationFailure: Error, Sendable {
     public let error: CardGenerationError
     public let accounting: [ModelRunMetadata]
+    /// The mark register of a response that produced no usable card (schema
+    /// v2.3). Same reasoning as `accounting`: the expensive, invisible cases
+    /// are the ones nobody was writing down, and a page whose every mark went
+    /// uncarded is exactly such a case.
+    public let coverage: PageCoverage?
 
-    public init(error: CardGenerationError, accounting: [ModelRunMetadata] = []) {
+    public init(
+        error: CardGenerationError,
+        accounting: [ModelRunMetadata] = [],
+        coverage: PageCoverage? = nil
+    ) {
         self.error = error
         self.accounting = accounting
+        self.coverage = coverage
     }
 }

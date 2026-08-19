@@ -56,11 +56,13 @@ final class BackendCardProviderTests: XCTestCase {
         readText: String = "işaretli ham metin",
         cards: [RemoteCard],
         verdicts: [RemoteCardVerdict],
-        warnings: [String] = []
+        warnings: [String] = [],
+        coverage: RemoteCoverage? = nil
     ) -> RemoteCardsSuccess {
         RemoteCardsSuccess(
             output: RemoteCardsOutput(requestId: "req-1", readText: readText, cards: cards, usage: usage()),
             gate: RemoteCardGateReport(verdicts: verdicts, warnings: warnings),
+            coverage: coverage,
             cardPromptVersion: "2.0"
         )
     }
@@ -250,14 +252,40 @@ final class BackendCardProviderTests: XCTestCase {
             verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "reject")]
         )
         XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
-            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
+            XCTAssertEqual((error as? CardGenerationFailure)?.error, .sourceInsufficient)
         }
     }
 
     func testNoCardsAtAllIsTreatedAsSourceInsufficient() {
         let decoded = success(cards: [], verdicts: [])
         XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])) { error in
-            XCTAssertEqual(error as? CardGenerationError, .sourceInsufficient)
+            XCTAssertEqual((error as? CardGenerationFailure)?.error, .sourceInsufficient)
+        }
+    }
+
+    /// The page that produced nothing is the page whose register matters most —
+    /// every mark on it is uncovered by definition. Before this it was thrown
+    /// away with the error, together with what the attempt had cost.
+    func testAPageWithNoCardsStillCarriesItsRegisterAndItsCost() {
+        let spent = ModelRunMetadata(
+            requestId: "req-1", attempt: 1, provider: "openai", model: "m",
+            purpose: "card_generation", promptVersion: "2.8", latencyMs: 10,
+            inputTokens: 1000, outputTokens: 20, estimatedCostUSD: 0.01
+        )
+        let decoded = success(
+            cards: [],
+            verdicts: [],
+            coverage: RemoteCoverage(
+                reported: true,
+                uncovered: [RemoteMark(id: "m1", kind: "symbol", quote: "★ hiç kartlaşmadı")],
+                unmarkedCardIds: []
+            )
+        )
+        XCTAssertThrowsError(try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [spent])) { error in
+            let failure = error as? CardGenerationFailure
+            XCTAssertEqual(failure?.error, .sourceInsufficient)
+            XCTAssertEqual(failure?.coverage?.uncovered.map(\.quote), ["★ hiç kartlaşmadı"])
+            XCTAssertEqual(failure?.accounting.count, 1)
         }
     }
 
@@ -453,6 +481,98 @@ final class BackendCardProviderTests: XCTestCase {
         guard case .failTransiently = BackendCardProvider.action(for: view(status: "paused")) else {
             return XCTFail("Bilinmeyen durum geçici hata olmalı")
         }
+    }
+
+    // MARK: Coverage (schema v2.3)
+
+    /// The server's register survives the mapping, because it is the only
+    /// signal in the system for a card that does not exist.
+    func testCoverageSurvivesTheMapping() throws {
+        let decoded = success(
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")],
+            coverage: RemoteCoverage(
+                reported: true,
+                uncovered: [
+                    RemoteMark(id: "m2", kind: "handwriting", quote: "hoca: EBV ilişkisi"),
+                    RemoteMark(id: "m5", kind: "highlight", quote: "geniş vurgu"),
+                ],
+                unmarkedCardIds: ["card_9"]
+            )
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
+
+        XCTAssertEqual(knowledge.coverage?.reported, true)
+        XCTAssertEqual(knowledge.coverage?.uncovered.count, 2)
+        XCTAssertEqual(knowledge.coverage?.uncovered.first?.kind, .handwriting)
+        XCTAssertEqual(knowledge.coverage?.uncovered.first?.source, .generator)
+        XCTAssertEqual(knowledge.coverage?.unmarkedCardIds, ["card_9"])
+    }
+
+    /// A tier this build has not heard of drops that one mark and keeps the
+    /// rest — the same leniency an unknown card type gets, and for the same
+    /// reason: an audit extra must not cost the page its findings.
+    func testUnknownMarkKindDropsOnlyThatMark() throws {
+        let decoded = success(
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")],
+            coverage: RemoteCoverage(
+                reported: true,
+                uncovered: [
+                    RemoteMark(id: "m1", kind: "doodle", quote: "bilinmeyen kademe"),
+                    RemoteMark(id: "m2", kind: "symbol", quote: "yıldızlı yer"),
+                ],
+                unmarkedCardIds: []
+            )
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
+        XCTAssertEqual(knowledge.coverage?.uncovered.map(\.quote), ["yıldızlı yer"])
+    }
+
+    /// An older server sends no block at all. That is `nil`, not an empty
+    /// report: "nobody looked" and "nothing was missed" are different answers
+    /// and only one of them is good news.
+    func testAbsentCoverageBlockIsNilRatherThanEmpty() throws {
+        let decoded = success(
+            cards: [card()],
+            verdicts: [RemoteCardVerdict(cardId: "card_1", decision: "auto_accept")]
+        )
+        let knowledge = try BackendCardProvider.map(decoded, elapsedMs: 100, accounting: [])
+        XCTAssertNil(knowledge.coverage)
+    }
+
+    /// A result stored by an older deployment — job results live 60 days — has
+    /// no `coverage` key, and decoding it must still yield the page's cards.
+    func testLegacyResultWithoutCoverageStillDecodes() throws {
+        let json = """
+        {"output":{"requestId":"req-1","readText":"metin",
+          "cards":[{"id":"c1","type":"direct_recall","front":"f","back":"b","explanation":"",
+                    "difficulty":2,"tags":[],"lowConfidence":false}],
+          "usage":{"provider":"openai","model":"m","inputTokens":1,"outputTokens":2,"estimatedCostUSD":0}},
+         "gate":{"verdicts":[{"cardId":"c1","decision":"auto_accept"}],"warnings":[]},
+         "cardPromptVersion":"2.7"}
+        """
+        let decoded = try JSONDecoder().decode(RemoteCardsSuccess.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.coverage)
+        XCTAssertEqual(decoded.output.cards.count, 1)
+    }
+
+    /// A half-written coverage object degrades to "no findings" instead of
+    /// failing the decode — the block is an extra on a response whose real
+    /// payload is the cards.
+    func testMalformedCoverageBlockDoesNotCostThePageItsCards() throws {
+        let json = """
+        {"output":{"requestId":"req-1","readText":"metin",
+          "cards":[{"id":"c1","type":"direct_recall","front":"f","back":"b","explanation":"",
+                    "difficulty":2,"tags":[],"lowConfidence":false}],
+          "usage":{"provider":"openai","model":"m","inputTokens":1,"outputTokens":2,"estimatedCostUSD":0}},
+         "gate":{"verdicts":[{"cardId":"c1","decision":"auto_accept"}],"warnings":[]},
+         "coverage":{"reported":"evet"},
+         "cardPromptVersion":"2.8"}
+        """
+        let decoded = try JSONDecoder().decode(RemoteCardsSuccess.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.coverage?.reported, false)
+        XCTAssertEqual(decoded.output.cards.count, 1)
     }
 
     /// Short while a page is likely to finish, longer afterwards, so a slow one
