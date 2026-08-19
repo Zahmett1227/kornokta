@@ -28,8 +28,14 @@ public struct DarkZone: Identifiable, Equatable, Sendable {
     public let subject: String
     public let topic: String
     /// From the deck, never from the model — the one number here that is known.
-    public let cardCount: Int
-    public let weakCardCount: Int
+    ///
+    /// `var`, not `let`, precisely *because* it belongs to the deck: the deck
+    /// keeps moving after the ranking is paid for. A zone is a model judgement
+    /// about a topic, and that judgement stays valid when a card is suspended —
+    /// but the count beside it does not. `DarkMapCoverage.reconcile` refreshes
+    /// these two and nothing else (Codex, PR #49).
+    public var cardCount: Int
+    public var weakCardCount: Int
     public let consensus: Consensus?
     public let consensusRaw: String
     /// Which families flagged it, so the screen can name them.

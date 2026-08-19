@@ -177,6 +177,37 @@ public enum DarkMapCoverage {
         return result
     }
 
+    /// Refreshes each zone's card counts from the current deck.
+    ///
+    /// A ranking is bought once and then read for as long as the screen lives,
+    /// while `@Query` keeps the deck current underneath it. The model's
+    /// *judgement* survives that — "TUS leans hard on this topic and you are
+    /// thin there" does not stop being true because a card was suspended — but
+    /// the **counts** beside it are deck facts and go wrong immediately. A zone
+    /// showing a stale count also keeps offering "Bu konuyu çalış", which then
+    /// opens an empty session.
+    ///
+    /// One choke point rather than a fix per call site: the same staleness was
+    /// patched twice at the places that happened to be looked at, and turned up
+    /// a third time in the zone rows (Codex, PR #49). Everything that reads a
+    /// loaded result now passes through here.
+    ///
+    /// Deliberately does **not** re-rank, re-order or drop zones. A topic that
+    /// has become covered still belongs on the list the user paid for; it just
+    /// says so honestly now.
+    public static func reconcile(zones: [DarkZone], with payload: Payload) -> [DarkZone] {
+        var counts: [String: Row] = [:]
+        for row in payload.rows { counts[key(subject: row.subject, topic: row.topic)] = row }
+
+        return zones.map { zone in
+            var refreshed = zone
+            let row = counts[key(subject: zone.subject, topic: zone.topic)]
+            refreshed.cardCount = row?.cardCount ?? 0
+            refreshed.weakCardCount = row?.weakCardCount ?? 0
+            return refreshed
+        }
+    }
+
     /// Groups the deck into canonical rows.
     ///
     /// Sample fronts are taken from the **longest** questions rather than the

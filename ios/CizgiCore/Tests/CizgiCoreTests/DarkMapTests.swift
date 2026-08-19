@@ -686,3 +686,104 @@ final class DarkMapUntouchedReconciliationTests: XCTestCase {
         XCTAssertFalse(keys(rows).contains("Patoloji|Neoplazi"))
     }
 }
+
+/// The third instance of one staleness axis (Codex, PR #49, rounds 7/9/10).
+///
+/// A ranking is bought once and read for as long as the screen lives, while
+/// `@Query` keeps the deck current underneath it. Patching the sites that
+/// happened to be looked at fixed it twice and missed the zone rows both times;
+/// this locks the single choke point instead.
+final class DarkMapZoneReconciliationTests: XCTestCase {
+
+    private func zone(subject: String, topic: String, cardCount: Int, weak: Int = 0) -> DarkZone {
+        DarkZone(
+            subject: subject,
+            topic: topic,
+            cardCount: cardCount,
+            weakCardCount: weak,
+            consensusRaw: "confirmed",
+            raters: ["openai", "gemini"],
+            darkness: 4,
+            tusYieldRaw: "high",
+            missingConcepts: ["x"],
+            reasons: [DarkZone.Reason(family: "openai", reason: "r")]
+        )
+    }
+
+    /// The reported case: the last active card is suspended, so the row must
+    /// stop claiming coverage — and stop offering "Bu konuyu çalış", which the
+    /// view gates on `cardCount > 0`.
+    func testDropsToZeroWhenTheLastActiveCardIsSuspended() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Neoplazi", isActive: false)],
+            schema: schema
+        )
+        let out = DarkMapCoverage.reconcile(
+            zones: [zone(subject: "Patoloji", topic: "Neoplazi", cardCount: 3, weak: 1)],
+            with: payload
+        )
+        XCTAssertEqual(out[0].cardCount, 0)
+        XCTAssertEqual(out[0].weakCardCount, 0)
+    }
+
+    func testPicksUpACardAddedSinceTheRun() {
+        let payload = DarkMapCoverage.build(
+            cards: [
+                card(subject: "Patoloji", topic: "Neoplazi"),
+                card(subject: "Patoloji", topic: "Neoplazi", lowConfidence: true),
+            ],
+            schema: schema
+        )
+        let out = DarkMapCoverage.reconcile(
+            zones: [zone(subject: "Patoloji", topic: "Neoplazi", cardCount: 0)],
+            with: payload
+        )
+        XCTAssertEqual(out[0].cardCount, 2)
+        XCTAssertEqual(out[0].weakCardCount, 1)
+    }
+
+    /// The judgement is what was paid for; only the counts are deck facts.
+    func testLeavesTheRankingUntouched() {
+        let payload = DarkMapCoverage.build(cards: [], schema: schema)
+        let original = zone(subject: "Patoloji", topic: "Neoplazi", cardCount: 5)
+        let out = DarkMapCoverage.reconcile(zones: [original], with: payload)
+        XCTAssertEqual(out[0].darkness, original.darkness)
+        XCTAssertEqual(out[0].consensus, original.consensus)
+        XCTAssertEqual(out[0].tusYield, original.tusYield)
+        XCTAssertEqual(out[0].raters, original.raters)
+        XCTAssertEqual(out[0].missingConcepts, original.missingConcepts)
+        XCTAssertEqual(out[0].reasons, original.reasons)
+    }
+
+    /// Order and membership are the user's paid result; a topic that became
+    /// covered stays on the list, it just says so honestly.
+    func testKeepsEveryZoneAndItsOrder() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Neoplazi")],
+            schema: schema
+        )
+        let out = DarkMapCoverage.reconcile(
+            zones: [
+                zone(subject: "Patoloji", topic: "Neoplazi", cardCount: 0),
+                zone(subject: "Patoloji", topic: "Inflamasyon", cardCount: 0),
+            ],
+            with: payload
+        )
+        XCTAssertEqual(out.map(\.topic), ["Neoplazi", "Inflamasyon"])
+        XCTAssertEqual(out[0].cardCount, 1)
+        XCTAssertEqual(out[1].cardCount, 0)
+    }
+
+    /// The pair is the identity here too.
+    func testDoesNotBorrowACountFromTheSameTopicNameUnderAnotherSubject() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Deri Hastalıkları")],
+            schema: schema
+        )
+        let out = DarkMapCoverage.reconcile(
+            zones: [zone(subject: "Genel Cerrahi", topic: "Deri Hastalıkları", cardCount: 9)],
+            with: payload
+        )
+        XCTAssertEqual(out[0].cardCount, 0)
+    }
+}

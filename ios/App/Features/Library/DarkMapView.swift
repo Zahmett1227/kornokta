@@ -66,7 +66,7 @@ struct DarkMapView: View {
                 case .failed(let message, let retryable):
                     failureSection(message: message, retryable: retryable)
                 case .loaded(let result):
-                    resultSections(result)
+                    resultSections(result, payload: payload)
                 }
 
                 untouchedSection(schema: schema, payload: payload)
@@ -101,6 +101,16 @@ struct DarkMapView: View {
     private var loaded: DarkMapResult? {
         if case .loaded(let result) = phase { return result }
         return nil
+    }
+
+    /// The loaded zones with their counts refreshed from the current deck.
+    ///
+    /// Every render of a zone goes through this, so a suspended card can never
+    /// leave a row claiming active coverage it no longer has — nor offering
+    /// "Bu konuyu çalış" into an empty session. The ranking itself is untouched:
+    /// it was paid for and the model's judgement did not expire.
+    private func reconciledZones(_ result: DarkMapResult, payload: DarkMapCoverage.Payload) -> [DarkZone] {
+        DarkMapCoverage.reconcile(zones: result.zones, with: payload)
     }
 
     @ViewBuilder
@@ -235,7 +245,7 @@ struct DarkMapView: View {
     }
 
     @ViewBuilder
-    private func resultSections(_ result: DarkMapResult) -> some View {
+    private func resultSections(_ result: DarkMapResult, payload: DarkMapCoverage.Payload) -> some View {
         Section {
             if result.singleRater {
                 // The degradation that must never look like agreement.
@@ -271,7 +281,7 @@ struct DarkMapView: View {
             }
         } else {
             Section {
-                ForEach(result.zones) { zone in
+                ForEach(reconciledZones(result, payload: payload)) { zone in
                     zoneRow(zone)
                 }
             } header: {
