@@ -88,6 +88,37 @@ public enum DarkMapCoverage {
         public var classifiedCards: Int { rows.reduce(0) { $0 + $1.cardCount } }
     }
 
+    /// Why a payload produced no rows.
+    ///
+    /// Three genuinely different situations that all look like "no coverage",
+    /// and telling them apart matters because only one is something the user
+    /// can act on. Lives here, and is tested, because the view got this wrong
+    /// twice: first by asserting a cause it could not know ("önce ders/konu
+    /// atanmalı"), then by calling an all-suspended deck empty (Codex, PR #49).
+    /// A `switch` over a closed enum is what stops a third miss.
+    public enum Emptiness: Equatable, Sendable {
+        /// Active cards exist, but none carries a canonical (ders, konu) pair.
+        /// The only actionable case: classifying them personalises the ranking.
+        case unclassifiedOnly
+        /// Cards exist but every one is suspended, draft, or awaiting review.
+        /// Nothing to act on — and emphatically *not* an empty deck.
+        case inactiveOnly
+        /// No cards at all.
+        case noCards
+    }
+
+    /// `nil` when the payload has rows; otherwise which of the three it is.
+    ///
+    /// `unclassifiedOnly` is checked first on purpose: when a deck has both
+    /// unclassified active cards and suspended ones, the actionable cause is
+    /// the one worth naming.
+    public static func emptiness(of payload: Payload) -> Emptiness? {
+        guard payload.rows.isEmpty else { return nil }
+        if payload.unclassifiedCards > 0 { return .unclassifiedOnly }
+        if payload.inactiveCards > 0 { return .inactiveOnly }
+        return .noCards
+    }
+
     /// Default questions forwarded per topic. Mirrors the server's own default;
     /// the server clamps to its configured ceiling either way, so a mismatch
     /// costs a slightly larger request, never a wrong answer.

@@ -472,3 +472,57 @@ final class DarkMapCoverageAgreementTests: XCTestCase {
         assertAgreement([])
     }
 }
+
+/// The three ways a payload can have no rows (Codex, PR #49).
+///
+/// A closed enum with a test rather than a chain of `if`s in the view, because
+/// the view got this wrong twice: first by asserting a cause it could not know,
+/// then by calling an all-suspended deck empty. Only one of the three is
+/// something the user can act on, so collapsing them loses the only part that
+/// matters.
+final class DarkMapEmptinessTests: XCTestCase {
+
+    func testNilWhenThereAreRows() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon")],
+            schema: schema
+        )
+        XCTAssertNil(DarkMapCoverage.emptiness(of: payload))
+    }
+
+    func testUnclassifiedOnly() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: nil), card(subject: nil, topic: nil)],
+            schema: schema
+        )
+        XCTAssertEqual(DarkMapCoverage.emptiness(of: payload), .unclassifiedOnly)
+    }
+
+    /// The case that used to read "Deste boş görünüyor" — with cards in it.
+    func testInactiveOnly() {
+        let payload = DarkMapCoverage.build(
+            cards: [
+                card(subject: "Patoloji", topic: "Inflamasyon", isActive: false),
+                card(subject: "Patoloji", topic: "Neoplazi", isActive: false),
+            ],
+            schema: schema
+        )
+        XCTAssertEqual(DarkMapCoverage.emptiness(of: payload), .inactiveOnly)
+    }
+
+    func testNoCards() {
+        XCTAssertEqual(DarkMapCoverage.emptiness(of: DarkMapCoverage.build(cards: [], schema: schema)), .noCards)
+    }
+
+    /// Both present: the actionable cause is the one worth naming.
+    func testUnclassifiedWinsOverInactive() {
+        let payload = DarkMapCoverage.build(
+            cards: [
+                card(subject: "Patoloji", topic: nil),
+                card(subject: "Patoloji", topic: "Inflamasyon", isActive: false),
+            ],
+            schema: schema
+        )
+        XCTAssertEqual(DarkMapCoverage.emptiness(of: payload), .unclassifiedOnly)
+    }
+}

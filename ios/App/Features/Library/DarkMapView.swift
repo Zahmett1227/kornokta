@@ -171,21 +171,15 @@ struct DarkMapView: View {
                 Text("Backend ayarlı değil (Ayarlar → Backend).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-            } else if payload.rows.isEmpty {
+            } else if let emptiness = DarkMapCoverage.emptiness(of: payload) {
                 // Said before the button, not after it: the ranking still runs
                 // and is still useful, it just has nothing personal to lean on.
-                // The two causes are distinguished because only one of them is
-                // something the user can act on.
-                Label(
-                    payload.unclassifiedCards > 0
-                        ? "Sınıflandırılmış aktif kartın yok, o yüzden sıralama yalnız TUS "
-                            + "ağırlığına bakacak. Kartlara ders/konu atadıkça kişiselleşir."
-                        : "Deste boş görünüyor, o yüzden sıralama yalnız TUS ağırlığına bakacak — "
-                            + "yani \"nereden başlamalı\" sorusunun cevabı.",
-                    systemImage: "info.circle"
-                )
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                // The three causes are told apart because only one of them is
+                // something the user can act on — and because calling an
+                // all-suspended deck "empty" is simply false.
+                Label(Self.emptinessNote(emptiness), systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         } header: {
             Text("Öncelik sırası")
@@ -325,17 +319,35 @@ struct DarkMapView: View {
         .padding(.vertical, 4)
     }
 
+    /// Three states, because `consensus` has three.
+    ///
+    /// `nil` means a newer server sent a level this build does not know. The
+    /// decoder keeps such a zone on purpose; collapsing it to "tek model" here
+    /// would throw that care away and can flatly contradict `raters` — which is
+    /// the actual evidence, so an unknown level falls back to counting it
+    /// (Codex, PR #49). No badge at all when even that is unavailable: silence
+    /// is honest, a guess is not.
+    @ViewBuilder
     private func consensusBadge(_ zone: DarkZone) -> some View {
-        let confirmed = zone.consensus == .confirmed
-        return Text(confirmed ? "iki model de" : "tek model")
+        switch zone.consensus {
+        case .confirmed:
+            badgeCapsule("iki model de", tint: Color.accentColor)
+        case .disputed:
+            badgeCapsule("tek model", tint: Color.secondary)
+        case nil:
+            if !zone.raters.isEmpty {
+                badgeCapsule("\(zone.raters.count) model", tint: Color.secondary)
+            }
+        }
+    }
+
+    private func badgeCapsule(_ text: String, tint: Color) -> some View {
+        Text(text)
             .font(.caption2.weight(.medium))
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(
-                (confirmed ? Color.accentColor : Color.secondary).opacity(0.15),
-                in: Capsule()
-            )
-            .foregroundStyle(confirmed ? Color.accentColor : Color.secondary)
+            .background(tint.opacity(0.15), in: Capsule())
+            .foregroundStyle(tint)
     }
 
     /// Five pips rather than a number: the score is a coarse judgement and a
@@ -492,6 +504,20 @@ struct DarkMapView: View {
     }
 
     // MARK: - Labels
+
+    private static func emptinessNote(_ emptiness: DarkMapCoverage.Emptiness) -> String {
+        switch emptiness {
+        case .unclassifiedOnly:
+            return "Sınıflandırılmış aktif kartın yok, o yüzden sıralama yalnız TUS ağırlığına "
+                + "bakacak. Kartlara ders/konu atadıkça kişiselleşir."
+        case .inactiveOnly:
+            return "Aktif kartın yok — destedeki kartların hepsi askıda ya da taslak. Sıralama "
+                + "yalnız TUS ağırlığına bakacak."
+        case .noCards:
+            return "Deste boş görünüyor, o yüzden sıralama yalnız TUS ağırlığına bakacak — yani "
+                + "\"nereden başlamalı\" sorusunun cevabı."
+        }
+    }
 
     private static func familyLabel(_ family: String) -> String {
         switch family {
