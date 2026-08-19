@@ -276,6 +276,18 @@ geçti; `swift test` + `xcodegen generate` bir Mac'te ya da CI'da koşmalı.
 - Eski (v2.3 öncesi) bir sayfayı aç → uygulama açılıyor mu (SwiftData'ya
   `coverageJSON` eklendi) ve o sayfa "defter yok" diyor mu.
 
+**Bilinçle açık bırakılan tek şey (PR #47, beşinci tur).** Aynı okuyucu aynı
+pasajı örtüşen iki farklı alıntıyla bildirirse ("Reed-Sternberg hücresi CD30"
+ve "…CD30 pozitiftir") satırlar tek satırda birleşiyor ve uzun alıntının
+fazladan içeriği ekranda görünmüyor. Ayırmak, yoksaymayı bozuyor: yoksayma
+kimliği metinden türetiliyor ve örtüşmeyle eşleşiyor (denetimin farklı
+kelimelerle aynı pasajı bildirmesi yüzünden öyle olmak zorunda), dolayısıyla
+iki satır gösterip birini yoksaydığında ikisi birden kaybolurdu — görünenle
+olanın çeliştiği bir ekran. Kaybın *sessiz* kısmı zaten kapalı: ikinci giriş
+düşürülmüyor, sayılıyor ("· 2 yerde"). Gerçek sayfalarda bu durumun çıkıp
+çıkmadığı aşağıdaki ölçümün yan ürünü olacak; çıkarsa doğru çözüm tahminle
+değil veriyle seçilir.
+
 **30 sayfadan sonra bakılacak üç sayı** (§3'ün "asıl ürün" tablosu): sayfa
 başına kartsız işaret, kabul/yoksay oranı, A ile B'nin kesişimi.
 
