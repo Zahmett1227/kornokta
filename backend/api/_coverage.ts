@@ -55,6 +55,22 @@ export interface CoverageSuccess extends CoverageAuditResult {
 export interface CoverageFailure {
   error: string;
   retryable: boolean;
+  /**
+   * How this failure should be counted in the phone's ledger: `unmeasured` if
+   * the request reached the model and may have been billed without saying how
+   * much, `none` if it was rejected before generating anything. Absent on the
+   * failures that never involved a provider at all (a bad body, a missing
+   * token) — nothing to account for there.
+   *
+   * Sent rather than left to the phone to infer, because the only two signals
+   * the phone has are the HTTP status *we* chose and `retryable`, and neither
+   * carries this: a 429 is retryable and free, while a safety stop is
+   * permanent and billed. Deriving billing from `retryable` got both of those
+   * backwards (Codex, PR #47) — and a wrong flag here is worse than none,
+   * since "ücretsiz" and "ölçülemedi" are exactly what the ledger exists to
+   * tell apart.
+   */
+  billing?: string;
 }
 
 /** Structural, so a test can drive the endpoint without a key or a network. */
@@ -76,8 +92,8 @@ function json(body: unknown, status: number): Response {
   });
 }
 
-function fail(message: string, status: number, retryable: boolean): Response {
-  return json({ error: message, retryable } satisfies CoverageFailure, status);
+function fail(message: string, status: number, retryable: boolean, billing?: string): Response {
+  return json({ error: message, retryable, ...(billing ? { billing } : {}) } satisfies CoverageFailure, status);
 }
 
 /**
@@ -196,6 +212,14 @@ export async function handleCoverageRequest(
     const geminiError = error instanceof GeminiError ? error : null;
     const retryable = geminiError ? geminiError.transient : true;
     const status = geminiError ? (retryable ? 503 : 502) : 500;
+    // Same three-way verdict the job ledger uses: a request Gemini rejected
+    // with a status generated nothing and cost nothing; anything else reached
+    // the model and may have been billed without saying how much.
+    //
+    // Decided once and used for both the log and the reply — computing it
+    // twice is exactly how `_ocr.ts` once ended up logging one value while
+    // telling the phone another (`_cards.ts` records that lesson).
+    const billing = geminiError?.status === undefined ? "unmeasured" : "none";
 
     deps.log?.({
       requestId,
@@ -203,10 +227,7 @@ export async function handleCoverageRequest(
       bytes: image.length,
       status: geminiError?.status,
       retryable,
-      // Same three-way verdict the job ledger uses: a request Gemini rejected
-      // with a status generated nothing and cost nothing; anything else
-      // reached the model and may have been billed without saying how much.
-      billing: geminiError?.status === undefined ? "unmeasured" : "none",
+      billing,
       elapsedMs: Date.now() - started,
     });
 
@@ -214,6 +235,7 @@ export async function handleCoverageRequest(
       geminiError ? geminiError.message : "Kapsama denetimi sırasında beklenmeyen hata.",
       status,
       retryable,
+      billing,
     );
   }
   // `image` goes out of scope here and is never written anywhere (§7.3).

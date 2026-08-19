@@ -499,7 +499,14 @@ const COVERAGE_RESPONSE_SCHEMA = {
           quote: { type: "STRING" },
           coveredByCardIndex: { type: "INTEGER", nullable: true },
         },
-        required: ["kind", "quote"],
+        // `coveredByCardIndex` is required-and-nullable, not optional, and the
+        // difference is the whole answer: leaving it out let a schema-valid row
+        // arrive with only `kind` and `quote`, which read exactly like an
+        // explicit `null` and reported a covered mark as uncovered (Codex,
+        // PR #47). A false "you skipped this" costs the owner a decision every
+        // time, which is the one thing this endpoint must not manufacture — so
+        // the model has to say `null` deliberately rather than by omission.
+        required: ["kind", "quote", "coveredByCardIndex"],
       },
     },
   },
@@ -582,7 +589,13 @@ function readAuditedMark(value: unknown, cardCount: number): AuditedMark | null 
   if (typeof record.quote !== "string" || !record.quote.trim()) return null;
 
   const index = record.coveredByCardIndex;
-  if (index === undefined || index === null) {
+  // An explicit `null` is the auditor saying "no card covers this" — the
+  // finding. A *missing* field is not the same statement: the schema requires
+  // it, so its absence means the row is malformed, and reading that as
+  // "uncovered" would invent a finding out of a formatting slip. Dropped and
+  // counted instead, like every other unusable row.
+  if (index === undefined) return null;
+  if (index === null) {
     return { kind: record.kind as MarkKind, quote: record.quote.trim(), coveredByCardIndex: null };
   }
   // An index pointing at no card is the auditor losing track of the list, not

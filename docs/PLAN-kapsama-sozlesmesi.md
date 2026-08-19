@@ -224,7 +224,7 @@ yükseltmeyi gerçekten hak ediyor mu? Bugün o karar veri olmadan bekliyor.
 | Kartsız işaret / işaretsiz kart çıkarımı | `backend/providers/coverage.ts` (`deriveCoverage`, `coverageFromGate`) |
 | Onarım (bozuk işaret, boşta `markId`) | `sanitizeMarks`, `openai.ts` içinde `sanitizeTopics`'in yanında |
 | Prompt v2.8, kural 13 + anti-teşvik | `backend/prompts/cardGeneration.ts` |
-| Model-yüzlü katı şema (zorunlu-ve-nullable, `maxItems = 3 × kart tavanı`) | `buildModelResponseSchema` |
+| Model-yüzlü katı şema (zorunlu-ve-nullable, `maxItems = MARK_REGISTER_CEILING`) | `buildModelResponseSchema` |
 | Bağımsız denetçi (Gemini) | `backend/prompts/coverageAudit.ts`, `providers/gemini.ts` → `GeminiCoverageAudit` |
 | Dördüncü kapı | `backend/api/_coverage.ts` + `api/index.ts` |
 | Kademe enum'u üç dilde kilitli | şema ↔ `MARK_KINDS` ↔ `MarkKind`; `evals/tests/test_*_contract_sync.py` |
@@ -242,6 +242,17 @@ diğerleri. Yöntem CLAUDE.md'nin "Bu ortamın kalıcı sınırı" notunda.
 **Doğrulanmayan:** SwiftUI görünümleri (`CoverageSection`, `PageDetailView`,
 `ManualCardSheet`) ve SwiftData modeli — onlar yalnız `swiftc -parse`'tan
 geçti; `swift test` + `xcodegen generate` bir Mac'te ya da CI'da koşmalı.
+
+> **Codex turu (PR #47) iki gerçek ters kurulumu yakaladı ve ikisi de düzeltildi.**
+> (1) Defter tavanı kullanıcının *kart* ayarına bağlıydı — oysa kart sayısı
+> azaldıkça raporlanacak kartsız işaret **artar**; `maxCards=1`'de on işaretli
+> bir sayfa yalnız üçünü yazabiliyor, kalanı sessizce kayboluyordu (tam da bu
+> katmanın bitirmek için var olduğu hata). Artık sabit bir tavan
+> (`MARK_REGISTER_CEILING = 60`). (2) Denetçi şemasında `coveredByCardIndex`
+> zorunlu değildi; alanı hiç yazmayan bir satır açık `null` gibi okunup
+> **kapsanmış bir işareti kartsız gösteriyordu** — yani denetimin üretmemesi
+> gereken tek şeyi, yanlış pozitifi. Artık zorunlu-ve-nullable, eksik alan ise
+> "okunamadı" sayılıp eleniyor.
 
 **Açılmadan önce yapılacak iki şey (§3'ün ön koşulları, hâlâ geçerli):**
 

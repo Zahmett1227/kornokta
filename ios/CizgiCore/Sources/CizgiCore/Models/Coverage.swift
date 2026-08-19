@@ -144,13 +144,21 @@ public struct PageCoverage: Codable, Equatable, Sendable {
     /// passage would say the same thing in slightly different words and take a
     /// second row for it.
     public var openFindings: [PageMark] {
-        let dismissed = Set(dismissedMarkIds)
+        // Dismissals are matched by the same overlap rule the deduplication
+        // uses, not by id alone. Ids differ whenever the two readers transcribe
+        // a passage slightly differently — or file it under different tiers —
+        // and matching only on equality left a hole with teeth: dismissing the
+        // generator's row skipped it before it could seed `seen`, so the
+        // auditor's near-identical row surfaced and the owner had to dismiss
+        // the same passage twice (Codex, PR #47). "Yoksay" is a decision about
+        // the passage, so it has to be recognised however it is worded.
+        let dismissedQuotes = dismissedMarkIds.map(PageCoverage.quote(inMarkId:))
         var seen: [String] = []
         var findings: [PageMark] = []
 
         for mark in uncovered + (audit?.uncovered ?? []) {
-            guard !dismissed.contains(mark.id) else { continue }
             let folded = CardSearch.fold(mark.quote)
+            guard !dismissedQuotes.contains(where: { PageCoverage.overlaps($0, folded) }) else { continue }
             // Containment, not equality: two readers rarely transcribe the same
             // handwriting identically, and one of them quoting a few words more
             // does not make it a second mark. Equality here would show the
@@ -191,6 +199,19 @@ public struct PageCoverage: Codable, Equatable, Sendable {
     /// identity.
     public mutating func record(audit: Audit) {
         self.audit = audit
+    }
+
+    /// The folded quote inside a mark id (`kind:folded-quote`).
+    ///
+    /// Reading it back out of the id rather than storing quotes separately: the
+    /// id already carries it, and a second stored list would be one more thing
+    /// that can fall out of step with the first. Tier raw values never contain
+    /// a colon, so the first one is always the separator; an id from a future
+    /// shape with no colon degrades to itself, which can then only match
+    /// exactly — the safe direction.
+    static func quote(inMarkId id: String) -> String {
+        guard let separator = id.firstIndex(of: ":") else { return id }
+        return String(id[id.index(after: separator)...])
     }
 
     /// Two quotes are the same passage when either contains the other.

@@ -130,6 +130,63 @@ final class CoverageTests: XCTestCase {
         XCTAssertTrue(coverage.openFindings.isEmpty, "yoksayılan işaret denetimden geri geldi")
     }
 
+    func testDismissingOneReadersWordingSilencesTheOthers() {
+        // Codex, PR #47. The two rows collapse into one while both are open, so
+        // the owner only ever sees — and only ever dismisses — one of them.
+        // Matching dismissals by id alone then skipped the generator's row
+        // before it could seed the dedup set, and the auditor's near-identical
+        // row popped back up demanding a second dismissal for one passage.
+        var coverage = PageCoverage(
+            reported: true,
+            uncovered: [mark("Reed-Sternberg hücresi CD30 pozitiftir", .symbol)],
+            audit: PageCoverage.Audit(
+                performedAt: Date(),
+                uncovered: [mark("Reed-Sternberg hücresi CD30", .symbol, source: .auditor)],
+                markCount: 1,
+                discarded: 0
+            )
+        )
+        XCTAssertEqual(coverage.openFindings.count, 1)
+
+        coverage.dismiss(coverage.openFindings[0])
+
+        XCTAssertTrue(coverage.openFindings.isEmpty, "aynı pasaj ikinci kez yoksayma istedi")
+    }
+
+    func testDismissalCrossesTiersForTheSamePassage() {
+        // The readers can disagree about *how* a passage was marked — one calls
+        // it a symbol, the other an underline — and the owner's "bu karta gerek
+        // yok" is a decision about the passage, not about the tier.
+        var coverage = PageCoverage(
+            reported: true,
+            uncovered: [mark("kenar notundaki ayrıntı", .symbol)]
+        )
+        coverage.dismiss(coverage.openFindings[0])
+
+        coverage.record(audit: PageCoverage.Audit(
+            performedAt: Date(),
+            uncovered: [mark("kenar notundaki ayrıntı", .underline, source: .auditor)],
+            markCount: 3,
+            discarded: 0
+        ))
+        XCTAssertTrue(coverage.openFindings.isEmpty)
+    }
+
+    func testDismissalDoesNotSwallowAShortUnrelatedMark() {
+        // The overlap rule's own guard still applies to dismissals: a short
+        // fragment must not silence every neighbour that happens to contain it.
+        var coverage = PageCoverage(reported: true, uncovered: [mark("IgA", .underline)])
+        coverage.dismiss(coverage.openFindings[0])
+
+        coverage.record(audit: PageCoverage.Audit(
+            performedAt: Date(),
+            uncovered: [mark("IgA nefropatisi tanısı", .underline, source: .auditor)],
+            markCount: 2,
+            discarded: 0
+        ))
+        XCTAssertEqual(coverage.openFindings.map(\.quote), ["IgA nefropatisi tanısı"])
+    }
+
     func testDismissingTwiceIsHarmless() {
         var coverage = PageCoverage(reported: true, uncovered: [mark("bir kez")])
         let target = coverage.openFindings[0]

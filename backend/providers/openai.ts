@@ -180,6 +180,24 @@ function isTransientStatus(status: number): boolean {
 }
 
 /**
+ * Hard ceiling on the mark register (schema v2.3), deliberately **not** derived
+ * from the card cap.
+ *
+ * The first version scaled it with `maxCards`, which inverted the whole point:
+ * the register exists to report marks that did *not* become cards, so the fewer
+ * cards a user allows, the *more* uncovered marks there are to report. At
+ * `maxCards = 1` a page with ten markings could only register three of them and
+ * the other seven would vanish — silently absent rather than reported as
+ * uncovered, which is exactly the failure this layer was built to end (Codex,
+ * PR #47).
+ *
+ * 60 is generous against any real textbook page (Tur A's densest pages carried
+ * marks in the low tens) while still bounding a runaway list; the model answers
+ * inside `max_output_tokens` regardless.
+ */
+export const MARK_REGISTER_CEILING = 60;
+
+/**
  * A per-request variant of the §14 schema: `usage` and `requestId` removed
  * (see file header), and `cards` capped at the configured per-passage limit
  * (§11.3, §13.2) so the constraint is enforced by the provider's own
@@ -233,14 +251,8 @@ export function buildModelResponseSchema(
   // payload predates it) and therefore absent from `required` — but strict mode
   // has no optional properties, so asking for it means promoting it here, the
   // same move `options`/`topic` already needed.
-  //
-  // The cap is generous rather than tight: a register is only worth having if
-  // it is complete, and a page really can carry more marks than it can carry
-  // cards (that is the whole finding — Tur A hit the card ceiling on 18 of 18
-  // pages). Three per card slot bounds a runaway list without narrowing the
-  // signal; the model still answers inside `max_output_tokens` either way.
   if (!clone.required.includes("marks")) clone.required.push("marks");
-  (clone.properties.marks as { maxItems?: number }).maxItems = maxCardsPerKnowledgeUnit * 3;
+  (clone.properties.marks as { maxItems?: number }).maxItems = MARK_REGISTER_CEILING;
 
   // The model has nothing to choose here: what it produces is v2.3.
   clone.properties.schemaVersion = { type: "string", const: "2.3" };

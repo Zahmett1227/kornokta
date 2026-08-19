@@ -53,6 +53,38 @@ final class CoverageAuditProviderTests: XCTestCase {
         XCTAssertNil(audit.promptVersion)
     }
 
+    // MARK: Billing (Codex, PR #47)
+
+    func testBillingComesFromTheServerRatherThanFromRetryability() {
+        // The two disagree in both directions and only the server can tell them
+        // apart: an exhausted quota is retryable and *free* (Gemini rejected the
+        // request), a safety stop is permanent and *billed* (it generated
+        // first). Deriving billing from `retryable` recorded both backwards.
+        let freeButRetryable = CoverageAuditError.server("kota tükendi", retryable: true, billing: "none")
+        XCTAssertEqual(freeButRetryable.billing, ModelRunBilling.none)
+        XCTAssertTrue(freeButRetryable.retryable)
+
+        let billedButPermanent = CoverageAuditError.server(
+            "üretim temiz bitmedi", retryable: false, billing: "unmeasured"
+        )
+        XCTAssertEqual(billedButPermanent.billing, ModelRunBilling.unmeasured)
+        XCTAssertFalse(billedButPermanent.retryable)
+    }
+
+    func testUnclassifiedFailuresAreCountedAsPossiblyBilled() {
+        // An older server sends no verdict, and a failure on our side of the
+        // wire has none to send: a call that got that far may well have been
+        // generated and billed, so overstating is the safe direction.
+        XCTAssertEqual(
+            CoverageAuditError.server("eski sunucu", retryable: true, billing: nil).billing,
+            ModelRunBilling.unmeasured
+        )
+        XCTAssertEqual(CoverageAuditError.transport("ağ yok").billing, ModelRunBilling.unmeasured)
+        XCTAssertEqual(CoverageAuditError.invalidResponse("bozuk").billing, ModelRunBilling.unmeasured)
+        // Nothing was ever sent, so nothing can have been billed.
+        XCTAssertEqual(CoverageAuditError.notConfigured.billing, ModelRunBilling.none)
+    }
+
     func testGarbageIsReportedAsAnInvalidResponse() {
         // Not retryable and not silent: the caller shows the message rather
         // than pretending the page has no uncovered marks.

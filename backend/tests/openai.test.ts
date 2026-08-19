@@ -4,6 +4,7 @@ import type { OpenAIConfig } from "../config.js";
 import { CARD_GENERATION_SYSTEM_PROMPT } from "../prompts/cardGeneration.js";
 import { LLM_OUTPUT_SCHEMA } from "../schemas/validateLlmOutput.js";
 import {
+  MARK_REGISTER_CEILING,
   OpenAICardGenerator,
   OpenAIError,
   buildModelResponseSchema,
@@ -264,11 +265,11 @@ describe("buildModelResponseSchema", () => {
     expect(schema.properties.schemaVersion.type).toBe("string");
   });
 
-  it("asks for the mark register and caps it above the card ceiling (schema v2.3)", () => {
+  it("asks for the mark register (schema v2.3)", () => {
     const schema = buildModelResponseSchema(6) as {
       required: string[];
       properties: {
-        marks: { maxItems?: number; items: { required: string[]; properties: Record<string, unknown> } };
+        marks: { items: { required: string[]; properties: Record<string, unknown> } };
         cards: { items: { required: string[] } };
       };
     };
@@ -281,11 +282,23 @@ describe("buildModelResponseSchema", () => {
     expect([...schema.properties.marks.items.required].sort()).toEqual(
       Object.keys(schema.properties.marks.items.properties).sort(),
     );
+  });
 
-    // Above the card ceiling on purpose: a page can carry more marks than it
-    // can carry cards, and a register capped at the card count could not
-    // report the very case the ceiling creates (Tur A: 18 of 18 pages).
-    expect(schema.properties.marks.maxItems).toBe(18);
+  it("caps the register independently of the user's card setting (Codex, PR #47)", () => {
+    // The inversion this guards against: the register reports marks that did
+    // *not* become cards, so a lower card cap means MORE to report, not less.
+    // Scaling the register with `maxCards` made a one-card page able to
+    // register three marks — the rest vanishing silently, which is the exact
+    // failure this layer exists to end.
+    for (const maxCards of [1, 4, 18]) {
+      const schema = buildModelResponseSchema(maxCards) as {
+        properties: { marks: { maxItems?: number }; cards: { maxItems?: number } };
+      };
+      expect(schema.properties.marks.maxItems).toBe(MARK_REGISTER_CEILING);
+      // The card cap still tracks the request; only the register is decoupled.
+      expect(schema.properties.cards.maxItems).toBe(maxCards);
+    }
+    expect(MARK_REGISTER_CEILING).toBeGreaterThan(18);
   });
 
   it("constrains topic to the subject's list when one is given, nullable either way", () => {

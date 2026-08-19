@@ -278,15 +278,12 @@ struct CoverageSection: View {
             phase = .idle
         } catch let error as CoverageAuditError {
             // A failed audit is a paid one whenever the request actually
-            // reached the model — the same asymmetry card generation has.
-            // `retryable` is the best signal available: the server marks a
-            // rejected request (bad key, exhausted quota) permanent and
-            // anything that got as far as generating transient.
-            recordFailedCall(
-                billing: error.retryable ? ModelRunBilling.unmeasured : ModelRunBilling.none,
-                requestId: requestId,
-                started: started
-            )
+            // reached the model — the same asymmetry card generation has. The
+            // verdict comes from the server, which is the only party that sees
+            // whether Gemini rejected the request or died mid-generation;
+            // deriving it from `retryable` here got a free 429 and a billed
+            // safety stop backwards in both directions (Codex, PR #47).
+            recordFailedCall(billing: error.billing, requestId: requestId, started: started)
             // The server's message travels verbatim: it already names the real
             // suspect (an exhausted Gemini quota says so in as many words).
             phase = .failed(message: error.localizedDescription, retryable: error.retryable)

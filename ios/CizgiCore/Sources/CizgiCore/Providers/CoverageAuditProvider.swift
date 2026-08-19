@@ -48,14 +48,69 @@ public struct CoverageAudit: Sendable, Equatable {
     }
 }
 
-/// The audit's failures are the second opinion's failures.
+/// Why an audit failed, and — when the server said — how it should be counted.
 ///
-/// A type alias rather than a copy of the same four cases: both are one
-/// user-initiated call to the same backend against the same provider, and their
-/// failure modes are identical down to the wording ("Backend ayarlı değil",
-/// the server's own message passed through verbatim). Two enums would be two
-/// places to keep a quota message in step.
-public typealias CoverageAuditError = SecondOpinionError
+/// This started as a type alias for `SecondOpinionError`, on the grounds that
+/// both are one user-initiated call to the same backend against the same
+/// provider. The review found the seam that argument missed (Codex, PR #47):
+/// the ledger needs to know whether a failed call was *billed*, and that verdict
+/// cannot be derived from anything the alias carries. A 429 is retryable and
+/// free; a safety stop is permanent and billed — inferring billing from
+/// `retryable` gets both backwards. So the server states it and this type
+/// carries it, which the shared alias had nowhere to put.
+public enum CoverageAuditError: Error, LocalizedError, Equatable {
+    /// No backend URL or device token — the button should not even have fired.
+    case notConfigured
+    /// Network-level failure; worth another tap (§17).
+    case transport(String)
+    /// The server answered with an error. The message travels verbatim: the
+    /// backend already names the real suspect ("Gemini kotası/kredisi
+    /// tükenmiş…"), and rewording it here would undo exactly that.
+    ///
+    /// `billing` is the server's own classification (`ModelRunBilling`), or
+    /// `nil` for a refusal that never involved a provider — a malformed body, a
+    /// missing key — where there is nothing to account for.
+    case server(String, retryable: Bool, billing: String?)
+    case invalidResponse(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .notConfigured:
+            return "Backend ayarlı değil (Ayarlar → Backend)."
+        case .transport(let message):
+            return "Bağlantı kurulamadı: \(message)"
+        case .server(let message, _, _):
+            return message
+        case .invalidResponse(let message):
+            return "Sunucu yanıtı çözümlenemedi: \(message)"
+        }
+    }
+
+    /// Whether "Tekrar dene" is worth offering.
+    public var retryable: Bool {
+        switch self {
+        case .notConfigured: return false
+        case .transport: return true
+        case .server(_, let retryable, _): return retryable
+        case .invalidResponse: return false
+        }
+    }
+
+    /// How the phone's ledger should record this failed call.
+    ///
+    /// Only the server can answer it, so anything it did not classify is
+    /// `unmeasured`: a call that got far enough to fail on our side of the
+    /// wire may well have been generated and billed, and overstating a failure
+    /// is the safe direction — the same choice the cached-token price makes in
+    /// `config.ts`.
+    public var billing: String {
+        switch self {
+        case .notConfigured: return ModelRunBilling.none
+        case .server(_, _, let billing): return billing ?? ModelRunBilling.unmeasured
+        case .transport, .invalidResponse: return ModelRunBilling.unmeasured
+        }
+    }
+}
 
 /// `POST /api/coverage` — the on-demand independent re-read of a page,
 /// answering "which marks did the generator leave uncarded?".
@@ -128,7 +183,8 @@ public struct CoverageAuditProvider: Sendable {
             let failure = try? JSONDecoder().decode(FailureBody.self, from: data)
             throw CoverageAuditError.server(
                 failure?.error ?? "Sunucu hatası (\(http.statusCode)).",
-                retryable: failure?.retryable ?? (http.statusCode >= 500)
+                retryable: failure?.retryable ?? (http.statusCode >= 500),
+                billing: failure?.billing
             )
         }
         return try Self.parse(data)
@@ -178,6 +234,9 @@ public struct CoverageAuditProvider: Sendable {
     private struct FailureBody: Decodable {
         let error: String
         let retryable: Bool
+        /// `measured` / `unmeasured` / `none`. Absent from a refusal that never
+        /// reached a provider, and from any server older than this contract.
+        let billing: String?
     }
 }
 

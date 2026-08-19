@@ -151,6 +151,35 @@ describe("GeminiCoverageAudit", () => {
     expect(result.discarded).toBe(2);
   });
 
+  it("makes the coverage verdict required, so omission cannot pass as 'uncovered'", async () => {
+    // Codex, PR #47: with the field merely optional, a row carrying only
+    // `kind` and `quote` was schema-valid and read exactly like an explicit
+    // `null` — inventing a "you skipped this" out of a formatting slip. The
+    // model must now state `null` deliberately.
+    const { transport, calls } = stubTransport(200, envelope({ marks: [] }));
+    await new GeminiCoverageAudit(CONFIG, "g-test", COST, transport).audit(REQUEST);
+
+    const schema = calls[0]!.body.generationConfig.responseSchema;
+    expect(schema.properties.marks.items.required).toContain("coveredByCardIndex");
+    expect(schema.properties.marks.items.properties.coveredByCardIndex.nullable).toBe(true);
+  });
+
+  it("discards a row that omits the verdict instead of calling it uncovered", async () => {
+    const { transport } = stubTransport(
+      200,
+      envelope({
+        marks: [
+          { kind: "symbol", quote: "alanı hiç yazmadı" },
+          { kind: "symbol", quote: "açıkça kartsız", coveredByCardIndex: null },
+        ],
+      }),
+    );
+    const result = await new GeminiCoverageAudit(CONFIG, "g-test", COST, transport).audit(REQUEST);
+
+    expect(result.discarded).toBe(1);
+    expect(result.uncovered.map((mark) => mark.quote)).toEqual(["açıkça kartsız"]);
+  });
+
   it("speaks the generator's own four tiers, not a second vocabulary", async () => {
     // Two readers describing marks in two vocabularies could not be merged on
     // the phone, which is the entire reason for running both.
@@ -333,5 +362,36 @@ describe("POST /api/coverage", () => {
     const body = (await response.json()) as { error: string; retryable: boolean };
     expect(body.error).toContain("kotası/kredisi");
     expect(body.retryable).toBe(true);
+  });
+
+  it("tells the phone how a failed call should be billed (Codex, PR #47)", async () => {
+    // `retryable` is not a billing signal and the two disagree in both
+    // directions: a 429 is retryable and *free* (Gemini rejected it), while a
+    // safety stop is permanent and *billed* (it generated first). The phone
+    // cannot derive that — only the server sees which happened — so it is
+    // stated on the wire.
+    const rejected = deps(new GeminiError("Gemini kotası tükendi (429).", 429, true));
+    const rejectedBody = (await (await handleCoverageRequest(post(VALID_BODY), rejected)).json()) as {
+      retryable: boolean;
+      billing?: string;
+    };
+    expect(rejectedBody.retryable).toBe(true);
+    expect(rejectedBody.billing).toBe("none");
+
+    const generated = deps(new GeminiError("Model üretimi temiz bitmedi (SAFETY).", undefined, false));
+    const generatedBody = (await (await handleCoverageRequest(post(VALID_BODY), generated)).json()) as {
+      retryable: boolean;
+      billing?: string;
+    };
+    expect(generatedBody.retryable).toBe(false);
+    expect(generatedBody.billing).toBe("unmeasured");
+  });
+
+  it("omits billing from a refusal that never reached a provider", async () => {
+    // A malformed body costs nothing and has nothing to account for; sending
+    // `none` there would put a free ledger line where there was no call.
+    const response = await handleCoverageRequest(post({ ...VALID_BODY, cards: undefined }), deps());
+    const body = (await response.json()) as { billing?: string };
+    expect(body.billing).toBeUndefined();
   });
 });
