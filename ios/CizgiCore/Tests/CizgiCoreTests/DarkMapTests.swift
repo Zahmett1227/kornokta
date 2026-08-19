@@ -379,3 +379,96 @@ final class DarkMapErrorTests: XCTestCase {
         XCTAssertTrue(DarkMapError.notConfigured.usage.isEmpty)
     }
 }
+
+/// Locks the one number the two map surfaces share (Codex, PR #49).
+///
+/// Bilgi Haritası's entry card promises "N konuda tek kartın yok"; tapping it
+/// opens a screen that computes the same figure from `DarkMapCoverage`. Those
+/// were two independent definitions of "covered", and they disagreed exactly
+/// where it hurts — a topic whose every card is suspended. This is the project's
+/// standard remedy for "aynı davranış iki yerde": one definition, locked by a
+/// test rather than kept in sync by hand.
+final class DarkMapCoverageAgreementTests: XCTestCase {
+
+    private func pair(
+        subject: String,
+        topic: String?,
+        isActive: Bool
+    ) -> (KnowledgeMapCard, DarkMapCoverage.Card) {
+        (
+            KnowledgeMapCard(
+                subject: subject,
+                topic: topic,
+                isActive: isActive,
+                lapseCount: 0,
+                lowConfidence: false
+            ),
+            DarkMapCoverage.Card(
+                subject: subject,
+                topic: topic,
+                front: "soru",
+                isActive: isActive,
+                lowConfidence: false
+            )
+        )
+    }
+
+    private func assertAgreement(
+        _ pairs: [(KnowledgeMapCard, DarkMapCoverage.Card)],
+        line: UInt = #line
+    ) {
+        let map = KnowledgeMapBuilder.build(cards: pairs.map(\.0), schema: schema)
+        let payload = DarkMapCoverage.build(cards: pairs.map(\.1), schema: schema)
+        XCTAssertEqual(
+            map.activeCoveredTopicCount,
+            payload.coveredTopicCount,
+            "giriş kartı ile Karanlık Harita aynı desteyi farklı sayıyor",
+            line: line
+        )
+    }
+
+    func testAgreesOnAnOrdinaryDeck() {
+        assertAgreement([
+            pair(subject: "Patoloji", topic: "Inflamasyon", isActive: true),
+            pair(subject: "Patoloji", topic: "Neoplazi", isActive: true),
+            pair(subject: "Genel Cerrahi", topic: "Deri Hastalıkları", isActive: true),
+        ])
+    }
+
+    /// The case that used to diverge: every card in the topic is suspended, so
+    /// Bilgi Haritası counted it as covered while the Dark Map called it empty.
+    func testAgreesWhenATopicHoldsOnlySuspendedCards() {
+        let pairs = [
+            pair(subject: "Patoloji", topic: "Inflamasyon", isActive: false),
+            pair(subject: "Patoloji", topic: "Neoplazi", isActive: true),
+        ]
+        assertAgreement(pairs)
+
+        // And it is the *active-only* answer both now give — the suspended-only
+        // topic is a gap, which is the whole point of the feature.
+        let map = KnowledgeMapBuilder.build(cards: pairs.map(\.0), schema: schema)
+        XCTAssertEqual(map.coveredTopicCount, 2, "Bilgi Haritası desteyi anlatır: ikisi de kapsanmış")
+        XCTAssertEqual(map.activeCoveredTopicCount, 1, "Karanlık Harita çalışılanı anlatır: biri boş")
+    }
+
+    func testAgreesWhenEveryCardIsSuspended() {
+        assertAgreement([
+            pair(subject: "Patoloji", topic: "Inflamasyon", isActive: false),
+            pair(subject: "Genel Cerrahi", topic: "Deri Hastalıkları", isActive: false),
+        ])
+    }
+
+    /// Uncategorised and unrecognised cards are excluded by both, for their own
+    /// reasons; the totals must still line up.
+    func testAgreesWithUnclassifiedCardsPresent() {
+        assertAgreement([
+            pair(subject: "Patoloji", topic: nil, isActive: true),
+            pair(subject: "Patoloji", topic: "Otonom", isActive: true),
+            pair(subject: "Patoloji", topic: "Inflamasyon", isActive: true),
+        ])
+    }
+
+    func testAgreesOnAnEmptyDeck() {
+        assertAgreement([])
+    }
+}

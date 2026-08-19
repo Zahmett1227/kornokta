@@ -664,10 +664,15 @@ gösterir (2026-08-13 tartışması).
     Bilgi Haritası → "Karanlık Harita" kartına dokun. Ekran **daha hiçbir şeye
     basmadan** üç sayı göstermeli (kapsanan / boş / toplam konu) ve altta "Hiç
     kart olmayan konular" bölümü dolu olmalı. Bunlar cihazda hesaplanır: **uçak
-    modunda da çalışmalı.** Üstteki "kapsanan konu" sayısı Bilgi Haritası'nın
-    kendi "Kapsanan konu" sayısıyla **birebir aynı** olmalı — tutmuyorsa iki
-    ekran aynı desteyi farklı sayıyor demektir. Konusuz kart uyarısı da
-    görünmeli (bu destede çoğu kart konusuz).
+    modunda da çalışmalı.** Bilgi Haritası'ndaki **giriş kartının** söylediği
+    sayı ("N konuda tek kartın yok") ile bu ekrandaki **"boş konu"** sayısı
+    birebir aynı olmalı — tutmuyorsa iki yüzey aynı desteyi farklı sayıyor
+    demektir (Codex, PR #49; artık `DarkMapCoverageAgreementTests` bunu
+    kilitliyor). **Ama** Bilgi Haritası'nın üstündeki "Kapsanan konu"
+    tile'ıyla aynı olması *gerekmez* ve bir kartı askıdayken olmaz da: tile
+    desteyi anlatır (askıdaki kart da destededir), Karanlık Harita çalışılanı
+    anlatır (askıdaki kart çalışılmıyor). Bu fark beklenen davranış, hata
+    değil. Konusuz kart uyarısı da görünmeli (bu destede çoğu kart konusuz).
 19. **Karanlık Harita — mutabakat kapısı.** "Öncelik sırasını çıkar" → iki model
     de yeşil tik almalı ve en az bir konu **"iki model de"** damgası taşımalı.
     Damgasız (tek model) satırlar da listede olmalı — düşürülmüyorlar. Her

@@ -124,11 +124,17 @@ struct KnowledgeMapView: View {
     /// Entry point for the Karanlık Harita.
     ///
     /// Its headline number is the one this screen never shows: the count of
-    /// canonical topics holding no card. Both numbers come from `map`, so the
-    /// card cannot disagree with the tiles above it, and the difference is
-    /// exactly the point — everything else here measures what the deck has.
+    /// canonical topics holding no **active** card.
+    ///
+    /// Deliberately `activeCoveredTopicCount` rather than the `coveredTopicCount`
+    /// behind the tiles above. The two differ only for a topic whose every card
+    /// is suspended, and there they must differ: the tiles describe the deck (a
+    /// suspended card is still in it) while the Karanlık Harita describes what
+    /// is being studied (it is not). Using the tiles' definition here made the
+    /// number *change on tap* — the card promised one figure and the screen
+    /// behind it computed another for the same deck (Codex, PR #49).
     private func darkMapCard(_ map: KnowledgeMapSummary) -> some View {
-        let dark = max(0, map.totalTopicCount - map.coveredTopicCount)
+        let dark = max(0, map.totalTopicCount - map.activeCoveredTopicCount)
         return CardSurface {
             VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
                 HStack(alignment: .firstTextBaseline) {
