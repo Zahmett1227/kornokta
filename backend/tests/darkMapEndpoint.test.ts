@@ -425,3 +425,74 @@ describe("parseCoverageInput", () => {
     expect(parseCoverageInput(undefined)).toEqual([]);
   });
 });
+
+describe("Gemini failure accounting (Codex, PR #49)", () => {
+  /**
+   * Gemini returns `usageMetadata` alongside a truncated generation, so the
+   * most expensive failure in the system is also the one where the exact figure
+   * is available. Before the fix the ledger recorded it as unmeasured with zero
+   * tokens — under-reporting precisely where measurement existed.
+   */
+  it("records a truncated Gemini call as measured, with its real tokens", async () => {
+    const spent = { inputTokens: 2500, cachedInputTokens: 0, outputTokens: 16384, reasoningTokens: 15900 };
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE }),
+      deps([
+        stubRanker("openai", ranking([DERMA])),
+        stubRanker("gemini", new GeminiError("MAX_TOKENS", undefined, true, spent)),
+      ]),
+    );
+    const body = (await response.json()) as DarkMapSuccess;
+    const failed = body.usage.find((entry) => entry.provider === "gemini");
+    expect(failed).toMatchObject({ outcome: "failure", billing: "measured" });
+    expect(failed?.usage.outputTokens).toBe(16384);
+    expect(failed?.usage.reasoningTokens).toBe(15900);
+  });
+
+  /** A rejected key generated nothing, so it stays genuinely free. */
+  it("still records a rejected Gemini call as free", async () => {
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE }),
+      deps([
+        stubRanker("openai", ranking([DERMA])),
+        stubRanker("gemini", new GeminiError("403", 403, false)),
+      ]),
+    );
+    const body = (await response.json()) as DarkMapSuccess;
+    expect(body.usage.find((e) => e.provider === "gemini")).toMatchObject({ billing: "none" });
+  });
+
+  /**
+   * A Gemini timeout used to escape as a raw AbortError, which is neither
+   * error type the all-failed path inspects — so a transient network failure
+   * paired with a permanent OpenAI one produced `retryable: false` and the
+   * phone offered no "Tekrar dene".
+   */
+  it("treats a transient Gemini failure as retryable even beside a permanent OpenAI one", async () => {
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE }),
+      deps([
+        stubRanker("openai", new OpenAIError("şema", undefined, false, undefined, "schema_invalid")),
+        stubRanker("gemini", new GeminiError("zaman aşımında kesildi", undefined, true)),
+      ]),
+    );
+    expect(response.status).toBe(503);
+    expect(((await response.json()) as { retryable: boolean }).retryable).toBe(true);
+  });
+});
+
+describe("merged zone ceiling (Codex, PR #49)", () => {
+  it("never returns more zones than the request allows", async () => {
+    const response = await handleDarkMapRequest(
+      post({ requestId: "r1", coverage: COVERAGE, maxZones: 1 }),
+      deps([
+        // Disjoint picks: two families, two different topics, ceiling of one.
+        stubRanker("openai", ranking([DERMA], 5)),
+        stubRanker("gemini", ranking([PHARM], 4)),
+      ]),
+    );
+    const body = (await response.json()) as DarkMapSuccess;
+    expect(body.zones).toHaveLength(1);
+    expect(body.zones[0]!.topicKey).toBe(DERMA);
+  });
+});

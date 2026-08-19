@@ -150,6 +150,38 @@ gerekçenin ve kart sorusunun log'a düşmediğini ayrıca kilitliyor).
    82/360→0/239 gidiyor. Kural 1–4 bu biçimde yazıldı ve `darkMapPrompt.test.ts`
    biçimi blok blok kilitliyor. Yine de gerçek ölçüm cihazda.
 
+## Codex incelemesi (PR #49) — dört P2, dördü de düzeltildi
+
+1. **Şema kanonik listeye değil, isteğin kendi tablosuna bağlanmalı.** `subjects`
+   daraltıldığında enum yine 143 konu sunuyordu; model dışarıda bırakılmış bir
+   dersin konusunu **geçerli biçimde** döndürebilirdi ve `mergeRankings` onu
+   kapsama tablosunda bulamayıp **uydurma 0 kart** basardı. Bu, bu özelliğin
+   kendi değişmezinin ("kart sayısı daima desteden, asla modelden") ihlaliydi.
+   Artık üç katman da (`allowedTopicKeys`) isteğin tablosundan türüyor, ve
+   `mergeRankings` satırı olmayan bölgeyi **basmak yerine düşürüyor** —
+   uydurma sayı yapısal olarak imkânsız.
+2. **Gemini'nin kesilme yolunda `usageMetadata` kayboluyordu.** `MAX_TOKENS`
+   ile biten bir üretim tam ücret faturalanır *ve* Gemini tam rakamı verir; ama
+   `GeminiError`'ın usage alanı yoktu, defter sıfır token yazıyordu. Sistemin en
+   pahalı hatası, ölçümün mevcut olduğu yerde eksik raporlanıyordu — yani
+   `tokenUsage.ts`'in var olma sebebinin aynısı. `GeminiError` artık `usage`
+   taşıyor (OpenAIError'ın eşi), usage HTTP katmanından hemen sonra bir kez
+   okunuyor ve her hata yoluna veriliyor.
+3. **Gemini taşıma hatası sarılmamıştı.** Zaman aşımı ham bir `AbortError`
+   olarak kaçıyordu; ne `OpenAIError` ne `GeminiError` olduğu için iki-aile-de-
+   düştü yolu onu geçici sayamıyor, kalıcı bir OpenAI hatasıyla birleşince
+   `retryable: false` üretiyor ve **telefon "Tekrar dene" sunmuyordu.** OpenAI
+   sıralayıcısındaki sarmalayıcının aynısı eklendi.
+4. **Birleşmiş sonucun tavanı yoktu.** Her aile ayrı ayrı `maxZones`'a
+   kırpılıyordu ama birleşim değil: ayrık seçimlerde 12 isteyen 24 alıyordu.
+   `mergeRankings` artık sıralamadan **sonra** kırpıyor, yani hayatta kalanlar
+   onaylanmış ve en karanlık olanlar.
+
+Yan ürün: filtreli istekte prompt modele "Kanonik şablonda N konu var" diyordu —
+N daraltılmış sayı olduğu için bu yanlıştı, ve kapalı-küme çerçevesi bütün
+prompt'un dayandığı şey olduğu için yanlış olması önemliydi. "Aşağıdaki tabloda
+N konu var" oldu.
+
 ## Değerlendirilen alternatifler
 
 - **Tek model.** Ucuz ve basit; ama zemini olmayan bir iddiada tek okuyucunun

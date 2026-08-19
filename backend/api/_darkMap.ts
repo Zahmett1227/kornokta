@@ -232,7 +232,13 @@ function billingFor(error: unknown): { billing: CallAccounting["billing"]; reaso
     };
   }
   if (error instanceof GeminiError) {
-    return { billing: error.status === undefined ? "unmeasured" : "none", reason: "gemini" };
+    // Gemini reports `usageMetadata` even on a truncated generation, so when it
+    // is present the call is measured like any other (Codex, PR #49).
+    if (error.usage) return { billing: "measured", reason: "gemini" };
+    return {
+      billing: error.status === undefined ? "unmeasured" : "none",
+      reason: "gemini",
+    };
   }
   return { billing: "unmeasured", reason: "unknown" };
 }
@@ -339,7 +345,10 @@ export async function handleDarkMapRequest(
     const { billing, reason } = billingFor(error);
     const message =
       error instanceof Error ? error.message : "Sıralama sırasında beklenmeyen hata.";
-    const spent = error instanceof OpenAIError && error.usage ? error.usage : EMPTY_TOKEN_USAGE;
+    const spent =
+      (error instanceof OpenAIError || error instanceof GeminiError) && error.usage
+        ? error.usage
+        : EMPTY_TOKEN_USAGE;
     raters.push({
       family: ranker.family,
       model: ranker.model,
@@ -387,7 +396,7 @@ export async function handleDarkMapRequest(
     );
   }
 
-  const zones = mergeRankings(successful, built.coverage);
+  const zones = mergeRankings(successful, built.coverage, maxZones);
 
   deps.log?.({
     requestId,

@@ -34,7 +34,7 @@
 import { DARK_MAP_PROMPT, DARK_MAP_PROMPT_VERSION } from "../prompts/darkMap.js";
 import {
   CANONICAL_TOPIC_KEYS,
-  isCanonicalTopicKey,
+  TOPIC_KEY_SEPARATOR,
   parseTopicKey,
   renderCoverageTable,
   type TopicCoverage,
@@ -112,7 +112,11 @@ export function buildRankInstruction(request: DarkMapRankRequest): string {
   const empty = request.coverage.length - withCards;
   return [
     `requestId: ${request.requestId}`,
-    `Kanonik şablonda ${request.coverage.length} konu var. ${withCards} konuda kart var, ` +
+    // "Aşağıdaki tabloda", not "kanonik şablonda": a `subjects`-narrowed request
+    // shows a subset, and telling the model the template itself has 8 topics
+    // would be false — and false in the direction that matters, since the
+    // closed-set framing is what the whole prompt rests on.
+    `Aşağıdaki tabloda ${request.coverage.length} konu var. ${withCards} konuda kart var, ` +
       `${empty} konu tamamen boş.`,
     `En fazla ${request.maxZones} konu döndür. Daha azını döndürmek serbesttir (Kural 5).`,
     "",
@@ -138,6 +142,7 @@ export function buildRankInstruction(request: DarkMapRankRequest): string {
 export function sanitizeRatings(
   raw: unknown,
   maxZones: number,
+  allowed: ReadonlySet<string>,
 ): { ratings: DarkZoneRating[]; droppedUnknown: number } {
   const zones = Array.isArray((raw as { zones?: unknown })?.zones)
     ? ((raw as { zones: unknown[] }).zones as unknown[])
@@ -150,7 +155,12 @@ export function sanitizeRatings(
     if (typeof entry !== "object" || entry === null) continue;
     const record = entry as Record<string, unknown>;
     const topicKey = typeof record.topicKey === "string" ? record.topicKey.trim() : "";
-    if (!isCanonicalTopicKey(topicKey)) {
+    // Checked against *this request's* universe, not the global canonical list.
+    // A `subjects`-narrowed request shows the model a smaller table, and a key
+    // from outside it has no row to read a card count from — `mergeRankings`
+    // would then print a fabricated 0 next to a real topic name, which is the
+    // one thing this feature's own invariant forbids (Codex, PR #49).
+    if (!allowed.has(topicKey)) {
       droppedUnknown += 1;
       continue;
     }
@@ -208,7 +218,24 @@ function readConcepts(value: unknown): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * The canonical topic list as a constrained-decoding enum.
+ * The keys one request may choose among — its coverage table, not the world.
+ *
+ * Equal to `CANONICAL_TOPIC_KEYS` for an unfiltered request, and a strict subset
+ * once `subjects` narrows it. Deriving it from the table the model was actually
+ * shown is what keeps "the enum" and "the rows that exist" the same set; when
+ * they drifted apart, a model could name a real topic the request had excluded
+ * and the merge step had no count for it.
+ */
+export function allowedTopicKeys(coverage: readonly TopicCoverage[]): Set<string> {
+  return new Set(coverage.map((row) => topicKeyOf(row)));
+}
+
+function topicKeyOf(row: TopicCoverage): string {
+  return `${row.subject}${TOPIC_KEY_SEPARATOR}${row.topic}`;
+}
+
+/**
+ * The selectable topic list as a constrained-decoding enum.
  *
  * This is the layer that makes "the model may only choose from the user's own
  * template" structural rather than hopeful. It mirrors exactly what
@@ -216,8 +243,14 @@ function readConcepts(value: unknown): string[] {
  * same three-layer treatment the topic field already gets: the enum here, Kural
  * 1 in the prompt, and `sanitizeRatings` on the way out. Any one of the three
  * can fail without a hallucinated topic reaching the screen.
+ *
+ * `keys` is the *request's* universe rather than the global canonical list, so a
+ * subject-restricted analysis cannot leak a topic from a subject it excluded.
  */
-export function buildOpenAIResponseSchema(maxZones: number): Record<string, unknown> {
+export function buildOpenAIResponseSchema(
+  maxZones: number,
+  keys: readonly string[] = CANONICAL_TOPIC_KEYS,
+): Record<string, unknown> {
   return {
     type: "object",
     additionalProperties: false,
@@ -234,7 +267,7 @@ export function buildOpenAIResponseSchema(maxZones: number): Record<string, unkn
           // never by an absent key.
           required: ["topicKey", "darkness", "tusYield", "missingConcepts", "reason"],
           properties: {
-            topicKey: { type: "string", enum: [...CANONICAL_TOPIC_KEYS] },
+            topicKey: { type: "string", enum: [...keys] },
             darkness: { type: "integer", minimum: 1, maximum: 5 },
             tusYield: { type: "string", enum: [...TUS_YIELDS] },
             missingConcepts: {
@@ -251,7 +284,10 @@ export function buildOpenAIResponseSchema(maxZones: number): Record<string, unkn
 }
 
 /** Same contract in Gemini's OpenAPI dialect (uppercase type names). */
-export function buildGeminiResponseSchema(maxZones: number): Record<string, unknown> {
+export function buildGeminiResponseSchema(
+  maxZones: number,
+  keys: readonly string[] = CANONICAL_TOPIC_KEYS,
+): Record<string, unknown> {
   return {
     type: "OBJECT",
     properties: {
@@ -261,7 +297,7 @@ export function buildGeminiResponseSchema(maxZones: number): Record<string, unkn
         items: {
           type: "OBJECT",
           properties: {
-            topicKey: { type: "STRING", enum: [...CANONICAL_TOPIC_KEYS] },
+            topicKey: { type: "STRING", enum: [...keys] },
             darkness: { type: "INTEGER" },
             tusYield: { type: "STRING", enum: [...TUS_YIELDS] },
             missingConcepts: { type: "ARRAY", items: { type: "STRING" } },
@@ -296,6 +332,10 @@ export class OpenAIDarkMapRanker implements DarkMapRankerLike {
   }
 
   async rank(request: DarkMapRankRequest): Promise<DarkMapRanking> {
+    // The enum and the sanitiser must see the same universe the coverage table
+    // does, or a subject-narrowed request can come back naming a topic it
+    // excluded (Codex, PR #49).
+    const allowed = allowedTopicKeys(request.coverage);
     const body = {
       model: this.config.model,
       reasoning: { effort: this.darkMap.reasoningEffort },
@@ -308,7 +348,7 @@ export class OpenAIDarkMapRanker implements DarkMapRankerLike {
         format: {
           type: "json_schema",
           name: "cizgi_dark_map",
-          schema: buildOpenAIResponseSchema(request.maxZones),
+          schema: buildOpenAIResponseSchema(request.maxZones, [...allowed]),
           strict: true,
         },
       },
@@ -401,7 +441,7 @@ export class OpenAIDarkMapRanker implements DarkMapRankerLike {
       );
     }
 
-    const { ratings, droppedUnknown } = sanitizeRatings(parsed, request.maxZones);
+    const { ratings, droppedUnknown } = sanitizeRatings(parsed, request.maxZones, allowed);
     return { ratings, droppedUnknown, rawUsage: usage ?? EMPTY_TOKEN_USAGE };
   }
 
@@ -440,6 +480,7 @@ export class GeminiDarkMapRanker implements DarkMapRankerLike {
   }
 
   async rank(request: DarkMapRankRequest): Promise<DarkMapRanking> {
+    const allowed = allowedTopicKeys(request.coverage);
     const body = {
       systemInstruction: { parts: [{ text: DARK_MAP_PROMPT }] },
       contents: [{ role: "user", parts: [{ text: buildRankInstruction(request) }] }],
@@ -452,16 +493,34 @@ export class GeminiDarkMapRanker implements DarkMapRankerLike {
         temperature: 0.2,
         maxOutputTokens: this.darkMap.maxOutputTokens,
         responseMimeType: "application/json",
-        responseSchema: buildGeminiResponseSchema(request.maxZones),
+        responseSchema: buildGeminiResponseSchema(request.maxZones, [...allowed]),
       },
     };
 
-    const response = await this.transport.post(
-      this.endpoint(),
-      this.apiKey,
-      body,
-      this.darkMap.timeoutMs,
-    );
+    // Wrapped for the same reason the OpenAI ranker wraps its own call: a raw
+    // `AbortError` from a timeout is neither an `OpenAIError` nor a
+    // `GeminiError`, so the endpoint's all-failed path could not see it as
+    // transient and the phone was offered no "Tekrar dene" for a failure that
+    // a retry would very likely fix (Codex, PR #49).
+    let response: { status: number; body: unknown };
+    try {
+      response = await this.transport.post(
+        this.endpoint(),
+        this.apiKey,
+        body,
+        this.darkMap.timeoutMs,
+      );
+    } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
+      throw new GeminiError(
+        aborted
+          ? `Gemini çağrısı ${this.darkMap.timeoutMs} ms zaman aşımında kesildi. Üretim ` +
+            "sağlayıcı tarafında sürmüş ve ücretlendirilmiş olabilir; sonucu alınamadı."
+          : `Gemini'ye ulaşılamadı: ${error instanceof Error ? error.message : "bilinmeyen ağ hatası"}`,
+        undefined,
+        true,
+      );
+    }
     const parsedBody = response.body as GeminiGenerateBody | undefined;
 
     if (response.status < 200 || response.status >= 300) {
@@ -488,22 +547,34 @@ export class GeminiDarkMapRanker implements DarkMapRankerLike {
       );
     }
 
+    // Read once, immediately, and reused by every path below including the
+    // failing ones — the ordering `openai.ts` arrived at the hard way. Gemini
+    // reports `usageMetadata` alongside a truncated generation, so the single
+    // most expensive failure in the system is also the one where the exact
+    // figure is available; fetching it only on success is what made that spend
+    // reach the ledger as zero (Codex, PR #49).
+    const usage = readGeminiUsage(parsedBody);
+
     if (parsedBody?.promptFeedback?.blockReason) {
       throw new GeminiError(
         `Gemini istemi engelledi: ${parsedBody.promptFeedback.blockReason}`,
         undefined,
         false,
+        usage ?? undefined,
       );
     }
 
     const candidate = parsedBody?.candidates?.[0];
-    if (!candidate) throw new GeminiError("Yanıtta aday (candidate) yok.", undefined, true);
+    if (!candidate) {
+      throw new GeminiError("Yanıtta aday (candidate) yok.", undefined, true, usage ?? undefined);
+    }
     if (candidate.finishReason === "MAX_TOKENS") {
       throw new GeminiError(
         "Model yanıtı tamamlayamadı (MAX_TOKENS): DARK_MAP_MAX_OUTPUT_TOKENS yetersiz olabilir " +
           "(düşünme token'ları da bu bütçeden düşülüyor).",
         undefined,
         true,
+        usage ?? undefined,
       );
     }
     if (candidate.finishReason && candidate.finishReason !== "STOP") {
@@ -514,24 +585,24 @@ export class GeminiDarkMapRanker implements DarkMapRankerLike {
         `Model üretimi temiz bitmedi (finishReason: ${candidate.finishReason}); içerik güvenilmez sayıldı.`,
         undefined,
         false,
+        usage ?? undefined,
       );
     }
 
     const text = candidate.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
     if (!text.trim()) {
-      throw new GeminiError("Yanıtta üretilmiş metin yok.", undefined, false);
+      throw new GeminiError("Yanıtta üretilmiş metin yok.", undefined, false, usage ?? undefined);
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(text);
     } catch {
-      throw new GeminiError("Model yanıtı geçerli JSON değil.", undefined, false);
+      throw new GeminiError("Model yanıtı geçerli JSON değil.", undefined, false, usage ?? undefined);
     }
 
-    const { ratings, droppedUnknown } = sanitizeRatings(parsed, request.maxZones);
-    const usage = readGeminiUsage(parsedBody) ?? EMPTY_TOKEN_USAGE;
-    return { ratings, droppedUnknown, rawUsage: usage };
+    const { ratings, droppedUnknown } = sanitizeRatings(parsed, request.maxZones, allowed);
+    return { ratings, droppedUnknown, rawUsage: usage ?? EMPTY_TOKEN_USAGE };
   }
 
   estimateCostUSD(usage: TokenUsage): number {
@@ -586,6 +657,7 @@ const YIELD_RANK: Record<TusYield, number> = { high: 3, medium: 2, low: 1 };
 export function mergeRankings(
   rankings: ReadonlyArray<{ family: string; ratings: readonly DarkZoneRating[] }>,
   coverage: readonly TopicCoverage[],
+  maxZones?: number,
 ): DarkZone[] {
   const byKey = new Map<string, TopicCoverage>();
   for (const row of coverage) byKey.set(`${row.subject}|${row.topic}`, row);
@@ -609,6 +681,11 @@ export function mergeRankings(
     // exported and a future caller could hand it unfiltered ratings.
     if (!parsed) continue;
     const row = byKey.get(topicKey);
+    // No row means no *known* card count, and the one invariant this function
+    // has is that the count comes from the deck. Emitting the zone with a
+    // fallback 0 would print a fabricated figure beside a real topic name, so
+    // the zone is dropped instead (Codex, PR #49).
+    if (!row) continue;
 
     const darkness =
       Math.round((entries.reduce((sum, e) => sum + e.rating.darkness, 0) / entries.length) * 10) /
@@ -632,8 +709,8 @@ export function mergeRankings(
       subject: parsed.subject,
       topic: parsed.topic,
       topicKey,
-      cardCount: row?.cardCount ?? 0,
-      weakCardCount: row?.weakCardCount ?? 0,
+      cardCount: row.cardCount,
+      weakCardCount: row.weakCardCount,
       consensus: entries.length >= 2 ? "confirmed" : "disputed",
       raters: entries.map((e) => e.family),
       darkness,
@@ -654,5 +731,10 @@ export function mergeRankings(
     return (order.get(a.topicKey) ?? 0) - (order.get(b.topicKey) ?? 0);
   });
 
-  return zones;
+  // Capped *after* ordering, so the survivors are the confirmed and darkest
+  // ones. Each family is already capped on its own, but the union is not: two
+  // rankers picking disjoint topics would otherwise return 2 x maxZones and
+  // turn the intended short study order into the inventory the ceiling exists
+  // to prevent (Codex, PR #49).
+  return maxZones !== undefined ? zones.slice(0, Math.max(0, maxZones)) : zones;
 }

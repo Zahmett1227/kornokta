@@ -50,6 +50,20 @@ export class GeminiError extends Error {
     readonly status: number | undefined,
     /** Transient failures are worth retrying; permanent ones are not (§17). */
     readonly transient: boolean,
+    /**
+     * What the call spent before it failed, when Gemini reported it.
+     *
+     * The same field `OpenAIError` carries, added for the same reason: the most
+     * expensive failure in the system is a generation that runs to the output
+     * ceiling and then truncates, and Gemini *does* return `usageMetadata`
+     * alongside `finishReason: "MAX_TOKENS"`. Without somewhere to put it, that
+     * fully-billed call reached the ledger as zero tokens — under-reporting
+     * exactly where the provider had handed us the exact figure (Codex, PR #49).
+     *
+     * Absent on the failures that genuinely cost nothing (a rejected key, an
+     * exhausted quota) and on those where no usage block ever arrived.
+     */
+    readonly usage?: TokenUsage,
   ) {
     super(message);
     this.name = "GeminiError";
