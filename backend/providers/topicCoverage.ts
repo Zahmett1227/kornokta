@@ -155,11 +155,28 @@ export const DEFAULT_MAX_SAMPLE_FRONTS = 4;
  */
 export const MAX_SAMPLE_FRONT_LENGTH = 240;
 
-/** Truncation is marked, so the model reads a cut sentence as cut. */
+/**
+ * One sample, flattened to a single line and cut to the ceiling.
+ *
+ * The flattening is not cosmetic. The coverage table is **line-oriented** —
+ * one `- Ders|Konu — N kart` per line — and a card question may contain
+ * newlines, because both card editors accept multiline text. Interpolating one
+ * unchanged put a second line inside a row, and a question like
+ * `"Soru\n- Patoloji|Neoplazi — 0 kart"` therefore produced what reads as
+ * another coverage row: the ranker would reason over a topic count that never
+ * came from the deck (Codex, PR #49).
+ *
+ * That is the same failure this feature guards against everywhere else — a
+ * fabricated number beside a real topic name — arriving through the prompt
+ * instead of through the model's answer. `renderCoverageTable` escapes on the
+ * way out as well; this collapse is what makes the length ceiling meaningful,
+ * since a front of 240 newlines is short and still ruinous.
+ */
 function clampFront(front: string): string {
-  return front.length <= MAX_SAMPLE_FRONT_LENGTH
-    ? front
-    : `${front.slice(0, MAX_SAMPLE_FRONT_LENGTH).trimEnd()}…`;
+  const flat = front.replace(/\s+/g, " ").trim();
+  return flat.length <= MAX_SAMPLE_FRONT_LENGTH
+    ? flat
+    : `${flat.slice(0, MAX_SAMPLE_FRONT_LENGTH).trimEnd()}…`;
 }
 
 /**
@@ -266,7 +283,13 @@ export function renderCoverageTable(coverage: readonly TopicCoverage[]): string 
     const parts = [`- ${topicKey(row.subject, row.topic)} — ${row.cardCount} kart`];
     if (row.weakCardCount > 0) parts.push(`(${row.weakCardCount} şüpheli)`);
     if (row.sampleFronts.length > 0) {
-      parts.push(`örnek: ${row.sampleFronts.map((front) => `"${front}"`).join("; ")}`);
+      // `JSON.stringify`, not manual quoting: it escapes the quote, the
+      // backslash and any residual control character, so nothing a card
+      // question contains can end the sample early or open a new line in a
+      // line-oriented table. `clampFront` has already flattened whitespace —
+      // this is the second layer, and the one that holds if a future caller
+      // builds rows without going through `buildCoverage`.
+      parts.push(`örnek: ${row.sampleFronts.map((front) => JSON.stringify(front)).join("; ")}`);
     }
     lines.push(parts.join(" "));
   }

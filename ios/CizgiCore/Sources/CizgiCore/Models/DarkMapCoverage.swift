@@ -205,7 +205,7 @@ public enum DarkMapCoverage {
         var trimmed: [String] = []
         trimmed.reserveCapacity(group.count)
         for card in group {
-            let front = card.front.trimmingCharacters(in: .whitespacesAndNewlines)
+            let front = Self.flattened(card.front)
             if !front.isEmpty { trimmed.append(front) }
         }
 
@@ -223,6 +223,20 @@ public enum DarkMapCoverage {
 
         if trimmed.count > limit { trimmed.removeLast(trimmed.count - limit) }
         return trimmed.map(clamped)
+    }
+
+    /// Collapses every run of whitespace — newlines included — into one space.
+    ///
+    /// Card editors accept multiline text, and the server renders these samples
+    /// into a **line-oriented** coverage table; a newline inside one opened what
+    /// read as another coverage row, which would have had a paid ranker reason
+    /// over a topic count that never came from the deck (Codex, PR #49). The
+    /// server flattens and escapes again on its side and that is the actual
+    /// guarantee — this keeps the phone from putting the problem on the wire,
+    /// and makes the length ceiling mean something, since 240 newlines is short
+    /// and still ruinous.
+    private static func flattened(_ front: String) -> String {
+        front.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
     /// Truncation is marked, so the model reads a cut sentence as cut.

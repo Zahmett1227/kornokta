@@ -567,3 +567,45 @@ final class DarkMapSampleLengthTests: XCTestCase {
         XCTAssertTrue(payload.rows[0].sampleFronts[0].hasPrefix("xxx"))
     }
 }
+
+/// The phone's half of the prompt-table integrity fix (Codex, PR #49).
+///
+/// The server flattens and escapes again and that is the guarantee; this stops
+/// the phone putting a multiline question on the wire at all, and makes the
+/// length ceiling mean something — 240 newlines is short and still ruinous.
+final class DarkMapSampleFlatteningTests: XCTestCase {
+
+    func testCollapsesNewlinesAndRunsOfWhitespace() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon", front: "ilk satır\n\tikinci  satır")],
+            schema: schema
+        )
+        XCTAssertEqual(payload.rows[0].sampleFronts[0], "ilk satır ikinci satır")
+    }
+
+    func testDropsAWhitespaceOnlyFront() {
+        let payload = DarkMapCoverage.build(
+            cards: [
+                card(subject: "Patoloji", topic: "Inflamasyon", front: "\n\t  \n"),
+                card(subject: "Patoloji", topic: "Inflamasyon", front: "gerçek soru"),
+            ],
+            schema: schema
+        )
+        XCTAssertEqual(payload.rows[0].sampleFronts, ["gerçek soru"])
+        XCTAssertEqual(payload.rows[0].cardCount, 2)
+    }
+
+    /// The ceiling is measured after flattening, not before.
+    func testMeasuresTheCeilingAfterFlattening() {
+        let front = String(repeating: "a", count: 200)
+            + String(repeating: "\n", count: 200)
+            + String(repeating: "b", count: 200)
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon", front: front)],
+            schema: schema
+        )
+        let sample = payload.rows[0].sampleFronts[0]
+        XCTAssertFalse(sample.contains("\n"))
+        XCTAssertLessThanOrEqual(sample.count, DarkMapCoverage.maxSampleFrontLength + 1)
+    }
+}
