@@ -191,7 +191,8 @@ struct DarkMapView: View {
             Text("Öncelik sırası")
         } footer: {
             Text(
-                "Boş konuların hepsi eşit acil değil. İki bağımsız model — kart üreten OpenAI ve "
+                "Aktif kartı olmayan konuların hepsi eşit acil değil. İki bağımsız model — kart "
+                    + "üreten OpenAI ve "
                     + "ondan bağımsız Gemini — aynı tabloyu ayrı ayrı okuyup TUS'ta en pahalıya "
                     + "mal olacak konuları sıralar. Yalnız ikisinin de işaretlediği konu "
                     + "\"iki model de\" damgası alır."
@@ -266,7 +267,7 @@ struct DarkMapView: View {
             } footer: {
                 Text(
                     "Sıra, TUS ağırlığı ile destedeki eksiğin çarpımıdır — yalnız boşluğa göre "
-                        + "değil. Kart sayıları destenden okunur, modelden değil."
+                        + "değil. Aktif kart sayıları destenden okunur, modelden değil."
                 )
             }
         }
@@ -508,9 +509,18 @@ struct DarkMapView: View {
         }
     }
 
+    /// Always says "aktif kart", never bare "kart".
+    ///
+    /// `cardCount` is the active-card count — `DarkMapCoverage` excludes
+    /// suspended and draft cards on purpose — so a ranked topic holding only
+    /// suspended cards shows 0 here while cards plainly still exist. The bare
+    /// wording was the last place in this screen still making that false claim
+    /// (Codex, PR #49), after the headers and tiles were qualified.
     private static func cardCountLabel(_ zone: DarkZone) -> String {
-        if zone.cardCount == 0 { return "kart yok" }
-        if zone.weakCardCount > 0 { return "\(zone.cardCount) kart · \(zone.weakCardCount) şüpheli" }
-        return "\(zone.cardCount) kart"
+        if zone.cardCount == 0 { return "aktif kart yok" }
+        if zone.weakCardCount > 0 {
+            return "\(zone.cardCount) aktif kart · \(zone.weakCardCount) şüpheli"
+        }
+        return "\(zone.cardCount) aktif kart"
     }
 }
