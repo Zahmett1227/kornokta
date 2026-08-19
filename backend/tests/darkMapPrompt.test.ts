@@ -99,3 +99,29 @@ describe("dark map prompt", () => {
     expect(DARK_MAP_PROMPT).toContain("kart üretme");
   });
 });
+
+describe("scope framing (Codex, PR #49)", () => {
+  /**
+   * A `subjects`-narrowed request shows the rankers a subset. The system
+   * message used to assert the table held every topic in the canonical schema,
+   * which is then false — and false in the direction that matters, since an
+   * omitted subject reads as "not in the curriculum" rather than "deliberately
+   * out of scope", and that skews the very subject-only ranking that was asked
+   * for. This is the higher-priority text, so `buildRankInstruction` wording
+   * alone was not enough.
+   */
+  it("describes the table as the evaluation's scope, not the whole schema", () => {
+    expect(DARK_MAP_PROMPT).toContain("KAPSAMINDAKİ her konuyu içerir");
+    expect(DARK_MAP_PROMPT).not.toContain("şablonundaki HER konuyu içerir");
+  });
+
+  it("says an absent topic is out of scope rather than absent from the curriculum", () => {
+    expect(DARK_MAP_PROMPT).toMatch(/müfredatta yok" demek DEĞİLDİR/);
+    expect(DARK_MAP_PROMPT).toMatch(/dışında bırakıldı/);
+  });
+
+  /** The closed-set framing must survive the rewording: the table is the universe. */
+  it("still tells the model to rank only over the rows it was given", () => {
+    expect(DARK_MAP_PROMPT).toMatch(/sıralamanı tablodaki satırlar üzerinden/);
+  });
+});

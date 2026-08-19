@@ -24,14 +24,19 @@
  * replacement".
  */
 
-export const DARK_MAP_PROMPT_VERSION = "1.0";
+export const DARK_MAP_PROMPT_VERSION = "1.1";
 
 export const DARK_MAP_PROMPT = `Sen TUS (Tıpta Uzmanlık Sınavı) müfredatını bilen bir sınav danışmanısın.
 
 Sana bir öğrencinin KİŞİSEL kart destesinin kapsama tablosu verilecek. Tablo,
-uygulamanın kanonik ders/konu şablonundaki HER konuyu içerir — sıfır kartlı
-olanlar dahil. Sıfırlar tablodaki en önemli satırlardır: öğrencinin o konuya
-hiç dokunmadığını gösterirler.
+bu değerlendirmenin KAPSAMINDAKİ her konuyu içerir — sıfır kartlı olanlar
+dahil. Sıfırlar tablodaki en önemli satırlardır: öğrencinin o konuya hiç
+dokunmadığını gösterirler.
+
+Kapsam bazen tüm şablon, bazen seçilmiş birkaç derstir. Tabloda görmediğin bir
+konu "müfredatta yok" demek DEĞİLDİR, "bu değerlendirmenin dışında bırakıldı"
+demektir; onlar hakkında akıl yürütme, sıralamanı tablodaki satırlar üzerinden
+kur.
 
 GÖREVİN: Bu öğrencinin TUS'ta en çok puan kaybedeceği konuları sırala. Yani
 "TUS'un bu konudan sorduğu" ile "destede duran" arasındaki farkın en pahalı

@@ -609,3 +609,80 @@ final class DarkMapSampleFlatteningTests: XCTestCase {
         XCTAssertLessThanOrEqual(sample.count, DarkMapCoverage.maxSampleFrontLength + 1)
     }
 }
+
+/// Two staleness axes pulling opposite ways (Codex, PR #49, rounds 7 and 9).
+///
+/// The deck moves fast (`@Query` updates the instant a card is suspended); the
+/// schema moves slowly (a deployed backend can know a topic a released app does
+/// not). Handing the whole answer to either side fixes one and breaks the other,
+/// which is exactly what happened once. Each owns what it is authoritative about.
+final class DarkMapUntouchedReconciliationTests: XCTestCase {
+
+    private func keys(_ rows: [(subject: String, topic: String)]) -> [String] {
+        rows.map { "\($0.subject)|\($0.topic)" }
+    }
+
+    func testUsesTheCurrentDeckWithNoServerList() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon")],
+            schema: schema
+        )
+        let rows = DarkMapCoverage.untouched(schema: schema, payload: payload)
+        XCTAssertFalse(keys(rows).contains("Patoloji|Inflamasyon"))
+        XCTAssertTrue(keys(rows).contains("Patoloji|Neoplazi"))
+        XCTAssertEqual(rows.count, 3)
+    }
+
+    /// The round-9 regression: a card suspended after the run must move the
+    /// topic back into the list, without needing a paid rerun.
+    func testTracksTheDeckEvenWhenAServerListIsPresent() {
+        let stale = [(subject: "Patoloji", topic: "Neoplazi")]
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Inflamasyon", isActive: false)],
+            schema: schema
+        )
+        let rows = DarkMapCoverage.untouched(schema: schema, payload: payload, serverUntouched: stale)
+        // Inflamasyon is suspended now, so it is uncovered again — even though
+        // the server's older answer did not list it.
+        XCTAssertTrue(keys(rows).contains("Patoloji|Inflamasyon"))
+    }
+
+    /// The round-7 finding: a topic only the server knows must still surface.
+    func testAddsTopicsTheBundledSchemaDoesNotKnow() {
+        let payload = DarkMapCoverage.build(cards: [], schema: schema)
+        let rows = DarkMapCoverage.untouched(
+            schema: schema,
+            payload: payload,
+            serverUntouched: [(subject: "Farmakoloji", topic: "Yeni Konu")]
+        )
+        XCTAssertTrue(keys(rows).contains("Farmakoloji|Yeni Konu"))
+        XCTAssertEqual(rows.count, 5)
+    }
+
+    /// A server row this build *does* know was already decided from the deck —
+    /// it must not appear twice.
+    func testDoesNotDuplicateAKnownServerRow() {
+        let payload = DarkMapCoverage.build(cards: [], schema: schema)
+        let rows = DarkMapCoverage.untouched(
+            schema: schema,
+            payload: payload,
+            serverUntouched: [(subject: "Patoloji", topic: "Neoplazi")]
+        )
+        XCTAssertEqual(keys(rows).filter { $0 == "Patoloji|Neoplazi" }.count, 1)
+    }
+
+    /// And a known server row for a topic the deck now covers must not
+    /// resurrect it.
+    func testAKnownServerRowCannotResurrectACoveredTopic() {
+        let payload = DarkMapCoverage.build(
+            cards: [card(subject: "Patoloji", topic: "Neoplazi")],
+            schema: schema
+        )
+        let rows = DarkMapCoverage.untouched(
+            schema: schema,
+            payload: payload,
+            serverUntouched: [(subject: "Patoloji", topic: "Neoplazi")]
+        )
+        XCTAssertFalse(keys(rows).contains("Patoloji|Neoplazi"))
+    }
+}

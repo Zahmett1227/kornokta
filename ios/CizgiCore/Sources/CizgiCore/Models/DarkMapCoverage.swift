@@ -137,6 +137,46 @@ public enum DarkMapCoverage {
     /// through unbounded (Codex, PR #49).
     public static let maxSampleFrontLength = 240
 
+    /// The topics with no active card, reconciling the two things that can be
+    /// stale in opposite directions.
+    ///
+    /// The deck is the fast-moving side: `@Query` updates the moment a card is
+    /// suspended in another tab, so any count held from an earlier run goes
+    /// wrong immediately. The schema is the slow-moving side: a deployed
+    /// backend can know a topic a released app does not, and that topic's gap
+    /// would otherwise be invisible.
+    ///
+    /// So neither source wins outright — each owns what it is actually
+    /// authoritative about. The local payload decides **coverage** (it is the
+    /// only one that knows the deck right now); the server list only **adds**
+    /// topics the bundled schema has never heard of. A previous version handed
+    /// the whole answer to the server after a run and traded one staleness for
+    /// the other (Codex, PR #49, twice).
+    public static func untouched(
+        schema: SubjectTopicSchema,
+        payload: Payload,
+        serverUntouched: [(subject: String, topic: String)] = []
+    ) -> [(subject: String, topic: String)] {
+        let covered = Set(payload.rows.map { key(subject: $0.subject, topic: $0.topic) })
+
+        var result: [(subject: String, topic: String)] = []
+        var known: Set<String> = []
+        for subject in schema.subjects {
+            for topic in subject.topics {
+                let id = key(subject: subject.name, topic: topic)
+                known.insert(id)
+                if !covered.contains(id) { result.append((subject: subject.name, topic: topic)) }
+            }
+        }
+
+        // Only the genuinely unknown ones. A server row this build *does* know
+        // was already decided above, from the current deck.
+        for row in serverUntouched where !known.contains(key(subject: row.subject, topic: row.topic)) {
+            result.append((subject: row.subject, topic: row.topic))
+        }
+        return result
+    }
+
     /// Groups the deck into canonical rows.
     ///
     /// Sample fronts are taken from the **longest** questions rather than the
