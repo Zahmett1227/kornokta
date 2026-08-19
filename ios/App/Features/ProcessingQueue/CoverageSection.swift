@@ -52,8 +52,8 @@ struct CoverageSection: View {
         if findings.isEmpty {
             summaryRow(coverage)
         } else {
-            ForEach(findings) { mark in
-                findingRow(mark)
+            ForEach(findings) { finding in
+                findingRow(finding)
             }
         }
 
@@ -62,12 +62,21 @@ struct CoverageSection: View {
 
     // MARK: Rows
 
-    private func findingRow(_ mark: PageMark) -> some View {
-        Button {
+    private func findingRow(_ finding: CoverageFinding) -> some View {
+        let mark = finding.mark
+        return Button {
             onAddCard(mark)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Label(mark.kind.label, systemImage: mark.kind.icon)
+                // The occurrence count is only ever shown when it is more than
+                // one, and then it is the whole point of showing it: the same
+                // words were marked in two places, and the row stands for both.
+                Label(
+                    finding.occurrences > 1
+                        ? "\(mark.kind.label) · \(finding.occurrences) yerde"
+                        : mark.kind.label,
+                    systemImage: mark.kind.icon
+                )
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(mark.source == .auditor ? Cizgi.accent : Cizgi.muted)
                 Text(mark.quote)

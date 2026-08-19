@@ -50,7 +50,7 @@ final class CoverageTests: XCTestCase {
         // Prompt rule 3's ladder, shared with the server: the most valuable
         // thing the model skipped is the first row.
         XCTAssertEqual(
-            coverage.openFindings.map(\.quote),
+            coverage.openFindings.map(\.mark.quote),
             ["el yazısı not", "yıldızlı yer", "altı çizili yer", "fosforlu yer"]
         )
     }
@@ -62,7 +62,7 @@ final class CoverageTests: XCTestCase {
         )
         // Readers list marks roughly in page order; re-sorting equals would
         // hand back an order nothing produced.
-        XCTAssertEqual(coverage.openFindings.map(\.quote), ["birinci", "ikinci", "üçüncü"])
+        XCTAssertEqual(coverage.openFindings.map(\.mark.quote), ["birinci", "ikinci", "üçüncü"])
     }
 
     func testGeneratorFindingsComeBeforeAuditOnlyOnes() {
@@ -76,7 +76,7 @@ final class CoverageTests: XCTestCase {
                 discarded: 0
             )
         )
-        XCTAssertEqual(coverage.openFindings.map(\.source), [.generator, .auditor])
+        XCTAssertEqual(coverage.openFindings.map(\.mark.source), [.generator, .auditor])
     }
 
     // MARK: Merging the two readers
@@ -98,7 +98,7 @@ final class CoverageTests: XCTestCase {
         XCTAssertEqual(coverage.openFindings.count, 1)
         // The generator's version wins: it is the reading the cards were
         // actually built from.
-        XCTAssertEqual(coverage.openFindings.first?.source, .generator)
+        XCTAssertEqual(coverage.openFindings.first?.mark.source, .generator)
     }
 
     func testShortQuotesAreNotMergedByContainment() {
@@ -111,6 +111,43 @@ final class CoverageTests: XCTestCase {
         XCTAssertEqual(coverage.openFindings.count, 2)
     }
 
+    func testTheSameWordsMarkedTwiceAreCountedNotDropped() {
+        // Codex, PR #47: the same drug name highlighted in two passages is two
+        // real marks. Collapsing them into one row is right — both rows would
+        // carry identical words and an identical tier, so there is nothing to
+        // act on differently, and the dismissal identity *is* that text — but
+        // dropping the second one silently is the loss this layer exists to
+        // end. So the row states how many it stands for.
+        let coverage = PageCoverage(
+            reported: true,
+            uncovered: [
+                mark("Adenozin infüzyonu", .highlight),
+                mark("Adenozin infüzyonu", .highlight),
+                mark("başka bir yer", .highlight),
+            ]
+        )
+        let findings = coverage.openFindings
+        XCTAssertEqual(findings.map(\.mark.quote), ["Adenozin infüzyonu", "başka bir yer"])
+        XCTAssertEqual(findings.map(\.occurrences), [2, 1])
+    }
+
+    func testTheOtherReaderSeeingItAgainIsNotASecondOccurrence() {
+        // Across readers the same passage is one mark seen twice, not two
+        // marks — that is reconciliation, and counting it would tell the owner
+        // they marked something twice when they did not.
+        let coverage = PageCoverage(
+            reported: true,
+            uncovered: [mark("tek bir işaret", .underline)],
+            audit: PageCoverage.Audit(
+                performedAt: Date(),
+                uncovered: [mark("tek bir işaret", .underline, source: .auditor)],
+                markCount: 1,
+                discarded: 0
+            )
+        )
+        XCTAssertEqual(coverage.openFindings.map(\.occurrences), [1])
+    }
+
     // MARK: Dismissal
 
     func testDismissedMarkStaysDismissedAcrossAReAudit() {
@@ -118,7 +155,7 @@ final class CoverageTests: XCTestCase {
         // later reports the same passage again, and a dismissal that did not
         // survive it would make the button useless.
         var coverage = PageCoverage(reported: true, uncovered: [mark("gerekmiyor", .highlight)])
-        coverage.dismiss(coverage.openFindings[0])
+        coverage.dismiss(coverage.openFindings[0].mark)
         XCTAssertTrue(coverage.openFindings.isEmpty)
 
         coverage.record(audit: PageCoverage.Audit(
@@ -148,7 +185,7 @@ final class CoverageTests: XCTestCase {
         )
         XCTAssertEqual(coverage.openFindings.count, 1)
 
-        coverage.dismiss(coverage.openFindings[0])
+        coverage.dismiss(coverage.openFindings[0].mark)
 
         XCTAssertTrue(coverage.openFindings.isEmpty, "aynı pasaj ikinci kez yoksayma istedi")
     }
@@ -161,7 +198,7 @@ final class CoverageTests: XCTestCase {
             reported: true,
             uncovered: [mark("kenar notundaki ayrıntı", .symbol)]
         )
-        coverage.dismiss(coverage.openFindings[0])
+        coverage.dismiss(coverage.openFindings[0].mark)
 
         coverage.record(audit: PageCoverage.Audit(
             performedAt: Date(),
@@ -176,7 +213,7 @@ final class CoverageTests: XCTestCase {
         // The overlap rule's own guard still applies to dismissals: a short
         // fragment must not silence every neighbour that happens to contain it.
         var coverage = PageCoverage(reported: true, uncovered: [mark("IgA", .underline)])
-        coverage.dismiss(coverage.openFindings[0])
+        coverage.dismiss(coverage.openFindings[0].mark)
 
         coverage.record(audit: PageCoverage.Audit(
             performedAt: Date(),
@@ -184,12 +221,12 @@ final class CoverageTests: XCTestCase {
             markCount: 2,
             discarded: 0
         ))
-        XCTAssertEqual(coverage.openFindings.map(\.quote), ["IgA nefropatisi tanısı"])
+        XCTAssertEqual(coverage.openFindings.map(\.mark.quote), ["IgA nefropatisi tanısı"])
     }
 
     func testDismissingTwiceIsHarmless() {
         var coverage = PageCoverage(reported: true, uncovered: [mark("bir kez")])
-        let target = coverage.openFindings[0]
+        let target = coverage.openFindings[0].mark
         coverage.dismiss(target)
         coverage.dismiss(target)
         XCTAssertEqual(coverage.dismissedMarkIds.count, 1)
@@ -244,7 +281,7 @@ final class CoverageTests: XCTestCase {
             markCount: 7,
             discarded: 1
         ))
-        coverage.dismiss(coverage.openFindings[0])
+        coverage.dismiss(coverage.openFindings[0].mark)
 
         let restored = PageCoverage.fromStorage(coverage.storageValue)
         XCTAssertEqual(restored, coverage)

@@ -76,6 +76,31 @@ public struct PageMark: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+/// One row of the "Kartlaşmamış işaretler" list.
+///
+/// A mark plus how many times the reader that found it listed that same
+/// passage. `occurrences > 1` means the owner marked the same words in more
+/// than one place on the page — the same drug name highlighted twice, say —
+/// and it is shown rather than folded away silently: the row still stands for
+/// all of them, but the owner gets to know that (Codex, PR #47).
+public struct CoverageFinding: Identifiable, Equatable, Sendable {
+    public let mark: PageMark
+    /// How many marks this row stands for. Always ≥ 1.
+    public let occurrences: Int
+
+    /// The mark's own identity, so a dismissal and a row are keyed the same way.
+    public var id: String { mark.id }
+
+    public init(mark: PageMark, occurrences: Int = 1) {
+        self.mark = mark
+        self.occurrences = max(1, occurrences)
+    }
+
+    func countingAnotherOccurrence() -> CoverageFinding {
+        CoverageFinding(mark: mark, occurrences: occurrences + 1)
+    }
+}
+
 /// What one page's coverage looks like right now.
 ///
 /// Stored on the page rather than derived on the fly: the generator's half
@@ -143,7 +168,7 @@ public struct PageCoverage: Codable, Equatable, Sendable {
     /// the cards were actually built from; the auditor's copy of the same
     /// passage would say the same thing in slightly different words and take a
     /// second row for it.
-    public var openFindings: [PageMark] {
+    public var openFindings: [CoverageFinding] {
         // Dismissals are matched by the same overlap rule the deduplication
         // uses, not by id alone. Ids differ whenever the two readers transcribe
         // a passage slightly differently — or file it under different tiers —
@@ -153,8 +178,8 @@ public struct PageCoverage: Codable, Equatable, Sendable {
         // the same passage twice (Codex, PR #47). "Yoksay" is a decision about
         // the passage, so it has to be recognised however it is worded.
         let dismissedQuotes = dismissedMarkIds.map(PageCoverage.quote(inMarkId:))
-        var seen: [String] = []
-        var findings: [PageMark] = []
+        var seen: [(quote: String, source: PageMark.Source, index: Int)] = []
+        var findings: [CoverageFinding] = []
 
         for mark in uncovered + (audit?.uncovered ?? []) {
             let folded = CardSearch.fold(mark.quote)
@@ -163,15 +188,31 @@ public struct PageCoverage: Codable, Equatable, Sendable {
             // handwriting identically, and one of them quoting a few words more
             // does not make it a second mark. Equality here would show the
             // owner the same passage twice and cost two dismissals.
-            guard !seen.contains(where: { PageCoverage.overlaps($0, folded) }) else { continue }
-            seen.append(folded)
-            findings.append(mark)
+            if let match = seen.first(where: { PageCoverage.overlaps($0.quote, folded) }) {
+                // The same reader listing the passage twice is two *marks* — the
+                // owner really did highlight that drug name in two places — while
+                // the other reader listing it is the same mark seen twice. The
+                // first is counted rather than dropped: silently swallowing a
+                // real mark is the loss this whole layer exists to end (Codex,
+                // PR #47). It is still one row, because both rows would carry the
+                // same words and the same tier, leaving nothing to act on
+                // differently — and because the identity a dismissal is stored
+                // under is that text, so a second row could not be dismissed
+                // separately anyway. What the count buys is that the second
+                // occurrence is *stated* instead of hidden.
+                if match.source == mark.source {
+                    findings[match.index] = findings[match.index].countingAnotherOccurrence()
+                }
+                continue
+            }
+            seen.append((quote: folded, source: mark.source, index: findings.count))
+            findings.append(CoverageFinding(mark: mark, occurrences: 1))
         }
 
         return findings.enumerated()
             .sorted { left, right in
-                if left.element.priority != right.element.priority {
-                    return left.element.priority < right.element.priority
+                if left.element.mark.priority != right.element.mark.priority {
+                    return left.element.mark.priority < right.element.mark.priority
                 }
                 // Stable within a tier: the readers list marks roughly in page
                 // order, and re-sorting equals would hand back an order nothing
