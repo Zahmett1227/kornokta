@@ -415,7 +415,9 @@ Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/0
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
-yönlendirmesi tasarımı), `docs/ORNEK-algi-taramasi.md` (Tur A nasıl doldurulur),
+yönlendirmesi tasarımı), `docs/PLAN-kapsama-sozlesmesi.md` (öneri, karar
+bekliyor: sessiz kapsama kaybını ölçülebilir yapan iki katman + Sentez
+Egzersizi ve Deste Doktoru adayları), `docs/ORNEK-algi-taramasi.md` (Tur A nasıl doldurulur),
 `docs/PRIVACY.md`, `docs/RUNBOOK.md`, `docs/MALIYET-OLCUMU.md` (çağrı başına
 maliyet defteri, teşhis yordamı, model karşılaştırması), `backend/README.md`,
 `ios/README.md`.
@@ -640,6 +642,18 @@ Kod bitti, kalite bitmedi — ancak gerçek sayfalarla oturur.
 
 Öneri, taahhüt değil; sırayı kullanıcı seçer.
 
+- **Kapsama sözleşmesi** (2026-08-19, ayrıntılı tasarım:
+  `docs/PLAN-kapsama-sozlesmesi.md`): sessiz kapsama kaybını — işaretlenip hiç
+  kartlaşmayan içeriği — ilk kez **ölçülebilir** yapan iki katman. (A) Şema
+  v2.3: model kendi işaret defterini (`marks[]`) ve kart başına `markIndex`
+  yazar, sunucu "kartsız işaret" ve "işaretsiz kart" listelerini deterministik
+  çıkarır; ek çağrı ve migration yok. (B) `/api/coverage`: bağımsız ikinci
+  okuyucu (Gemini) aynı sayfayı denetler — A'nın göremediği sınıfı, yani
+  modelin *hiç görmediği* işareti yakalar. Aynı belgede iki büyük alternatif:
+  **Sentez Egzersizi** (kendi kartlarından TUS tipi vinyet, Gemini
+  doğrulamalı; yalnız FES'i besler, `EarlyPractice`'e asla dokunmaz) ve
+  **Deste Doktoru** (2026-08-18 denetiminin tekrarlanabilir hâli, tam deste
+  ≈$0.015).
 - **Tekrar (FSRS) oturumuna ders/konu filtresi** ("bugün yalnız Farmakoloji").
 - **Kart kalitesi geri bildirimi:** tekrar sırasında "bu kart kötü" işareti →
   prompt iterasyonuna girdi.
