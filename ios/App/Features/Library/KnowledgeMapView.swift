@@ -60,6 +60,15 @@ struct KnowledgeMapView: View {
                         .foregroundStyle(Cizgi.muted)
                     }
 
+                    // The inverse of everything below it. This screen counts the
+                    // cards that exist; the Karanlık Harita asks which canonical
+                    // topics have none — a question only worth asking because
+                    // the template is a closed list (docs/ADR-009).
+                    NavigationLink(value: AppNavigator.LibraryRoute.darkMap) {
+                        darkMapCard(map)
+                    }
+                    .buttonStyle(.plain)
+
                     CizgiSectionTitle(
                         "Dersler",
                         subtitle: "Bir dersi açarak konu dağılımını ve zayıf noktaları incele."
@@ -110,6 +119,44 @@ struct KnowledgeMapView: View {
     private func totalUncategorized(_ map: KnowledgeMapSummary) -> Int? {
         let total = map.subjects.reduce(0) { $0 + ($1.uncategorized?.cardCount ?? 0) }
         return total > 0 ? total : nil
+    }
+
+    /// Entry point for the Karanlık Harita.
+    ///
+    /// Its headline number is the one this screen never shows: the count of
+    /// canonical topics holding no **active** card.
+    ///
+    /// Deliberately `activeCoveredTopicCount` rather than the `coveredTopicCount`
+    /// behind the tiles above. The two differ only for a topic whose every card
+    /// is suspended, and there they must differ: the tiles describe the deck (a
+    /// suspended card is still in it) while the Karanlık Harita describes what
+    /// is being studied (it is not). Using the tiles' definition here made the
+    /// number *change on tap* — the card promised one figure and the screen
+    /// behind it computed another for the same deck (Codex, PR #49).
+    private func darkMapCard(_ map: KnowledgeMapSummary) -> some View {
+        let dark = max(0, map.totalTopicCount - map.activeCoveredTopicCount)
+        return CardSurface {
+            VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Karanlık Harita", systemImage: "moon.stars")
+                        .font(.headline)
+                        .foregroundStyle(Cizgi.ink)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Cizgi.muted)
+                }
+                Text("\(dark) konuda tek aktif kartın yok.")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Cizgi.ink)
+                Text(
+                    "Hangilerinin TUS'ta pahalıya mal olduğunu iki bağımsız model ayrı ayrı "
+                        + "değerlendirir; yalnız ikisinin de işaretlediği konu onaylanır."
+                )
+                .font(.footnote)
+                .foregroundStyle(Cizgi.muted)
+            }
+        }
     }
 
     private func subjectCard(_ summary: KnowledgeMapSubjectSummary) -> some View {

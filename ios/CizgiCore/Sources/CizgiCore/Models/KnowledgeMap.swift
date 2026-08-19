@@ -83,6 +83,27 @@ public struct KnowledgeMapSummary: Equatable, Sendable {
     public let totalTopicCount: Int
 
     public var isEmpty: Bool { totalCardCount == 0 }
+
+    /// Canonical topics holding at least one **active** card.
+    ///
+    /// `coveredTopicCount` above counts a topic as covered on any card at all,
+    /// which is the right answer for this screen: Bilgi Haritası describes the
+    /// deck, and a suspended card is still in the deck.
+    ///
+    /// The Karanlık Harita asks a different question — "what am I not
+    /// studying?" — and there a topic whose only cards are suspended is a gap,
+    /// not coverage (`DarkMapCoverage` documents why: the 117 duplicates
+    /// `DuplicateSuspendMigration` put away must not make a topic look
+    /// studied). Both definitions are correct for their own screen; what was
+    /// wrong was the entry card computing one and the screen behind it
+    /// computing the other, so the number changed on tap (Codex, PR #49).
+    ///
+    /// Lives here rather than in the caller so the two surfaces share one
+    /// definition, and `DarkMapCoverageAgreementTests` locks it against
+    /// `DarkMapCoverage.build`.
+    public var activeCoveredTopicCount: Int {
+        subjects.reduce(0) { $0 + $1.topics.countMatching { $0.activeCount > 0 } }
+    }
 }
 
 public enum KnowledgeMapBuilder {

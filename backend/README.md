@@ -130,6 +130,38 @@ aistudio.google.com'dan kontrol et") — OpenAI tarafında da `insufficient_quot
 aynı netlikte raporlanır; ikisi de sahibinin şartı (2026-08-11): bir 429'un
 "model meşgul" mü "bakiye bitti" mi olduğu asla aranarak bulunmasın.
 
+## Karanlık Harita — `POST /api/dark-map` (2026-08-19, docs/ADR-009)
+
+Telefonun **istek üzerine** çağırdığı dördüncü kapı, ve diğerlerinin tersi bir
+soru sorar: *hangi kanonik konuda hiç kartım yok, ve hangileri TUS'ta pahalıya
+mal oluyor?*
+
+Gövde: `{ requestId, coverage: [{ subject, topic, cardCount, weakCardCount?,
+sampleFronts? }], subjects?, maxZones? }` — telefon yalnız **kartı olan**
+çiftleri gönderir. Cevap iki cinsten oluşur ve bu ayrım bilerektir:
+
+- `untouched` — hiç kartı olmayan kanonik konuların **tam** listesi. Sunucu
+  kendi kanonik listesinden sıfır doldurur, yani telefonun anmadığı konu boş
+  sayılır; eksik rapor eden bir istemci bir konuyu ancak *daha karanlık*
+  gösterebilir. Model çağrısından **önce** üretilir.
+- `zones` — ince konular arasında öncelik sıralaması. **İki model ailesi** (aynı
+  prompt, iki ayrı çağrı, birbirini görmeden) sıralar; ikisinin de işaretlediği
+  konu `confirmed`, tekinin `disputed`. Ayrıca `raters[]`, `singleRater` ve iki
+  satırlık `usage` defteri (`purpose: "dark_map"`).
+
+**Model konu icat edemez:** `topicKey` (= `Ders|Konu`) her iki ailenin yanıt
+şemasında 143 değerli bir **enum**'dur — kartın `topic` alanındaki üç katmanın
+aynısı (şema enum'u + prompt Kural 1 + `sanitizeRatings`). Kimlik daima çifttir,
+çünkü altı konu adı iki ders altında birden geçer.
+
+`GEMINI_API_KEY` yoksa uç **tek sıralayıcıyla** çalışır (`singleRater: true`,
+her bölge `disputed`) — reddetmez. İki aile de düşerse **5xx** döner, boş
+`zones` ile 200 değil: boş sıralama "karanlık yer yok" diye okunur.
+
+Veritabanına dokunmaz, hiçbir şey yazmaz, görüntü taşımaz — bu yüzden kuyruğa
+(ADR-006) binmez ve `jobs` tablosuna sütun eklemez. Bütün ayarları kod
+varsayılanlı (`DARK_MAP_*`), yani canlıya hiçbir değişken girmeden çalışır.
+
 **Migration sırası (kural):** `jobs` tablosuna sütun ekleyen bir değişiklik
 **dağıtımdan önce** canlıya uygulanmalı. Yeni kod sütunu yazar; sütun yoksa
 PostgREST `insert`'i reddeder ve her çekim patlar. Migration'lar sırayla
@@ -151,6 +183,9 @@ ADR-006'da yazılı.
 | `api/_cards.ts` | `POST /api/cards-vision` — senkron kart üretimi; saf handler, testte doğrudan çağrılıyor |
 | `api/_jobs.ts` | `POST/GET /api/jobs` — asenkron iş kuyruğu (ADR-006) + saklama süpürmesi |
 | `api/_secondOpinion.ts` | `POST /api/second-opinion` — lowConfidence kart için istek üzerine Gemini ikinci okuması |
+| `api/_darkMap.ts` | `POST /api/dark-map` — kapsama boşluğu; deterministik `untouched` + çift aileli `zones` (ADR-009) |
+| `providers/coverage.ts` | Karanlık Harita'nın sayılabilir yarısı: kanonik listeden sıfır doldurma, `topicKey` kodlaması, prompt tablosu |
+| `providers/darkMap.ts` | İki sıralayıcı (OpenAI + Gemini, aynı prompt) + `sanitizeRatings` + `mergeRankings` mutabakat kapısı |
 | `api/index.ts` | Bileşim kökü; `DEVICE_TOKEN`, `OPENAI_API_KEY`, `GEMINI_API_KEY` ve Supabase anahtarına dokunan tek dosya; Vercel'in çalıştırdığı tek fonksiyon |
 | `providers/openai.ts` | OpenAI Responses API sağlayıcısı — vision kart üretimi (§11.2, §14) |
 | `providers/gemini.ts` | Gemini generateContent sağlayıcısı — ikinci görüş (§10.4'ün Faz 6 hali); kota/kredi bitişini adıyla raporlar |
