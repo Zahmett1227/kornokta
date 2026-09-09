@@ -163,7 +163,7 @@ kez yazmak olurdu (gerekçe ADR-010).
   tepesinde; seçim `@AppStorage` ile paylaşılıyor. Altıncı sekme değil:
   `CizgiRootTabBar` beş öğeli ve ortası yükseltilmiş.
 - **Bir kapsamdayken diğerinin kartları hiçbir yerde görünmez** — liste,
-  sayaçlar, arama, Bilgi Haritası, Karanlık Harita ve bildirim sayıları dahil.
+  sayaçlar, arama, Bilgi Haritası ve bildirim sayıları dahil.
 - **Filtrelemenin tek adı `CardScope`.** Tek gerçek risk bir çağrı yerini
   unutmak ve bu **sessiz** bir hata: kartlar geçerli, aktif, vadesinde —
   ekran sağlıklı görünürken yanlış desteyi anlatır. İki kilit:
@@ -265,34 +265,6 @@ kez yazmak olurdu (gerekçe ADR-010).
 - **Bilgi Haritası:** kanonik ders/konu kapsamı; tanınmayan ad asla kanonik
   düğüm üretmez ama sayılır ("Konusuz" / "tanınmayan konu" /
   "sınıflandırılmamış" kovaları) — ekrandaki satırların toplamı desteye eşit.
-- **Karanlık Harita (ADR-009, 2026-08-19):** Bilgi Haritası'nın tersi — *var
-  olan* kartları değil, **hiç kartı olmayan kanonik konuları** gösterir.
-  **"Kapsama" bu repoda iki şeydir:** Kapsama sözleşmesi (#47) *tek sayfada*
-  işaret↔kart eşleşmesini ölçer (`providers/coverage.ts`); bu ise *tüm destede*
-  konu↔kart kapsamasını (`providers/topicCoverage.ts`). Kardeşler — aynı kör
-  noktanın (üretilmemiş kart hiçbir sinyal taşımaz) sayfa ve müfredat ölçekleri. Bilgi
-  Haritası içinden açılır. İki yarısı bilerek ayrı durur, çünkü garantileri
-  farklı: **boş konular** cihazda hesaplanır (ağ yok, ücret yok, model çağrısı
-  düşse bile durur); **öncelik sırası** iki model ailesinin yargısıdır ve
-  ücretlidir. Tek listede birleştirmek bir kanıya bir sayımın yetkisini verirdi.
-  Özelliği mümkün kılan şey şablonun **kapalı** olması: 143 konunun tümleyeni
-  bilinebilir. Bu yüzden model konu **icat edemez** — `topicKey` (= `Ders|Konu`)
-  her iki ailenin yanıt şemasında enum'dur, kartın `topic` alanındaki üç
-  katmanın (şema enum'u + prompt Kural 1 + `sanitizeRatings`) aynısı. Kimlik
-  daima **çifttir**: altı konu adı iki ders altında birden geçiyor
-  (`Deri Hastalıkları` → Patoloji + Genel Cerrahi, `İmmünoloji`,
-  `Meme Hastalıkları`, `Pankreas Hastalıkları`, `Onkoloji`, `Beslenme`), iki
-  alanı bağımsız doğrulayan bir kapı Patoloji'ye Farmakoloji konusu bağlanmasına
-  izin verirdi. **Tek prompt, iki aile:** ikisi de aynı metni alır ve birbirini
-  görmez — farklı metin verseydik anlaşmazlık "deste hakkında ayrıldılar" değil
-  "farklı şeyler soruldu" anlamına gelirdi. İkisinin de işaretlediği konu
-  `confirmed`, tekinin işaretlediği `disputed` (düşürülmez — 50/50 bir yargıyı
-  sessizlikten ayırt edilemez yapardı). `GEMINI_API_KEY` yoksa uç **tek
-  sıralayıcıyla** çalışır: `singleRater: true` ve ekran bunu turuncu uyarıyla
-  söyler. **İki aile de düşerse 5xx** döner, boş `zones` ile 200 değil — boş
-  sıralama "karanlık yer yok" diye okunur, bu özelliğin kazara veremeyeceği tek
-  cevap. Askıya alınmış kart kapsama sayılmaz. Kalıcı veri yok, `jobs` tablosuna
-  dokunmaz, SwiftData şeması değişmez.
 - **Yedek biçimi v7:** v6'nın üstüne kartın **koleksiyonu** (`collection`,
   ADR-010). Alansız bir geri yükleme 3.017 kavram kartını çekim destesine
   kurardı ve bunu hiçbir şey bildirmezdi — her kart tek tek geçerli. Alanı
@@ -338,7 +310,6 @@ kez yazmak olurdu (gerekçe ADR-010).
 | Sayfa detayında kart ekleme + düzenleme (2026-08-15) | ✅ `main`'de (PR #43, squash `721ed19`). Kuyruktan açılan sayfa ekranı (`PageDetailView`) salt-okunur olmaktan çıktı: karta dokunmak ortak `CardEditorView`'ı açıyor, her pasajın altında **"Kart ekle"** var (`ManualCardSheet`). Gerekçe: modelin tehlikeli hatası yanlış kart değil **eksik** kart, ve üretilmemiş kart `lowConfidence` taşımadığı için onu hiçbir otomatik sinyal görmüyor — tek çare sayfaya bakarken elle eklemek. Ortak editör **kart tipi seçici** kazandı (Bilgilerim/Tekrar/Egzersiz de). Codex'in iki P2'si kapatıldı: elle kartın unit'i boş `canonicalClaim` taşıyor (yukarıdaki 4. madde) ve bu belge de o sözleşmeyi yazıyor. Yerel `swift test` (391), simülatör derlemesi, backend ve evals yeşil. **Cihaz doğrulaması açık:** aşağıdaki listenin 6-10. maddeleri |
 | Deste denetimi: kopya kartların askıya alınması (2026-08-18) | ✅ `main`'de (PR #46, squash `deef8dc`) ve **cihazda doğrulandı** (2026-08-18): ilk açılışta askıdaki kart sayısı 11 → **128**, tam beklendiği gibi. Sahibinin 2026-08-18 yedeği (1007 kart) baştan sona okundu: 996 aktif kartın **117'si** (%12) birebir/yakın kopya (74) ya da tutulan başka bir kartın cevabında tamamen kapsanan (43) — ana kaynak aynı sayfanın birden çok kez çekilmesi; en yoğun konu Solunum (142 kartın 49'u). Küme küme gerekçeli rapor + UUID listesi sahibinde (sohbette dosya olarak). Uygulama: `DuplicateSuspendMigration` — kimlik listesi gömülü, tek seferlik, **siler değil askıya alır** (`ReviewLog`/FES korunur, "Askıdan çıkar" ile tek tek geri alınır), yalnız `.active` karta dokunur. Bilinçli olarak `TopicBackfillMigration`'ın seen-set deseni DEĞİL (o desenin sonsuz-tarama açığı "Küçük ve gerçek kalanlar" 2'de kayıtlı): bayrak ilk başarılı kayıtta yazılır; temiz kurulum + sonradan restore boşluğu ise `ApprovalGateMigration`'la aynı biçimde kapalı — `SettingsView.restore`, idempotent `suspend(in:)` adımını restore'un kendi context'inde yeniden koşar (Codex, PR #46 P2). Denetimin yan ürünleri: içeriği şüpheli 3 kart (anjiyomiyolipom-ağrı, miksoma-McCune-Albright, HER2→"Luminal B" — `lowConfidence` olmadıkları için İkinci Görüş düğmesi çıkmaz, elle bakılmalı) ve metni düzeltilmeli ~25 kart (v2.6 öncesi "Pasaja göre…" kalıntıları) rapora yazıldı, koda dahil değil. Kalan mini kontrol (kritik değil, fırsat olunca): bir kartta "Askıdan çıkar" deneyip kartın aktif **kaldığını** görmek — bayrak yazıldığı için migration bir daha dokunmamalı |
 
-| Karanlık Harita (`/api/dark-map` + Bilgi Haritası'nda yeni ekran, ADR-009) | 🟡 dalda (`claude/kornokta-new-feature-idea-igpc6w`). Backend uçtan uca testli ve yeşil (`npm test` 378, `tsc` temiz, evals 501); iOS çekirdeği (`DarkMapCoverage`, `DarkMapProvider`) indirilen araç zinciriyle izole pakette gerçekten koşturuldu. **Cihaz doğrulaması açık:** doğrulama listesinin 18-21. maddeleri. Ayrıca canlıya `DARK_MAP_*` değişkenleri **girilmesi şart değil** — hepsi kod varsayılanlı; `GEMINI_API_KEY` zaten girili olduğu için kapı iki aileyle çalışır |
 
 | Kavram destesi ayrı alanda (`CardCollection` + kapsam anahtarı + `ConceptPackImporter`, ADR-010) | 🟡 dalda (`kavram-kartlari-ayri-alan`). **Simülatörde uçtan uca doğrulandı:** eski şemayla yazılmış bir depo (4 kart, 3 unit) üzerine yeni ikili kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` eklendi, dört kart da `capture` oldu, veri kayıpsız. Gerçek 3.017 kartlık paket telefonda içe aktarıldı (~15 sn, 831 kavram/831 unit, konusuz kart **sıfır**), Çekimlerim tarafı 4 kartta kaldı, Ayarlar dökümü 3021 = 4 + 3017, v7 yedeği 3.017 concept + 4 capture ile 4,1 MB çıktı. Swift 493→526, evals 509→513, backend 452 + `tsc` temiz, App hedefi derleniyor. **Gerçek cihazda kalan:** doğrulama listesinin 23-26. maddeleri |
 
@@ -468,13 +439,6 @@ boş defterle geçti).
   dokunmadan önce oku — özellikle FES'in **neden saklanan, hesaplanan
   olmadığı** (`ExerciseAttempt` 90 günde siliniyor) ve neden
   `ExercisePracticeWeight`'in yerine değil yanına girdiği.
-- **`docs/ADR-009`** — GÜNCEL YÖN: Karanlık Harita — kapalı kanonik şablon
-  üzerinde kapsama boşluğu, çift aileli mutabakat kapısı. `coverage.ts`,
-  `darkMap.ts`, `_darkMap.ts`, `DarkMapCoverage.swift`, `DarkMapProvider.swift`'e
-  dokunmadan önce oku — özellikle **konuların neden yalnız şablondan
-  seçilebildiği** (kapalı küme olmasa "neyi çalışmıyorum" bir sorgu değil bir
-  kanı olurdu), kimliğin neden **çift** olduğu, ve tek-aileli bozulmanın neden
-  asla mutabakat gibi görünmemesi gerektiği.
 - **`docs/ADR-010`** — GÜNCEL YÖN: kavram destesi ayrı bir modelde değil,
   `Card` üzerindeki bir koleksiyon ayracında; arayüzde kapsam anahtarı.
   `CardScope.swift`, `ConceptPackImporter.swift`, `CardScopePicker.swift`'e
@@ -543,7 +507,7 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 ## Doküman haritası
 
 Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler),
-`docs/ADR-005/006/007/008/009/010`,
+`docs/ADR-005/006/007/008/010`,
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -555,7 +519,9 @@ maliyet defteri, teşhis yordamı, model karşılaştırması), `backend/README.
 `ios/README.md`.
 
 Tarihsel (davranış için değil, karar gerekçesi için): `docs/HISTORY.md`
-(oturum kayıtları arşivi), `docs/ADR-001..004`, `docs/FAZ0-*` – `FAZ5-*`,
+(oturum kayıtları arşivi), `docs/ADR-001..004`, **`docs/ADR-009`** (Karanlık
+Harita — 2026-09-09'da koddan tamamen kaldırıldı; geri dönüş = kaldırma
+commit'inin revert'i), `docs/FAZ0-*` – `FAZ5-*`,
 `docs/COKLU-FOTO-TIMEOUT.md`, `docs/MAC-ADIMLARI*.md`, `docs/GOLD-SET-GUIDE.md`,
 `docs/GOOGLE-CLOUD-KURULUM.md`, `docs/OPENAI-GEMINI-KURULUM.md`,
 `docs/MODEL-CARD.md`.
@@ -711,39 +677,6 @@ gösterir (2026-08-13 tartışması).
     açılmalı (SwiftData'ya `coverageJSON` eklendi — `ModelRun.attempt` dersi:
     isteğe bağlı alan, varsayılan `nil`) ve o sayfa "kapsama defteri olmadan
     üretilmiş" demeli — "temiz" değil.
-
-18. **Karanlık Harita — deterministik yarı (ADR-009, 2026-08-19).** Bilgilerim →
-    Bilgi Haritası → "Karanlık Harita" kartına dokun. Ekran **daha hiçbir şeye
-    basmadan** üç sayı göstermeli (kapsanan / boş / toplam konu) ve altta "Hiç
-    kartı olmayan konular" bölümü dolu olmalı. Bunlar cihazda hesaplanır: **uçak
-    modunda da çalışmalı.** Bilgi Haritası'ndaki **giriş kartının** söylediği
-    sayı ("N konuda tek kartın yok") ile bu ekrandaki **"boş konu"** sayısı
-    birebir aynı olmalı — tutmuyorsa iki yüzey aynı desteyi farklı sayıyor
-    demektir (Codex, PR #49; artık `DarkMapCoverageAgreementTests` bunu
-    kilitliyor). **Ama** Bilgi Haritası'nın üstündeki "Kapsanan konu"
-    tile'ıyla aynı olması *gerekmez* ve bir kartı askıdayken olmaz da: tile
-    desteyi anlatır (askıdaki kart da destededir), Karanlık Harita çalışılanı
-    anlatır (askıdaki kart çalışılmıyor). Bu fark beklenen davranış, hata
-    değil. Konusuz kart uyarısı da görünmeli (bu destede çoğu kart konusuz).
-19. **Karanlık Harita — mutabakat kapısı.** "Öncelik sırasını çıkar" → iki model
-    de yeşil tik almalı ve en az bir konu **"iki model de"** damgası taşımalı.
-    Damgasız (tek model) satırlar da listede olmalı — düşürülmüyorlar. Her
-    satırdaki kart sayısı destedeki gerçek sayı olmalı. Gerekçeler **aile aile**
-    ayrı satırlarda basılmalı ("OpenAI: …", "Gemini: …"), tek cümlede
-    birleştirilmiş değil. Gerekçe "bu konuda hiç kartın yok" gibi sayıyı tekrar
-    eden bir cümleyse Kural 2 bağlamamış demektir — prompt'a dönülecek.
-20. **Karanlık Harita — konu adları uydurulmuyor mu (en kritik).** Listedeki her
-    ders/konu adı Ayarlar'daki şablonda **aynen** var olmalı. Şablonda olmayan
-    tek bir ad bile görünürse üç katmanın üçü birden düşmüş demektir (şema
-    enum'u + prompt + `sanitizeRatings`) ve bu bir P0'dır. Özellikle iki ders
-    altında birden geçen adlara dikkat: bir satır "Genel Cerrahi | Deri
-    Hastalıkları" diyorsa o gerçekten Genel Cerrahi'nin konusu mu?
-21. **Karanlık Harita — maliyet ve bozulma.** Ayarlar → Kullanım → Çağrı
-    dökümünde **iki yeni satır** olmalı: biri OpenAI biri Gemini, ikisi de
-    "karanlık harita" etiketli (etiket "kart üretimi" diyorsa
-    `UsageDetailView.purposeLabel` eksik). Bozulmayı denemek için Vercel'den
-    `GEMINI_API_KEY`'i geçici kaldır: ekran turuncu "yalnız tek model
-    değerlendirdi" uyarısı vermeli ve **hiçbir satır "iki model de" dememeli**.
 
 23. **Kavram paketi gerçek telefonda (ADR-010).** Paketi Dosyalar'a koy →
     Bilgilerim → Kavramlar → "Kavram paketi içe aktar". Simülatörde ~15 sn

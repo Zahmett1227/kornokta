@@ -177,11 +177,11 @@ export interface ResponsesApiBody {
 /**
  * Status codes worth another attempt (§17), same convention as `documentAI.ts`.
  *
- * Exported so a second OpenAI-backed provider (`darkMap.ts`) classifies
- * failures identically rather than growing its own near-copy — the same
- * "generate it, don't hand-sync it" rule the anti-drift pairs follow.
+ * Module-private again: it was exported for a second OpenAI-backed provider
+ * that no longer exists, and an export kept "in case" is how the next reader
+ * concludes something outside still depends on this shape.
  */
-export function isTransientStatus(status: number): boolean {
+function isTransientStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
 

@@ -13,9 +13,9 @@ yok, `TextRegion`'ı yok.
 Bu kartlar çekim destesine karışsaydı iki şey birden bozulurdu. Nicelik: 996
 kartlık bir destenin üstüne 3.017 kart, yani Tekrar ve Egzersiz artık ağırlıklı
 olarak *bir başkasının* ürettiği içeriği sorar. Nitelik: "Kaynağı göster" boş
-kalır, Bilgi Haritası'nın Farmakoloji kapsaması bir anda dolar ve **Karanlık
-Harita'nın cevabı anlamını yitirir** — "hangi konuda hiç kartım yok" sorusu,
-karışık bir destede "hangi konuda ne ben ne de paket çalışmış" demeye başlar.
+kalır ve Bilgi Haritası'nın Farmakoloji kapsaması bir anda dolar — "bu konuda
+kaç kartım var" sorusu, karışık bir destede "ben mi çalıştım paket mi getirdi"
+ayrımını kaybeder.
 
 ## Karar
 
@@ -51,7 +51,7 @@ fiyatlarıyla birlikte değiştirmeme hatasıyla aynı: kaçırılması en kolay
 
 1. `CizgiCoreTests/CardScopeTests` — **bileşimin** doğruluğu: kapsamlanmış deste
    `ReviewSessionPlanner`, `ExerciseFilter`, `LibraryCardFilter`, `CardSearch` ve
-   `DarkMapCoverage`'a verildiğinde kapsamlar kesişmiyor.
+   `KnowledgeMapBuilder`'a verildiğinde kapsamlar kesişmiyor.
 2. `evals/tests/test_card_scope_sites.py` — **çağrının varlığı**: altı ekranın
    her biri gerçekten `CardScope`'u çağırıyor mu, ve yeni bir `[Card]` sorgusu
    listeye katılmış mı. SwiftUI görünümlerini bir Swift testi göremez;
@@ -73,9 +73,9 @@ diye.
 - **Ayarlar bilerek kapsamsız:** yedek ve geri yükleme cihaz geneli işlemlerdir.
   Kapsamlı bir `existingIds` kümesi, zaten burada olan kartları
   `@Attribute(.unique)` altında yeniden eklemeye kalkardı.
-- **Karanlık Harita kapsamlı:** çekim destesinde bakıldığında Farmakoloji hâlâ
-  karanlık görünür, kavram destesinde görünmez. İstenen davranış bu — iki deste
-  ayrı çalışma evrenleri.
+- **Bilgi Haritası kapsamlı:** çekim destesinde bakıldığında Farmakoloji boş
+  görünür, kavram destesinde dolu. İstenen davranış bu — iki deste ayrı
+  çalışma evrenleri.
 - **`DuplicateSuspendMigration` yalnız `.capture`:** 2026-08-18 denetimi o
   desteyi okudu; kavram paketinde aynı ilacı iki kavram altında sormak kasıtlı.
 - **Kapsam değişince açık oturum kapanır.** Egzersiz'de `finishEarly()` ile,

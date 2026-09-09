@@ -218,12 +218,12 @@ final class CardScopeTests: XCTestCase {
         XCTAssertEqual(hits(in: .capture), 0)
     }
 
-    // MARK: - Karanlık Harita (DarkMapView)
+    // MARK: - Bilgi Haritası (KnowledgeMapView)
 
-    /// The point of the screen is "topics this deck has never touched". An
-    /// imported Farmakoloji pack must not mark Farmakoloji covered for the
-    /// photographed deck — that would answer the question about the wrong deck.
-    func testDarkMapCoverageNeverCrossesCollections() throws {
+    /// The map describes one deck, not the store: an imported Farmakoloji pack
+    /// must not light up topics for the photographed deck, or the coverage
+    /// tiles would be answering about cards the screen is not showing.
+    func testKnowledgeMapCoverageNeverCrossesCollections() throws {
         let context = try makeContext()
         let schema = SubjectTopicSchema(
             version: 1,
@@ -232,14 +232,14 @@ final class CardScopeTests: XCTestCase {
         insert(.concept, into: context, subject: "Farmakoloji", topic: "Genel Farmakoloji")
         let all = try context.fetch(FetchDescriptor<Card>())
 
-        func coverage(in collection: CardCollection) -> DarkMapCoverage.Payload {
-            DarkMapCoverage.build(
+        func map(in collection: CardCollection) -> KnowledgeMapSummary {
+            KnowledgeMapBuilder.build(
                 cards: CardScope.cards(all, in: collection).map {
-                    DarkMapCoverage.Card(
+                    KnowledgeMapCard(
                         subject: $0.knowledgeUnit?.subject,
                         topic: $0.knowledgeUnit?.topic,
-                        front: $0.front,
                         isActive: $0.status == .active,
+                        lapseCount: $0.lapseCount,
                         lowConfidence: $0.lowConfidence
                     )
                 },
@@ -248,10 +248,10 @@ final class CardScopeTests: XCTestCase {
         }
 
         // Seen from the concept deck, one of the two topics is covered.
-        XCTAssertEqual(coverage(in: .concept).coveredTopicCount, 1)
-        XCTAssertEqual(coverage(in: .concept).rows.map(\.topic), ["Genel Farmakoloji"])
-        // Seen from the photographed deck, neither is: it has no cards at all,
-        // so both canonical topics are still dark.
-        XCTAssertEqual(coverage(in: .capture).coveredTopicCount, 0)
+        XCTAssertEqual(map(in: .concept).coveredTopicCount, 1)
+        XCTAssertEqual(map(in: .concept).totalCardCount, 1)
+        // Seen from the photographed deck, neither is: it has no cards at all.
+        XCTAssertEqual(map(in: .capture).coveredTopicCount, 0)
+        XCTAssertEqual(map(in: .capture).totalCardCount, 0)
     }
 }

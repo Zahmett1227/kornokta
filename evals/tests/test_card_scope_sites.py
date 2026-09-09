@@ -3,8 +3,8 @@
 Splitting the deck into "Çekimlerim" and "Kavramlar" (a `Card.collectionRaw`
 discriminator plus a scope switcher, not a second SwiftData model) introduced
 exactly one way to break a working app: forget the filter at a single call
-site and an imported pack's 3.017 cards pour into Tekrar, Egzersiz, Bilgilerim,
-the Karanlık Harita or the reminder counts.
+site and an imported pack's 3.017 cards pour into Tekrar, Egzersiz, Bilgilerim
+or the reminder counts.
 
 Nothing detects that at runtime. Every one of those cards is `.active`, has a
 due date and renders correctly, so the screen looks healthy while answering a
@@ -14,10 +14,10 @@ treatment CLAUDE.md prescribes for it: "elle senkron tutma, üret ve testle
 kilitle."
 
 `CizgiCoreTests/CardScopeTests` proves the *composition* is right — a scoped
-deck fed to `ReviewSessionPlanner`, `ExerciseFilter`, `LibraryCardFilter` and
-`DarkMapCoverage` never crosses collections. It cannot prove a view actually
-calls `CardScope`, because the views are SwiftUI and live in the App target.
-This does, by reading the source.
+deck fed to `ReviewSessionPlanner`, `ExerciseFilter`, `LibraryCardFilter`,
+`CardSearch` and `KnowledgeMapBuilder` never crosses collections. It cannot
+prove a view actually calls `CardScope`, because the views are SwiftUI and live
+in the App target. This does, by reading the source.
 
 Python rather than Swift for the reason `test_swiftdata_migration_safety.py`
 gives: the App target only compiles on a Mac, so a Swift test would run in
@@ -39,7 +39,6 @@ SCOPED_SITES = {
     "Features/Review/ReviewView.swift": "Tekrar",
     "Features/Review/ExerciseView.swift": "Egzersiz",
     "Features/Library/LibraryView.swift": "Bilgilerim",
-    "Features/Library/DarkMapView.swift": "Karanlık Harita",
     "Features/Settings/SettingsView.swift": "Ayarlar",
 }
 

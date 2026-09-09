@@ -1,6 +1,27 @@
 # ADR-009 — Karanlık Harita: kapalı şablon üzerinde çift aileli kapsama boşluğu
 
-**Tarih:** 2026-08-19 · **Durum:** kabul edildi, uygulandı (cihaz doğrulaması açık)
+**Tarih:** 2026-08-19 · **Durum:** ⛔️ **GERİ ALINDI (2026-09-09) — kod silindi.**
+Yalnız karar arkeolojisi için okuyun; bu belge artık davranışı tarif etmiyor.
+
+> **Geri alma notu (2026-09-09).** Özellik sahibinin kararıyla arka uçtan ve
+> arayüzden **tamamen** kaldırıldı. Silinenler: `api/_darkMap.ts`,
+> `prompts/darkMap.ts`, `providers/darkMap.ts`, `providers/topicCoverage.ts`,
+> `Models/DarkMapCoverage.swift`, `Providers/DarkMapProvider.swift`,
+> `Features/Library/DarkMapView.swift` ve dört backend test dosyası; ayrıca
+> `/api/dark-map` rotası, `DarkMapConfig` + `DARK_MAP_*` değişkenleri,
+> `CallPurpose`'un `dark_map` değeri ve Bilgi Haritası'ndaki giriş kartı.
+>
+> Geri dönüş = bu kaldırma commit'inin revert'i (`git log`'da "Karanlık
+> Harita'yı tamamen kaldır"). ADR-002/003/004 ile aynı muamele: kod gider,
+> gerekçe kalır.
+>
+> **Hâlâ geçerli olan komşusu:** Kapsama sözleşmesi (#47,
+> `providers/coverage.ts`) *tek sayfa* ölçeğinde işaret ↔ kart farkını ölçüyor
+> ve **duruyor**. Aşağıdaki adlandırma notu tam da bu ikisini ayırmak için
+> yazılmıştı; karışıklık riski kalkmadı, yalnız tarafı azaldı.
+>
+> **Canlıda kalan iş:** `DARK_MAP_*` değişkenleri Vercel'e hiç girilmemişti
+> (hepsi kod varsayılanlıydı), yani orada temizlenecek bir şey yok.
 
 ## Bağlam
 

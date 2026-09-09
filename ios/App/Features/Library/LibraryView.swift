@@ -120,7 +120,6 @@ struct LibraryView: View {
             }
             .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
                 switch route {
-                case .darkMap: DarkMapView()
                 case .conceptImport: ConceptPackImportView()
                 }
             }
