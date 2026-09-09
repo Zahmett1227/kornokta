@@ -17,6 +17,7 @@ struct LibraryView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
+    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
     @State private var searchText = ""
     @State private var subjectFilter: String?
     @State private var topicFilter: TopicFilter = .all
@@ -36,8 +37,17 @@ struct LibraryView: View {
     /// Filtered in memory rather than with `#Predicate`, on purpose: subject
     /// and topic live on an optional relationship, `CardSearch` folds Turkish
     /// case in a way SQLite will not, and this deck is hundreds of cards.
+    private var collection: CardCollection { CardScope.collection(fromStored: collectionRaw) }
+
+    /// The active deck, before this screen's own subject/topic/search filters.
+    /// Everything on this screen — the tiles, the sections, the map and the
+    /// empty state — starts here, for the same reason the search text was
+    /// folded into `cards` on 2026-08-15: a screen that filters its list but
+    /// not its totals is reporting on a deck the user is not looking at.
+    private var scopedCards: [Card] { CardScope.cards(allCards, in: collection) }
+
     private var cards: [Card] {
-        allCards.filter { card in
+        scopedCards.filter { card in
             LibraryCardFilter.matches(
                 subject: card.knowledgeUnit?.subject,
                 topic: card.knowledgeUnit?.topic,
@@ -69,6 +79,8 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $navigator.libraryPath) {
             VStack(spacing: 0) {
+                CardScopePicker()
+
                 Picker("Görünüm", selection: $contentMode) {
                     ForEach(ContentMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -85,11 +97,11 @@ struct LibraryView: View {
                         // in map mode the field searched nothing, and a search
                         // box that ignores what you type is worse than none.
                         Group {
-                            if allCards.isEmpty { emptyState } else { list }
+                            if scopedCards.isEmpty { emptyState } else { list }
                         }
                         .searchable(text: $searchText, prompt: "Kartlarda ara")
                     case .map:
-                        KnowledgeMapView(cards: allCards)
+                        KnowledgeMapView(cards: scopedCards)
                     }
                 }
             }
@@ -109,6 +121,7 @@ struct LibraryView: View {
             .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
                 switch route {
                 case .darkMap: DarkMapView()
+                case .conceptImport: ConceptPackImportView()
                 }
             }
             .toolbar {
@@ -117,23 +130,47 @@ struct LibraryView: View {
                         SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
                     }
                 }
+                // Still reachable once the deck is no longer empty: a pack gets
+                // revised, and re-importing is how new concepts arrive. Safe to
+                // offer repeatedly because the import is idempotent.
+                ToolbarItem(placement: .topBarLeading) {
+                    if collection == .concept {
+                        NavigationLink(value: AppNavigator.LibraryRoute.conceptImport) {
+                            Label("Kavram paketi içe aktar", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                }
             }
         }
         .tint(Cizgi.accent)
     }
 
+    /// Scope-aware, and on the Kavramlar side it is the feature's only door:
+    /// the importer lives behind it, so a generic "henüz bilgi yok" would leave
+    /// an empty deck with no way to fill it.
+    @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: Cizgi.Space.md) {
-            Image(systemName: "books.vertical")
+            Image(systemName: collection == .concept ? "square.stack.3d.down.right" : "books.vertical")
                 .font(.system(size: 52))
                 .foregroundStyle(Cizgi.accent)
-            Text("Henüz bilgi yok")
+            Text(collection == .concept ? "Henüz kavram yok" : "Henüz bilgi yok")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(Cizgi.ink)
-            Text("Bir sayfa çektiğinde üretilen kartlar burada birikir.")
+            Text(collection == .concept
+                 ? "Dışarıda hazırlanmış bir kavram paketini içe aktararak başla."
+                 : "Bir sayfa çektiğinde üretilen kartlar burada birikir.")
                 .font(.subheadline)
                 .foregroundStyle(Cizgi.muted)
                 .multilineTextAlignment(.center)
+            if collection == .concept {
+                NavigationLink(value: AppNavigator.LibraryRoute.conceptImport) {
+                    Text("Kavram paketi içe aktar")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Cizgi.accent)
+                .padding(.top, Cizgi.Space.sm)
+            }
         }
         .padding(Cizgi.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -73,6 +73,13 @@ enum DuplicateSuspendMigration {
         let cards = try context.fetch(FetchDescriptor<Card>())
         var changed = 0
         for card in cards where suspendIds.contains(card.id.uuidString.uppercased()) {
+            // The audit read the photographed deck and nothing else, so its
+            // verdict has no authority over an imported concept pack — where
+            // near-identical fronts are deliberate, the same drug being asked
+            // about under two concepts. The id list makes a collision
+            // vanishingly unlikely on its own; this states the scope rather
+            // than relying on that.
+            guard card.collection == .capture else { continue }
             if let restoredIds, !restoredIds.contains(card.id) { continue }
             guard card.status == .active else { continue }
             card.status = .suspended

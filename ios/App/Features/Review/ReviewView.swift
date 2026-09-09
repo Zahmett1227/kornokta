@@ -17,6 +17,7 @@ struct ReviewView: View {
     @Environment(\.modelContext) private var context
 
     @Query private var allCards: [Card]
+    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
 
     /// `nil` before the user has chosen a session — §6.5 asks for the count and
     /// an estimate *before* the first card, not after it.
@@ -34,9 +35,16 @@ struct ReviewView: View {
     @State private var ledger = DailyNewCardLedger()
     @State private var secondsPerCard = ReviewPace.fallbackSecondsPerCard
 
+    private var collection: CardCollection { CardScope.collection(fromStored: collectionRaw) }
+
+    /// The active deck. Every listing on this screen goes through here; the two
+    /// places that still touch `allCards` resolve an id the session already
+    /// chose, which is lookup, not listing.
+    private var scopedCards: [Card] { CardScope.cards(allCards, in: collection) }
+
     /// Everything the planner needs, read once per render from the store.
     private var plannableCards: [PlannableCard] {
-        allCards.map {
+        scopedCards.map {
             PlannableCard(
                 id: $0.id,
                 dueDate: $0.dueDate,
@@ -100,6 +108,15 @@ struct ReviewView: View {
                     }
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                // Hidden mid-session: the switcher would be a second way to
+                // end a run, next to a progress counter that says one is in
+                // flight. `onChange` below covers the case where it is flipped
+                // from another screen while this one is alive.
+                if session == nil || session?.isFinished == true {
+                    CardScopePicker().background(Cizgi.paper)
+                }
+            }
             .rootTabBarInset()
             .navigationTitle("Tekrar")
             .toolbar {
@@ -145,6 +162,16 @@ struct ReviewView: View {
         }
         .tint(Cizgi.accent)
         .onAppear(perform: refreshMeasurements)
+        // A queue built from one deck must not outlive a switch to the other:
+        // its ids still resolve through `allCards`, so the session would go on
+        // showing cards the active scope hides. Ending it is the honest
+        // reading of "I am studying the other deck now".
+        .onChange(of: collectionRaw) {
+            session = nil
+            isAnswerVisible = false
+            selectedOption = nil
+            lastGrade = nil
+        }
         .sheet(item: $editingCard) { card in
             CardEditorView(card: card)
         }
@@ -502,7 +529,7 @@ struct ReviewView: View {
         try? await ReviewNotificationManager.reschedule(
             enabled: environment.settings.notificationsEnabled,
             hour: environment.settings.notificationHour,
-            dueDates: allCards.filter { $0.status == .active }.map(\.dueDate)
+            dueDates: scopedCards.filter { $0.status == .active }.map(\.dueDate)
         )
     }
 

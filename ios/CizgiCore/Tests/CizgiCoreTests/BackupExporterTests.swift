@@ -99,4 +99,76 @@ final class BackupExporterTests: XCTestCase {
         XCTAssertNil(restored.cards.first?.topic)
         XCTAssertEqual(restored.cards.first?.subject, "Patoloji")
     }
+
+    // MARK: - Version 7: which deck a card belongs to
+
+    /// The hazard this field exists for: without it a restore rebuilds every
+    /// imported concept card inside the photographed deck, and nothing reports
+    /// it because each restored card is individually valid.
+    func testCollectionSurvivesAFullExportRestoreRoundTrip() throws {
+        let capture = BackupExporter.CardRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!,
+            type: "direct_recall", front: "Çekim", back: "Yanıt",
+            explanation: nil, sourceQuote: nil, subject: "Patoloji",
+            status: "active", dueDate: Date(timeIntervalSince1970: 0),
+            stability: 1, difficulty: 5, reviewCount: 2, lapseCount: 0,
+            collection: CardCollection.capture.rawValue
+        )
+        let concept = BackupExporter.CardRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!,
+            type: "direct_recall", front: "Kavram", back: "Yanıt",
+            explanation: nil, sourceQuote: nil, subject: "Farmakoloji",
+            status: "active", dueDate: Date(timeIntervalSince1970: 0),
+            stability: 1, difficulty: 5, reviewCount: 2, lapseCount: 0,
+            collection: CardCollection.concept.rawValue
+        )
+        let data = try BackupExporter.encode(
+            cards: [capture, concept],
+            exportedAt: Date(timeIntervalSince1970: 0)
+        )
+        let restored = try BackupExporter.decode(data)
+
+        let byFront = Dictionary(restored.cards.map { ($0.front, $0.collection) }) { first, _ in first }
+        XCTAssertEqual(byFront["Çekim"], "capture")
+        XCTAssertEqual(byFront["Kavram"], "concept")
+    }
+
+    /// A card exported without saying which deck it is in defaults to the
+    /// photographed one — the same fallback `Card.collection` applies.
+    func testARecordMadeWithoutACollectionIsACaptureCard() throws {
+        let record = BackupExporter.CardRecord(
+            id: UUID(), type: "direct_recall", front: "Soru", back: "Yanıt",
+            explanation: nil, sourceQuote: nil, subject: nil,
+            status: "active", dueDate: Date(timeIntervalSince1970: 0),
+            stability: 1, difficulty: 5, reviewCount: 0, lapseCount: 0
+        )
+        XCTAssertEqual(record.collection, "capture")
+    }
+
+    func testAPreCollectionBackupStillDecodesAsCaptureCards() throws {
+        // A version 6 file has no `collection` key. Reading it as `.capture` is
+        // not a fallback so much as the truth: concept cards could not exist
+        // when it was written.
+        let json = """
+        {"formatVersion":6,"exportedAt":"1970-01-01T00:00:00Z","cards":[{
+          "id":"00000000-0000-0000-0000-000000000001","type":"direct_recall",
+          "front":"Soru","back":"Yanıt","subject":"Patoloji","status":"active",
+          "dueDate":"1970-01-01T00:00:00Z","stability":1,"difficulty":5,
+          "reviewCount":0,"lapseCount":0,"fesScore":4,"fesNegativeCount":2
+        }]}
+        """
+        let restored = try BackupExporter.decode(Data(json.utf8))
+        XCTAssertEqual(restored.cards.first?.collection, "capture")
+        // The v6 fields still read, so the new key did not shift anything.
+        XCTAssertEqual(restored.cards.first?.fesScore, 4)
+    }
+
+    /// Guards the version constant itself: a file from a newer build must be
+    /// refused rather than restored as a lossy subset.
+    func testTheFormatVersionIsSeven() {
+        XCTAssertEqual(BackupExporter.formatVersion, 7)
+        XCTAssertThrowsError(try BackupExporter.decode(Data(
+            #"{"formatVersion":8,"exportedAt":"1970-01-01T00:00:00Z","cards":[]}"#.utf8
+        )))
+    }
 }

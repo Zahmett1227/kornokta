@@ -22,9 +22,10 @@ import Foundation
 /// rather than failing.
 public enum BackupExporter {
     /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2);
-    /// 6 adds the FES record (docs/ADR-008). Older files still restore: every
-    /// field added after version 1 is decoded with `decodeIfPresent`.
-    public static let formatVersion = 6
+    /// 6 adds the FES record (docs/ADR-008); 7 adds the card's collection
+    /// (`CardCollection`). Older files still restore: every field added after
+    /// version 1 is decoded with `decodeIfPresent`.
+    public static let formatVersion = 7
 
     /// One graded review, as recorded at the time (§16.7).
     public struct ReviewRecord: Codable, Sendable, Equatable {
@@ -118,6 +119,20 @@ public enum BackupExporter {
         public let fesScore: Int
         public let fesNegativeCount: Int
         public let fesInitializedAt: Date?
+        // --- added in version 7 ---
+        /// Which deck the card belongs to (`CardCollection.rawValue`).
+        ///
+        /// Imported concept cards travel in the backup like any other card,
+        /// and this field is why that is safe: without it a restore would
+        /// rebuild all 3.017 of them as `.capture` and permanently flood the
+        /// photographed deck — the failure would be silent, because every
+        /// restored card is individually valid. The pack itself is
+        /// reproducible from JSON, but a card's FSRS history is not, and that
+        /// history is the only thing in this file that exists nowhere else.
+        ///
+        /// A pre-v7 file has no such key, and `.capture` is the right reading
+        /// of it: concept cards could not exist when it was written.
+        public let collection: String
 
         public init(
             id: UUID,
@@ -146,7 +161,8 @@ public enum BackupExporter {
             lastPracticedAt: Date? = nil,
             fesScore: Int = 0,
             fesNegativeCount: Int = 0,
-            fesInitializedAt: Date? = nil
+            fesInitializedAt: Date? = nil,
+            collection: String = CardCollection.capture.rawValue
         ) {
             self.id = id
             self.type = type
@@ -175,6 +191,7 @@ public enum BackupExporter {
             self.fesScore = fesScore
             self.fesNegativeCount = fesNegativeCount
             self.fesInitializedAt = fesInitializedAt
+            self.collection = collection
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -209,6 +226,8 @@ public enum BackupExporter {
             fesScore = try values.decodeIfPresent(Int.self, forKey: .fesScore) ?? 0
             fesNegativeCount = try values.decodeIfPresent(Int.self, forKey: .fesNegativeCount) ?? 0
             fesInitializedAt = try values.decodeIfPresent(Date.self, forKey: .fesInitializedAt)
+            collection = try values.decodeIfPresent(String.self, forKey: .collection)
+                ?? CardCollection.capture.rawValue
         }
     }
 

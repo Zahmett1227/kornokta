@@ -72,6 +72,34 @@ public enum CardStatus: String, Codable, Sendable {
     case needsReview = "needs_review"
 }
 
+/// Which deck a card belongs to: the ones made from pages photographed with
+/// this phone, or a concept pack imported in bulk.
+///
+/// Unlike `CardType` this is *not* locked to the backend schema, and it must
+/// not become so. The distinction is entirely device-side — the model never
+/// sees it, no prompt mentions it, and `llm_output.schema.json` has no place
+/// for it. Adding a case here therefore stays a one-file change, where a new
+/// `CardType` case would mean editing the schema, the TS types and two sync
+/// tests (`evals/tests/test_swift_contract_sync.py`).
+public enum CardCollection: String, Codable, Sendable, CaseIterable {
+    /// Produced by the Yakala flow: photograph, model, cards. The whole
+    /// pipeline in this app builds these, so it is the migration default and
+    /// the answer for any card whose origin is not recorded.
+    case capture
+    /// Imported in bulk from a concept pack (`ConceptPackImporter`). No page,
+    /// no region, no model run — the chain from `Card` up to `CapturedPage` is
+    /// optional precisely because a card can exist without one.
+    case concept
+
+    /// What this deck is called on screen.
+    public var title: String {
+        switch self {
+        case .capture: return "Çekimlerim"
+        case .concept: return "Kavramlar"
+        }
+    }
+}
+
 /// A mark's tier, from the canonical §14 contract (schema v2.3,
 /// docs/PLAN-kapsama-sozlesmesi.md).
 ///

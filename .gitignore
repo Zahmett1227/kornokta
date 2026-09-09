@@ -38,6 +38,10 @@ xcuserdata/
 *.ipa
 *.dSYM.zip
 .build/
+# `xcodebuild` run from ios/ without -derivedDataPath drops its products here,
+# next to the sources rather than in DerivedData/.
+ios/build/
+ios/CizgiCore/build/
 
 # --- OS ---
 .DS_Store

@@ -50,6 +50,7 @@ final class AppNavigator: ObservableObject {
     /// `SettingsRoute` exist for.
     enum LibraryRoute: Hashable {
         case darkMap
+        case conceptImport
     }
 
     /// Egzersiz is the product's daily working surface, so launches and the

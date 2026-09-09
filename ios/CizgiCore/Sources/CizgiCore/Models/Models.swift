@@ -296,6 +296,31 @@ public final class Card {
     /// decide.
     public var lowConfidence: Bool = false
 
+    /// Which deck this card belongs to (`CardCollection`): made from a
+    /// photographed page, or imported from a concept pack.
+    ///
+    /// The default lives on the property, not only in the initialiser, and it
+    /// has to: SwiftData's lightweight migration never calls `init`, so an
+    /// added column is filled from the property's own default. A mandatory
+    /// attribute without one aborts the migration and the app then refuses to
+    /// open a store it cannot repair — which is exactly what shipping
+    /// `ModelRun.attempt` did, and what
+    /// `evals/tests/test_swiftdata_migration_safety.py` now guards. Every
+    /// existing card therefore migrates to `.capture`, which is the truth
+    /// about all of them: nothing but the Yakala flow has ever made a card.
+    ///
+    /// Stored raw for the same reason as `typeRaw`/`statusRaw` — SwiftData
+    /// predicates work on the stored primitive, not on the computed enum.
+    public var collectionRaw: String = CardCollection.capture.rawValue
+
+    /// An unreadable value reads as `.capture` rather than trapping: the
+    /// fallback matches `type` and `status`, and it fails toward the deck the
+    /// user actually photographed.
+    public var collection: CardCollection {
+        get { CardCollection(rawValue: collectionRaw) ?? .capture }
+        set { collectionRaw = newValue.rawValue }
+    }
+
     // Scheduling state. Faz 1 uses a placeholder scheduler; FSRS replaces the
     // algorithm in Faz 4 (§18) without changing these fields.
     public var dueDate: Date
@@ -383,7 +408,8 @@ public final class Card {
         createdAt: Date = .now,
         dueDate: Date = .now,
         options: [CardOption]? = nil,
-        lowConfidence: Bool = false
+        lowConfidence: Bool = false,
+        collection: CardCollection = .capture
     ) {
         self.id = id
         self.typeRaw = type.rawValue
@@ -403,6 +429,7 @@ public final class Card {
         self.softLapseCount = 0
         self.reviews = []
         self.lowConfidence = lowConfidence
+        self.collectionRaw = collection.rawValue
         if let options, case .valid = MultipleChoice.validate(options) {
             self.optionsRaw = MultipleChoice.encode(options)
             self.correctOptionIndex = MultipleChoice.correctIndex(options)

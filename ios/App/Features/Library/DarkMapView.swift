@@ -31,14 +31,26 @@ struct DarkMapView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
 
-    /// The whole deck. Same shape `KnowledgeMapView` uses — coverage is a
-    /// question about all of it, so there is nothing to narrow with a predicate.
+    /// The whole store; `scopedCards` narrows it to the active deck. Same shape
+    /// `KnowledgeMapView` uses.
+    ///
+    /// Coverage is a question about one deck, not about the store: with both
+    /// decks pooled, an imported Farmakoloji pack would light up topics the
+    /// photographed deck has never touched, and this screen exists precisely to
+    /// say which topics a deck has never touched. The entry card in Bilgi
+    /// Haritası reads the same scope, which is what keeps the two counts equal
+    /// (`DarkMapCoverageAgreementTests`).
     @Query private var allCards: [Card]
+    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
 
     @State private var phase: Phase = .idle
     @State private var expandedSubject: String?
 
     private let schema = SubjectTopicSchema.shared
+
+    private var scopedCards: [Card] {
+        CardScope.cards(allCards, in: CardScope.collection(fromStored: collectionRaw))
+    }
 
     private enum Phase: Equatable {
         case idle
@@ -52,7 +64,7 @@ struct DarkMapView: View {
         // `KnowledgeMapView` learned: totals in the header and rows below have
         // to come from the same value or they will disagree. It also keeps the
         // O(deck) grouping to one pass instead of one per section.
-        let payload = schema.map { DarkMapCoverage.build(cards: allCards.map(Self.coverageCard), schema: $0) }
+        let payload = schema.map { DarkMapCoverage.build(cards: scopedCards.map(Self.coverageCard), schema: $0) }
 
         return List {
             if let schema, let payload {
@@ -478,7 +490,7 @@ struct DarkMapView: View {
             phase = .failed(message: DarkMapError.schemaUnavailable.localizedDescription, retryable: false)
             return
         }
-        let payload = DarkMapCoverage.build(cards: allCards.map(Self.coverageCard), schema: schema)
+        let payload = DarkMapCoverage.build(cards: scopedCards.map(Self.coverageCard), schema: schema)
 
         // No guard on an empty `rows`. It used to refuse here with "önce
         // kartlara ders/konu atanmalı", which is a *cause* the phone cannot
