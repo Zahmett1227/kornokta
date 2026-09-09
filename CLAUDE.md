@@ -151,6 +151,40 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    Egzersiz'in kendi `ExerciseAttempt.responseTimeMs` örnekleriyle beslenerek
    kart sayısına çevrilir — çekirdekte hiçbir değişiklik gerekmedi.
 
+### İki deste: Çekimlerim ve Kavramlar (ADR-010, 2026-09-09)
+
+Kartların bir kaynağı daha var: dışarıda hazırlanmış bir **kavram paketi**
+(JSON) toplu içe aktarılıyor. `Card.collectionRaw` (`CardCollection`:
+`capture` | `concept`) hangi desteye ait olduğunu söylüyor; **ayrı bir
+SwiftData modeli yok** — o, FSRS/tekrar/Egzersiz/FES/yedek/migration'ı ikinci
+kez yazmak olurdu (gerekçe ADR-010).
+
+- **Kapsam anahtarı** (`CardScopePicker`) Tekrar / Egzersiz / Bilgilerim
+  tepesinde; seçim `@AppStorage` ile paylaşılıyor. Altıncı sekme değil:
+  `CizgiRootTabBar` beş öğeli ve ortası yükseltilmiş.
+- **Bir kapsamdayken diğerinin kartları hiçbir yerde görünmez** — liste,
+  sayaçlar, arama, Bilgi Haritası, Karanlık Harita ve bildirim sayıları dahil.
+- **Filtrelemenin tek adı `CardScope`.** Tek gerçek risk bir çağrı yerini
+  unutmak ve bu **sessiz** bir hata: kartlar geçerli, aktif, vadesinde —
+  ekran sağlıklı görünürken yanlış desteyi anlatır. İki kilit:
+  `CardScopeTests` (bileşim doğru mu) ve `evals/tests/test_card_scope_sites.py`
+  (görünüm `CardScope`'u gerçekten çağırıyor mu; yeni bir `[Card]` sorgusu
+  listeye katılmak **zorunda**).
+- **Ayarlar bilerek kapsamsız:** yedek/geri yükleme cihaz geneli işlemler.
+  Kapsamlı bir `existingIds` kümesi zaten burada olan kartları
+  `@Attribute(.unique)` altında yeniden eklemeye kalkardı. Yalnız bildirim
+  sayısı ve kart dökümü kapsamlı.
+- **Kapsam değişince açık oturum kapanır** (Egzersiz'de `finishEarly()`, çünkü
+  `finishedAt`'i boş bir `ExerciseRun` sonraki açılışta geri açılırdı).
+- **`ConceptPackImporter`** idempotent (paket kimlikleri uuid5), kavram başına
+  **tek** `KnowledgeUnit`, `region = nil` (sahte sayfa üretmez), gruplar hâlinde
+  yazar. Bilinmeyen kart tipi `direct_recall`'a düşer — `CardType` backend
+  şemasına kilitli, paketteki 466 `sirali_coklu` kartı bu yoldan geliyor.
+- **Paketin düzensizliği:** `kitapSayfa` 741 kavramda string, 90'ında çıplak
+  sayı. `String` olarak çözmek 559. kavramda `typeMismatch` verip **bütün**
+  import'u düşürüyordu; `LooseString` ikisini de alıyor. Kod okuyarak değil
+  gerçek dosyaya karşı **koşturarak** bulundu.
+
 ### Ders/konu sınıflandırması, Egzersiz ve Bilgi Haritası (kalıcı sözleşmeler)
 
 - **Konu şablonu tek kaynak:** `backend/schemas/subject_topics.json` (11 ders,
@@ -259,6 +293,10 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
   sıralama "karanlık yer yok" diye okunur, bu özelliğin kazara veremeyeceği tek
   cevap. Askıya alınmış kart kapsama sayılmaz. Kalıcı veri yok, `jobs` tablosuna
   dokunmaz, SwiftData şeması değişmez.
+- **Yedek biçimi v7:** v6'nın üstüne kartın **koleksiyonu** (`collection`,
+  ADR-010). Alansız bir geri yükleme 3.017 kavram kartını çekim destesine
+  kurardı ve bunu hiçbir şey bildirmezdi — her kart tek tek geçerli. Alanı
+  olmayan eski dosyalar `.capture` okur.
 - **Yedek biçimi v6:** `CardRecord` = kart + FSRS durumu + tüm `ReviewLog`
   geçmişi + şıklar + `lowConfidence` + `topic` (v4) + `softLapseCount` (v5) +
   FES sicili (v6: `fesScore`/`fesNegativeCount`/`fesInitializedAt`). Eski
@@ -301,6 +339,8 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
 | Deste denetimi: kopya kartların askıya alınması (2026-08-18) | ✅ `main`'de (PR #46, squash `deef8dc`) ve **cihazda doğrulandı** (2026-08-18): ilk açılışta askıdaki kart sayısı 11 → **128**, tam beklendiği gibi. Sahibinin 2026-08-18 yedeği (1007 kart) baştan sona okundu: 996 aktif kartın **117'si** (%12) birebir/yakın kopya (74) ya da tutulan başka bir kartın cevabında tamamen kapsanan (43) — ana kaynak aynı sayfanın birden çok kez çekilmesi; en yoğun konu Solunum (142 kartın 49'u). Küme küme gerekçeli rapor + UUID listesi sahibinde (sohbette dosya olarak). Uygulama: `DuplicateSuspendMigration` — kimlik listesi gömülü, tek seferlik, **siler değil askıya alır** (`ReviewLog`/FES korunur, "Askıdan çıkar" ile tek tek geri alınır), yalnız `.active` karta dokunur. Bilinçli olarak `TopicBackfillMigration`'ın seen-set deseni DEĞİL (o desenin sonsuz-tarama açığı "Küçük ve gerçek kalanlar" 2'de kayıtlı): bayrak ilk başarılı kayıtta yazılır; temiz kurulum + sonradan restore boşluğu ise `ApprovalGateMigration`'la aynı biçimde kapalı — `SettingsView.restore`, idempotent `suspend(in:)` adımını restore'un kendi context'inde yeniden koşar (Codex, PR #46 P2). Denetimin yan ürünleri: içeriği şüpheli 3 kart (anjiyomiyolipom-ağrı, miksoma-McCune-Albright, HER2→"Luminal B" — `lowConfidence` olmadıkları için İkinci Görüş düğmesi çıkmaz, elle bakılmalı) ve metni düzeltilmeli ~25 kart (v2.6 öncesi "Pasaja göre…" kalıntıları) rapora yazıldı, koda dahil değil. Kalan mini kontrol (kritik değil, fırsat olunca): bir kartta "Askıdan çıkar" deneyip kartın aktif **kaldığını** görmek — bayrak yazıldığı için migration bir daha dokunmamalı |
 
 | Karanlık Harita (`/api/dark-map` + Bilgi Haritası'nda yeni ekran, ADR-009) | 🟡 dalda (`claude/kornokta-new-feature-idea-igpc6w`). Backend uçtan uca testli ve yeşil (`npm test` 378, `tsc` temiz, evals 501); iOS çekirdeği (`DarkMapCoverage`, `DarkMapProvider`) indirilen araç zinciriyle izole pakette gerçekten koşturuldu. **Cihaz doğrulaması açık:** doğrulama listesinin 18-21. maddeleri. Ayrıca canlıya `DARK_MAP_*` değişkenleri **girilmesi şart değil** — hepsi kod varsayılanlı; `GEMINI_API_KEY` zaten girili olduğu için kapı iki aileyle çalışır |
+
+| Kavram destesi ayrı alanda (`CardCollection` + kapsam anahtarı + `ConceptPackImporter`, ADR-010) | 🟡 dalda (`kavram-kartlari-ayri-alan`). **Simülatörde uçtan uca doğrulandı:** eski şemayla yazılmış bir depo (4 kart, 3 unit) üzerine yeni ikili kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` eklendi, dört kart da `capture` oldu, veri kayıpsız. Gerçek 3.017 kartlık paket telefonda içe aktarıldı (~15 sn, 831 kavram/831 unit, konusuz kart **sıfır**), Çekimlerim tarafı 4 kartta kaldı, Ayarlar dökümü 3021 = 4 + 3017, v7 yedeği 3.017 concept + 4 capture ile 4,1 MB çıktı. Swift 493→526, evals 509→513, backend 452 + `tsc` temiz, App hedefi derleniyor. **Gerçek cihazda kalan:** doğrulama listesinin 23-26. maddeleri |
 
 **Dal durumu:** çalışma dalları merge sonrası siliniyor; yeni iş `main`'in
 ucundan yeni bir dalla başlar.
@@ -435,6 +475,11 @@ boş defterle geçti).
   seçilebildiği** (kapalı küme olmasa "neyi çalışmıyorum" bir sorgu değil bir
   kanı olurdu), kimliğin neden **çift** olduğu, ve tek-aileli bozulmanın neden
   asla mutabakat gibi görünmemesi gerektiği.
+- **`docs/ADR-010`** — GÜNCEL YÖN: kavram destesi ayrı bir modelde değil,
+  `Card` üzerindeki bir koleksiyon ayracında; arayüzde kapsam anahtarı.
+  `CardScope.swift`, `ConceptPackImporter.swift`, `CardScopePicker.swift`'e
+  dokunmadan önce oku — özellikle **neden ayrı model olmadığı** ve filtreyi
+  unutmanın neden sessiz bir hata olduğu.
 - **`docs/ADR-001`** — Türkçe normalizasyon (İ/ı, NFC, diyakritik katlama);
   `providers/turkish.ts` ↔ `MultipleChoice.comparisonKey` hâlâ buna dayanır.
 - **`docs/ADR-002/003/004`** — tarihsel: OCR seçimi, uzlaştırma kapısı,
@@ -461,6 +506,11 @@ Canlı çiftler ve kilitleri:
   Burada **sıra da sözleşmedir**: prompt kural 3'ün öncelik merdiveni (el yazısı
   → sembol → altı çizili → fosforlu) hem sunucunun hem telefonun sıralamasını
   belirler, testler sırayı da kilitler.
+
+- **Kapsam filtresi (ADR-010):** `CardScope`'u çağırması gereken altı ekran ↔
+  `evals/tests/test_card_scope_sites.py`. Burada kilitlenen şey bir *değer*
+  değil bir *çağrının varlığı*: filtresi unutulmuş bir ekran çalışmaya devam
+  eder, yalnız yanlış desteyi anlatır.
 
 Yeni bir "aynı davranış iki yerde" durumu çıkarsa aynı deseni uygula — elle
 senkron tutma, üret ve testle kilitle.
@@ -492,7 +542,8 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 
 ## Doküman haritası
 
-Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler), `docs/ADR-005/006/007/008/009`,
+Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler),
+`docs/ADR-005/006/007/008/009/010`,
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -511,8 +562,9 @@ Tarihsel (davranış için değil, karar gerekçesi için): `docs/HISTORY.md`
 
 ## Sıradaki iş
 
-**Elle yapılacak somut işler:** FES sicili ve Egzersiz'in altı boyutlu
-filtresinin cihaz doğrulaması (ADR-008, aşağıda 1-5) ve A6 (§2 aşağıda).
+**Elle yapılacak somut işler:** kavram destesinin gerçek cihazda doğrulanması
+(ADR-010, aşağıda 23-27), FES sicili ve Egzersiz'in altı boyutlu filtresinin
+cihaz doğrulaması (ADR-008, aşağıda 1-5) ve A6 (§2 aşağıda).
 Cihaz doğrulama listesinin geri kalanı 2026-08-13'te büyük ölçüde kapandı;
 kalan iki madde (6-7) haftalara yayılan gerçek-kullanım gözlemi, oturup
 yapılacak bir şey değil.
@@ -692,6 +744,28 @@ gösterir (2026-08-13 tartışması).
     `UsageDetailView.purposeLabel` eksik). Bozulmayı denemek için Vercel'den
     `GEMINI_API_KEY`'i geçici kaldır: ekran turuncu "yalnız tek model
     değerlendirdi" uyarısı vermeli ve **hiçbir satır "iki model de" dememeli**.
+
+23. **Kavram paketi gerçek telefonda (ADR-010).** Paketi Dosyalar'a koy →
+    Bilgilerim → Kavramlar → "Kavram paketi içe aktar". Simülatörde ~15 sn
+    sürdü; gerçek cihazda daha uzun sürebilir, ilerleme çubuğu ilerlemeye
+    devam etmeli ve uygulama yanıt vermeyi bırakmamalı. Bitince "831 kavram,
+    3.017 kart eklendi." demeli. **Aynı dosyayı ikinci kez seç:** "3.017 kart
+    zaten buradaydı, atlandı." demeli ve deste büyümemeli.
+24. **Kapsam sızıntısı (asıl sınanan).** Kavramlar'a geç, sonra Çekimlerim'e
+    dön: Bilgilerim'in üç sayısı, Tekrar'ın oturum sayısı ve Egzersiz'in
+    "Hızlı 10"u **içe aktarmadan önceki** değerlerinde olmalı. Bir yerde
+    3.017'yi hatırlatan bir sayı görürsen bir `CardScope` çağrısı atlanmış
+    demektir — sessiz hata sınıfı, kilidi `test_card_scope_sites.py`.
+25. **Bildirim sayısı.** Kapsam Kavramlar'dayken gelen tekrar bildirimi
+    kavram kartlarını saymalı, Çekimlerim'e geçince çekim kartlarını.
+26. **Yedek al → geri yükle (v7).** Yedek her iki desteyi de taşımalı
+    (dosya ~4 kat büyür). Geri yüklemeden sonra kavram kartları **Kavramlar**
+    tarafında olmalı, Çekimlerim'e sızmamalı. Ayrıca **v6 bir eski yedeği**
+    geri yükle: gelen kartların hepsi Çekimlerim'de olmalı.
+27. **Performans ölçümü (plandaki açık madde).** 3.017 kart içerideyken:
+    Bilgilerim'de arama kutusuna yazarken gecikme var mı, Egzersiz açılışı ve
+    uygulama açılışı yavaşladı mı. Gerekirse çözüm kapsam filtresini `@Query`
+    predicate'ine taşımak — çağrı yerleri aynı kalır (ADR-010 "Kapsam dışı").
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

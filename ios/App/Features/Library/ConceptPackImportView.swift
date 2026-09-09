@@ -116,12 +116,21 @@ struct ConceptPackImportView: View {
     private func summaryLine(_ summary: ConceptPackImporter.Summary) -> String {
         var parts: [String] = []
         if summary.insertedCards > 0 {
-            parts.append("\(summary.insertedConcepts) kavram, \(summary.insertedCards) kart eklendi.")
+            parts.append("\(count(summary.insertedConcepts)) kavram, "
+                         + "\(count(summary.insertedCards)) kart eklendi.")
         }
         if summary.skippedCards > 0 {
-            parts.append("\(summary.skippedCards) kart zaten buradaydı, atlandı.")
+            parts.append("\(count(summary.skippedCards)) kart zaten buradaydı, atlandı.")
         }
         return parts.isEmpty ? "Pakette eklenecek kart yok." : parts.joined(separator: " ")
+    }
+
+    /// Grouped the way the locale writes numbers ("3.017"), because the
+    /// progress line above is a `Text` and formats its counts automatically —
+    /// interpolating into a `String` here does not, so the same number was
+    /// printed two ways one screen apart.
+    private func count(_ value: Int) -> String {
+        value.formatted(.number)
     }
 
     private func failedState(_ message: String) -> some View {
