@@ -383,8 +383,9 @@ tek satır + kırpma, tam ad VoiceOver'da.
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
 **Dal durumu:** `main` en güncel ve `origin/main`'e **push edildi**
-(2026-09-09). Yukarıdaki iki iş o gün merge edildi, çalışma dalları silindi.
-Yeni iş `main`'in ucundan yeni bir dalla başlar.
+(2026-09-10). Tasarım dili işi (`tasarim-dili-kemik-oxblood`) o gün `main`'e
+fast-forward merge edildi, çalışma dalı silindi. Yeni iş `main`'in ucundan
+yeni bir dalla başlar.
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
