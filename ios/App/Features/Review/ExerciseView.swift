@@ -313,13 +313,17 @@ struct ExerciseView: View {
                 VStack(alignment: .leading, spacing: Cizgi.Space.md) {
                     CizgiSectionTitle(
                         "Hızlı başlangıç",
+                        index: 1,
                         subtitle: "Hazırlık ekranı olmadan doğrudan çalışmaya geç."
                     )
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: Cizgi.Space.md) {
-                        FeatureActionCard(
+                    // Yan yana iki sütun değil, alt alta üç satır: `NumeralActionRow`
+                    // sayıyı öne alan yatay bir satır ve dar bir sütunda büyük
+                    // serif rakam ile başlık aynı hizada durmaz.
+                    VStack(spacing: Cizgi.Space.sm) {
+                        NumeralActionRow(
+                            numeral: "10",
                             title: "Hızlı 10",
                             subtitle: "Seçiminden 10 karışık kart",
-                            systemImage: "bolt.fill",
                             isProminent: true
                         ) {
                             start(cards: eligibleCards, limit: 10, mode: .quick)
@@ -331,24 +335,24 @@ struct ExerciseView: View {
                         // (docs/ADR-008). Padding the run out with cards the
                         // user has never got wrong would make the label a lie
                         // and bury the few that actually need work.
-                        FeatureActionCard(
+                        NumeralActionRow(
+                            numeral: "\(fes.count)",
                             title: "FES kartlar",
                             subtitle: fes.isEmpty
                                 ? "Şimdilik FES kart yok"
-                                : "\(fes.count) kart seni zorluyor",
-                            systemImage: "flame.fill"
+                                : "\(fes.count) kart seni zorluyor"
                         ) {
                             start(cards: fes, limit: nil, mode: .weak)
                         }
                         .disabled(fes.isEmpty)
                         .opacity(fes.isEmpty ? 0.45 : 1)
 
-                        FeatureActionCard(
+                        NumeralActionRow(
+                            numeral: "\(review.count)",
                             title: "Gözden geçir",
                             subtitle: review.isEmpty
                                 ? "Gözden geçirilecek kart yok"
-                                : "\(review.count) şüpheli kart",
-                            systemImage: "exclamationmark.triangle.fill"
+                                : "\(review.count) şüpheli kart"
                         ) {
                             start(cards: review, limit: nil, mode: .free)
                         }
@@ -361,6 +365,7 @@ struct ExerciseView: View {
                     HStack(alignment: .firstTextBaseline) {
                         CizgiSectionTitle(
                             "Egzersizini kur",
+                            index: 2,
                             subtitle: filter.isActive
                                 ? "Uyguladığın filtreler aşağıda."
                                 : "İstersen ders, konu, kart tipi, durum, tarih ya da FES'e göre daralt."
@@ -441,6 +446,7 @@ struct ExerciseView: View {
                     VStack(alignment: .leading, spacing: Cizgi.Space.md) {
                         CizgiSectionTitle(
                             "Son Egzersizler",
+                            index: 3,
                             subtitle: "Tekrar geçmişinden ayrı tutulan çalışma kayıtların."
                         )
                         ForEach(completedRuns.prefix(3)) { run in
@@ -615,10 +621,15 @@ struct ExerciseView: View {
     }
 
     private func flashcard(_ card: Card) -> some View {
-        CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
+        // Şerit kartın dersinin rengini taşır — rozet yerine kartın kendisi
+        // hangi derste olduğunu söylüyor (Kemik & Oxblood).
+        CardSurface(highlighted: true,
+                    subject: CizgiSubject.matching(card.knowledgeUnit?.subject),
+                    padding: Cizgi.Space.xl) {
             VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
                 HStack(spacing: Cizgi.Space.sm) {
-                    CardTypeBadge(type: card.type)
+                    CardTypeBadge(type: card.type,
+                                  subject: CizgiSubject.matching(card.knowledgeUnit?.subject))
                     if let topic = card.knowledgeUnit?.topic {
                         TagChip(topic, systemImage: "tag")
                     }
@@ -634,8 +645,9 @@ struct ExerciseView: View {
                     }
                 }
 
+                // Serifin üç yerinden biri: kart sorusu.
                 Text(card.front)
-                    .font(.title2.weight(.semibold))
+                    .font(Cizgi.serif(24, relativeTo: .title2))
                     .foregroundStyle(Cizgi.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -644,7 +656,9 @@ struct ExerciseView: View {
                 }
 
                 if isAnswerVisible {
-                    Rectangle().fill(Cizgi.hairline).frame(height: 1)
+                    // Tasarımın soru/cevap kesmesi: düz çizgi değil baklava
+                    // ayırıcı — kartın iki yarısını ayıran şey.
+                    CizgiRule()
 
                     if card.options == nil {
                         Text(card.back)
@@ -654,10 +668,15 @@ struct ExerciseView: View {
                     }
 
                     if let explanation = card.explanation, !explanation.isEmpty {
-                        Text(explanation)
-                            .font(.callout)
-                            .foregroundStyle(Cizgi.muted)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // § işareti açıklamayı cevaptan ayırır: cevap kartın
+                        // sorduğu şey, açıklama kenar notu.
+                        HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
+                            CizgiSectionMark()
+                            Text(explanation)
+                                .font(.callout)
+                                .foregroundStyle(Cizgi.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
 
                     let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
@@ -672,6 +691,13 @@ struct ExerciseView: View {
                 }
             }
         }
+        // Kıvrık köşe: kartın "tam olarak doğrulanmadı" işareti. Renk tek
+        // başına anlam taşımasın diye üstteki "Gözden geçir" çipiyle birlikte
+        // görünür, onun yerine değil.
+        .overlay(alignment: .topTrailing) {
+            if card.lowConfidence { DogEar() }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
         .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
     }
 

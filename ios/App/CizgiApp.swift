@@ -28,6 +28,11 @@ struct CizgiApp: App {
         self.container = container
         _environment = StateObject(wrappedValue: environment)
 
+        // Vurgu rengi ders bağlamından türüyor (Kemik & Oxblood). Depoda duran
+        // ders açılışta bir kez okunur; sonrasını `SubjectPickerBar` taşır.
+        // Tanınmayan/boş ders `nil` bırakır, o zaman saat karar verir.
+        Cizgi.activeSubject = CizgiSubject.matching(environment.settings.defaultSubject)
+
         // After the container exists, before any view reads it: the library
         // filters assume every unit's subject is either canonical or nil.
         SubjectBackfillMigration.runIfNeeded(container: container)

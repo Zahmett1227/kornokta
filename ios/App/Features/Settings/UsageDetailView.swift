@@ -77,6 +77,11 @@ struct UsageDetailView: View {
                 }
             }
         }
+        // Kemik kâğıt zemin, iOS'un soğuk gri grup zemini değil — diğer
+        // kök ekranlar (Bilgilerim, Kuyruk) zaten bunu yapıyor; bu üçü
+        // yeni palette görünür biçimde ayrışıyordu.
+        .scrollContentBackground(.hidden)
+        .background(Cizgi.paper)
         .navigationTitle("Çağrı dökümü")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

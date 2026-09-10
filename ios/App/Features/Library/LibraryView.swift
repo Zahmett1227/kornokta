@@ -221,6 +221,17 @@ struct LibraryView: View {
                         StatTile(value: "\(activeCount)", label: "Aktif")
                         StatTile(value: "\(suspendedCount)", label: "Askıda")
                     }
+                    // Deste hangi derslerden kurulu — tek satırda. `visible`
+                    // üzerinden okunur, `cards` üzerinden değil: kapsam
+                    // anahtarı ve etkin filtreler burada da geçerli (ADR-010).
+                    if !visible.isEmpty {
+                        SubjectDistributionBar(
+                            counts: subjectDistribution(visible),
+                            other: unrecognisedSubjectCount(visible)
+                        )
+                        .accessibilityElement()
+                        .accessibilityLabel(distributionSummary(visible))
+                    }
                 }
                 .listRowInsets(EdgeInsets(top: Cizgi.Space.sm, leading: Cizgi.Space.lg,
                                           bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
@@ -330,6 +341,35 @@ struct LibraryView: View {
     }
 }
 
+extension LibraryView {
+    /// Yayın sırasına sadık: `CizgiSubject.allCases` zaten ton sırasında, bu
+    /// yüzden şerit her deste için aynı sırayı gösterir.
+    func subjectDistribution(_ cards: [Card]) -> [(CizgiSubject, Int)] {
+        var tally: [CizgiSubject: Int] = [:]
+        for card in cards {
+            guard let subject = CizgiSubject.matching(card.knowledgeUnit?.subject) else { continue }
+            tally[subject, default: 0] += 1
+        }
+        return CizgiSubject.allCases.map { ($0, tally[$0] ?? 0) }
+    }
+
+    /// Yaya oturmayanlar. Sıfır olması beklenir (`SubjectBackfillMigration`
+    /// her dersi kanonikleştirir); sıfır değilse şerit bunu nötr bir dilimle
+    /// söyler, sessizce yutmaz.
+    func unrecognisedSubjectCount(_ cards: [Card]) -> Int {
+        cards.filter { CizgiSubject.matching($0.knowledgeUnit?.subject) == nil }.count
+    }
+
+    func distributionSummary(_ cards: [Card]) -> String {
+        let parts = subjectDistribution(cards)
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 > $1.1 }
+            .prefix(4)
+            .map { "\($0.0.displayName) \($0.1)" }
+        return parts.isEmpty ? "Ders dağılımı yok" : "Ders dağılımı: " + parts.joined(separator: ", ")
+    }
+}
+
 struct CardRow: View {
     let card: Card
 
@@ -342,7 +382,8 @@ struct CardRow: View {
                 .foregroundStyle(Cizgi.ink)
                 .lineLimit(2)
             HStack(spacing: Cizgi.Space.sm) {
-                CardTypeBadge(type: card.type)
+                CardTypeBadge(type: card.type,
+                              subject: CizgiSubject.matching(card.knowledgeUnit?.subject))
                 ForEach(tags, id: \.self) { TagChip($0) }
                 Spacer(minLength: 0)
                 if card.status == .suspended {

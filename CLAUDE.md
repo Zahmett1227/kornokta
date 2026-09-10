@@ -185,6 +185,73 @@ kez yazmak olurdu (gerekçe ADR-010).
   import'u düşürüyordu; `LooseString` ikisini de alıyor. Kod okuyarak değil
   gerçek dosyaya karşı **koşturarak** bulundu.
 
+### Tasarım dili — "Kemik & Oxblood" (2026-09-10)
+
+Görsel dilin tek kaynağı `ios/App/Theme/CizgiTheme.swift`. Claude Design'da
+hazırlanan tasarım dili buraya birebir uygulandı; **akış, metin, FSRS, kuyruk,
+ADR kararları ve `CizgiCore` değişmedi** — değişen yalnız değer katmanı ve
+bileşen anatomisi.
+
+Önceki "warm study" (kehribar vurgu / lacivert mürekkep / sıcak kâğıt) gitti.
+Yerine:
+
+- **Vurgu sabit bir marka rengi değil, bir konum.** `Cizgi.accent` artık
+  `static let` değil hesaplanan bir değer: o an çalışılan **dersin** rengi.
+  Kaynağı `CizgiAccentSource` seçer — `subject` (öntanımlı) · `timeOfDay` ·
+  `pinned`; Ayarlar → **Görünüm**'den değişir. Ders yoksa saat karar verir
+  (06–12 tuğla · 12–18 oxblood · 18–23 erik · 23–06 lacivert).
+- **Ders yayı:** on bir ders tek bir renk yayında — aynı açıklık ve
+  doygunlukta, yalnız ton açısı kayar. Bağımsız marka renkleri değil, aynı
+  ölçeğin komşu durakları.
+- **Nötrler:** kemik kâğıt / lacivert gece. **Gölge kalktı, yerine 1px
+  hairline.** Köşe yarıçapı bir kademe sıkıldı (baloncuk değil, ciltli kitap).
+- **Serif (`Cizgi.serif`) tam üç yerde:** kart sorusu, boş durum başlığı,
+  büyük sayı. Başka hiçbir yerde serif yok.
+- **Yeni bileşenler:** `NumeralActionRow` (büyük serif sayı + ad; eski
+  `FeatureActionCard`'ın yerine), `CardTypeMark` (SF Symbol rozet yerine
+  sorunun *biçimini* çizen `Canvas` işareti), `CizgiRule` (soru/cevap
+  baklava kesmesi), `CizgiSectionMark` (§, açıklama paragrafının başında),
+  `DogEar` (kıvrık köşe — yalnız `lowConfidence` kartta), `SubjectChip`,
+  `SubjectDistributionBar` (Bilgilerim'in tepesinde ders dağılımı).
+  `HighlighterStrip` kaldırıldı (zaten kullanılmıyordu).
+- `Cizgi.highlighter` artık `LinearGradient` değil `Color` — adı, çağrı
+  yerleri değişmesin diye korundu.
+
+**Tasarımdan bilinçli üç sapma** (üçü de "sessizce yanlış" olmasın diye):
+
+1. **Yay dokuz durakla geldi, şema on bir ders taşıyor.** Eksik iki ders
+   (`Küçük Stajlar`, `Kadın Hastalıkları ve Doğum`) renksiz kalsaydı vurguları
+   saate düşer ve `SubjectDistributionBar` o kartları şeritten sessizce
+   atardı — kartlar geçerli, ekran sağlıklı, anlattığı deste yanlış. Yay iki
+   durak **uzatıldı**: mevcut dokuz renk aynen duruyor, yeni ikisi en geniş
+   iki ton boşluğunun ortasına komşularının açıklık/doygunluk ortalamasıyla
+   kondu. Ayrıca `cerrahi`'nin görünen adı kanonik **"Genel Cerrahi"**ye
+   çekildi — "Cerrahi" `matching()` ile hiçbir zaman eşleşmiyordu.
+   Kilit: **`evals/tests/test_subject_arc_sync.py`**.
+2. **Tepkisellik `.id()` ile değil yayıncıyla.** UYGULAMA.md kökü
+   `.id(Cizgi.accentSubject)` ile yeniden kimliklemeyi öneriyordu; o, alt
+   ağacın bütün `@State`'ini sıfırlar — Egzersiz'in yarım kalan oturumu dahil.
+   Yerine `CizgiAppearance` (tek `ObservableObject`): `RootView` ve
+   `SettingsView` onu gözler, gövde yeniden değerlendirilir, `Cizgi.accent`
+   taze okunur, kimlik değişmediği için hiçbir `@State` kaybolmaz.
+3. **Serif geri düşüşü gerçekten serif.** `Font.custom` bulunamayan bir aile
+   için sistem **sans**'ına düşer, serife değil — tasarımın serif sesi hiç
+   duyulmadan kaybolurdu. `Cizgi.isSerifBundled` bir kez bakar ve yoksa
+   **Georgia**'ya düşer (iOS'ta hep var, `relativeTo:` korunduğu için Dynamic
+   Type de yerinde).
+
+**Font durumu:** `LibreCaslonText-Regular.ttf` **pakete konmadı** (indirme
+kullanıcının kararı). `ios/Resources/` klasörü ve `UIAppFonts` anahtarı
+`project.yml`'de hazır; dosyayı oraya koymak yeterli, başka değişiklik
+gerekmez. Konmadığı sürece serif = Georgia.
+
+**Yan düzeltmeler** (tasarımı uygularken görünür hâle gelen gerçek kusurlar):
+Ayarlar / Egzersiz kurulumu / Kullanım dökümü ekranları iOS'un soğuk gri grup
+zeminini kullanıyordu — üçü de artık `Cizgi.paper`'a bağlı (diğer kök ekranlar
+zaten öyleydi). `TagChip` uzun konu adında ("Kemoterapötikler ve
+İmmünomodülatörler") üç satıra şişip kartın başlık satırını dağıtıyordu; artık
+tek satır + kırpma, tam ad VoiceOver'da.
+
 ### Ders/konu sınıflandırması, Egzersiz ve Bilgi Haritası (kalıcı sözleşmeler)
 
 - **Konu şablonu tek kaynak:** `backend/schemas/subject_topics.json` (11 ders,
@@ -312,6 +379,7 @@ kez yazmak olurdu (gerekçe ADR-010).
 
 
 | Kavram destesi ayrı alanda (`CardCollection` + kapsam anahtarı + `ConceptPackImporter`, ADR-010) | ✅ `main`'de (2026-09-09, `12ccf93` + `efa1978`). **Simülatörde uçtan uca doğrulandı:** eski şemayla yazılmış bir depo (4 kart, 3 unit) üzerine yeni ikili kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` eklendi, dört kart da `capture` oldu, veri kayıpsız. Gerçek 3.017 kartlık paket telefonda içe aktarıldı (~15 sn, 831 kavram/831 unit, konusuz kart **sıfır**), Çekimlerim tarafı 4 kartta kaldı, Ayarlar dökümü 3021 = 4 + 3017, v7 yedeği 3.017 concept + 4 capture ile 4,1 MB çıktı. **Gerçek cihazda kalan:** doğrulama listesinin 23-27. maddeleri |
+| Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 28-31. maddeleri |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
 **Dal durumu:** `main` en güncel ve `origin/main`'e **push edildi**
@@ -477,6 +545,13 @@ Canlı çiftler ve kilitleri:
   `evals/tests/test_card_scope_sites.py`. Burada kilitlenen şey bir *değer*
   değil bir *çağrının varlığı*: filtresi unutulmuş bir ekran çalışmaya devam
   eder, yalnız yanlış desteyi anlatır.
+
+- **Ders renk yayı (tasarım dili):** `CizgiSubject` ↔
+  `backend/schemas/subject_topics.json` — `evals/tests/test_subject_arc_sync.py`.
+  Yayda karşılığı olmayan bir ders **hata vermez**: vurgusu saate düşer ve
+  dağılım şeridinden kaybolur. Test dört şeyi tutar: her kanonik dersin bir
+  durağı var, yayda şemada olmayan ad yok, iki ders aynı rengi paylaşmıyor,
+  iki `switch`'in sırası aynı (o sıra ekrandaki sıradır).
 
 Yeni bir "aynı davranış iki yerde" durumu çıkarsa aynı deseni uygula — elle
 senkron tutma, üret ve testle kilitle.
@@ -701,6 +776,26 @@ gösterir (2026-08-13 tartışması).
     Bilgilerim'de arama kutusuna yazarken gecikme var mı, Egzersiz açılışı ve
     uygulama açılışı yavaşladı mı. Gerekirse çözüm kapsam filtresini `@Query`
     predicate'ine taşımak — çağrı yerleri aynı kalır (ADR-010 "Kapsam dışı").
+
+28. **Vurgu rengi gerçekten kayıyor mu (tasarım dili).** Yakala'daki ders
+    şeridinden ders değiştir: bütün uygulamanın vurgusu (butonlar, seçili
+    sekme diski, bağlantılar) o dersin rengine kaymalı — ve bunu yaparken
+    **açık bir Egzersiz oturumu kaybolmamalı** (`.id()` yerine yayıncı
+    kullanılmasının tek sebebi bu). Ayarlar → Görünüm → "Zamana göre" ve
+    "Sabit"i de dene; "Sabit"te ders değişimi rengi **değiştirmemeli**.
+29. **Dokuz değil on bir ders.** Ayarlar → Görünüm'deki önizleme şeridi on bir
+    durak göstermeli. Bilgilerim'de Çekimlerim destesinin ders şeridi, kart
+    dökümüyle aynı oranları anlatmalı; **gri bir dilim görürsen** yaya
+    oturmayan kart var demektir (beklenen: yok).
+30. **Serif üç yerde, fazlasında değil.** Kart sorusu, boş durum başlığı ve
+    büyük sayılar serif olmalı; gövde metni, etiketler ve butonlar **olmamalı**.
+    Font pakete konmadıysa serif = Georgia (kırılma değil, tasarlanmış geri
+    düşüş). `LibreCaslonText-Regular.ttf` `ios/Resources/`'a konduktan sonra
+    aynı üç yer Caslon'a dönmeli — dördüncü bir yer serif olduysa bir çağrı
+    fazladan `Cizgi.serif` kullanıyordur.
+31. **Dynamic Type'ın en büyük iki kademesi.** Sekme çubuğu etiketleri düşüp
+    yalnız ikonlar kalmalı; `NumeralActionRow`'un büyük rakamı satırı
+    taşırmamalı; `CardTypeMark` işaretleri okunur kalmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

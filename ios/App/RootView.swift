@@ -9,6 +9,13 @@ struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var navigator = AppNavigator()
+    /// Vurgu rengi `Cizgi.accent` üzerinden okunuyor — bir `static var`, yani
+    /// SwiftUI'ın göremediği bir kaynak. Bunu gözlemek, ders ya da Görünüm
+    /// ayarı değiştiğinde kökün gövdesini yeniden değerlendirir; sekme
+    /// çocuklarının gövdeleri de yeniden koşar ve rengi taze okur. Kimlik
+    /// değişmediği için hiçbir ekranın `@State`'i sıfırlanmaz (bkz.
+    /// `CizgiAppearance`).
+    @ObservedObject private var appearance = CizgiAppearance.shared
     @Query private var cards: [Card]
     /// The deck the user is currently in. Read here as well as on the three
     /// card screens because a reminder must count the same cards the screen it

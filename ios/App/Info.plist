@@ -24,6 +24,10 @@
 	<string>Kitap sayfalarındaki işaretlediğin bölümleri karta dönüştürmek için kamerayı kullanır. Görüntüler yalnız cihazında saklanır.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Daha önce çektiğin sayfa fotoğraflarını içe aktarmak için kullanılır.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>LibreCaslonText-Regular.ttf</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

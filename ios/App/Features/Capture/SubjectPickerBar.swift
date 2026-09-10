@@ -41,6 +41,10 @@ struct SubjectPickerBar: View {
                     }
                     .onAppear {
                         guard let selected = selectedSubject else { return }
+                        // Uygulama açılışta da bunu yapar; burası ekranın
+                        // depoyla yeniden buluştuğu yer (geri yükleme, Ayarlar'dan
+                        // değişen ders).
+                        Cizgi.activeSubject = CizgiSubject.matching(selected)
                         proxy.scrollTo(selected, anchor: .center)
                     }
                 }
@@ -53,17 +57,27 @@ struct SubjectPickerBar: View {
         Self.canonicalSubject(environment.settings.defaultSubject)
     }
 
+    /// Seçili çip dersin *kendi* rengini taşır — vurgu rengi zaten oradan
+    /// türediği için ikisi aynı şeyi söyler. Tanınmayan bir ad (şema ile bu
+    /// dosyadaki yay ayrışırsa) renksiz kalır ama çalışmaya devam eder.
     private func chip(_ name: String, isSelected: Bool) -> some View {
         Button {
             environment.settings.defaultSubject = name
             environment.settings.save()
+            // Vurgunun kaynağı: seçilen ders. `Cizgi.accentSource == .subject`
+            // iken bütün uygulamanın rengi buradan kayar.
+            Cizgi.activeSubject = CizgiSubject.matching(name)
         } label: {
-            Text(name)
-                .font(.caption.weight(.medium))
-                .foregroundStyle(isSelected ? Cizgi.paper : Cizgi.ink)
-                .padding(.horizontal, Cizgi.Space.sm)
-                .padding(.vertical, Cizgi.Space.xs)
-                .background(isSelected ? Cizgi.accent : Cizgi.accentSoft, in: Capsule())
+            if let subject = CizgiSubject.matching(name) {
+                SubjectChip(subject: subject, isSelected: isSelected)
+            } else {
+                Text(name)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(isSelected ? Cizgi.surface : Cizgi.ink)
+                    .padding(.horizontal, Cizgi.Space.sm)
+                    .padding(.vertical, Cizgi.Space.xs)
+                    .background(isSelected ? Cizgi.ink : Cizgi.surfaceMuted, in: Capsule())
+            }
         }
         .buttonStyle(.plain)
         .id(name)

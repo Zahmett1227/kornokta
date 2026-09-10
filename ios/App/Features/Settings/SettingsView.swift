@@ -19,6 +19,10 @@ struct SettingsView: View {
     @Query private var modelRuns: [ModelRun]
     @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
 
+    /// Görünüm bölümündeki seçimler `Cizgi`'nin `static var`'larına yazıyor;
+    /// SwiftUI onları göremez, bu yüzden yayıncı burada da gözleniyor.
+    @ObservedObject private var appearance = CizgiAppearance.shared
+
     @State private var deviceToken = ""
     @State private var tokenSaved = false
     @State private var tokenError: String?
@@ -41,7 +45,13 @@ struct SettingsView: View {
                     if let names = SubjectTopicSchema.shared?.subjectNames {
                         Picker("Ders", selection: Binding(
                             get: { SubjectPickerBar.canonicalSubject(environment.settings.defaultSubject) ?? "" },
-                            set: { environment.settings.defaultSubject = $0; environment.settings.save() }
+                            set: {
+                                environment.settings.defaultSubject = $0
+                                environment.settings.save()
+                                // Yakala şeridiyle aynı depolanan değer, aynı
+                                // sonuç: vurgu rengi de buradan kayar.
+                                Cizgi.activeSubject = CizgiSubject.matching($0)
+                            }
                         )) {
                             Text("Seçilmedi").tag("")
                             ForEach(names, id: \.self) { name in
@@ -91,6 +101,48 @@ struct SettingsView: View {
                     ))
                 } footer: {
                     Text("Açıkken kartlar yalnızca sayfada yazan bilgiye dayanır. Kapatmak zenginleştirilmiş içeriğe izin verir ve her ek bilgi ayrıca işaretlenir.")
+                }
+
+                Section {
+                    Picker("Vurgu rengi", selection: Binding(
+                        get: { Cizgi.accentSource },
+                        set: { Cizgi.accentSource = $0 }
+                    )) {
+                        ForEach(CizgiAccentSource.allCases, id: \.self) {
+                            Text($0.displayName).tag($0)
+                        }
+                    }
+
+                    if Cizgi.accentSource == .pinned {
+                        Picker("Sabit renk", selection: Binding(
+                            get: { Cizgi.pinnedSubject },
+                            set: { Cizgi.pinnedSubject = $0 }
+                        )) {
+                            ForEach(CizgiSubject.allCases, id: \.self) {
+                                Text($0.displayName).tag($0)
+                            }
+                        }
+                    }
+
+                    // Rengin nereye oturduğunu söylemek yerine göster: seçim
+                    // değişince bu şerit anında kayar.
+                    HStack(spacing: Cizgi.Space.xs) {
+                        ForEach(CizgiSubject.allCases, id: \.self) { subject in
+                            Capsule()
+                                .fill(subject.color)
+                                .frame(height: 8)
+                                .opacity(subject == Cizgi.accentSubject ? 1 : 0.3)
+                        }
+                    }
+                    .padding(.vertical, Cizgi.Space.xs)
+                    .accessibilityHidden(true)
+                } header: {
+                    Text("Görünüm")
+                } footer: {
+                    Text("Uygulamanın tek vurgu rengi sabit bir marka rengi değil, "
+                         + "çalıştığın dersin rengi. \"Derse göre\" seçiliyken ders "
+                         + "yoksa saat karar verir: sabah tuğla, öğleden sonra "
+                         + "oxblood, akşam erik, gece lacivert.")
                 }
 
                 Section("Tekrar") {
@@ -217,6 +269,11 @@ struct SettingsView: View {
                 allowsMultipleSelection: false,
                 onCompletion: restore
             )
+            // Kemik kâğıt zemin, iOS'un soğuk gri grup zemini değil — diğer
+            // kök ekranlar (Bilgilerim, Kuyruk) zaten bunu yapıyor; bu üçü
+            // yeni palette görünür biçimde ayrışıyordu.
+            .scrollContentBackground(.hidden)
+            .background(Cizgi.paper)
             .navigationTitle("Ayarlar")
             // Value-based like every other push in the app (AppNavigator's
             // note): only a value push appends to the stack's path.

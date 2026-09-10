@@ -4,38 +4,184 @@ import CizgiCore
 import UIKit
 #endif
 
-/// Çizgi's "warm study" design system (Faz 6 B3/UI).
-///
-/// Brand-aligned with the app icon: an amber highlighter accent over navy ink
-/// on a warm-paper ground. Everything here is derived, light+dark aware, and
-/// asset-catalog-free so the whole palette lives in one file. Status is never
-/// colour-only — call sites pair a tint with a label or an SF Symbol.
+// MARK: - Ders yayı
+//
+// On bir ders, tek bir renk yayı üzerinde: hepsi aynı açıklık ve doygunlukta,
+// yalnız ton açısı kayıyor. Bağımsız marka renkleri değil — aynı ölçeğin komşu
+// durakları. Karanlık modda hepsinin açık varyantı kullanılır (lacivert
+// zeminde 4.5:1 üstü kalsınlar diye).
+//
+// Tasarım dokuz durakla geldi; `subject_topics.json` on bir ders taşıyor
+// (ADR-001 çevresindeki ders/konu sözleşmesi). Eksik iki ders renksiz kalsaydı
+// vurguları saatin dersine düşer, `SubjectDistributionBar` de o kartları
+// şeritten sessizce düşürürdü — kartlar geçerli, ekran sağlıklı, anlattığı
+// deste yanlış. Bu yüzden yay iki durak *uzatıldı*: mevcut dokuz rengin hiçbiri
+// değişmedi, yeni ikisi en geniş iki ton boşluğunun ortasına, komşularının
+// açıklık/doygunluk ortalamasıyla kondu — "aynı ölçeğin komşu durakları"
+// ilkesi korunarak. `cerrahi`'nin görünen adı da kanonik "Genel Cerrahi"ye
+// çekildi: "Cerrahi" hiçbir zaman eşleşmiyordu (`matching` tam ad karşılaştırır).
+//
+// Ders adlarının tek kaynağı `backend/schemas/subject_topics.json`; buradaki
+// tablo ondan sapamaz — `evals/tests/test_subject_arc_sync.py` ikisini
+// karşılaştırır (App hedefi yalnız Mac'te derlendiği için Swift değil Python).
+
+enum CizgiSubject: String, CaseIterable {
+    // Yay sırası (ton açısına göre), enum sırası da bu.
+    case patoloji, farmakoloji, fizyoloji, anatomi, biyokimya
+    case kucukStajlar, mikrobiyoloji, dahiliye, cerrahi, kadinDogum, pediatri
+
+    /// `SubjectTopicSchema`'nın ders adlarıyla **birebir** eşleşir.
+    var displayName: String {
+        switch self {
+        case .patoloji: return "Patoloji"
+        case .farmakoloji: return "Farmakoloji"
+        case .fizyoloji: return "Fizyoloji"
+        case .anatomi: return "Anatomi"
+        case .biyokimya: return "Biyokimya"
+        case .kucukStajlar: return "Küçük Stajlar"
+        case .mikrobiyoloji: return "Mikrobiyoloji"
+        case .dahiliye: return "Dahiliye"
+        case .cerrahi: return "Genel Cerrahi"
+        case .kadinDogum: return "Kadın Hastalıkları ve Doğum"
+        case .pediatri: return "Pediatri"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .patoloji:      return dyn((0.482, 0.133, 0.188), (0.816, 0.541, 0.565))
+        case .farmakoloji:   return dyn((0.541, 0.227, 0.141), (0.847, 0.576, 0.478))
+        case .fizyoloji:     return dyn((0.494, 0.333, 0.094), (0.827, 0.659, 0.361))
+        case .anatomi:       return dyn((0.416, 0.353, 0.137), (0.769, 0.702, 0.416))
+        case .biyokimya:     return dyn((0.247, 0.357, 0.200), (0.576, 0.725, 0.518))
+        // Yeni durak: biyokimya (102°) ile mikrobiyoloji (172°) arasında, 137°.
+        case .kucukStajlar:  return dyn((0.167, 0.348, 0.218), (0.504, 0.724, 0.565))
+        case .mikrobiyoloji: return dyn((0.137, 0.337, 0.310), (0.490, 0.725, 0.686))
+        case .dahiliye:      return dyn((0.173, 0.290, 0.420), (0.561, 0.690, 0.831))
+        case .cerrahi:       return dyn((0.275, 0.208, 0.420), (0.659, 0.584, 0.824))
+        // Yeni durak: cerrahi (259°) ile pediatri (326°) arasında, 293°.
+        case .kadinDogum:    return dyn((0.390, 0.186, 0.418), (0.792, 0.566, 0.820))
+        case .pediatri:      return dyn((0.416, 0.165, 0.306), (0.816, 0.549, 0.690))
+        }
+    }
+
+    /// Yumuşak dolgu (seçili sekme diski, işaret şeridi zemini).
+    var soft: Color { color.opacity(0.14) }
+
+    /// Depoda duran serbest metni (eski `AppSettings.defaultSubject`) tanımaya
+    /// çalışır. Türkçe küçük harf katlaması `lowercased()` ile yeterli çünkü
+    /// karşılaştırılan iki taraf da bu tablodan geliyor.
+    static func matching(_ raw: String?) -> CizgiSubject? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !raw.isEmpty else { return nil }
+        return allCases.first { $0.displayName.lowercased() == raw || $0.rawValue == raw }
+    }
+}
+
+// MARK: - Vurgunun kaynağı
+
+enum CizgiAccentSource: String, CaseIterable {
+    /// Öntanımlı: o an çalışılan dersin rengi.
+    case subject
+    /// Ders bağlamı yoksa (ya da kullanıcı böyle seçtiyse) günün saati.
+    case timeOfDay
+    /// Kullanıcı bir dersi sabitledi; hiç değişmez.
+    case pinned
+
+    var displayName: String {
+        switch self {
+        case .subject: return "Derse göre"
+        case .timeOfDay: return "Zamana göre"
+        case .pinned: return "Sabit"
+        }
+    }
+}
+
 enum Cizgi {
 
-    // MARK: Colour
+    // MARK: Depolanan görünüm ayarları
 
-    /// Amber highlighter — the one accent. Actions, selection, the marker motif.
-    static let accent = dyn((0.90, 0.62, 0.13), (0.96, 0.72, 0.26))
-    /// Translucent amber for chips, highlighter strips, soft fills.
-    static let accentSoft = dyn((0.98, 0.90, 0.72), (0.42, 0.32, 0.12))
-    /// Navy ink — primary text and headings.
-    static let ink = dyn((0.09, 0.13, 0.24), (0.91, 0.93, 0.98))
-    /// Secondary text.
-    static let muted = dyn((0.42, 0.45, 0.52), (0.62, 0.66, 0.74))
-    /// Screen background — warm paper.
-    static let paper = dyn((0.97, 0.95, 0.91), (0.07, 0.08, 0.11))
-    /// Raised card surface.
-    static let surface = dyn((1.0, 1.0, 1.0), (0.11, 0.13, 0.17))
-    /// Muted surface (stat tiles, inset rows).
-    static let surfaceMuted = dyn((0.94, 0.92, 0.87), (0.14, 0.16, 0.21))
-    /// Hairline separators / card borders.
-    static let hairline = dyn((0.86, 0.83, 0.77), (0.20, 0.23, 0.29))
+    enum Keys {
+        static let accentSource = "cizgi.accentSource"
+        static let pinnedSubject = "cizgi.pinnedSubject"
+    }
 
-    static let success = dyn((0.20, 0.55, 0.34), (0.40, 0.78, 0.53))
-    static let warning = dyn((0.85, 0.55, 0.13), (0.96, 0.72, 0.30))
-    static let danger = dyn((0.76, 0.24, 0.22), (0.94, 0.45, 0.42))
+    /// Ekranların o an hangi derste olduğunu bildirdiği yer. `SubjectPickerBar`
+    /// ve `CizgiApp` bunu yazar; okuyan yalnız `accent`.
+    ///
+    /// Bir `static var` olması bilinçli: eski çağrı yerlerinin hepsi
+    /// `Cizgi.accent` yazıyor ve hiçbiri değişmek zorunda kalmıyor. Bedeli,
+    /// SwiftUI'ın değişimi görememesi — `didSet` onu `CizgiAppearance`'a
+    /// duyurarak kapatıyor.
+    static var activeSubject: CizgiSubject? = nil {
+        didSet {
+            guard oldValue != activeSubject else { return }
+            CizgiAppearance.shared.bump()
+        }
+    }
 
-    // MARK: Spacing / shape
+    static var accentSource: CizgiAccentSource {
+        get { CizgiAccentSource(rawValue: UserDefaults.standard.string(forKey: Keys.accentSource) ?? "") ?? .subject }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Keys.accentSource)
+            CizgiAppearance.shared.bump()
+        }
+    }
+
+    static var pinnedSubject: CizgiSubject {
+        get { CizgiSubject(rawValue: UserDefaults.standard.string(forKey: Keys.pinnedSubject) ?? "") ?? .patoloji }
+        set {
+            UserDefaults.standard.set(newValue.rawValue, forKey: Keys.pinnedSubject)
+            CizgiAppearance.shared.bump()
+        }
+    }
+
+    /// Saatin dersi. Rastgele değil, tahmin edilebilir: sabah ısınır, gece soğur.
+    static func subjectForTime(_ date: Date = .now) -> CizgiSubject {
+        switch Calendar.current.component(.hour, from: date) {
+        case 6..<12:  return .farmakoloji   // tuğla
+        case 12..<18: return .patoloji      // oxblood
+        case 18..<23: return .pediatri      // erik
+        default:      return .dahiliye      // lacivert
+        }
+    }
+
+    /// Tek vurgu. Sabit bir marka rengi değil, bir konum.
+    static var accent: Color { accentSubject.color }
+
+    static var accentSubject: CizgiSubject {
+        switch accentSource {
+        case .pinned: return pinnedSubject
+        case .timeOfDay: return subjectForTime()
+        case .subject: return activeSubject ?? subjectForTime()
+        }
+    }
+
+    /// Vurgunun yumuşak dolgusu — çip, disk, şerit zemini.
+    static var accentSoft: Color { dyn((0.941, 0.886, 0.878), (0.227, 0.153, 0.200)) }
+
+    // MARK: Nötr palet — kemik kâğıt / lacivert gece
+
+    /// Sıcak grafit: başlık ve gövde.
+    static let ink = dyn((0.110, 0.098, 0.090), (0.929, 0.941, 0.965))
+    /// İkincil metin.
+    static let muted = dyn((0.431, 0.404, 0.365), (0.682, 0.722, 0.796))
+    /// Üçüncül: eyebrow, birim etiketi.
+    static let faint = dyn((0.541, 0.514, 0.471), (0.486, 0.533, 0.627))
+    /// Ekran zemini.
+    static let paper = dyn((0.953, 0.941, 0.914), (0.082, 0.106, 0.157))
+    /// Kart yüzeyi, liste satırı.
+    static let surface = dyn((1.000, 0.992, 0.976), (0.110, 0.141, 0.204))
+    /// Gömülü alan, sayaç kutusu.
+    static let surfaceMuted = dyn((0.918, 0.898, 0.855), (0.133, 0.173, 0.243))
+    /// 1px ayırıcı ve kart kenarı. Gölge yerine çizgi.
+    static let hairline = dyn((0.878, 0.851, 0.796), (0.180, 0.227, 0.314))
+
+    static let success = dyn((0.180, 0.361, 0.271), (0.435, 0.718, 0.557))
+    static let warning = dyn((0.541, 0.353, 0.071), (0.835, 0.651, 0.341))
+    static let danger  = dyn((0.549, 0.184, 0.149), (0.878, 0.502, 0.475))
+
+    // MARK: Boşluk / biçim
 
     enum Space {
         static let xs: CGFloat = 4
@@ -46,23 +192,68 @@ enum Cizgi {
         static let xxl: CGFloat = 32
     }
 
+    /// Bir kademe sıkıldı: baloncuk değil, ciltli kitap köşesi.
     enum Radius {
-        static let sm: CGFloat = 10
-        static let md: CGFloat = 16
-        static let lg: CGFloat = 24
+        static let sm: CGFloat = 8
+        static let md: CGFloat = 14
+        static let lg: CGFloat = 22
     }
 
-    /// Amber → soft-amber highlighter gradient, the recurring marker motif.
-    static var highlighter: LinearGradient {
-        LinearGradient(
-            colors: [accent, accentSoft],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+    // MARK: Tipografi
+
+    /// Tek gömülü yazı ailesi. Yalnız üç yerde: kart sorusu, boş durum
+    /// başlığı, büyük sayı.
+    ///
+    /// Font pakete konmadıysa `Font.custom` sessizce **sistem sans'ına** düşer,
+    /// serife değil — tasarımın serif sesi hiç duyulmadan kaybolurdu. Georgia
+    /// iOS'ta her zaman var ve gerçekten serif; `relativeTo:` korunduğu için
+    /// Dynamic Type ölçeklemesi de yerinde kalır.
+    static func serif(_ size: CGFloat, relativeTo style: Font.TextStyle = .body) -> Font {
+        .custom(isSerifBundled ? serifFamily : "Georgia", size: size, relativeTo: style)
+    }
+
+    static let serifFamily = "LibreCaslonText-Regular"
+
+    /// Bir kez bakılır: `UIFont(name:)` yalnız kayıtlı aileler için nil dışı döner.
+    #if canImport(UIKit)
+    static let isSerifBundled = UIFont(name: serifFamily, size: 12) != nil
+    #else
+    static let isSerifBundled = false
+    #endif
+
+    /// Eski `highlighter` gradyanının yerine geçen düz renk. Adı korunuyor ki
+    /// çağrı yerleri (`ReviewView.progressBar`, `CardSurface`) değişmesin.
+    static var highlighter: Color { accent }
+}
+
+// MARK: - Görünüm yayıncısı
+
+/// Vurgu rengi bir `static var`'dan okunuyor; SwiftUI onu gözlemleyemez, yani
+/// ders ya da ayar değişince ekranda kendiliğinden hiçbir şey yenilenmez.
+///
+/// UYGULAMA.md `.id(Cizgi.accentSubject)` öneriyordu. O yol kökü *kimliğiyle*
+/// değiştirir ve alt ağacın bütün `@State`'ini sıfırlar — Egzersiz'in yarım
+/// kalan oturumu dahil (`ExerciseView` koşuyu `@State`'te tutar). Bunun yerine
+/// tek bir yayıncı: `RootView` onu gözler, değiştiğinde gövdesi yeniden
+/// değerlendirilir, sekme çocuklarının gövdeleri de öyle, `Cizgi.accent` taze
+/// okunur. Kimlik değişmediği için hiçbir `@State` kaybolmaz.
+final class CizgiAppearance: ObservableObject {
+    static let shared = CizgiAppearance()
+    private init() {}
+
+    /// Yalnız "bir şey değişti" demek için; değerin kendisi anlamsız.
+    @Published private(set) var revision = 0
+
+    /// Ana kuyruğa alınır: `@Published`'ı arka plandan yazmak SwiftUI'da
+    /// çalışma zamanı uyarısıdır ve `activeSubject` ileride bir kuyruk
+    /// geri çağrısından da yazılabilir.
+    func bump() {
+        if Thread.isMainThread { revision &+= 1 }
+        else { DispatchQueue.main.async { self.revision &+= 1 } }
     }
 }
 
-// MARK: - Dynamic colour helper
+// MARK: - Dinamik renk yardımcısı
 
 #if canImport(UIKit)
 private func dyn(_ light: (Double, Double, Double), _ dark: (Double, Double, Double)) -> Color {
@@ -77,20 +268,22 @@ private func dyn(_ light: (Double, Double, Double), _ dark: (Double, Double, Dou
 }
 #endif
 
-// MARK: - Reusable components
+// MARK: - Kart yüzeyi
 
-/// A rounded "paper" card with a soft shadow and an optional leading
-/// highlighter strip — the surface every screen builds on.
+/// Gölge kalktı, yerine 1px hairline. İşaret şeridi 5px → 3px ve artık üstte:
+/// rozet yerine kartın kendisi hangi derste olduğunu söylüyor.
 struct CardSurface<Content: View>: View {
     var highlighted: Bool = false
+    var subject: CizgiSubject? = nil
     var padding: CGFloat = Cizgi.Space.lg
     @ViewBuilder var content: () -> Content
 
+    private var strip: Color { subject?.color ?? Cizgi.accent }
+
     var body: some View {
-        HStack(spacing: 0) {
+        VStack(spacing: 0) {
             if highlighted {
-                Cizgi.highlighter
-                    .frame(width: 5)
+                strip.frame(height: 3)
             }
             content()
                 .padding(padding)
@@ -102,21 +295,48 @@ struct CardSurface<Content: View>: View {
             RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
                 .stroke(Cizgi.hairline, lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.06), radius: 10, x: 0, y: 4)
     }
 }
 
-/// A thin amber highlighter underline — used as a section/word accent.
-struct HighlighterStrip: View {
-    var width: CGFloat = 44
+/// Baklava ayırıcı — soru ile cevap arasındaki kesme.
+struct CizgiRule: View {
     var body: some View {
-        Capsule()
-            .fill(Cizgi.highlighter)
-            .frame(width: width, height: 5)
+        HStack(spacing: Cizgi.Space.md) {
+            Rectangle().fill(Cizgi.hairline).frame(height: 1)
+            Rectangle().fill(Cizgi.hairline.opacity(0.9))
+                .frame(width: 5, height: 5)
+                .rotationEffect(.degrees(45))
+            Rectangle().fill(Cizgi.hairline).frame(height: 1)
+        }
     }
 }
 
-/// A soft amber-tinted tag capsule.
+/// Bölüm işareti — açıklama paragrafının başında.
+struct CizgiSectionMark: View {
+    var body: some View {
+        Text("§")
+            .font(Cizgi.serif(20))
+            .foregroundStyle(Cizgi.hairline)
+    }
+}
+
+/// Kıvrık köşe — yalnız gözden geçirilmesi gereken kartta.
+struct DogEar: View {
+    var tint: Color = Cizgi.warning
+    var size: CGFloat = 26
+    var body: some View {
+        Path { p in
+            p.move(to: .init(x: size, y: 0))
+            p.addLine(to: .init(x: size, y: size))
+            p.addLine(to: .init(x: 0, y: 0))
+            p.closeSubpath()
+        }
+        .fill(tint.opacity(0.22))
+        .frame(width: size, height: size)
+    }
+}
+
+/// Konturlu etiket. Dolgu yalnız *seçili* olanı işaretler.
 struct TagChip: View {
     let text: String
     var systemImage: String?
@@ -127,28 +347,43 @@ struct TagChip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let systemImage { Image(systemName: systemImage) }
+            // Konu adları uzun olabiliyor ("Kemoterapötikler ve
+            // İmmünomodülatörler"): sarmalanan bir kapsül üç satıra şişip
+            // kartın başlık satırını dağıtıyordu. Etiket bir *işaret*, bir
+            // paragraf değil — kırpılır, tam adı VoiceOver taşır.
             Text(text)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
         .font(.caption.weight(.medium))
         .foregroundStyle(Cizgi.ink)
         .padding(.horizontal, Cizgi.Space.sm)
         .padding(.vertical, Cizgi.Space.xs)
-        .background(Cizgi.accentSoft, in: Capsule())
+        .background(Cizgi.surfaceMuted, in: Capsule())
+        .accessibilityLabel(text)
     }
 }
 
-/// A small labelled statistic tile.
+struct SubjectChip: View {
+    let subject: CizgiSubject
+    let isSelected: Bool
+    var body: some View {
+        Text(subject.displayName)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(isSelected ? Cizgi.surface : Cizgi.ink)
+            .padding(.horizontal, Cizgi.Space.sm)
+            .padding(.vertical, Cizgi.Space.xs)
+            .background(isSelected ? subject.color : Cizgi.surfaceMuted, in: Capsule())
+    }
+}
+
 struct StatTile: View {
     let value: String
     let label: String
     var body: some View {
         VStack(spacing: 2) {
-            Text(value)
-                .font(.title2.weight(.bold))
-                .foregroundStyle(Cizgi.ink)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(Cizgi.muted)
+            Text(value).font(.title2.weight(.bold)).foregroundStyle(Cizgi.ink)
+            Text(label).font(.caption).foregroundStyle(Cizgi.muted)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Cizgi.Space.md)
@@ -157,106 +392,131 @@ struct StatTile: View {
     }
 }
 
-/// Shared hierarchy for root-screen introductions. Keeping the eyebrow, title
-/// and supporting copy aligned prevents every feature from inventing a new
-/// visual language as the app grows.
+/// Eyebrow artık vurgu renginde değil: harf aralıklı ve `faint`. Renk yerine
+/// ağırlık ve aralık farkı.
 struct ScreenHero: View {
     let eyebrow: String
     let title: String
     let subtitle: String
     let systemImage: String
+    /// Mürekkep zeminli varyant — bir bölümü diğerlerinden ayırmak için.
+    var onInk = false
 
     var body: some View {
-        CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
-            HStack(alignment: .top, spacing: Cizgi.Space.lg) {
-                VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
-                    Text(eyebrow.uppercased())
-                        .font(.caption2.weight(.bold))
-                        .tracking(1.1)
-                        .foregroundStyle(Cizgi.accent)
-                    Text(title)
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(Cizgi.ink)
-                    Text(subtitle)
-                        .font(.subheadline)
-                        .foregroundStyle(Cizgi.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: systemImage)
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(Cizgi.ink)
-                    .frame(width: 58, height: 58)
-                    .background(Cizgi.accent, in: Circle())
+        HStack(alignment: .top, spacing: Cizgi.Space.lg) {
+            VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
+                Text(eyebrow.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(onInk ? Cizgi.muted : Cizgi.faint)
+                Text(title)
+                    .font(Cizgi.serif(22, relativeTo: .title2))
+                    .foregroundStyle(onInk ? Cizgi.paper : Cizgi.ink)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(onInk ? Cizgi.muted : Cizgi.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
+            Image(systemName: systemImage)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(Cizgi.accent)
+                .frame(width: 48, height: 48)
+                .background(Cizgi.accentSoft, in: Circle())
         }
+        .padding(Cizgi.Space.lg)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(onInk ? Cizgi.ink : Cizgi.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
+                .stroke(onInk ? .clear : Cizgi.hairline, lineWidth: 1)
+        )
     }
 }
 
+/// Numaralı bölüm başlığı — Egzersiz'de bölümleri birbirinden ayıran şey.
 struct CizgiSectionTitle: View {
     let title: String
+    var index: Int?
     var subtitle: String?
+    var trailing: String?
 
-    init(_ title: String, subtitle: String? = nil) {
+    init(_ title: String, index: Int? = nil, subtitle: String? = nil, trailing: String? = nil) {
         self.title = title
+        self.index = index
         self.subtitle = subtitle
+        self.trailing = trailing
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.headline)
-                .foregroundStyle(Cizgi.ink)
+            HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
+                if let index {
+                    Text(String(format: "%02d", index))
+                        .font(.caption.weight(.bold).monospaced())
+                        .foregroundStyle(Cizgi.accent)
+                }
+                Text(title).font(.headline).foregroundStyle(Cizgi.ink)
+                Rectangle().fill(Cizgi.hairline).frame(height: 1)
+                if let trailing {
+                    Text(trailing)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Cizgi.accent)
+                        .fixedSize()
+                }
+            }
             if let subtitle {
-                Text(subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(Cizgi.muted)
+                Text(subtitle).font(.footnote).foregroundStyle(Cizgi.muted)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Compact root-screen action used for quick starts and cross-feature jumps.
-struct FeatureActionCard: View {
+/// Büyük serif sayı + ad: "Hızlı 10" gibi başlangıçlar için.
+struct NumeralActionRow: View {
+    let numeral: String
     let title: String
     let subtitle: String
-    let systemImage: String
+    var tint: Color = Cizgi.accent
     var isProminent = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
-                Image(systemName: systemImage)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(isProminent ? Cizgi.ink : Cizgi.accent)
-                Spacer(minLength: Cizgi.Space.xs)
-                Text(title)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(Cizgi.ink)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(Cizgi.muted)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+            HStack(spacing: Cizgi.Space.lg) {
+                Text(numeral)
+                    .font(Cizgi.serif(isProminent ? 32 : 22, relativeTo: .title))
+                    .foregroundStyle(isProminent ? Cizgi.surface : tint)
+                    .frame(minWidth: 28, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(isProminent ? Cizgi.surface : Cizgi.ink)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(isProminent ? Cizgi.surface.opacity(0.8) : Cizgi.muted)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isProminent ? Cizgi.surface : Cizgi.hairline)
             }
-            .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
-            .padding(Cizgi.Space.lg)
-            .background(isProminent ? Cizgi.accentSoft : Cizgi.surface)
+            .padding(.horizontal, Cizgi.Space.lg)
+            .padding(.vertical, Cizgi.Space.md)
+            .background(isProminent ? tint : Cizgi.surface)
             .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
-                    .stroke(isProminent ? Cizgi.accent.opacity(0.7) : Cizgi.hairline, lineWidth: 1)
+                    .stroke(isProminent ? .clear : Cizgi.hairline, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
     }
 }
 
-/// A toggleable filter chip. Same capsule shape as `TagChip`, but selectable —
-/// used for the multi-select rows in `ExerciseSetupSheet` (kart tipi, kart
-/// durumu).
 struct SelectableChip: View {
     let title: String
     var systemImage: String?
@@ -270,20 +530,16 @@ struct SelectableChip: View {
                 Text(title)
             }
             .font(.caption.weight(.medium))
-            .foregroundStyle(isSelected ? Cizgi.paper : Cizgi.ink)
+            .foregroundStyle(isSelected ? Cizgi.surface : Cizgi.ink)
             .padding(.horizontal, Cizgi.Space.sm)
             .padding(.vertical, Cizgi.Space.xs)
-            .background(isSelected ? Cizgi.accent : Cizgi.surfaceMuted, in: Capsule())
-            .overlay(
-                Capsule().stroke(isSelected ? Color.clear : Cizgi.hairline, lineWidth: 1)
-            )
+            .background(isSelected ? Cizgi.accent : Cizgi.surface, in: Capsule())
+            .overlay(Capsule().stroke(isSelected ? .clear : Cizgi.hairline, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 }
 
-/// A wrapping row of chips. An adaptive grid rather than a custom `Layout`
-/// conformance — a handful of short labels never needs more control than that.
 struct ChipFlowRow<Data: RandomAccessCollection, Content: View>: View where Data.Element: Hashable {
     let data: Data
     let content: (Data.Element) -> Content
@@ -299,24 +555,19 @@ struct ChipFlowRow<Data: RandomAccessCollection, Content: View>: View where Data
             alignment: .leading,
             spacing: Cizgi.Space.xs
         ) {
-            ForEach(Array(data), id: \.self) { item in
-                content(item)
-            }
+            ForEach(Array(data), id: \.self) { content($0) }
         }
     }
 }
 
-/// A compact ring showing a fraction, e.g. Egzersiz's completion accuracy.
 struct RingGauge: View {
-    /// 0...1.
     let progress: Double
     let tint: Color
     var lineWidth: CGFloat = 8
 
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(Cizgi.hairline, lineWidth: lineWidth)
+            Circle().stroke(Cizgi.hairline, lineWidth: lineWidth)
             Circle()
                 .trim(from: 0, to: max(0, min(1, progress)))
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
@@ -325,26 +576,60 @@ struct RingGauge: View {
     }
 }
 
-// MARK: - Button styles
+/// Ders dağılım şeridi — Bilgilerim'in tepesinde, dokuz rengin tek satırda
+/// okunduğu yer.
+struct SubjectDistributionBar: View {
+    /// (ders, kart sayısı) — sıfır olanlar atlanır.
+    let counts: [(CizgiSubject, Int)]
+    /// Yaya oturmayan kartlar (serbest metin ders adı, kavram paketinden gelen
+    /// tanınmayan ad). Sıfırdan büyükse nötr bir dilim olarak çizilir.
+    ///
+    /// Varsayılanı 0 olduğu için tasarımın verdiği çağrı biçimi aynen derlenir.
+    /// Var olma sebebi: bu kartları saymadan atlamak şeridin *oranlarını*
+    /// bozar — ekran sağlıklı görünürken yanlış bir deste anlatır, ki bu
+    /// projenin tam olarak kovaladığı sessiz hata sınıfı.
+    var other: Int = 0
+    var height: CGFloat = 9
 
-/// The primary amber action button.
+    private var total: Int { max(1, counts.reduce(other) { $0 + $1.1 }) }
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                ForEach(counts.filter { $0.1 > 0 }, id: \.0) { subject, count in
+                    subject.color
+                        .frame(width: geo.size.width * CGFloat(count) / CGFloat(total))
+                }
+                if other > 0 {
+                    Cizgi.hairline
+                        .frame(width: geo.size.width * CGFloat(other) / CGFloat(total))
+                }
+            }
+        }
+        .frame(height: height)
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - Butonlar
+
+/// Amber halo kalktı; metin `surface`.
 struct CizgiPrimaryButtonStyle: ButtonStyle {
+    var tint: Color = Cizgi.accent
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
-            .foregroundStyle(Color(red: 0.09, green: 0.13, blue: 0.24))
+            .foregroundStyle(Cizgi.surface)
             .frame(maxWidth: .infinity)
             .padding(.vertical, Cizgi.Space.lg)
-            .background(Cizgi.accent)
+            .background(tint)
             .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
-            .shadow(color: Cizgi.accent.opacity(0.35), radius: 10, x: 0, y: 5)
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-/// A bordered secondary button on the paper ground.
 struct CizgiSecondaryButtonStyle: ButtonStyle {
     var tint: Color = Cizgi.ink
     func makeBody(configuration: Configuration) -> some View {
@@ -357,14 +642,128 @@ struct CizgiSecondaryButtonStyle: ButtonStyle {
             .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous)
-                    .stroke(tint.opacity(0.4), lineWidth: 1.5)
+                    .stroke(Cizgi.hairline, lineWidth: 1.5)
             )
             .opacity(configuration.isPressed ? 0.7 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-// MARK: - Card type display (§14 types → Turkish label, icon, tint)
+// MARK: - Kart tipi işaretleri
+//
+// Eski rozet yalnız bir isimdi. Yeni işaret sorunun *biçimini* çiziyor.
+
+struct CardTypeMark: View {
+    let type: CardType
+    var size: CGFloat = 19
+    var tint: Color = Cizgi.accent
+
+    var body: some View {
+        Canvas { ctx, s in
+            let w = s.width, h = s.height
+            let lw = max(1.3, w * 0.085)
+            var stroke = Path()
+
+            switch type {
+            case .directRecall:
+                stroke.addEllipse(in: .init(x: lw, y: lw, width: w - lw * 2, height: h - lw * 2))
+                ctx.stroke(stroke, with: .color(tint), lineWidth: lw)
+                var dot = Path()
+                dot.addEllipse(in: .init(x: w * 0.355, y: h * 0.355, width: w * 0.29, height: h * 0.29))
+                ctx.fill(dot, with: .color(tint))
+
+            case .cloze:
+                stroke.move(to: .init(x: 0, y: h * 0.66))
+                stroke.addLine(to: .init(x: w * 0.24, y: h * 0.66))
+                stroke.move(to: .init(x: w * 0.76, y: h * 0.66))
+                stroke.addLine(to: .init(x: w, y: h * 0.66))
+                ctx.stroke(stroke, with: .color(tint), lineWidth: lw)
+                let box = Path(roundedRect: .init(x: w * 0.32, y: h * 0.3, width: w * 0.36, height: h * 0.38),
+                               cornerRadius: lw)
+                ctx.stroke(box, with: .color(tint),
+                           style: StrokeStyle(lineWidth: lw, dash: [w * 0.1, w * 0.09]))
+
+            case .mechanism:
+                stroke.move(to: .init(x: w * 0.14, y: h * 0.34))
+                stroke.addLine(to: .init(x: w * 0.58, y: h * 0.34))
+                stroke.addQuadCurve(to: .init(x: w * 0.58, y: h * 0.7),
+                                    control: .init(x: w * 0.94, y: h * 0.52))
+                stroke.addLine(to: .init(x: w * 0.36, y: h * 0.7))
+                stroke.move(to: .init(x: w * 0.5, y: h * 0.56))
+                stroke.addLine(to: .init(x: w * 0.34, y: h * 0.7))
+                stroke.addLine(to: .init(x: w * 0.5, y: h * 0.85))
+                ctx.stroke(stroke, with: .color(tint),
+                           style: .init(lineWidth: lw, lineCap: .round, lineJoin: .round))
+                var dot = Path()
+                dot.addEllipse(in: .init(x: w * 0.06, y: h * 0.26, width: w * 0.16, height: w * 0.16))
+                ctx.fill(dot, with: .color(tint))
+
+            case .distinction:
+                stroke.move(to: .init(x: w * 0.5, y: h * 0.08))
+                stroke.addLine(to: .init(x: w * 0.5, y: h * 0.92))
+                stroke.move(to: .init(x: w * 0.3, y: h * 0.3))
+                stroke.addLine(to: .init(x: w * 0.1, y: h * 0.5))
+                stroke.addLine(to: .init(x: w * 0.3, y: h * 0.7))
+                stroke.move(to: .init(x: w * 0.7, y: h * 0.3))
+                stroke.addLine(to: .init(x: w * 0.9, y: h * 0.5))
+                stroke.addLine(to: .init(x: w * 0.7, y: h * 0.7))
+                ctx.stroke(stroke, with: .color(tint),
+                           style: .init(lineWidth: lw, lineCap: .round, lineJoin: .round))
+
+            case .exceptionTrap:
+                stroke.move(to: .init(x: w * 0.5, y: h * 0.1))
+                stroke.addLine(to: .init(x: w * 0.94, y: h * 0.86))
+                stroke.addLine(to: .init(x: w * 0.06, y: h * 0.86))
+                stroke.closeSubpath()
+                stroke.move(to: .init(x: w * 0.5, y: h * 0.42))
+                stroke.addLine(to: .init(x: w * 0.5, y: h * 0.62))
+                ctx.stroke(stroke, with: .color(tint),
+                           style: .init(lineWidth: lw, lineJoin: .round))
+                var dot = Path()
+                dot.addEllipse(in: .init(x: w * 0.45, y: h * 0.68, width: w * 0.1, height: w * 0.1))
+                ctx.fill(dot, with: .color(tint))
+
+            case .multipleChoice:
+                for i in 0..<4 {
+                    let y = h * (0.16 + 0.23 * Double(i))
+                    stroke.move(to: .init(x: w * 0.36, y: y))
+                    stroke.addLine(to: .init(x: w, y: y))
+                }
+                ctx.stroke(stroke, with: .color(tint), lineWidth: lw)
+                var rings = Path()
+                for i in 0..<4 where i != 2 {
+                    let y = h * (0.16 + 0.23 * Double(i))
+                    rings.addEllipse(in: .init(x: w * 0.06, y: y - w * 0.06,
+                                               width: w * 0.12, height: w * 0.12))
+                }
+                ctx.stroke(rings, with: .color(tint), lineWidth: lw * 0.8)
+                var filled = Path()
+                let y = h * (0.16 + 0.23 * 2)
+                filled.addEllipse(in: .init(x: w * 0.02, y: y - w * 0.1,
+                                            width: w * 0.2, height: w * 0.2))
+                ctx.fill(filled, with: .color(tint))
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
+/// İşaret + etiket. Renk işarette, ad mürekkepte.
+struct CardTypeBadge: View {
+    let type: CardType
+    var subject: CizgiSubject?
+    var body: some View {
+        HStack(spacing: Cizgi.Space.sm) {
+            CardTypeMark(type: type, tint: subject?.color ?? Cizgi.accent)
+            Text(type.displayName)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Cizgi.ink)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(type.displayName)
+    }
+}
 
 extension CardType {
     var displayName: String {
@@ -378,11 +777,24 @@ extension CardType {
         }
     }
 
+    /// Ne tür bir soru olduğunu bir cümlede söyler — kılavuzdaki metinler.
+    var explainer: String {
+        switch self {
+        case .directRecall: return "Tek bir olgu, tam merkezde."
+        case .cloze: return "Cümle duruyor, bir parçası çıkarılmış."
+        case .mechanism: return "Bir zincir: neden buradan başlar, oraya varır."
+        case .distinction: return "İki şey karışıyor; hangi eksende ayrıldıkları sorulur."
+        case .exceptionTrap: return "Kural işliyor — bir yer hariç."
+        case .multipleChoice: return "Biri doğru, dördü nedenli yanlış."
+        }
+    }
+
+    /// SF Symbols'a hâlâ ihtiyaç duyan yerler (filtre menüsü, VoiceOver) için.
     var icon: String {
         switch self {
-        case .directRecall: return "brain.head.profile"
+        case .directRecall: return "circle.circle"
         case .cloze: return "rectangle.dashed"
-        case .mechanism: return "gearshape.2"
+        case .mechanism: return "arrow.triangle.turn.up.right.circle"
         case .distinction: return "arrow.left.and.right"
         case .exceptionTrap: return "exclamationmark.triangle"
         case .multipleChoice: return "list.bullet.circle"
@@ -390,7 +802,7 @@ extension CardType {
     }
 }
 
-// MARK: - Exercise filter display (docs/ADR-008 çevresinde eklendi)
+// MARK: - Filtre / derecelendirme etiketleri (mevcut davranış korunuyor)
 
 extension CardStateFilter {
     var displayName: String {
@@ -400,7 +812,6 @@ extension CardStateFilter {
         case .needsReview: return "Gözden geçir"
         }
     }
-
     var icon: String {
         switch self {
         case .unstudied: return "circle.dashed"
@@ -420,9 +831,6 @@ extension CardRecency {
     }
 }
 
-/// A chip's label and icon — Core only carries which dimension is active, not
-/// how to say it in Turkish. One switch here instead of one per call site
-/// (`ExerciseFilterChips`, the setup sheet's live summary).
 extension FilterDimension {
     var label: String {
         switch self {
@@ -439,7 +847,6 @@ extension FilterDimension {
         case .fesOnly: return "FES"
         }
     }
-
     var icon: String {
         switch self {
         case .subject: return "book"
@@ -452,28 +859,15 @@ extension FilterDimension {
     }
 }
 
-/// A compact badge naming the card's type.
-struct CardTypeBadge: View {
-    let type: CardType
-    var body: some View {
-        Label(type.displayName, systemImage: type.icon)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(Cizgi.accent)
-            .padding(.horizontal, Cizgi.Space.sm)
-            .padding(.vertical, 3)
-            .background(Cizgi.accentSoft.opacity(0.6), in: Capsule())
-    }
-}
-
-// MARK: - Review rating colour
-
+/// "Kolay" artık vurgu renginde değil — mürekkep. Vurgu bir eylem daveti;
+/// burada dört seçenek eşit ağırlıkta.
 extension ReviewRating {
     var tint: Color {
         switch self {
         case .again: return Cizgi.danger
         case .hard: return Cizgi.warning
         case .good: return Cizgi.success
-        case .easy: return Cizgi.accent
+        case .easy: return Cizgi.ink
         }
     }
 }

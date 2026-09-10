@@ -316,10 +316,15 @@ struct ReviewView: View {
     }
 
     private func flashcard(_ card: Card) -> some View {
-        CardSurface(highlighted: true, padding: Cizgi.Space.xl) {
+        // Şerit kartın dersinin rengini taşır — rozet yerine kartın kendisi
+        // hangi derste olduğunu söylüyor (Kemik & Oxblood).
+        CardSurface(highlighted: true,
+                    subject: CizgiSubject.matching(card.knowledgeUnit?.subject),
+                    padding: Cizgi.Space.xl) {
             VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
                 HStack(spacing: Cizgi.Space.sm) {
-                    CardTypeBadge(type: card.type)
+                    CardTypeBadge(type: card.type,
+                                  subject: CizgiSubject.matching(card.knowledgeUnit?.subject))
                     // Flagged, not blocked (§13.3 rule 6): the card is being
                     // reviewed like any other, but the user is told it was not
                     // fully vouched for before they trust the answer.
@@ -328,8 +333,9 @@ struct ReviewView: View {
                     }
                 }
 
+                // Serifin üç yerinden biri: kart sorusu.
                 Text(card.front)
-                    .font(.title2.weight(.semibold))
+                    .font(Cizgi.serif(24, relativeTo: .title2))
                     .foregroundStyle(Cizgi.ink)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -338,7 +344,9 @@ struct ReviewView: View {
                 }
 
                 if isAnswerVisible {
-                    Rectangle().fill(Cizgi.hairline).frame(height: 1)
+                    // Tasarımın soru/cevap kesmesi: düz çizgi değil baklava
+                    // ayırıcı — kartın iki yarısını ayıran şey.
+                    CizgiRule()
 
                     // On a five-option card the answer is already marked in the
                     // list above; repeating it as a line of text would just push
@@ -351,10 +359,15 @@ struct ReviewView: View {
                     }
 
                     if let explanation = card.explanation, !explanation.isEmpty {
-                        Text(explanation)
-                            .font(.callout)
-                            .foregroundStyle(Cizgi.muted)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // § işareti açıklamayı cevaptan ayırır: cevap kartın
+                        // sorduğu şey, açıklama kenar notu.
+                        HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
+                            CizgiSectionMark()
+                            Text(explanation)
+                                .font(.callout)
+                                .foregroundStyle(Cizgi.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
 
                     // §5.5. The old gate was `card.sourceQuote`, which the Faz 6
@@ -373,6 +386,13 @@ struct ReviewView: View {
                 }
             }
         }
+        // Kıvrık köşe: kartın "tam olarak doğrulanmadı" işareti. Renk tek
+        // başına anlam taşımasın diye üstteki "Gözden geçir" çipiyle birlikte
+        // görünür, onun yerine değil.
+        .overlay(alignment: .topTrailing) {
+            if card.lowConfidence { DogEar() }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
         .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
     }
 

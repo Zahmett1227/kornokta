@@ -41,6 +41,11 @@ struct ExerciseSetupSheet: View {
                 recencySection
                 fesSection
             }
+            // Kemik kâğıt zemin, iOS'un soğuk gri grup zemini değil — diğer
+            // kök ekranlar (Bilgilerim, Kuyruk) zaten bunu yapıyor; bu üçü
+            // yeni palette görünür biçimde ayrışıyordu.
+            .scrollContentBackground(.hidden)
+            .background(Cizgi.paper)
             .navigationTitle("Egzersizi kur")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
