@@ -334,3 +334,31 @@ eklenen `force` kaçışını da kapatırdı.
   Xcode derlemesinde çıktı (düzeltildi, `cfcc44c`). Bu sınıftan hatalar için
   **tek gerçek kapı bir Mac derlemesi.**
 
+
+---
+
+## Karanlık Harita — yaşadı ve kaldırıldı (2026-08-19 → 2026-09-09)
+
+Kartı olmayan kanonik konuları listeleyen ve bunları iki model ailesinin
+mutabakatıyla sıralayan bir ekran. Üç hafta `main`'de durdu, sonra sahibinin
+kararıyla **arka uçtan ve arayüzden tamamen silindi** (31 dosya, −5.640 satır).
+
+Kaldırılanlar: `/api/dark-map`, `providers/darkMap.ts`,
+`providers/topicCoverage.ts`, `prompts/darkMap.ts`, `DarkMapConfig` +
+`DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapCoverage.swift`,
+`DarkMapProvider.swift`, `DarkMapView.swift` ve Bilgi Haritası'ndaki giriş
+kartı.
+
+Gerekçesi, kapalı şablonun neden bu özelliği mümkün kıldığı ve çift aileli
+mutabakat kapısının tasarımı [`ADR-009`](ADR-009-karanlik-harita.md)'da tarihsel
+olarak duruyor. Geri dönüş = kaldırma commit'inin (`f50a936`) revert'i.
+
+**Karıştırmayın:** kardeşi olan **kapsama sözleşmesi** (#47,
+`providers/coverage.ts`) duruyor ve çalışıyor. O *tek sayfada* işaret↔kart
+farkını ölçer; kaldırılan ise *tüm destede* konu↔kart kapsamasıydı. İki ayrı
+şeye "kapsama" denmesi ADR-009'un kendi adlandırma notunun konusuydu.
+
+Kaldırmanın ortaya çıkardığı iki artık da aynı commit'te temizlendi:
+`KnowledgeMapSummary.activeCoveredTopicCount` (yalnız giriş kartının bu ekranla
+aynı sayıyı göstermesi için vardı — Codex, PR #49) ve `openai.ts`'teki
+`isTransientStatus`'un `export`'u (yalnız `darkMap.ts` için açılmıştı).

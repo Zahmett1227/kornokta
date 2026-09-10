@@ -314,9 +314,9 @@ kez yazmak olurdu (gerekçe ADR-010).
 | Kavram destesi ayrı alanda (`CardCollection` + kapsam anahtarı + `ConceptPackImporter`, ADR-010) | ✅ `main`'de (2026-09-09, `12ccf93` + `efa1978`). **Simülatörde uçtan uca doğrulandı:** eski şemayla yazılmış bir depo (4 kart, 3 unit) üzerine yeni ikili kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` eklendi, dört kart da `capture` oldu, veri kayıpsız. Gerçek 3.017 kartlık paket telefonda içe aktarıldı (~15 sn, 831 kavram/831 unit, konusuz kart **sıfır**), Çekimlerim tarafı 4 kartta kaldı, Ayarlar dökümü 3021 = 4 + 3017, v7 yedeği 3.017 concept + 4 capture ile 4,1 MB çıktı. **Gerçek cihazda kalan:** doğrulama listesinin 23-27. maddeleri |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
-**Dal durumu:** `main` en güncel — yukarıdaki iki iş 2026-09-09'da merge edildi
-ve çalışma dalları silindi. Yeni iş `main`'in ucundan yeni bir dalla başlar.
-`main` şu an `origin/main`'in **3 commit önünde**: push edilmedi.
+**Dal durumu:** `main` en güncel ve `origin/main`'e **push edildi**
+(2026-09-09). Yukarıdaki iki iş o gün merge edildi, çalışma dalları silindi.
+Yeni iş `main`'in ucundan yeni bir dalla başlar.
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da

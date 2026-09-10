@@ -22,7 +22,7 @@ Ana şartname:
 [`CLAUDE.md`](CLAUDE.md)'yi oku** — güncel durum, açık kararlar ve sıradaki
 adım oranın tek kaynağıdır; buradaki tablo yalnız kaba bir özettir.
 
-## Mevcut durum (2026-08-07)
+## Mevcut durum (2026-09-09)
 
 | Faz | Kapsam | Durum |
 |---|---|---|
@@ -35,6 +35,9 @@ adım oranın tek kaynağıdır; buradaki tablo yalnız kaba bir özettir.
 | **Faz 6** | Vision-öncelikli kişisel yeniden tasarım (B) | ✅ **Tamam ve cihazda doğrulandı.** Tek vision çağrısı + Supabase asenkron iş kuyruğu (ADR-006). Bkz. `docs/FAZ6-PLAN.md`, `docs/ADR-005`, `docs/ADR-006` |
 | Galeriden fotoğraf ekleme | İçe aktarılan fotoğrafın JPEG + düz yöne normalize edilmesi | ✅ Tamam ve cihazda doğrulandı. Bkz. `docs/PLAN-galeriden-foto.md` |
 | **Faz 7** | Beş şıklı (TUS tipi) kart | 🟡 Kod `main`'de; kalan iş distraktör kalitesinin gerçek sayfayla denenmesi (A6). Bkz. `docs/FAZ7-PLAN-coktan-secmeli.md` |
+| Kapsama sözleşmesi | İşaretlenip kartlaşmamış içeriği görünür yapma (şema v2.3 + `/api/coverage`) | ✅ `main`'de. Bkz. `docs/PLAN-kapsama-sozlesmesi.md` |
+| Kavram destesi | Dışarıda hazırlanmış kavram paketinin ayrı bir destede toplu içe aktarılması (831 kavram / 3.017 kart) | ✅ `main`'de; simülatörde uçtan uca doğrulandı, gerçek cihaz doğrulaması açık. Bkz. `docs/ADR-010-kavram-destesi-ayri-alan.md` |
+| ~~Karanlık Harita~~ | Kartı olmayan kanonik konuların çift aileli sıralaması | ⛔️ **2026-09-09'da tamamen kaldırıldı** (arka uç + arayüz). Karar kaydı tarihsel: `docs/ADR-009-karanlik-harita.md` |
 
 Backend gerçek bir Vercel dağıtımında canlı; kart üretimi `POST /api/jobs` →
 Supabase iş kuyruğu → OpenAI vision üzerinden asenkron çalışıyor ve gerçek
@@ -46,6 +49,7 @@ Ana plan §26'daki yapı izlenir:
 
 ```text
 ├── ios/          # SwiftUI uygulaması — CizgiCore (mantık) + App (arayüz)
+│              #   iki deste: çekimlerden üretilen kartlar + kavram paketi (ADR-010)
 ├── backend/      # Vercel Functions — OpenAI vision kart üretimi + Supabase iş kuyruğu
 ├── evals/        # Altın test seti, OCR/işaret metrikleri, spike'lar
 │   ├── gold-manifest.json         # Altın set manifesti

@@ -27,8 +27,18 @@ pasaj kırpıntısı" daraltması bu pivotla bilinçli olarak gevşetildi.
 | OpenAI (vision) | **Tam sayfa fotoğrafı** + varsa kullanıcı ipucu | İşaretli içeriği okuma + kart üretimi | İstek süresince |
 | Supabase Storage (özel kova) | Tam sayfa fotoğrafı | Asenkron işin bekleme alanı | İş sonuçlanana kadar; terminal durumda silinir |
 | Supabase Postgres (`jobs`) | İş durumu + üretilen kart metinleri ve modelin okuduğu sayfa metni (`result`) | Telefonun sonucu yoklayıp alması | **En fazla 60 gün** (aşağıya bak). Görüntü içermez |
-| Google Document AI | Sayfa/kırpıntı görseli | OCR | **Faz 6'da ana akıştan çıktı** — kod geri dönüş için duruyor, çağrılmıyor |
-| Gemini | Belirsiz el yazısı kırpıntısı | İkinci görüş transkripsiyon | **Faz 6'da ana akıştan çıktı** — çağrılmıyor |
+| Gemini (ikinci görüş) | Sayfa fotoğrafı + tek kartın metni | `lowConfidence` bir kartı bağımsız bir model ailesine yeniden okutmak (`/api/second-opinion`, istek üzerine) | İstek süresince. Verdiktin **metni kaydedilmez**; yalnız maliyeti `ModelRun`'a yazılır |
+| Gemini (kapsama denetimi) | Tam sayfa fotoğrafı | "Hangi işaret hiç kartlaşmadı?" (`/api/coverage`, istek üzerine) | İstek süresince. Bulgular sunucuda kalmaz, telefonda (`CapturedPage.coverageJSON`) durur |
+| Google Document AI | Sayfa/kırpıntı görseli | OCR | **Kullanılmıyor.** Faz 6'da ana akıştan çıktı, 2026-08-09'da **koddan da silindi**. Canlıda `DOCUMENTAI_*` / `GOOGLE_CREDENTIALS_JSON` değişkenleri hâlâ duruyor ve hiçbir kod okumuyor — temizlenmeli (`GOOGLE_CREDENTIALS_JSON` gerçek bir kimlik bilgisi) |
+
+**Hiçbir yere gitmeyen:** toplu içe aktarılan kavram destesi (ADR-010).
+`ConceptPackImporter` tamamen cihazda çalışır — ağ çağrısı yok, sağlayıcı yok,
+`jobs` tablosuna satır yok. Kartları yalnız yedek dosyasına girer (biçim v7),
+o da kullanıcının kendi eline çıkar.
+
+**2026-09-09'da kaldırılan:** Karanlık Harita (`/api/dark-map`) iki model
+ailesine deste düzeyinde **konu adları ve kart soruları** gönderiyordu. Uç
+tamamen silindi; artık böyle bir gönderim yok (`docs/ADR-009`, tarihsel).
 
 Bu tablo her yeni entegrasyonda güncellenir.
 
