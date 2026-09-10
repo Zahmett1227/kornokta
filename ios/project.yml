@@ -24,6 +24,13 @@ targets:
       - path: App
     dependencies:
       - package: CizgiCore
+    # Şema da üretilsin. Elle yazılan bir şema bu projede bir kez `Run`'ı
+    # sessizce bozdu: `LaunchAction`'ında `BuildableProductRunnable` yoktu, bu
+    # yüzden Xcode "Build Succeeded" diyor ama telefona hiçbir şey kurmuyordu.
+    # Üretilen şema paylaşılan (xcshareddata) olur, yani hem Xcode hem
+    # komut satırındaki `xcodebuild -scheme Cizgi` aynı tanımı kullanır.
+    scheme:
+      testTargets: []
     info:
       path: App/Info.plist
       properties:
