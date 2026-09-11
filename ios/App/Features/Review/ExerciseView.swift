@@ -79,9 +79,21 @@ struct ExerciseView: View {
         )
     }
 
+    /// One indexed row, not the deck. This used to scan `allCards`, and reading
+    /// that `@Query` after any change re-materialises every card — 3.021 on the
+    /// owner's device — just to find the one on screen: ~23% of main-thread time
+    /// per advance (Time Profiler on the simulator, 2026-09-11). `Card.id` is
+    /// `@Attribute(.unique)`, so this is a keyed lookup, and a card deleted
+    /// mid-session still comes back `nil` for the skip branch in `body`.
     private var currentCard: Card? {
         guard let id = session?.current else { return nil }
-        return allCards.first { $0.id == id }
+        return card(withId: id)
+    }
+
+    private func card(withId id: UUID) -> Card? {
+        var descriptor = FetchDescriptor<Card>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     private var practiceOutcomes: [ExerciseOutcome] {
@@ -150,7 +162,16 @@ struct ExerciseView: View {
                 Group {
                     if let session, !session.isFinished {
                         if let card = currentCard {
+                            // Keyed on the card: each card is a new view, not the
+                            // previous one with its text swapped in. Without it,
+                            // `flashcard`'s `.animation(value: isAnswerVisible)`
+                            // fired in the same transaction as the swap, so for
+                            // ~0.2 s the next question sat on top of the previous
+                            // card's answer — recorded frame by frame on the
+                            // simulator (2026-09-11). Also resets scroll position
+                            // and the "Kaynağı göster" group per card.
                             cardBody(card, session: session)
+                                .id(card.id)
                         } else {
                             // Deleted from the editor mid-session. Keyed on `total`
                             // and not `completed`, unlike ReviewView: dropping a
@@ -165,8 +186,18 @@ struct ExerciseView: View {
                         }
                     } else if session != nil {
                         completionScreen
-                    } else {
+                    } else if navigator.selectedTab == .exercise {
                         startScreen
+                    } else {
+                        // Not on screen. TabView keeps every tab's body alive and
+                        // this one's `@Query` fires on any card change, so the
+                        // start screen — `eligibleCards` and the FES ranking over
+                        // the whole deck — would be rebuilt on every Tekrar grade
+                        // in a tab nobody can see. The profiler measured exactly
+                        // this in the other direction (ReviewView, see there).
+                        // Switching tabs re-evaluates `body` in the same
+                        // transaction that makes this one visible.
+                        Color.clear
                     }
                 }
             }
@@ -888,7 +919,7 @@ struct ExerciseView: View {
         // partial stability credit, pull a missed card forward, or — close
         // enough to due — count as a real lapse. All policy lives in
         // `EarlyPractice`; the card is only ever touched with what it returns.
-        if let card = allCards.first(where: { $0.id == cardId }) {
+        if let card = self.card(withId: cardId) {
             applyFesScore(result: result, to: card, at: answeredAt)
             applyEarlyPractice(result: result, to: card, at: answeredAt)
         }

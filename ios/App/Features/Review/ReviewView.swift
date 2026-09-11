@@ -37,9 +37,9 @@ struct ReviewView: View {
 
     private var collection: CardCollection { CardScope.collection(fromStored: collectionRaw) }
 
-    /// The active deck. Every listing on this screen goes through here; the two
-    /// places that still touch `allCards` resolve an id the session already
-    /// chose, which is lookup, not listing.
+    /// The active deck. Every listing on this screen goes through here; a card
+    /// the session already chose is fetched by id (`card(withId:)`), never
+    /// found by scanning this.
     private var scopedCards: [Card] { CardScope.cards(allCards, in: collection) }
 
     /// Everything the planner needs, read once per render from the store.
@@ -74,9 +74,17 @@ struct ReviewView: View {
         )
     }
 
+    /// Fetched by id, not found by scanning `allCards` — see the matching
+    /// comment in `ExerciseView.currentCard` for what that scan cost.
     private var currentCard: Card? {
         guard let id = session?.current else { return nil }
-        return allCards.first { $0.id == id }
+        return card(withId: id)
+    }
+
+    private func card(withId id: UUID) -> Card? {
+        var descriptor = FetchDescriptor<Card>(predicate: #Predicate { $0.id == id })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 
     var body: some View {
@@ -86,7 +94,11 @@ struct ReviewView: View {
                 Group {
                     if let session, !session.isFinished {
                         if let card = currentCard {
+                            // Keyed on the card for the reason in ExerciseView:
+                            // without it the answer-hide in `grade` animated
+                            // across the swap and leaked the previous answer.
                             cardBody(card, session: session)
+                                .id(card.id)
                         } else {
                             // The card was deleted from Bilgilerim mid-session.
                             // Skipping is the only sensible move; it must not
@@ -101,6 +113,15 @@ struct ReviewView: View {
                                 .onAppear { skipCurrentCard() }
                                 .id(session.completed)
                         }
+                    } else if navigator.selectedTab != .review {
+                        // Not on screen. Both screens below plan the whole deck
+                        // (`pendingIds`), and TabView re-evaluates this body on
+                        // every card change even while another tab is up: ~40%
+                        // of main-thread time per Egzersiz answer before this
+                        // guard (Time Profiler, 2026-09-11). Switching back
+                        // re-plans in the same transaction that shows the tab,
+                        // so the counts are never stale when seen.
+                        Color.clear
                     } else if session != nil {
                         completionScreen
                     } else {
@@ -767,7 +788,7 @@ struct ReviewView: View {
     /// that card again for weeks and there was no way to say so.
     private func undoLastGrade() {
         guard var working = session, let snapshot = lastGrade else { return }
-        guard let card = allCards.first(where: { $0.id == snapshot.step.cardId }) else {
+        guard let card = self.card(withId: snapshot.step.cardId) else {
             lastGrade = nil
             return
         }
