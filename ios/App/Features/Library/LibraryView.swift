@@ -189,6 +189,10 @@ struct LibraryView: View {
     private func cardList(_ visible: [Card]) -> some View {
         let activeCount = visible.filter { $0.status == .active }.count
         let suspendedCount = visible.filter { $0.status == .suspended }.count
+        // Queued cards are in the deck file but not in the deck. Counted and
+        // shown because the alternative — 2.600 rows listed with no indication
+        // why none of them ever appear in Tekrar — is the confusing version.
+        let queued = visible.filter { $0.status == .queued }
 
         // Cards the server could not fully vouch for (§13.3 rule 6). Faz 6
         // removed the approval gate and §13.3 wants one on a suspicious
@@ -204,7 +208,7 @@ struct LibraryView: View {
         // a FES card is *this user* repeatedly getting it wrong or unsure.
         // Same shape, different evidence.
         let fesCards = visible
-            .filter { FesScore.isFes(score: $0.fesScore) && $0.status != .suspended }
+            .filter { FesScore.isFes(score: $0.fesScore) && !$0.status.isWithheld }
             .sorted { $0.fesScore > $1.fesScore }
 
         let mostForgotten = visible.filter { $0.lapseCount > 0 }
@@ -219,7 +223,11 @@ struct LibraryView: View {
                     HStack(spacing: Cizgi.Space.sm) {
                         StatTile(value: "\(visible.count)", label: "Toplam")
                         StatTile(value: "\(activeCount)", label: "Aktif")
-                        StatTile(value: "\(suspendedCount)", label: "Askıda")
+                        if queued.isEmpty {
+                            StatTile(value: "\(suspendedCount)", label: "Askıda")
+                        } else {
+                            StatTile(value: "\(queued.count)", label: "Kuyrukta")
+                        }
                     }
                     // Deste hangi derslerden kurulu — tek satırda. `visible`
                     // üzerinden okunur, `cards` üzerinden değil: kapsam
@@ -237,6 +245,12 @@ struct LibraryView: View {
                                           bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
+            }
+
+            if !queued.isEmpty {
+                ConceptQueueSection(queued: queued) { target in
+                    release(target, from: queued)
+                }
             }
 
             if visible.isEmpty {
@@ -339,6 +353,30 @@ struct LibraryView: View {
         }
         try? context.save()
     }
+
+    /// Lets a batch of queued concept cards into the deck.
+    ///
+    /// `queued` is the filtered, scoped set this screen is showing — so with a
+    /// subject or topic filter on, "+20" releases 20 from *that* topic. That is
+    /// the useful reading of the filter and it is the one the owner can see:
+    /// the count beside the buttons is the same filtered count.
+    ///
+    /// Saves once, and only reports what the write actually moved: `plan` picks
+    /// ids, `release` returns how many of them were still queued by the time it
+    /// ran.
+    private func release(_ target: Int, from queued: [Card]) {
+        let ids = ConceptRelease.plan(ConceptRelease.candidates(in: queued), target: target)
+        guard !ids.isEmpty else { return }
+        do {
+            let moved = try ConceptRelease.release(ids: ids, in: context)
+            guard moved > 0 else { return }
+            try context.save()
+        } catch {
+            // Left queued on purpose: a failed save means these cards are still
+            // in the queue, and the next press will find them there. Nothing is
+            // lost and nothing is claimed.
+        }
+    }
 }
 
 extension LibraryView {
@@ -388,6 +426,14 @@ struct CardRow: View {
                 Spacer(minLength: 0)
                 if card.status == .suspended {
                     Label("Askıda", systemImage: "pause.circle")
+                        .font(.caption2)
+                        .foregroundStyle(Cizgi.muted)
+                }
+                // Without this a queued card is indistinguishable from an
+                // active one in the list, and the owner would reasonably
+                // wonder why it never comes up in Tekrar.
+                if card.status == .queued {
+                    Label("Kuyrukta", systemImage: "tray.full")
                         .font(.caption2)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -534,6 +580,22 @@ struct CardDetailView: View {
                         card.updatedAt = .now
                         try? context.save()
                     }
+                }
+            } else if card.status == .queued {
+                // One card out of the queue, by hand. The batch buttons in
+                // Bilgilerim are the normal route; this is for the card the
+                // owner happened to open and wants now. Spelled out rather than
+                // folded into the suspend toggle, which would have released it
+                // through a button labelled "Askıdan çıkar".
+                Section {
+                    Button("Desteye al") {
+                        card.status = .active
+                        card.dueDate = .now
+                        card.updatedAt = .now
+                        try? context.save()
+                    }
+                } footer: {
+                    Text("Bu kart kuyrukta bekliyor: tekrar, egzersiz ve hatırlatmalarda görünmüyor.")
                 }
             } else {
                 Section {

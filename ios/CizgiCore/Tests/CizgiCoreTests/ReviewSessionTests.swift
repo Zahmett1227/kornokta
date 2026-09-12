@@ -149,6 +149,44 @@ final class ReviewSessionTests: XCTestCase {
         XCTAssertTrue(session.isFinished, "tekrar sınırından sonra kart oturumu uzatmamalı")
     }
 
+    /// The grade button's label is built from this, so it has to agree with
+    /// `advance(relearn:)` about the same card — a button that says "oturumda"
+    /// on a card the session will not requeue is a promise it then breaks.
+    func testRequeuePredictionTracksTheRepeatLimit() {
+        let id = UUID()
+        var session = ReviewSession(queue: [id])
+
+        for _ in 0..<ReviewSession.maxRelearningRepeats {
+            XCTAssertTrue(session.wouldRequeueOnAgain(id))
+            session.advance(relearn: true)
+        }
+        XCTAssertFalse(session.wouldRequeueOnAgain(id),
+                       "sınır dolduktan sonra kart oturuma geri dönmeyeceğini söylemeli")
+    }
+
+    /// A card nobody has failed yet has its full budget, including one this
+    /// session has never seen.
+    func testRequeuePredictionIsTrueForAnUntouchedCard() {
+        let session = ReviewSession(queue: [UUID()])
+        XCTAssertTrue(session.wouldRequeueOnAgain(UUID()))
+    }
+
+    /// Taking back an "Unuttum" gives the repeat back, so the label must go
+    /// with it — otherwise an undo silently spends one of the three.
+    func testRewindRestoresTheRequeueBudget() {
+        let id = UUID()
+        var session = ReviewSession(queue: [id])
+
+        for _ in 0..<ReviewSession.maxRelearningRepeats {
+            session.advance(relearn: true)
+        }
+        XCTAssertFalse(session.wouldRequeueOnAgain(id))
+
+        let last = ReviewSession.Step(cardId: id, requeuedAt: session.queue.count - 1)
+        session.rewind(last)
+        XCTAssertTrue(session.wouldRequeueOnAgain(id))
+    }
+
     func testAdvancingPastTheEndDoesNothing() {
         var session = ReviewSession(queue: [])
         XCTAssertNil(session.advance())

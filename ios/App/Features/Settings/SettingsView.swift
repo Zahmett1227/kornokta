@@ -162,7 +162,11 @@ struct SettingsView: View {
                         ), in: 0...23
                     )
                     .disabled(!environment.settings.notificationsEnabled)
-                    Stepper("Günlük yeni kart: \(environment.settings.dailyNewCardLimit)", value: Binding(
+                    // Named for the deck it governs since 2026-09-10: the concept
+                    // deck is paced by its own batch buttons in Bilgilerim, not by
+                    // this number, and a label that said only "günlük yeni kart"
+                    // would be describing a limit that deck ignores.
+                    Stepper("Çekimlerde günlük yeni kart: \(environment.settings.dailyNewCardLimit)", value: Binding(
                         get: { environment.settings.dailyNewCardLimit },
                         set: { environment.settings.dailyNewCardLimit = $0; environment.settings.save() }
                     ), in: 0...100)

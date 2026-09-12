@@ -35,14 +35,20 @@ final class SecondLookTests: XCTestCase {
     }
 
     /// A pre-Faz 6 `needsReview` card is still in the deck's history, so a flag
-    /// on one must not be silently swallowed by the status check — only
-    /// `.suspended` takes a card off this list.
-    func testOnlySuspensionHidesAFlaggedCard() {
+    /// on one must not be silently swallowed by the status check — only a status
+    /// that takes the card out of the deck takes it off this list.
+    func testOnlyBeingOutOfTheDeckHidesAFlaggedCard() {
         for status in [CardStatus.active, .draft, .needsReview] {
             XCTAssertTrue(
                 SecondLook.isPending(lowConfidence: true, status: status),
                 "\(status) durumundaki işaretli kart listeden düşmemeli"
             )
         }
+    }
+
+    /// A queued card has not been let into the deck yet, so asking the owner to
+    /// vouch for it would be asking about a card he has not been given.
+    func testAQueuedCardIsNotListedEvenWhileFlagged() {
+        XCTAssertFalse(SecondLook.isPending(lowConfidence: true, status: .queued))
     }
 }

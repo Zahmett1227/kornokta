@@ -27,7 +27,7 @@ struct ExerciseSetupSheet: View {
     private var matchingCount: Int {
         let now = Date()
         return allCards.reduce(into: 0) { count, card in
-            guard card.status != .suspended else { return }
+            guard !card.status.isWithheld else { return }
             if draft.matches(candidate(for: card), now: now) { count += 1 }
         }
     }

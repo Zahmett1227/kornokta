@@ -50,6 +50,18 @@ public struct ReviewSession: Equatable, Sendable {
 
     public var isFinished: Bool { position >= queue.count }
     public var isEmpty: Bool { queue.isEmpty }
+
+    /// Whether grading this card "Unuttum" right now would put it back into
+    /// this sitting.
+    ///
+    /// Read by the screen so the label under that button can say what actually
+    /// happens next. The scheduler's interval is written to the card either
+    /// way, but while the card still has repeats left it returns before the
+    /// session ends — and a day count printed there is contradicted within
+    /// minutes. Once the repeats are spent the interval is the truth again.
+    public func wouldRequeueOnAgain(_ cardId: UUID) -> Bool {
+        relearningRepeats[cardId, default: 0] < Self.maxRelearningRepeats
+    }
     /// Total *showings* in this session, which grows when a card is put back.
     public var total: Int { queue.count }
     public var completed: Int { position }

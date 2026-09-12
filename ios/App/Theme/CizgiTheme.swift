@@ -405,7 +405,11 @@ struct ScreenHero: View {
     var body: some View {
         HStack(alignment: .top, spacing: Cizgi.Space.lg) {
             VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
-                Text(eyebrow.uppercased())
+                // Bugünkü eyebrow metinlerinde dotted i yok, yani bu satır
+                // görünür bir şeyi düzeltmiyor — 'i' içeren bir eyebrow
+                // yazıldığı gün sessizce "ENDOKRIN" olmasını engelliyor
+                // (docs/ADR-001).
+                Text(TurkishText.uppercased(eyebrow))
                     .font(.caption2.weight(.bold))
                     .tracking(1.2)
                     .foregroundStyle(onInk ? Cizgi.muted : Cizgi.faint)
@@ -627,6 +631,61 @@ struct CizgiPrimaryButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+/// Bir seçim satırındaki eşit ağırlıklı düğme: kâğıt dolgusu, kendi renginde
+/// ince kontur, kendi renginde metin. İsteğe bağlı ikinci satır seçimin
+/// sonucunu söyler ("4 gün").
+///
+/// Dolgu yerine kontur olması bir erişilebilirlik kararı, üslup değil. Dolgulu
+/// sürümde metin `.white`'a sabitlenmişti ve dördüncü derecenin zemini
+/// `Cizgi.ink`'ti; karanlık modda ink neredeyse beyaz olduğu için "Kolay"
+/// beyaz üstüne beyaz kalıyordu (simülatörde görüldü, 2026-09-12). Konturlu
+/// sürümde metin her zaman kendi tint'inde ve zemin her zaman `surface` —
+/// ikisi de moda göre döndüğü için böyle bir çift bir daha kurulamaz.
+///
+/// Tekrar'ın dört derecesi ve Egzersiz'in üç sonucu bunu paylaşır: iki ekran
+/// aynı hareketi soruyor, iki ayrı kopya zamanla birbirinden ayrılırdı.
+struct CizgiChoiceButton: View {
+    let title: String
+    /// Alt satır. `nil` ise düğme tek satır kalır (Egzersiz böyle kullanır —
+    /// orada bir zamanlama sonucu yok).
+    var detail: String?
+    /// VoiceOver'ın `detail` yerine okuyacağı tam hâli ("4 gün sonra"): "4 g"
+    /// harf harf okunur.
+    var spokenDetail: String?
+    var tint: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(tint)
+                if let detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+            .lineLimit(1)
+            // Dört sütun dar; "Unuttum · oturumda" en büyük yazı boyutunda
+            // sarmalanmak yerine küçülür.
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Cizgi.Space.md)
+            .background(Cizgi.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
+                    .stroke(tint.opacity(0.55), lineWidth: 1.5)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(spokenDetail.map { "\(title), \($0)" } ?? title)
     }
 }
 

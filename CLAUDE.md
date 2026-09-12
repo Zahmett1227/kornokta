@@ -185,6 +185,49 @@ kez yazmak olurdu (gerekçe ADR-010).
   import'u düşürüyordu; `LooseString` ikisini de alıyor. Kod okuyarak değil
   gerçek dosyaya karşı **koşturarak** bulundu.
 
+#### Kuyruk: paket parti parti açılıyor (2026-09-10)
+
+İçe aktarılan kartlar artık `.active` değil **`CardStatus.queued`** olarak
+iniyor. Gerekçe: paket binlerce kart ve hepsi aynı gün vadesinde olursa Tekrar
+devasa bir birikimle açılır; FSRS'in bunu eritecek bir yolu yok, sonuç desteyi
+bırakmak olur. Kuyruktan çıkışın tek yolu **`ConceptRelease`** ve onu yalnız
+kullanıcının bastığı düğme çağırıyor (Bilgilerim → Kavramlar → "Kuyruk" →
+`+10 / +25 / +50`).
+
+- **Kota yok, takvim yok, otomatik damlatma yok.** Önceden girilen bir sayı,
+  düşeceği günü bilemez: nöbet gecesi 40 kart ceza, boş pazar 40 kart israf.
+  Karar, bilginin olduğu yerde — o günde — veriliyor.
+- **Bütün kavram birlikte açılır**, o yüzden `target` taban değil tavan değil:
+  20 istenince 22 gelebilir. Bir kavramın 6 kartından 2'sini görmek parçayı
+  çerçevesiz öğretmek olurdu.
+- **Sıra paketin sırası** (kavram slug'ı, `KnowledgeUnit.tags[0]`), ekleme
+  sırası değil — yeniden import sonrası ekleme sırası anlamsızlaşıyor.
+- **`dueDate` açılışta yazılıyor**, import'ta değil: eylülde alınıp ocakta
+  açılan bir kart dört ay gecikmiş gelmemeli, FSRS o gecikmeyi hafıza kanıtı
+  sayar.
+- **`CardStatus.isWithheld`** eklendi. Daha önce "deste dışı" demenin tek yolu
+  `.suspended` olduğu için üç çağrı yeri (`SecondLook`, `ExerciseView`,
+  `ExerciseSetupSheet`) doğrudan `status != .suspended` soruyordu; ikinci bir
+  yol eklemek bunları **sessizce** yanlış hale getirirdi — kuyruktaki kart
+  geçerli, vadesinde ve askıda değil, yani Egzersiz'e sızardı. Yeni bir "deste
+  dışı" durumu eklenecekse tek yer burası.
+- **`.suspended` ya da `.draft` yeniden kullanılmadı:** ilki "kullanıcı bunu
+  kenara koydu" demek ve öyle sayılıyor, ikincisi "yarım yazılmış" demek ve
+  `CoverageSection` onu öyle okuyor. Kuyruktaki kart ikisi de değil — bitmiş,
+  görülmemiş, bekliyor.
+
+#### Günlük yeni kart sınırı deste başına (2026-09-10)
+
+`dailyNewCardLimit` ve `DailyNewCardLedger` tek ve paylaşımlıydı: sabah 20
+kavram kartı çalışmak, Çekimlerim'i günün kalanında yeni kartsız bırakıyordu ve
+bunu **hiçbir ekran göstermiyordu**. Artık sicil deste başına
+(`DailyNewCardLedger.load(for:)`, concept için ayrı `UserDefaults` anahtarı;
+capture eski anahtarı koruyor ki yükseltme günü kimseye bedava 20 kart
+çıkmasın). Ayarlar'daki sayı **yalnız Çekimlerim'i** yönetiyor ve etiketi öyle
+diyor; Kavramlar tarafında sınır `Int.max`, çünkü orada hız `+N` düğmesiyle
+zaten kullanıcı tarafından veriliyor — üstüne bir de 20 uygulamak `+50`'ye
+basan adama 20 kart göstermek olurdu.
+
 ### Tasarım dili — "Kemik & Oxblood" (2026-09-10)
 
 Görsel dilin tek kaynağı `ios/App/Theme/CizgiTheme.swift`. Claude Design'da
@@ -251,6 +294,82 @@ zeminini kullanıyordu — üçü de artık `Cizgi.paper`'a bağlı (diğer kök
 zaten öyleydi). `TagChip` uzun konu adında ("Kemoterapötikler ve
 İmmünomodülatörler") üç satıra şişip kartın başlık satırını dağıtıyordu; artık
 tek satır + kırpma, tam ad VoiceOver'da.
+
+#### Tekrar ekranı düzeni (2026-09-12)
+
+Sahibin bildirimi ("font kötü, renkler kötü") simülatörde açık ve karanlık modda
+gezilerek somutlaştırıldı; çıkanların bir kısmı zevk değil **kusurdu**. Kart
+karakteri (kutu mu, sayfa mı, fiş mi) bilerek **sonraki tura bırakıldı** —
+bu tur yalnız düzen, kontrast ve eksik bilgi.
+
+- **Karanlık modda "Kolay" okunmuyordu.** Not düğmelerinin metni `.white`
+  sabitti, dördüncü derecenin zemini `Cizgi.ink`'ti ve ink karanlıkta neredeyse
+  beyaz. Çözüm dolgulu düğmeyi bırakıp **konturlu** `CizgiChoiceButton`'a
+  geçmek: metin her zaman kendi tint'inde, zemin her zaman `surface`, ikisi de
+  moda göre dönüyor — böyle bir çift bir daha kurulamaz. Egzersiz'in üç sonucu
+  da aynı bileşeni kullanıyor (zaten aynı görünüyorlardı; iki kopya ayrışırdı).
+- **FSRS aralıkları artık düğmenin altında** ("Zor · 8 gün"). Scheduler zaten
+  hesaplıyordu ve `schedule` saf, yani kart başına dört aritmetik geçiş —
+  yazma yok, ağ yok. **"Unuttum" istisnası:** kart hâlâ kuyruğa geri dönecekse
+  (`ReviewSession.wouldRequeueOnAgain`) etiket `oturumda` diyor. Scheduler'ın
+  tarihi karta yazılıyor ama gerçekte olan şey kartın bu oturumda geri
+  gelmesi; oraya gün sayısı basmak iki dakika sonra yalanlanan bir söz olurdu.
+  Biçimlendirme `ReviewIntervalLabel` (CizgiCore, testli) — sınırları olan
+  aritmetik `Text` içinde `%.0f` ile durmamalı.
+- **Oturumda büyük başlık ve alt sekme çubuğu gizli**, "Bitir" tek çıkış
+  (Egzersiz'in deseni, `AppNavigator.isTabBarHidden` kuralı). Egzersiz'den
+  farkı: **onay diyaloğu yok** — her not verildiği anda karta ve `ReviewLog`'a
+  yazılıyor, kapatılacak yarım kayıt yok (Egzersiz'in diyaloğu `finishedAt`'i
+  boş `ExerciseRun` yüzünden var).
+- **Kart dikeyde ortalanıyor** (`minHeight: geo.size.height`). Önce üste
+  yapışıktı ve alt yarı boştu: cevapla not düğmesi telefonun iki ucundaydı.
+  Uzun cevap eskisi gibi kayıyor.
+- **Tipografi 26 serif / 17 sans / 15 muted.** Önceki 24/20 çifti neredeyse
+  aynı ağırlıktaydı, yani soruyla cevabı tipografi değil yalnız araya giren
+  kesme çizgisi ayırıyordu.
+- **Erişilebilirlik boyutlarında not satırı 2×2'ye kırılıyor.** Dört sütun
+  ~86pt bırakıyor ve AX5'te her etiket kırpılıyordu ("Unut…" / "oturu…");
+  okunamayan bir not düğmesi, aralığı olmayandan kötüdür.
+- **Yan düzeltmeler:** başlangıç ekranındaki büyük sayı artık serif (temanın
+  kendi kuralıydı, `.system(.rounded)` tasarım dilinden önce kalmıştı); süre
+  tahmini dakikada takılmıyordu — 3.017 kartlık kavram destesi "≈ 603 dk"
+  diyordu, artık `ReviewIntervalLabel.sessionEstimate` ile "≈ 10 sa".
+
+Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turdan önce de
+öyleydi); aynı 2×2 çözümü oraya da uygulanabilir.
+
+#### Kart karakteri: kutu değil sayfa (2026-09-12, ikinci tur)
+
+`ReviewCardFace` — Tekrar ve Egzersiz'in **ortak** kart yüzü.
+
+- **Kutu kalktı.** Kart bir `CardSurface`'ti: `surface` dolgulu yuvarlak
+  dikdörtgen, hairline kenar, tepede 3px ders şeridi, `paper` üstünde yüzen.
+  İki sorun: `surface` zeminden %5 farklı olduğu için kutu zaten *görünmüyordu*
+  — kenarlık, yarıçap ve şerit gözün seçemediği bir şeyi çizmeye harcanıyordu;
+  ve bir kutu bir *yerde* durmak zorunda, kısa kart onu boş ekranın ortasında
+  bırakıyordu. Artık sayfanın kendisi kart: geriye solda **dersin rengini
+  taşıyan dikey bir çizgi** (ciltli kitabın kenar rubrikası — okunan şeyin
+  yanında durur, tepesini kapatmaz) ve kâğıt üstünde mürekkep kaldı.
+- **Neden ortak:** iki ekranda neredeyse birebir iki kopya vardı ve **zaten
+  ayrışmışlardı** — konu çipi yalnız Egzersiz'de, FES işareti yalnız
+  Egzersiz'de, soru puntosu iki yerde iki türlü (24 ve 26). Gerçekten farklı
+  olan iki şey iki slot: `options` (her ekran kendi seçim durumunu tutuyor) ve
+  `footer` (kaynak açıcısı, her ekranın kendi image store'u).
+- **Üst satır:** ders · konu, harf aralıklı ve `faint`. Kartın **tipi** orada
+  yazmıyor — `CardTypeMark` onun biçimini çiziyor, o işaret bunun için var.
+  Ders de konu da yoksa tip adı yazıya düşüyor (satır hiç boş kalmıyor).
+- **Dikeyde üste yaslandı** (birinci turdaki ortalama geri alındı). Ortalama
+  yüzen bir kutu için doğruydu, sayfa için yanlış: cevap açılınca soru yukarı
+  kayıyordu, yani okunan satır her kartta gözün altından kaçıyordu.
+- **Türkçe büyük harf hatası** (bu turda görüldü): `"Endokrin".uppercased()`
+  → "ENDOKRIN". `TurkishText.uppercased` (CizgiCore, testli) eklendi ve
+  `ScreenHero`'nun aynı satırı da ona çevrildi — bugünkü eyebrow metinlerinde
+  dotted i yok, yani orada görünür bir şey düzelmedi, 'i' içeren bir eyebrow
+  yazıldığı gün sessizce bozulması engellendi. docs/ADR-001.
+- **`DogEar` artık kullanılmıyor** (katlandığı kutuyla birlikte gitti).
+  Silinmedi — "Gözden geçir" çipi hem ikon hem kelime taşıdığı için anlam
+  zaten renge dayanmıyordu, ama kıvrık köşe başka bir yerde (Bilgilerim'in
+  şüpheli kart listesi) işe yarayabilir. Kullanılmayacaksa silinmeli.
 
 ### Ders/konu sınıflandırması, Egzersiz ve Bilgi Haritası (kalıcı sözleşmeler)
 
@@ -554,6 +673,13 @@ Canlı çiftler ve kilitleri:
   durağı var, yayda şemada olmayan ad yok, iki ders aynı rengi paylaşmıyor,
   iki `switch`'in sırası aynı (o sıra ekrandaki sıradır).
 
+- **Tekrar ↔ Egzersiz'in kart yüzü (2026-09-12):** artık tek bir
+  `ReviewCardFace`, çünkü iki kopya **zaten ayrışmıştı** — konu çipi yalnız
+  birinde, FES işareti yalnız birinde, soru puntosu 24'e karşı 26. Buranın
+  testi yok ve olamaz (SwiftUI görünümü); koruma testte değil **yapıda**:
+  ekrana özgü olan iki şey (`options`, `footer`) slot, geri kalanı ortak.
+  Not düğmeleri de aynı sebeple ortak (`CizgiChoiceButton`).
+
 Yeni bir "aynı davranış iki yerde" durumu çıkarsa aynı deseni uygula — elle
 senkron tutma, üret ve testle kilitle.
 
@@ -797,6 +923,26 @@ gösterir (2026-08-13 tartışması).
 31. **Dynamic Type'ın en büyük iki kademesi.** Sekme çubuğu etiketleri düşüp
     yalnız ikonlar kalmalı; `NumeralActionRow`'un büyük rakamı satırı
     taşırmamalı; `CardTypeMark` işaretleri okunur kalmalı.
+
+32. **Tekrar'ın aralık etiketleri doğru mu (2026-09-12).** Bir kartta "Bildim"e
+    bastıktan sonra kart detayındaki vade, düğmenin altında yazan süreyle
+    tutmalı. **Asıl sınanan "Unuttum":** `oturumda` diyorsa kart gerçekten bu
+    oturumda geri gelmeli; **aynı kartı üst üste üç kez** Unuttum'la geçince
+    dördüncüde etiket bir gün sayısına dönmeli (`maxRelearningRepeats`).
+33. **"Bitir" ve sekme çubuğu.** Oturum başlayınca alt çubuk kaybolmalı ve
+    "Bitir" çıkmalı; Bitir'e basınca onay sorulmadan başlangıç ekranına
+    dönmeli, çubuk geri gelmeli ve **verdiğin notlar korunmuş olmalı** (sayaç
+    o kadar azalmış olmalı). Yarıda bırakılan kartlar hâlâ vadesinde görünmeli.
+34. **Karanlık mod not düğmeleri.** Dördü de okunur olmalı — özellikle
+    "Kolay". Simülatörde doğrulandı, gerçek cihazda bir kez görülmeli.
+35. **Beş şıklı kart yeni yüzde (`ReviewCardFace`).** Şık listesi artık bir
+    slot; şıklar soru ile kesme çizgisi arasında, kutulu satırlar hâlinde
+    durmalı. Yanlış şık seçilince "Devam", doğruda üç derece çıkmalı — bu yol
+    simülatördeki destede beş şıklı kart olmadığı için **denenmedi**.
+36. **`lowConfidence` kartı.** "Gözden geçir" çipi artık sorunun *üstünde*
+    değil, metnin altında. Kıvrık köşe (`DogEar`) kutuyla birlikte kalktı;
+    kartın şüpheli olduğu hâlâ anlaşılıyor mu, yoksa çip yetersiz mi — bu bir
+    zevk kararı, gerçek kullanımda bakılmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

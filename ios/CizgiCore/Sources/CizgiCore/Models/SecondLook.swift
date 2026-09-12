@@ -28,6 +28,6 @@ public enum SecondLook {
     /// listing it under a heading that asks for a decision would be asking
     /// about a card the owner has already set aside.
     public static func isPending(lowConfidence: Bool, status: CardStatus) -> Bool {
-        lowConfidence && status != .suspended
+        lowConfidence && !status.isWithheld
     }
 }

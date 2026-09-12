@@ -61,7 +61,7 @@ struct ExerciseView: View {
         let now = Date()
         return CardScope.cards(allCards, in: CardScope.collection(fromStored: collectionRaw))
             .filter { card in
-                card.status != .suspended && filter.matches(candidate(for: card), now: now)
+                !card.status.isWithheld && filter.matches(candidate(for: card), now: now)
             }
     }
 
@@ -628,8 +628,9 @@ struct ExerciseView: View {
             ScrollView {
                 flashcard(card)
                     .padding(.horizontal, Cizgi.Space.lg)
-                    .padding(.top, Cizgi.Space.sm)
+                    .padding(.top, Cizgi.Space.md)
             }
+            .scrollBounceBehavior(.basedOnSize)
 
             actionArea(card)
                 .padding(.horizontal, Cizgi.Space.lg)
@@ -652,84 +653,24 @@ struct ExerciseView: View {
     }
 
     private func flashcard(_ card: Card) -> some View {
-        // Şerit kartın dersinin rengini taşır — rozet yerine kartın kendisi
-        // hangi derste olduğunu söylüyor (Kemik & Oxblood).
-        CardSurface(highlighted: true,
-                    subject: CizgiSubject.matching(card.knowledgeUnit?.subject),
-                    padding: Cizgi.Space.xl) {
-            VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
-                HStack(spacing: Cizgi.Space.sm) {
-                    CardTypeBadge(type: card.type,
-                                  subject: CizgiSubject.matching(card.knowledgeUnit?.subject))
-                    if let topic = card.knowledgeUnit?.topic {
-                        TagChip(topic, systemImage: "tag")
-                    }
-                    if card.lowConfidence {
-                        TagChip("Gözden geçir", systemImage: "exclamationmark.triangle.fill")
-                    }
-                    // Only after the answer is revealed — showing it earlier
-                    // would hint "this one's hard" before the user has tried
-                    // to recall it, which is exactly the measurement FES's
-                    // own signal depends on not being contaminated.
-                    if isAnswerVisible, FesScore.isFes(score: card.fesScore) {
-                        TagChip("FES", systemImage: "flame.fill")
-                    }
+        // Tekrar'la ortak yüz (`ReviewCardFace`). İki ekran aynı nesneyi
+        // gösteriyor; ayrı iki kopya zaten ayrışmıştı — konu çipi yalnız
+        // burada, FES işareti yalnız burada, soru puntosu iki yerde iki türlü.
+        ReviewCardFace(card: card, isAnswerVisible: isAnswerVisible, showsFesMark: true) {
+            if let options = card.options {
+                optionList(card, options: options)
+            }
+        } footer: {
+            let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
+            if !source.isEmpty {
+                DisclosureGroup("Kaynağı göster") {
+                    CardSourceView(material: source, imageStore: environment.imageStore)
+                        .padding(.top, Cizgi.Space.sm)
                 }
-
-                // Serifin üç yerinden biri: kart sorusu.
-                Text(card.front)
-                    .font(Cizgi.serif(24, relativeTo: .title2))
-                    .foregroundStyle(Cizgi.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let options = card.options {
-                    optionList(card, options: options)
-                }
-
-                if isAnswerVisible {
-                    // Tasarımın soru/cevap kesmesi: düz çizgi değil baklava
-                    // ayırıcı — kartın iki yarısını ayıran şey.
-                    CizgiRule()
-
-                    if card.options == nil {
-                        Text(card.back)
-                            .font(.title3)
-                            .foregroundStyle(Cizgi.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let explanation = card.explanation, !explanation.isEmpty {
-                        // § işareti açıklamayı cevaptan ayırır: cevap kartın
-                        // sorduğu şey, açıklama kenar notu.
-                        HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
-                            CizgiSectionMark()
-                            Text(explanation)
-                                .font(.callout)
-                                .foregroundStyle(Cizgi.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
-                    if !source.isEmpty {
-                        DisclosureGroup("Kaynağı göster") {
-                            CardSourceView(material: source, imageStore: environment.imageStore)
-                                .padding(.top, Cizgi.Space.sm)
-                        }
-                        .font(.subheadline)
-                        .tint(Cizgi.accent)
-                    }
-                }
+                .font(.subheadline)
+                .tint(Cizgi.accent)
             }
         }
-        // Kıvrık köşe: kartın "tam olarak doğrulanmadı" işareti. Renk tek
-        // başına anlam taşımasın diye üstteki "Gözden geçir" çipiyle birlikte
-        // görünür, onun yerine değil.
-        .overlay(alignment: .topTrailing) {
-            if card.lowConfidence { DogEar() }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
-        .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
     }
 
     @ViewBuilder
@@ -986,18 +927,12 @@ struct ExerciseView: View {
         card.updatedAt = now
     }
 
+    /// Tekrar'ın not düğmeleriyle aynı bileşen (`CizgiChoiceButton`). İki ekran
+    /// aynı hareketi soruyor; ayrı iki kopya zamanla birbirinden ayrılırdı.
+    /// Buradaki fark yalnız alt satırın yokluğu: Egzersiz bir zamanlama kararı
+    /// vermiyor, dolayısıyla söylenecek bir aralık da yok (ADR-007).
     private func resultButton(_ title: String, result: ExerciseResult, tint: Color) -> some View {
-        Button(title) { recordAndAdvance(result) }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Cizgi.Space.md)
-            .background(Cizgi.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
-                    .stroke(tint.opacity(0.55), lineWidth: 1.5)
-            )
+        CizgiChoiceButton(title: title, tint: tint) { recordAndAdvance(result) }
     }
 
     private func skipCurrentCard() {

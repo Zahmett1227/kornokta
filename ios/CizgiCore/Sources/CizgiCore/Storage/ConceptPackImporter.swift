@@ -256,10 +256,18 @@ public enum ConceptPackImporter {
                 // The book page, so "Kaynağı göster" has something true to say
                 // about a card with no photograph behind it.
                 sourceQuote: concept.pageReference,
-                // No approval gate since Faz 6; these enter the deck like any
-                // other card and are scheduled from their first review.
-                status: .active,
+                // Queued, not active: a pack is thousands of cards and letting
+                // them all in at once would make every one of them due on day
+                // one — a backlog FSRS cannot drain and the owner abandons.
+                // `ConceptRelease` is the only way out, driven by a button he
+                // presses on the days he wants cards (2026-09-10). Capture
+                // cards are unaffected; nothing else in the app writes this
+                // status.
+                status: .queued,
                 createdAt: now,
+                // Meaningless while queued and overwritten at release, so that
+                // a pack imported today and released in three months does not
+                // arrive three months overdue.
                 dueDate: now,
                 // Flagged into Bilgilerim's "Gözden geçir" for the same reason
                 // `sourceFaithful` is false: nobody has checked these against

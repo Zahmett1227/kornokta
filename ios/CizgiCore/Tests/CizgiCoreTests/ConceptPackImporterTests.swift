@@ -171,18 +171,22 @@ final class ConceptPackImporterTests: XCTestCase {
         XCTAssertTrue(cards.allSatisfy { $0.type == .directRecall })
     }
 
-    func testImportedCardsLandInTheConceptDeckActiveAndDue() throws {
+    /// Renamed from `...ActiveAndDue` on 2026-09-10: a pack now lands queued,
+    /// and the point of this test is the one thing that must never regress —
+    /// that importing a file does not put thousands of cards into Tekrar.
+    func testImportedCardsLandInTheConceptDeckQueuedAndInvisible() throws {
         let context = try makeContext()
         try importAll(packJSON(), into: context)
 
         let cards = try context.fetch(FetchDescriptor<Card>())
         XCTAssertTrue(cards.allSatisfy { $0.collection == .concept })
-        XCTAssertTrue(cards.allSatisfy { $0.status == .active })
-        XCTAssertTrue(cards.allSatisfy { $0.dueDate == self.now })
+        XCTAssertTrue(cards.allSatisfy { $0.status == .queued })
+        // The gate that keeps them out of every pool, asserted on the property
+        // the three "is this card in play?" call sites actually read.
+        XCTAssertTrue(cards.allSatisfy { $0.status.isWithheld })
         // Page reference, so the source screen has something true to show.
         XCTAssertTrue(cards.allSatisfy { $0.sourceQuote == "242-243" })
-        // Never new-card-limited by accident: they start unstudied like any
-        // freshly made card.
+        // They start unstudied like any freshly made card.
         XCTAssertTrue(cards.allSatisfy { $0.reviewCount == 0 })
     }
 

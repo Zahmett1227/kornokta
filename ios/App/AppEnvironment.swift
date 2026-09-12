@@ -281,18 +281,35 @@ struct AppSettings: Codable, Equatable {
 /// must keep working offline and without a store fetch (§24.5). The type itself
 /// lives in CizgiCore, where its day-boundary logic is unit-tested.
 extension DailyNewCardLedger {
+    /// The original, single key. Kept as the capture deck's key so the tally a
+    /// user has already built up today survives this change — renaming it would
+    /// hand them a fresh 20 new cards on upgrade day.
     static let storageKey = "cizgi.newCardLedger.v1"
 
-    static func load() -> DailyNewCardLedger {
+    /// One tally per deck (2026-09-10).
+    ///
+    /// It used to be one tally for both, which meant twenty concept cards
+    /// studied in the morning left the capture deck with nothing new for the
+    /// rest of the day — the two decks silently spending one allowance. Nothing
+    /// showed that on screen: Tekrar simply stopped offering new cards in a deck
+    /// the user had not touched.
+    static func storageKey(for collection: CardCollection) -> String {
+        switch collection {
+        case .capture: return storageKey
+        case .concept: return "cizgi.newCardLedger.concept.v1"
+        }
+    }
+
+    static func load(for collection: CardCollection = .capture) -> DailyNewCardLedger {
         guard
-            let data = UserDefaults.standard.data(forKey: storageKey),
+            let data = UserDefaults.standard.data(forKey: storageKey(for: collection)),
             let decoded = try? JSONDecoder().decode(DailyNewCardLedger.self, from: data)
         else { return DailyNewCardLedger() }
         return decoded
     }
 
-    func save() {
+    func save(for collection: CardCollection = .capture) {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        UserDefaults.standard.set(data, forKey: Self.storageKey(for: collection))
     }
 }

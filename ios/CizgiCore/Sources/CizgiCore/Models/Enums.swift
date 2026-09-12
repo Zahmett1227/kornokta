@@ -70,6 +70,48 @@ public enum CardStatus: String, Codable, Sendable {
     case suspended
     case draft
     case needsReview = "needs_review"
+    /// Imported but not yet let into the deck.
+    ///
+    /// Only `ConceptPackImporter` writes it. A pack arrives as one file of
+    /// thousands of cards; if they all entered as `.active` with `dueDate` now,
+    /// every one of them would be due on day one and FSRS would present a
+    /// backlog nobody can work through — the deck would be abandoned rather
+    /// than learned. So the pack lands in a queue and the owner releases it in
+    /// batches, on the days he wants to, from Bilgilerim.
+    ///
+    /// Deliberately a new case rather than reusing `.suspended` or `.draft`:
+    /// `.suspended` means "the owner set this card aside" and is shown and
+    /// counted as such, `.draft` means "half-written" and `CoverageSection`
+    /// reads it that way. A queued card is neither — it is finished, unseen,
+    /// and waiting. Reusing either would make both counts lie.
+    ///
+    /// Being a status rather than a separate field is what keeps this cheap:
+    /// Tekrar, Egzersiz's budget and the reminder counts already require
+    /// `.active`, so a queued card is excluded by code that already exists.
+    /// The three places that ask the weaker question "not suspended?" are the
+    /// ones that needed changing, and they now ask `isWithheld`.
+    case queued
+}
+
+extension CardStatus {
+    /// Whether this status keeps a card out of every study pool.
+    ///
+    /// Exists so that "is this card out of play?" has one answer. Before
+    /// `.queued` there was exactly one way to be out — suspension — so three
+    /// call sites asked `status != .suspended` directly and were correct.
+    /// Adding a second way silently made all three wrong, and nothing would
+    /// have caught it: a queued card is valid, due and not suspended, so it
+    /// would simply have appeared in Egzersiz as if released.
+    ///
+    /// `.draft` and `.needsReview` answer `false` — not because they are
+    /// strong, but because they already answered `false` at those call sites
+    /// and this property must not quietly change how existing cards behave.
+    public var isWithheld: Bool {
+        switch self {
+        case .suspended, .queued: return true
+        case .active, .draft, .needsReview: return false
+        }
+    }
 }
 
 /// Which deck a card belongs to: the ones made from pages photographed with

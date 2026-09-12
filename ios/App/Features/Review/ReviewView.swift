@@ -15,6 +15,8 @@ struct ReviewView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
+    /// Read for one decision: whether the four grades still fit on one row.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Query private var allCards: [Card]
     @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
@@ -62,9 +64,26 @@ struct ReviewView: View {
         ReviewSessionPlanner.session(
             cards: plannableCards,
             now: .now,
-            newCardLimit: environment.settings.dailyNewCardLimit,
+            newCardLimit: effectiveNewCardLimit,
             alreadyIntroducedToday: ledger.count(on: .now)
         )
+    }
+
+    /// How many new cards this deck may introduce today.
+    ///
+    /// The two decks are paced by different mechanisms and a single number
+    /// cannot serve both (2026-09-10). Captures arrive a page at a time, so a
+    /// daily ceiling is the right shape and Ayarlar's stepper sets it. Concepts
+    /// arrive thousands at a time and are paced at the other end: nothing leaves
+    /// the queue until the owner presses a batch button, which is itself the
+    /// decision "today I want this many". Applying the stepper on top would
+    /// overrule him — press `+50` and see 20 — so the cards he has explicitly
+    /// released are not held back again here.
+    private var effectiveNewCardLimit: Int {
+        switch collection {
+        case .capture: return environment.settings.dailyNewCardLimit
+        case .concept: return .max
+        }
     }
 
     private var quickSessionCardCount: Int {
@@ -85,6 +104,16 @@ struct ReviewView: View {
         var descriptor = FetchDescriptor<Card>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
+    }
+
+    /// A sitting is in progress — the screen is a card, not a menu.
+    ///
+    /// Everything that makes this screen focused reads from here: the large
+    /// title collapses, the deck switcher goes away, the tab bar hides and
+    /// "Bitir" appears in its place.
+    private var isSessionActive: Bool {
+        guard let session else { return false }
+        return !session.isFinished
     }
 
     var body: some View {
@@ -134,13 +163,28 @@ struct ReviewView: View {
                 // end a run, next to a progress counter that says one is in
                 // flight. `onChange` below covers the case where it is flipped
                 // from another screen while this one is alive.
-                if session == nil || session?.isFinished == true {
+                if !isSessionActive {
                     CardScopePicker().background(Cizgi.paper)
                 }
             }
             .rootTabBarInset()
             .navigationTitle("Tekrar")
+            // Mid-session the title is ~90pt of chrome telling the user
+            // something the card in front of them already says. Collapsing it
+            // is what gives the card room to sit in the middle of the screen
+            // instead of against the top of it.
+            .navigationBarTitleDisplayMode(isSessionActive ? .inline : .large)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    // The only exit while the tab bar is hidden — the rule at
+                    // `AppNavigator.isTabBarHidden`. Tekrar is a tab root, so
+                    // there is no back button either.
+                    if isSessionActive {
+                        Button("Bitir") { endSession() }
+                            .tint(Cizgi.accent)
+                            .accessibilityLabel("Tekrarı bitir")
+                    }
+                }
                 ToolbarItem(placement: .principal) {
                     if let session, !session.isFinished {
                         Text("\(session.completed + 1) / \(session.total)")
@@ -182,7 +226,17 @@ struct ReviewView: View {
             }
         }
         .tint(Cizgi.accent)
-        .onAppear(perform: refreshMeasurements)
+        .onAppear {
+            refreshMeasurements()
+            navigator.isTabBarHidden = isSessionActive
+        }
+        // Focus, and the reason "Bitir" exists above: a grade row and a tab bar
+        // stacked on top of each other are two rows of controls under the same
+        // thumb, and the tab bar is the one that loses the user's place.
+        .onChange(of: isSessionActive) { _, active in
+            navigator.isTabBarHidden = active
+        }
+        .onDisappear { navigator.isTabBarHidden = false }
         // A queue built from one deck must not outlive a switch to the other:
         // its ids still resolve through `allCards`, so the session would go on
         // showing cards the active scope hides. Ending it is the honest
@@ -192,6 +246,10 @@ struct ReviewView: View {
             isAnswerVisible = false
             selectedOption = nil
             lastGrade = nil
+            // Each deck keeps its own day's tally, so the one held in `@State`
+            // belongs to the deck we just left. Without this the start screen
+            // would count the other deck's new cards against this one.
+            ledger = DailyNewCardLedger.load(for: collection)
         }
         .sheet(item: $editingCard) { card in
             CardEditorView(card: card)
@@ -217,13 +275,16 @@ struct ReviewView: View {
         } else {
             VStack(spacing: Cizgi.Space.xl) {
                 VStack(spacing: Cizgi.Space.xs) {
+                    // Serifin üç yerinden biri: büyük sayı. Buradaki
+                    // `.system(design: .rounded)` tasarım dilinden önce
+                    // kalmıştı ve temanın kendi kuralını çiğniyordu.
                     Text("\(pending)")
-                        .font(.system(size: 56, weight: .bold, design: .rounded))
+                        .font(Cizgi.serif(56, relativeTo: .largeTitle))
                         .foregroundStyle(Cizgi.ink)
                     Text("kart tekrar bekliyor")
                         .font(.subheadline)
                         .foregroundStyle(Cizgi.muted)
-                    Text("≈ \(estimatedMinutes(for: pending)) dk")
+                    Text("≈ \(ReviewIntervalLabel.sessionEstimate(minutes: estimatedMinutes(for: pending)))")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -307,14 +368,23 @@ struct ReviewView: View {
     // MARK: Card
 
     private func cardBody(_ card: Card, session: ReviewSession) -> some View {
-        VStack(spacing: Cizgi.Space.lg) {
+        VStack(spacing: Cizgi.Space.md) {
             progressBar(session)
 
+            // Anchored to the top, which centring briefly was not.
+            //
+            // Centring was the right fix for a floating box stranded in an
+            // empty screen, and the wrong one for a page: it moved the question
+            // upward at the moment the answer appeared, so the line being read
+            // jumped under the eye on every single card. A page starts at the
+            // top and grows down, and the space left below a short card is
+            // margin rather than a void now that nothing is drawn around it.
             ScrollView {
                 flashcard(card)
                     .padding(.horizontal, Cizgi.Space.lg)
-                    .padding(.top, Cizgi.Space.sm)
+                    .padding(.top, Cizgi.Space.md)
             }
+            .scrollBounceBehavior(.basedOnSize)
 
             actionArea(card)
                 .padding(.horizontal, Cizgi.Space.lg)
@@ -329,92 +399,40 @@ struct ReviewView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Cizgi.hairline)
                 Capsule().fill(Cizgi.highlighter)
-                    .frame(width: max(6, geo.size.width * fraction))
+                    // On the first card of a twenty-card queue the filled part
+                    // is a couple of points wide and reads as a rendering
+                    // fault rather than as progress. The floor is a starting
+                    // mark, not a claim about how far in the user is.
+                    .frame(width: max(10, geo.size.width * fraction))
             }
         }
-        .frame(height: 5)
+        .frame(height: 4)
         .padding(.horizontal, Cizgi.Space.lg)
+        .accessibilityElement()
+        .accessibilityLabel("İlerleme")
+        .accessibilityValue("\(session.total) karttan \(session.completed) tanesi bitti")
     }
 
     private func flashcard(_ card: Card) -> some View {
-        // Şerit kartın dersinin rengini taşır — rozet yerine kartın kendisi
-        // hangi derste olduğunu söylüyor (Kemik & Oxblood).
-        CardSurface(highlighted: true,
-                    subject: CizgiSubject.matching(card.knowledgeUnit?.subject),
-                    padding: Cizgi.Space.xl) {
-            VStack(alignment: .leading, spacing: Cizgi.Space.lg) {
-                HStack(spacing: Cizgi.Space.sm) {
-                    CardTypeBadge(type: card.type,
-                                  subject: CizgiSubject.matching(card.knowledgeUnit?.subject))
-                    // Flagged, not blocked (§13.3 rule 6): the card is being
-                    // reviewed like any other, but the user is told it was not
-                    // fully vouched for before they trust the answer.
-                    if card.lowConfidence {
-                        TagChip("Gözden geçir", systemImage: "exclamationmark.triangle.fill")
-                    }
+        ReviewCardFace(card: card, isAnswerVisible: isAnswerVisible) {
+            if let options = card.options {
+                optionList(card, options: options)
+            }
+        } footer: {
+            // §5.5. The old gate was `card.sourceQuote`, which the Faz 6
+            // contract never fills — so on every card the app now makes,
+            // "Kaynağı göster" was unreachable. Resolved from the page the
+            // card actually came from instead.
+            let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
+            if !source.isEmpty {
+                DisclosureGroup("Kaynağı göster") {
+                    CardSourceView(material: source, imageStore: environment.imageStore)
+                        .padding(.top, Cizgi.Space.sm)
                 }
-
-                // Serifin üç yerinden biri: kart sorusu.
-                Text(card.front)
-                    .font(Cizgi.serif(24, relativeTo: .title2))
-                    .foregroundStyle(Cizgi.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let options = card.options {
-                    optionList(card, options: options)
-                }
-
-                if isAnswerVisible {
-                    // Tasarımın soru/cevap kesmesi: düz çizgi değil baklava
-                    // ayırıcı — kartın iki yarısını ayıran şey.
-                    CizgiRule()
-
-                    // On a five-option card the answer is already marked in the
-                    // list above; repeating it as a line of text would just push
-                    // the reasons off screen.
-                    if card.options == nil {
-                        Text(card.back)
-                            .font(.title3)
-                            .foregroundStyle(Cizgi.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    if let explanation = card.explanation, !explanation.isEmpty {
-                        // § işareti açıklamayı cevaptan ayırır: cevap kartın
-                        // sorduğu şey, açıklama kenar notu.
-                        HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
-                            CizgiSectionMark()
-                            Text(explanation)
-                                .font(.callout)
-                                .foregroundStyle(Cizgi.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    // §5.5. The old gate was `card.sourceQuote`, which the Faz 6
-                    // contract never fills — so on every card the app now makes,
-                    // "Kaynağı göster" was unreachable. Resolved from the page
-                    // the card actually came from instead.
-                    let source = CardSourceView.material(for: card, imageStore: environment.imageStore)
-                    if !source.isEmpty {
-                        DisclosureGroup("Kaynağı göster") {
-                            CardSourceView(material: source, imageStore: environment.imageStore)
-                                .padding(.top, Cizgi.Space.sm)
-                        }
-                        .font(.subheadline)
-                        .tint(Cizgi.accent)
-                    }
-                }
+                .font(.subheadline)
+                .tint(Cizgi.accent)
             }
         }
-        // Kıvrık köşe: kartın "tam olarak doğrulanmadı" işareti. Renk tek
-        // başına anlam taşımasın diye üstteki "Gözden geçir" çipiyle birlikte
-        // görünür, onun yerine değil.
-        .overlay(alignment: .topTrailing) {
-            if card.lowConfidence { DogEar() }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.md, style: .continuous))
-        .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
     }
 
     @ViewBuilder
@@ -524,23 +542,89 @@ struct ReviewView: View {
         )
     }
 
+    @ViewBuilder
     private func gradeButtons(for card: Card, ratings: [ReviewRating]) -> some View {
-        HStack(spacing: Cizgi.Space.sm) {
-            ForEach(ratings, id: \.self) { rating in
-                Button {
-                    grade(card, rating)
-                } label: {
-                    Text(rating.label)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Cizgi.Space.md)
-                        .background(rating.tint)
-                        .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
-                }
-                .buttonStyle(.plain)
+        let previews = intervalPreviews(for: card, ratings: ratings)
+        if dynamicTypeSize.isAccessibilitySize {
+            // Four columns leave about 86pt each, and at the accessibility
+            // sizes every label truncates — "Unut…" over "oturu…" (simulator,
+            // AX5). A grade button whose word cannot be read is worse than one
+            // with no interval under it, so the row breaks into two columns
+            // rather than shrinking further.
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: Cizgi.Space.sm),
+                    GridItem(.flexible(), spacing: Cizgi.Space.sm)
+                ],
+                spacing: Cizgi.Space.sm
+            ) {
+                ForEach(ratings, id: \.self) { gradeButton(card, $0, previews) }
+            }
+        } else {
+            HStack(spacing: Cizgi.Space.sm) {
+                ForEach(ratings, id: \.self) { gradeButton(card, $0, previews) }
             }
         }
+    }
+
+    private func gradeButton(
+        _ card: Card,
+        _ rating: ReviewRating,
+        _ previews: [ReviewRating: (short: String, spoken: String)]
+    ) -> some View {
+        CizgiChoiceButton(
+            title: rating.label,
+            detail: previews[rating]?.short,
+            spokenDetail: previews[rating]?.spoken,
+            tint: rating.tint
+        ) {
+            grade(card, rating)
+        }
+    }
+
+    /// What each grade would do to this card, asked of the same scheduler the
+    /// tap is about to use.
+    ///
+    /// Until now the four buttons were unlabelled bets: FSRS's whole value is
+    /// that "Zor" and "İyi" move the card by very different amounts, and the
+    /// screen was hiding the one number that makes the choice meaningful.
+    /// `schedule` is pure (ANA-PLAN §0.8 — deterministic, offline), so asking
+    /// it four times per card is four arithmetic passes and no state: nothing
+    /// here writes, and the previews are thrown away when the card advances.
+    ///
+    /// "Unuttum" is the one grade whose interval is not what happens next. The
+    /// scheduler's date *is* written to the card, but while the card still has
+    /// requeue budget it comes back before this sitting ends — so a day count
+    /// there would be contradicted within minutes, and the label says
+    /// `oturumda` instead. Once the repeats are spent the interval is the truth
+    /// again and it is shown (`ReviewSession.wouldRequeueOnAgain`).
+    private func intervalPreviews(
+        for card: Card,
+        ratings: [ReviewRating]
+    ) -> [ReviewRating: (short: String, spoken: String)] {
+        let state = SchedulingState(
+            stability: card.stability,
+            difficulty: card.difficulty,
+            reviewCount: card.reviewCount,
+            lapseCount: card.lapseCount,
+            lastReviewedAt: card.lastReviewedAt
+        )
+        let now = Date()
+        var previews: [ReviewRating: (short: String, spoken: String)] = [:]
+        for rating in ratings {
+            if rating == .again, session?.wouldRequeueOnAgain(card.id) == true {
+                previews[rating] = (ReviewIntervalLabel.sameSession, "bu oturumda yeniden")
+            } else {
+                let days = environment.scheduler
+                    .schedule(rating: rating, state: state, now: now)
+                    .scheduledDays
+                previews[rating] = (
+                    ReviewIntervalLabel.short(days: days),
+                    ReviewIntervalLabel.spoken(days: days)
+                )
+            }
+        }
+        return previews
     }
 
     // MARK: Session control
@@ -548,7 +632,7 @@ struct ReviewView: View {
     /// Reads the two measured inputs the start screen needs. Never touches
     /// `session`: coming back to this tab mid-session must resume, not restart.
     private func refreshMeasurements() {
-        ledger = DailyNewCardLedger.load()
+        ledger = DailyNewCardLedger.load(for: collection)
         secondsPerCard = measuredSecondsPerCard()
     }
 
@@ -579,11 +663,11 @@ struct ReviewView: View {
     }
 
     private func startSession(cap: Int?) {
-        ledger = DailyNewCardLedger.load()
+        ledger = DailyNewCardLedger.load(for: collection)
         let queue = ReviewSessionPlanner.session(
             cards: plannableCards,
             now: .now,
-            newCardLimit: environment.settings.dailyNewCardLimit,
+            newCardLimit: effectiveNewCardLimit,
             alreadyIntroducedToday: ledger.count(on: .now),
             cap: cap
         )
@@ -592,6 +676,21 @@ struct ReviewView: View {
         selectedOption = nil
         lastGrade = nil
         shownAt = .now
+    }
+
+    /// Ends the sitting early, from "Bitir".
+    ///
+    /// Nothing is asked and nothing is lost, which is why — unlike Egzersiz —
+    /// there is no confirmation here. Every grade was written to its card and
+    /// its `ReviewLog` at the moment it was given, and there is no open record
+    /// to close: Egzersiz's dialog exists because an `ExerciseRun` with a nil
+    /// `finishedAt` is reopened on the next launch. The cards that were left
+    /// are still due, so the start screen simply plans them again.
+    private func endSession() {
+        session = nil
+        isAnswerVisible = false
+        selectedOption = nil
+        lastGrade = nil
     }
 
     /// Moves past the current card without grading it: it was deleted from
@@ -733,7 +832,7 @@ struct ReviewView: View {
 
         if wasNew {
             ledger.record(on: now)
-            ledger.save()
+            ledger.save(for: collection)
         }
 
         // A forgotten card goes back into this session rather than waiting for
@@ -829,7 +928,7 @@ struct ReviewView: View {
 
         if snapshot.countedAsNew {
             ledger.undoRecord(on: .now)
-            ledger.save()
+            ledger.save(for: collection)
         }
 
         working.rewind(snapshot.step)
