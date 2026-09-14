@@ -169,9 +169,12 @@ struct SettingsView: View {
                     // Both numbers used to be quieter than they looked: the new-card
                     // limit reset every time the review screen was reopened, and the
                     // quick session was not a choice but the ceiling on every session.
-                    Text("Yeni kart sınırı gün boyunca geçerlidir. Hızlı oturum, "
-                         + "Tekrar ekranındaki ayrı bir seçenektir — normal oturum "
-                         + "bugün bekleyen tüm kartları gösterir.")
+                    // The reminder's rule said on screen, because its silence is
+                    // deliberate and would otherwise read as a broken switch.
+                    Text("Hatırlatıcı her gün seçtiğin saatte gelir; o günün "
+                         + "tekrarlarını bitirdiysen gelmez. Yeni kart sınırı gün "
+                         + "boyunca geçerlidir. Hızlı oturum, Tekrar ekranındaki ayrı "
+                         + "bir seçenektir — normal oturum bugün bekleyen tüm kartları gösterir.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                     if let notificationError { Text(notificationError).font(.footnote).foregroundStyle(.red) }

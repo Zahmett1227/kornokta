@@ -187,7 +187,9 @@ struct AppSettings: Codable, Equatable {
     }
     var sourceFaithfulOnly: Bool = true
     var notificationHour: Int = 20
-    var notificationsEnabled: Bool = false
+    /// On by default since 2026-09-14, when the owner asked for a daily nudge
+    /// and it turned out the reminder had existed all along, switched off.
+    var notificationsEnabled: Bool = true
     var dailyNewCardLimit: Int = 20
     var quickSessionMinutes: Int = 5
     var keepOriginalPage: Bool = true
@@ -195,6 +197,8 @@ struct AppSettings: Codable, Equatable {
     static let storageKey = "cizgi.settings.v1"
     /// Guards the one-time `maxCardsPerPage` 12→18 migration in `load()`.
     private static let maxCardsPerPageMigrationFlagKey = "cizgi.migration.maxCardsPerPage12to18.v1"
+    /// Guards the one-time switch of the daily reminder to on in `load()`.
+    private static let reminderOnMigrationFlagKey = "cizgi.migration.reminderOn.v1"
 
     private enum CodingKeys: String, CodingKey {
         case backendURL, defaultSubject, maxCardsPerPassage, maxCardsPerPage, sourceFaithfulOnly
@@ -217,7 +221,7 @@ struct AppSettings: Codable, Equatable {
             ?? MultipleChoiceMode.mixed.rawValue
         sourceFaithfulOnly = try values.decodeIfPresent(Bool.self, forKey: .sourceFaithfulOnly) ?? true
         notificationHour = try values.decodeIfPresent(Int.self, forKey: .notificationHour) ?? 20
-        notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? false
+        notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
         dailyNewCardLimit = try values.decodeIfPresent(Int.self, forKey: .dailyNewCardLimit) ?? 20
         quickSessionMinutes = try values.decodeIfPresent(Int.self, forKey: .quickSessionMinutes) ?? 5
         keepOriginalPage = try values.decodeIfPresent(Bool.self, forKey: .keepOriginalPage) ?? true
@@ -237,9 +241,39 @@ struct AppSettings: Codable, Equatable {
             // default, and get silently bounced back to 18 (Codex, PR #42,
             // third P1).
             UserDefaults.standard.set(true, forKey: maxCardsPerPageMigrationFlagKey)
+            // Same reasoning for the reminder: a fresh install starts on (the
+            // default), and a user who then turns it off must stay off.
+            UserDefaults.standard.set(true, forKey: reminderOnMigrationFlagKey)
             return AppSettings()
         }
-        return migratingMaxCardsPerPageIfNeeded(decoded)
+        return migratingReminderOnIfNeeded(migratingMaxCardsPerPageIfNeeded(decoded))
+    }
+
+    /// One-time switch of the daily reminder to on (2026-09-14).
+    ///
+    /// Changing the default alone would do nothing on the owner's phone:
+    /// `save()` writes every field, so an install that ever opened Ayarlar
+    /// holds an explicit `false`, and `decodeIfPresent`'s fallback never fires.
+    /// So the stored value is flipped once, here, while the settings are being
+    /// read — not in a startup migration that runs after `AppEnvironment` has
+    /// already loaded them. There, the in-memory copy would stay `false` and the
+    /// next unrelated `save()` from Ayarlar would write it straight back.
+    ///
+    /// Flagged rather than keyed on the value, like the migration above: a user
+    /// who turns the reminder off after this has run keeps it off. The system
+    /// permission prompt appears at the first reschedule; declining it turns
+    /// the setting back off (`RootView.refreshReminders`).
+    private static func migratingReminderOnIfNeeded(
+        _ settings: AppSettings,
+        defaults: UserDefaults = .standard
+    ) -> AppSettings {
+        guard !defaults.bool(forKey: reminderOnMigrationFlagKey) else { return settings }
+        defaults.set(true, forKey: reminderOnMigrationFlagKey)
+        guard !settings.notificationsEnabled else { return settings }
+        var migrated = settings
+        migrated.notificationsEnabled = true
+        migrated.save()
+        return migrated
     }
 
     /// One-time migration (2026-08-14, Codex PR #42 P1): `save()` always

@@ -107,15 +107,25 @@ struct RootView: View {
         #endif
     }
 
-    /// Silent by design: a failure here means the user revoked notification
-    /// permission outside the app, which Ayarlar reports the next time the
-    /// toggle is touched. Interrupting a launch over it would be worse.
+    /// No alert on failure — interrupting a launch over it would be worse — but
+    /// not silent either. A refused permission used to be swallowed here, which
+    /// left Ayarlar showing "Günlük hatırlatıcı" switched on while nothing was
+    /// ever scheduled: the exact "bildirim gelmiyor" the owner reported. Now the
+    /// setting follows the permission, so the switch tells the truth.
     private func refreshReminders() async {
-        try? await ReviewNotificationManager.reschedule(
-            enabled: environment.settings.notificationsEnabled,
-            hour: environment.settings.notificationHour,
-            dueDates: reviewableDueDates
-        )
+        do {
+            try await ReviewNotificationManager.reschedule(
+                enabled: environment.settings.notificationsEnabled,
+                hour: environment.settings.notificationHour,
+                dueDates: reviewableDueDates
+            )
+        } catch ReviewNotificationManager.NotificationError.permissionDenied {
+            environment.settings.notificationsEnabled = false
+            environment.settings.save()
+        } catch {
+            // Anything else is transient (the centre could not add a request);
+            // the next launch or backgrounding tries again.
+        }
     }
 }
 

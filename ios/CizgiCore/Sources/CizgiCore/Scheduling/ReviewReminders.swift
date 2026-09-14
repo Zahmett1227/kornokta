@@ -16,11 +16,15 @@ import Foundation
 /// launch keeps the horizon rolling.
 public enum ReviewReminderPlanner {
 
-    /// How far ahead to schedule. Long enough to survive a week away from the
-    /// app, short enough that the counts are still roughly true when they fire —
-    /// they are computed from today's due dates and cannot know about cards
-    /// graded in between.
-    public static let horizonDays = 7
+    /// How far ahead to schedule. The horizon only moves when the app is opened
+    /// or sent to the background, so this is also how long the reminders keep
+    /// coming if it is not opened at all — two weeks since 2026-09-14, when the
+    /// owner asked for the reminder to be there every day. Well inside iOS's
+    /// 64 pending-request limit. The counts are computed from the due dates as
+    /// they stand at scheduling time and cannot know about cards graded in
+    /// between; rescheduling after every finished session is what keeps them
+    /// honest (see `ReviewView.refreshReminders`).
+    public static let horizonDays = 14
 
     public struct Reminder: Equatable, Sendable {
         public let fireDate: Date
@@ -31,9 +35,11 @@ public enum ReviewReminderPlanner {
             self.dueCount = dueCount
         }
 
-        /// Turkish plural is invariant, so this reads correctly for any count.
+        /// The owner's own wording for the nudge (2026-09-14), with the count
+        /// that makes it true. Turkish plural is invariant, so it reads correctly
+        /// for any count.
         public var body: String {
-            "\(dueCount) kart tekrar bekliyor."
+            "Günlük tekrarlarını tamamla — \(dueCount) kart bekliyor."
         }
     }
 

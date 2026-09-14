@@ -892,6 +892,14 @@ gösterir (2026-08-13 tartışması).
     **Görülmeyen tek şey çift dokunuş** (1× ↔ 2,5×): simülatör aracı iki
     dokunuşu çift dokunuş eşiğinden yavaş gönderiyor — gerçek cihazda denenmeli.
     Aynı görüntüleyici kart detayında ve sayfa detayında da var.
+36. **Günlük bildirim (2026-09-14).** Yükselttikten sonraki ilk açılışta sistem
+    bildirim izni sormalı (Ayarlar'da kapalı duruyordu; tek seferlik göç açıyor).
+    **İzin ver** → Ayarlar'da "Günlük hatırlatıcı" açık kalmalı ve o akşam
+    seçili saatte "Günlük tekrarlarını tamamla — N kart bekliyor" gelmeli.
+    **O günün tekrarlarını bitirdiğin gün gelmemeli.** Simülatörde izin istemi,
+    izin ver (ayar açık kaldı) ve izin verme (ayar dürüstçe kapandı, bir daha
+    zorla açılmadı) üçü de görüldü; **bildirimin gerçekten düştüğü görülmedi**
+    (saat yalnız tam saat alıyor) — cihazda ilk akşam bakılmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

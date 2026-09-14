@@ -334,7 +334,35 @@ final class BackupRestoreTests: XCTestCase {
         let first = try XCTUnwrap(reminders.first)
         XCTAssertEqual(first.fireDate, tonight)
         XCTAssertEqual(first.dueCount, 2)
-        XCTAssertEqual(first.body, "2 kart tekrar bekliyor.")
+        XCTAssertEqual(first.body, "Günlük tekrarlarını tamamla — 2 kart bekliyor.")
+    }
+
+    /// The owner's rule, in their words: every day, unless today's reviews are
+    /// already done (2026-09-14). "Done" is not a flag anywhere — it is what
+    /// grading does to due dates. A finished session pushes every card past
+    /// tonight, the app reschedules, and tonight's slot finds nothing to count.
+    func testFinishingTodaysReviewsSilencesTonight() {
+        let dueThisMorning = [morning.addingTimeInterval(-3600), morning.addingTimeInterval(-60)]
+        let before = ReviewReminderPlanner.reminders(
+            dueDates: dueThisMorning, hour: 20, from: morning, days: 1, calendar: calendar
+        )
+        XCTAssertEqual(before.count, 1, "tekrar yapılmadan önce bu akşam hatırlatma olmalı")
+
+        // The same two cards after grading: FSRS moved them to later days.
+        let afterGrading = [morning.addingTimeInterval(2 * 86_400), morning.addingTimeInterval(4 * 86_400)]
+        let after = ReviewReminderPlanner.reminders(
+            dueDates: afterGrading, hour: 20, from: morning, days: 1, calendar: calendar
+        )
+        XCTAssertTrue(after.isEmpty, "tekrarlar bitince bu akşam sessiz kalmalı")
+    }
+
+    /// One reminder a day for two weeks when every day has something due.
+    func testTheHorizonIsTwoWeeks() {
+        let reminders = ReviewReminderPlanner.reminders(
+            dueDates: [morning.addingTimeInterval(-60)], hour: 20, from: morning, calendar: calendar
+        )
+        XCTAssertEqual(ReviewReminderPlanner.horizonDays, 14)
+        XCTAssertEqual(reminders.count, 14)
     }
 
     /// Opening the app after tonight's slot has passed must not schedule one in
