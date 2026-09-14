@@ -916,6 +916,14 @@ gösterir (2026-08-13 tartışması).
     demek, "—" hiç veri yok demek. Simülatörde 325 kart / 719 log ile her sayı
     (toplam, ders, 7 gün penceresi) SQL'e karşı birebir doğrulandı; gerçek
     destede (binlerce log) açılış süresi hissedilir mi, ona bakılmalı.
+40. **Arka plan gravürleri (2026-09-14).** Tekrar/Egzersiz'de soru hâlindeyken
+    sağ altta dersin silik gravürü görünmeli (Anatomi kafatası, Farmakoloji
+    yüksükotu, Mikrobiyoloji mikroskop…); **cevap açılınca kaybolmalı**; beş
+    şıklı kartta, en büyük yazı boyutlarında ve dersi tanınmayan kartta hiç
+    çıkmamalı. Simülatörde açık/karanlık mod, iki ders, cevap açma ve AX5
+    görüldü. Açık kalan tek soru **opaklık** (bugün %7, `SubjectFigure.opacity`):
+    gerçek telefon ekranında "belli olmayan ama kaliteli" eşiği bu mu.
+    Kaynaklar ve lisanslar: `docs/FIGURES-SOURCES.md`.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

@@ -338,6 +338,13 @@ struct ReviewView: View {
                     .padding(.top, Cizgi.Space.md)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // Fills the margin a short question leaves, only until the answer
+            // needs the room (2026-09-14, `SubjectFigure`).
+            .subjectFigureBackground(
+                CizgiSubject.matching(card.knowledgeUnit?.subject),
+                isVisible: !isAnswerVisible && card.options == nil
+                    && !dynamicTypeSize.isAccessibilitySize
+            )
 
             actionArea(card)
                 .padding(.horizontal, Cizgi.Space.lg)

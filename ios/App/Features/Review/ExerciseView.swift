@@ -19,6 +19,8 @@ struct ExerciseView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
+    /// Read for one decision: whether the background figure has room.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
     @Query(sort: \ExerciseRun.startedAt, order: .reverse) private var exerciseRuns: [ExerciseRun]
@@ -619,6 +621,12 @@ struct ExerciseView: View {
                     .padding(.top, Cizgi.Space.md)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // Same figure, same rule as Tekrar (`SubjectFigure`).
+            .subjectFigureBackground(
+                CizgiSubject.matching(card.knowledgeUnit?.subject),
+                isVisible: !isAnswerVisible && card.options == nil
+                    && !dynamicTypeSize.isAccessibilitySize
+            )
 
             actionArea(card)
                 .padding(.horizontal, Cizgi.Space.lg)
