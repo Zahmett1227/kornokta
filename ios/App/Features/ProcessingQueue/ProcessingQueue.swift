@@ -106,26 +106,14 @@ final class ProcessingQueue: ObservableObject {
         // without one is invisible to every future check.
         page.perceptualHash = PageImageHasher.hash(imageData)?.stringValue
         if let subject, !subject.isEmpty {
-            page.source = try existingOrNewSource(named: subject, in: context)
+            // Reuses the subject's `Source` instead of creating one per
+            // capture, which would fill "Bilgilerim" with duplicates of the
+            // same book. Shared with restore (`BackupPageInstaller`).
+            page.source = try SourceBinding.existingOrNew(subject: subject, context: context)
         }
         context.insert(page)
         try context.save()
         return id
-    }
-
-    /// Reuses the subject's `Source` instead of creating one per capture, which
-    /// would fill "Bilgilerim" with duplicates of the same book.
-    private func existingOrNewSource(named subject: String, in context: ModelContext) throws -> Source {
-        var descriptor = FetchDescriptor<Source>(
-            predicate: #Predicate { $0.subject == subject }
-        )
-        descriptor.fetchLimit = 1
-        if let existing = try context.fetch(descriptor).first {
-            return existing
-        }
-        let source = Source(title: subject, subject: subject)
-        context.insert(source)
-        return source
     }
 
     /// Processes every page that is not finished. Safe to call repeatedly; a

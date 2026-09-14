@@ -27,6 +27,10 @@ struct SettingsView: View {
     @State private var exportError: String?
     @State private var isImportingBackup = false
     @State private var restoreSummary: String?
+    /// A restore is reading or writing (see `restore(from:)`). The button stays
+    /// disabled so a second tap cannot plan against a store the first restore
+    /// is about to change.
+    @State private var isRestoring = false
     @State private var restoreError: String?
 
     var body: some View {
@@ -205,14 +209,26 @@ struct SettingsView: View {
                     if let exportError { Text(exportError).font(.footnote).foregroundStyle(.red) }
 
                     Button("Yedekten geri yükle") { isImportingBackup = true }
+                        .disabled(isRestoring)
+                    if isRestoring {
+                        HStack(spacing: Cizgi.Space.xs) {
+                            ProgressView()
+                            Text("Geri yükleniyor…").font(.footnote).foregroundStyle(Cizgi.muted)
+                        }
+                    }
                     if let restoreSummary {
                         Text(restoreSummary).font(.footnote).foregroundStyle(Cizgi.success)
                     }
                     if let restoreError {
                         Text(restoreError).font(.footnote).foregroundStyle(Cizgi.danger)
                     }
+                    // Two halves since version 9 (docs/ADR-011): the app's own
+                    // backup still carries no photos, but a file that does
+                    // restores them — "Yedekte fotoğraflar yok" was true of the
+                    // first and would now be false about the second.
                     Text("Geri yükleme yalnızca ekler: bu cihazda zaten olan bir kart "
-                         + "olduğu gibi bırakılır. Yedekte fotoğraflar yok.")
+                         + "olduğu gibi bırakılır. Buradan hazırlanan yedekte fotoğraf "
+                         + "yok; fotoğraf taşıyan bir yedeğin sayfaları geri yüklenir.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -548,141 +564,215 @@ struct SettingsView: View {
     /// reasoning is with it. Restoring is also the one place the app takes a
     /// file it did not write, so the decode is allowed to fail loudly rather
     /// than half-succeed.
+    ///
+    /// Two halves since version 9 (Codex, PR #50). A file can now carry dozens
+    /// of page photos, and reading, decoding, planning, writing and hashing
+    /// them on the main actor froze this screen for as long as the archive was
+    /// large. That half touches no `ModelContext`, so it runs detached; only
+    /// the inserts and the save come back to the main actor, on the context
+    /// they have always used.
     private func restore(from result: Result<[URL], Error>) {
         restoreSummary = nil
         restoreError = nil
+        let url: URL
         do {
-            guard let url = try result.get().first else { return }
-            // A file from the Files app lives outside the sandbox until asked
-            // for; without this the read fails with a permission error that
-            // looks like a corrupt backup.
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-
-            let backup = try BackupExporter.decode(try Data(contentsOf: url))
-            let plan = BackupRestorer.plan(
-                records: backup.cards,
-                existingIds: Set(cards.map(\.id))
-            )
-            // Said on every outcome, including the empty one: a v7 file holds
-            // the removed concept deck next to the photographed cards, and a
-            // restore that silently inserted 4 of 3.021 records would read as
-            // a broken backup (2026-09-14).
-            let conceptNote = plan.skippedLegacyConcept.isEmpty
-                ? ""
-                : " \(plan.skippedLegacyConcept.count) kavram kartı atlandı (bu deste kaldırıldı)."
-            guard !plan.isEmpty else {
-                restoreSummary = plan.skipped.isEmpty
-                    ? "Yedekte geri yüklenecek çekim kartı yok." + conceptNote
-                    : "Yedekteki \(plan.skipped.count) çekim kartının hepsi zaten burada." + conceptNote
-                return
-            }
-
-            for record in plan.toInsert {
-                insert(record, into: context)
-            }
-            do {
-                try context.save()
-            } catch {
-                // A failed save leaves every inserted object sitting in the
-                // context, where an unrelated later save would flush half a
-                // restore into the store. Rolling back is the only way to make
-                // "the restore failed" mean nothing was written.
-                context.rollback()
-                throw error
-            }
-
-            // A restored pre-v6 card arrives with `fesInitializedAt == nil`.
-            // Without this call, studying it before the next cold start would
-            // let the live-update paths in `ReviewView.grade`/
-            // `ExerciseView.applyFesScore` stamp that field over a score that
-            // never replayed the just-restored `ReviewLog` history — a real
-            // and permanent loss, not a defensive no-op (Codex review, PR #41,
-            // second pass). Running it here, on this restore's own context,
-            // closes the gap before the user can ever touch the card.
-            FesBackfillMigration.runIfNeeded(context: context)
-
-            // The same shape of gap, for the approval gate (Codex review, PR
-            // #44). `insert` restores each card's stored status verbatim, so a
-            // backup taken before `ApprovalGateMigration` ran carries
-            // `.needsReview` cards back in — and that migration's one-shot flag
-            // is already set, on a fresh install by an empty-store run that had
-            // nothing to do. `ReviewScheduler` schedules `.active` only, so
-            // those cards would land outside every review with no way back.
-            // The release is idempotent, so running it on this context costs a
-            // fetch and closes the hole.
-            do {
-                if try ApprovalGateRelease.release(in: context) > 0 {
-                    try context.save()
-                }
-            } catch {
-                // Failing the whole restore here would misreport it: the cards
-                // are already committed by the save above. But swallowing it
-                // would be worse, because nothing would ever retry (Codex
-                // review, PR #44, second pass). Re-importing the same backup
-                // skips these cards as duplicates, and on a fresh install the
-                // startup migration has already spent its one-shot flag on an
-                // empty store — so the cards would sit outside every review
-                // with only the per-card "Etkinleştir" button left.
-                //
-                // Clearing that flag hands the work back to the migration,
-                // which is already built to retry: the release is idempotent
-                // and runs again on the next cold start. A store that is still
-                // unwritable then simply leaves the flag clear and tries again
-                // after that.
-                context.rollback()
-                UserDefaults.standard.removeObject(forKey: ApprovalGateMigration.flagKey)
-            }
-
-            // Same shape again, for the duplicate audit (Codex review, PR
-            // #46): the audited 2026-08-18 backup carries its 117 duplicates
-            // as `.active`, and on a fresh install the startup migration has
-            // already spent its one-shot flag on an empty store. Limited to
-            // the records this restore actually inserted — a pre-existing
-            // card's status is the user's live choice ("Askıdan çıkar"), and
-            // a whole-store sweep would override it on any unrelated restore
-            // that inserts a single new card (second pass of the same
-            // review). Failure hands the work back to the startup migration
-            // exactly as above.
-            do {
-                let restoredIds = Set(plan.toInsert.map(\.id))
-                if try DuplicateSuspendMigration.suspend(in: context, limitedTo: restoredIds) > 0 {
-                    try context.save()
-                }
-            } catch {
-                context.rollback()
-                UserDefaults.standard.removeObject(forKey: DuplicateSuspendMigration.flagKey)
-            }
-
-            // Belt to the plan's filter: the plan already left every tagged or
-            // queued record out, so this should find nothing. It runs because
-            // the startup migration's flag is spent on a fresh install, and a
-            // concept card that slipped through by any other route would
-            // otherwise stay for good.
-            do {
-                if try !ConceptDeckRemoval.remove(in: context).isEmpty {
-                    try context.save()
-                }
-            } catch {
-                context.rollback()
-                UserDefaults.standard.removeObject(forKey: ConceptDeckRemovalMigration.flagKey)
-            }
-
-            restoreSummary = (plan.skipped.isEmpty
-                ? "\(plan.toInsert.count) kart geri yüklendi."
-                : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı.")
-                + conceptNote
+            guard let picked = try result.get().first else { return }
+            url = picked
         } catch {
-            restoreError = (error as? LocalizedError)?.errorDescription
-                ?? "Yedek okunamadı: \(error.localizedDescription)"
+            restoreError = Self.restoreErrorText(error)
+            return
+        }
+
+        // Read from the store before leaving the main actor: the plan decides
+        // against these, and `@Query` results do not cross actors.
+        let existingIds = Set(cards.map(\.id))
+        let existingPageIds = Set(pages.map(\.id))
+        let imageStore = environment.imageStore
+        isRestoring = true
+
+        Task {
+            defer { isRestoring = false }
+            do {
+                let prepared = try await Task.detached(priority: .userInitiated) { () throws -> PreparedRestore in
+                    // A file from the Files app lives outside the sandbox until
+                    // asked for; without this the read fails with a permission
+                    // error that looks like a corrupt backup.
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+                    let plan = try BackupRestorer.plan(
+                        fileAt: url,
+                        existingIds: existingIds,
+                        existingPageIds: existingPageIds
+                    )
+                    // Pages first (version 9, docs/ADR-011), so each card can
+                    // be hung off its page's region as it goes in. A write that
+                    // throws half-way has already removed what it wrote.
+                    let images = plan.isEmpty
+                        ? [:]
+                        : try BackupPageInstaller.writeImages(
+                            for: plan,
+                            imageStore: imageStore,
+                            hash: { PageImageHasher.hash($0)?.stringValue }
+                        )
+                    return PreparedRestore(plan: plan, images: images)
+                }.value
+                try apply(prepared)
+            } catch {
+                restoreError = Self.restoreErrorText(error)
+            }
         }
     }
 
-    /// A restored card gets its own `KnowledgeUnit` to carry the subject, tags
-    /// and read text — there is no page to attach it to, because images are
-    /// deliberately not in the backup (§24.6). "Kaynağı göster" will therefore
-    /// show the text but no photograph, which is the honest result.
-    private func insert(_ record: BackupExporter.CardRecord, into context: ModelContext) {
+    /// The store half of a restore: everything that needs the `ModelContext`.
+    private func apply(_ prepared: PreparedRestore) throws {
+        let plan = prepared.plan
+        // Said on every outcome, including the empty one: a v7 file holds
+        // the removed concept deck next to the photographed cards, and a
+        // restore that silently inserted 4 of 3.021 records would read as
+        // a broken backup (2026-09-14).
+        let conceptNote = plan.skippedLegacyConcept.isEmpty
+            ? ""
+            : " \(plan.skippedLegacyConcept.count) kavram kartı atlandı (bu deste kaldırıldı)."
+        guard !plan.isEmpty else {
+            restoreSummary = plan.skipped.isEmpty
+                ? "Yedekte geri yüklenecek çekim kartı yok." + conceptNote
+                : "Yedekteki \(plan.skipped.count) çekim kartının hepsi zaten burada." + conceptNote
+            return
+        }
+
+        do {
+            let regions = try BackupPageInstaller.install(
+                plan,
+                images: prepared.images,
+                context: context,
+                schema: SubjectTopicSchema.shared
+            )
+            for record in plan.toInsert {
+                let region = plan.pageLinks[record.id].flatMap { regions[$0] }
+                insert(record, region: region, into: context)
+            }
+            try context.save()
+        } catch {
+            // A failed save leaves every inserted object sitting in the
+            // context, where an unrelated later save would flush half a
+            // restore into the store. Rolling back is the only way to make
+            // "the restore failed" mean nothing was written — and the images
+            // are the part a rollback cannot reach.
+            context.rollback()
+            BackupPageInstaller.discard(prepared.images.values.map(\.path), imageStore: environment.imageStore)
+            throw error
+        }
+
+        // A restored pre-v6 card arrives with `fesInitializedAt == nil`.
+        // Without this call, studying it before the next cold start would
+        // let the live-update paths in `ReviewView.grade`/
+        // `ExerciseView.applyFesScore` stamp that field over a score that
+        // never replayed the just-restored `ReviewLog` history — a real
+        // and permanent loss, not a defensive no-op (Codex review, PR #41,
+        // second pass). Running it here, on this restore's own context,
+        // closes the gap before the user can ever touch the card.
+        FesBackfillMigration.runIfNeeded(context: context)
+
+        // The same shape of gap, for the approval gate (Codex review, PR
+        // #44). `insert` restores each card's stored status verbatim, so a
+        // backup taken before `ApprovalGateMigration` ran carries
+        // `.needsReview` cards back in — and that migration's one-shot flag
+        // is already set, on a fresh install by an empty-store run that had
+        // nothing to do. `ReviewScheduler` schedules `.active` only, so
+        // those cards would land outside every review with no way back.
+        // The release is idempotent, so running it on this context costs a
+        // fetch and closes the hole.
+        do {
+            if try ApprovalGateRelease.release(in: context) > 0 {
+                try context.save()
+            }
+        } catch {
+            // Failing the whole restore here would misreport it: the cards
+            // are already committed by the save above. But swallowing it
+            // would be worse, because nothing would ever retry (Codex
+            // review, PR #44, second pass). Re-importing the same backup
+            // skips these cards as duplicates, and on a fresh install the
+            // startup migration has already spent its one-shot flag on an
+            // empty store — so the cards would sit outside every review
+            // with only the per-card "Etkinleştir" button left.
+            //
+            // Clearing that flag hands the work back to the migration,
+            // which is already built to retry: the release is idempotent
+            // and runs again on the next cold start. A store that is still
+            // unwritable then simply leaves the flag clear and tries again
+            // after that.
+            context.rollback()
+            UserDefaults.standard.removeObject(forKey: ApprovalGateMigration.flagKey)
+        }
+
+        // Same shape again, for the duplicate audit (Codex review, PR
+        // #46): the audited 2026-08-18 backup carries its 117 duplicates
+        // as `.active`, and on a fresh install the startup migration has
+        // already spent its one-shot flag on an empty store. Limited to
+        // the records this restore actually inserted — a pre-existing
+        // card's status is the user's live choice ("Askıdan çıkar"), and
+        // a whole-store sweep would override it on any unrelated restore
+        // that inserts a single new card (second pass of the same
+        // review). Failure hands the work back to the startup migration
+        // exactly as above.
+        do {
+            let restoredIds = Set(plan.toInsert.map(\.id))
+            if try DuplicateSuspendMigration.suspend(in: context, limitedTo: restoredIds) > 0 {
+                try context.save()
+            }
+        } catch {
+            context.rollback()
+            UserDefaults.standard.removeObject(forKey: DuplicateSuspendMigration.flagKey)
+        }
+
+        // Belt to the plan's filter: the plan already left every tagged or
+        // queued record out, so this should find nothing. It runs because
+        // the startup migration's flag is spent on a fresh install, and a
+        // concept card that slipped through by any other route would
+        // otherwise stay for good.
+        do {
+            if try !ConceptDeckRemoval.remove(in: context).isEmpty {
+                try context.save()
+            }
+        } catch {
+            context.rollback()
+            UserDefaults.standard.removeObject(forKey: ConceptDeckRemovalMigration.flagKey)
+        }
+
+        // Both photo notes are said only when they apply: a version 8 file
+        // restores with exactly the sentence it always did.
+        let restored = plan.linkedPageCount == 0
+            ? "\(plan.toInsert.count) kart geri yüklendi"
+            : "\(plan.toInsert.count) kart, \(plan.linkedPageCount) sayfa fotoğrafıyla geri yüklendi"
+        let missingPhotoNote = plan.cardsWithMissingPage.isEmpty
+            ? ""
+            : " \(plan.cardsWithMissingPage.count) kartın sayfa fotoğrafı bulunamadı."
+        restoreSummary = (plan.skipped.isEmpty
+            ? restored + "."
+            : restored + ", \(plan.skipped.count) tanesi zaten vardı.")
+            + missingPhotoNote + conceptNote
+    }
+
+    private static func restoreErrorText(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription
+            ?? "Yedek okunamadı: \(error.localizedDescription)"
+    }
+
+    /// A restored card gets a `KnowledgeUnit` to carry the subject, tags and
+    /// read text.
+    ///
+    /// With a `region` — a version 9 file that carried this card's page — the
+    /// unit hangs off that page's region, which is all "Kaynağı göster" needs to
+    /// find the photograph (docs/ADR-011). Without one there is no page to
+    /// attach it to, because the app's own backups carry no images (§24.6):
+    /// "Kaynağı göster" then shows the text but no photograph, which is the
+    /// honest result.
+    private func insert(
+        _ record: BackupExporter.CardRecord,
+        region: TextRegion?,
+        into context: ModelContext
+    ) {
         let card = Card(
             id: record.id,
             type: CardType(rawValue: record.type) ?? .directRecall,
@@ -725,7 +815,19 @@ struct SettingsView: View {
         // remapped subject can leave a stored topic belonging to another ders.
         let topic = TopicGrouping.validatedTopic(record.topic, subject: subject, schema: schema)
 
-        if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
+        if let region {
+            // Always a unit here, even for a record with nothing else to put on
+            // one: the unit is the only link from a card to its page.
+            card.knowledgeUnit = BackupPageInstaller.unit(
+                on: region,
+                subject: subject,
+                topic: topic,
+                claim: record.canonicalClaim ?? record.front,
+                tags: record.tags,
+                createdAt: card.createdAt,
+                context: context
+            )
+        } else if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
             let unit = KnowledgeUnit(
                 canonicalClaim: record.canonicalClaim ?? record.front,
                 subject: subject,
@@ -755,4 +857,11 @@ struct SettingsView: View {
             context.insert(log)
         }
     }
+}
+
+/// What the detached half of a restore hands back to the main actor: the plan,
+/// and every planned page's image already on disk.
+private struct PreparedRestore: Sendable {
+    let plan: RestorePlan
+    let images: [UUID: BackupPageInstaller.WrittenImage]
 }
