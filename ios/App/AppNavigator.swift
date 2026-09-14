@@ -41,6 +41,18 @@ final class AppNavigator: ObservableObject {
         case usageDetail
     }
 
+    /// Value-based routes for the Library tab's stack (2026-09-14).
+    ///
+    /// Browsing the deck by subject and topic, and the per-subject statistics.
+    /// `nil` subject is the "Ders atanmamış" row — cards whose subject is missing
+    /// or not in the schema — so every row a list shows can be opened.
+    /// `Card` and `KnowledgeMapSubjectSummary` are still pushed as themselves.
+    enum LibraryRoute: Hashable {
+        case subject(String?)
+        case topic(subject: String, bucket: TopicStats.Bucket)
+        case subjectStats(String?)
+    }
+
     /// Egzersiz is the product's daily working surface, so launches and the
     /// global home action both land here. Capture remains one tap away.
     @Published var selectedTab: RootTab = .exercise

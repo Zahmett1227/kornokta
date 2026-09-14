@@ -900,6 +900,22 @@ gösterir (2026-08-13 tartışması).
     izin ver (ayar açık kaldı) ve izin verme (ayar dürüstçe kapandı, bir daha
     zorla açılmadı) üçü de görüldü; **bildirimin gerçekten düştüğü görülmedi**
     (saat yalnız tam saat alıyor) — cihazda ilk akşam bakılmalı.
+37. **Bilgilerim — ders → konu → kart (2026-09-14).** Arama ve filtre boşken
+    "Son eklenenler · 7 gün" yalnız son haftanın kartlarını (en fazla 50),
+    altında "Dersler"i göstermeli; bir derse dokun → konular (kanonik sıra, sonra
+    Konusuz ve varsa Tanınmayan konu) → kartlar. Satırlardaki sayıların toplamı
+    ders satırındakine eşit olmalı. Arama ya da filtre açıkken liste "Sonuçlar ·
+    N" olarak tamamını göstermeli.
+38. **Satırda vade + kaydırma.** Her kart satırında "yeni" / "vadesi geldi" /
+    "4 gün" etiketi; sola kaydır → tam kaydırma **askıya alır** (eskiden tam
+    kaydırma silerdi), "Sil" ayrı dokunuş. Askıdaki kartta aynı hareket
+    "Askıdan çıkar".
+39. **İstatistik.** Bilgilerim → İstatistik: Tümü/30 gün/7 gün değişince
+    sayılar değişmeli; toplam kart Bilgilerim'in Toplam'ına eşit; bir kartı
+    Tekrar'da "Unuttum" ile geç, dön → o dersin "unutma"sı +1. "%0" hepsi yanlış
+    demek, "—" hiç veri yok demek. Simülatörde 325 kart / 719 log ile her sayı
+    (toplam, ders, 7 gün penceresi) SQL'e karşı birebir doğrulandı; gerçek
+    destede (binlerce log) açılış süresi hissedilir mi, ona bakılmalı.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

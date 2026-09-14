@@ -12,6 +12,7 @@ struct LibraryView: View {
     private enum ContentMode: String, CaseIterable {
         case cards = "Kartlar"
         case map = "Bilgi Haritası"
+        case stats = "İstatistik"
     }
 
     @EnvironmentObject private var navigator: AppNavigator
@@ -90,6 +91,8 @@ struct LibraryView: View {
                         .searchable(text: $searchText, prompt: "Kartlarda ara")
                     case .map:
                         KnowledgeMapView(cards: allCards)
+                    case .stats:
+                        StatisticsView()
                     }
                 }
             }
@@ -105,6 +108,16 @@ struct LibraryView: View {
             }
             .navigationDestination(for: KnowledgeMapSubjectSummary.self) { summary in
                 KnowledgeSubjectView(summary: summary)
+            }
+            .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
+                switch route {
+                case .subject(let subject):
+                    SubjectCardsView(subject: subject)
+                case .topic(let subject, let bucket):
+                    TopicCardsView(subject: subject, bucket: bucket)
+                case .subjectStats(let subject):
+                    if let subject { SubjectStatisticsView(subject: subject) }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -171,6 +184,23 @@ struct LibraryView: View {
             .prefix(5)
             .map { $0 }
 
+        // Browsing or narrowing (2026-09-14). With nothing typed and no filter,
+        // the screen is a map of the deck: the last week's cards, then the
+        // subjects to open. With a search or a filter it is a result list, and
+        // every matching card is listed — that is what narrowing is for.
+        let isNarrowing = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || subjectFilter != nil || topicFilter != .all
+
+        // "Son eklenenler" used to list the *whole* deck under that title —
+        // a thousand rows that were not recent, with the subject structure
+        // nowhere. Now it means what it says.
+        let weekAgo = Date.now.addingTimeInterval(-7 * 86_400)
+        let recent = visible.filter { $0.createdAt >= weekAgo }.prefix(50).map { $0 }
+
+        let browse: StudyStatisticsSummary? = isNarrowing ? nil : SubjectTopicSchema.shared.map {
+            StudyStatistics.build(cards: visible.map(StatsCard.init), now: .now, schema: $0)
+        }
+
         return List {
             Section {
                 VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
@@ -223,7 +253,6 @@ struct LibraryView: View {
                                 .tint(Cizgi.success)
                             }
                     }
-                    .onDelete { deleteCards(needsSecondLook, at: $0) }
                 } header: {
                     sectionHeader("Gözden geçir")
                 } footer: {
@@ -242,7 +271,6 @@ struct LibraryView: View {
                     ForEach(fesCards) { card in
                         row(card)
                     }
-                    .onDelete { deleteCards(fesCards, at: $0) }
                 } header: {
                     sectionHeader("FES kartlar")
                 } footer: {
@@ -258,19 +286,49 @@ struct LibraryView: View {
                     ForEach(mostForgotten) { card in
                         row(card)
                     }
-                    .onDelete { deleteCards(mostForgotten, at: $0) }
                 } header: {
                     sectionHeader("En çok unutulanlar")
                 }
             }
 
-            Section {
-                ForEach(visible) { card in
-                    row(card)
+            if isNarrowing {
+                if !visible.isEmpty {
+                    Section {
+                        ForEach(visible) { card in
+                            row(card)
+                        }
+                    } header: {
+                        sectionHeader("Sonuçlar · \(visible.count)")
+                    }
                 }
-                .onDelete { deleteCards(visible, at: $0) }
-            } header: {
-                sectionHeader("Son eklenenler")
+            } else {
+                if !recent.isEmpty {
+                    Section {
+                        ForEach(recent) { card in
+                            row(card)
+                        }
+                    } header: {
+                        sectionHeader("Son eklenenler · 7 gün")
+                    }
+                }
+
+                if let browse, !browse.subjects.isEmpty {
+                    Section {
+                        ForEach(browse.subjects) { subject in
+                            NavigationLink(value: AppNavigator.LibraryRoute.subject(subject.subject)) {
+                                SubjectBrowseRow(stats: subject)
+                            }
+                            .listRowBackground(Cizgi.surface)
+                        }
+                    } header: {
+                        sectionHeader("Dersler")
+                    } footer: {
+                        Text("Kartları derse, sonra konuya göre aç. Bir kartı sola "
+                             + "kaydırarak askıya alabilir ya da silebilirsin.")
+                            .font(.footnote)
+                            .foregroundStyle(Cizgi.muted)
+                    }
+                }
             }
         }
         .listStyle(.insetGrouped)
@@ -285,17 +343,7 @@ struct LibraryView: View {
     }
 
     private func row(_ card: Card) -> some View {
-        NavigationLink(value: card) {
-            CardRow(card: card)
-        }
-        .listRowBackground(Cizgi.surface)
-    }
-
-    private func deleteCards(_ source: [Card], at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(source[index])
-        }
-        try? context.save()
+        LibraryCardRow(card: card)
     }
 }
 
@@ -345,18 +393,61 @@ struct CardRow: View {
                 ForEach(tags, id: \.self) { TagChip($0) }
                 Spacer(minLength: 0)
                 if card.status == .suspended {
-                    Label("Askıda", systemImage: "pause.circle")
-                        .font(.caption2)
-                        .foregroundStyle(Cizgi.muted)
+                    RowBadge(text: "Askıda", systemImage: "pause.circle", color: Cizgi.muted)
+                } else {
+                    dueLabel
                 }
                 if card.lapseCount > 0 {
-                    Label("\(card.lapseCount)", systemImage: "arrow.counterclockwise")
-                        .font(.caption2)
-                        .foregroundStyle(Cizgi.warning)
+                    RowBadge(text: "\(card.lapseCount)", systemImage: "arrow.counterclockwise", color: Cizgi.warning)
+                        .accessibilityLabel("\(card.lapseCount) kez unutuldu")
                 }
             }
         }
         .padding(.vertical, 2)
+        // Separators start under the question, not under whichever badge
+        // happens to be the last text in the row — which is where SwiftUI puts
+        // them by default once the row ends in a label.
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+    }
+
+    /// When the card comes back, readable from the list (2026-09-14). "yeni"
+    /// for a card never reviewed — its due date is its creation time and says
+    /// nothing yet — and "vadesi geldi" rather than a negative interval.
+    @ViewBuilder
+    private var dueLabel: some View {
+        if card.status == .active {
+            let days = card.dueDate.timeIntervalSinceNow / 86_400
+            if card.reviewCount == 0 {
+                RowBadge(text: "yeni", systemImage: "sparkle", color: Cizgi.muted)
+            } else if days <= 0 {
+                RowBadge(text: "vadesi geldi", systemImage: "clock", color: Cizgi.warning)
+            } else {
+                RowBadge(text: ReviewIntervalLabel.short(days: days), systemImage: "clock", color: Cizgi.muted)
+                    .accessibilityLabel("Sonraki tekrar \(ReviewIntervalLabel.spoken(days: days))")
+            }
+        }
+    }
+}
+
+/// A small icon-and-word mark on a card row. Tighter than `Label`, whose
+/// default gap reads as two separate items at caption size.
+private struct RowBadge: View {
+    let text: String
+    let systemImage: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: systemImage)
+                .imageScale(.small)
+            Text(text)
+                .monospacedDigit()
+        }
+        .font(.caption2)
+        .foregroundStyle(color)
+        .lineLimit(1)
+        .fixedSize()
+        .accessibilityElement(children: .combine)
     }
 }
 
