@@ -43,14 +43,23 @@ tek yolu (§5.5).
    yazılmaz; yeni kartlar ona bağlanır.
 
 5. **Dosya güvenilmezdir — içerik affedilir, biçim affedilmez.** Karşılığı
-   olmayan bir `pageId`, boş ya da çözülemeyen `jpegBase64` (ya da JPEG
-   başlangıç işareti `FF D8 FF` taşımayan bayt) o kartın **fotoğrafını**
-   götürür, geri yüklemeyi değil: kart v8'deki gibi fotoğrafsız girer ve özet
-   "N kartın sayfa fotoğrafı bulunamadı" der. Tip hatası (geçersiz UUID/tarih)
-   ise bugünkü bütün alanlarda olduğu gibi dosyayı okunamaz yapar.
-   JPEG işareti kontrolünün sebebi: görüntü `-original.jpg` olarak saklanır ve
-   "İkinci görüş"/"Kapsama denetle" onu `image/jpeg` diye gönderir; base64'ün
-   çözülmesi içeriğin JPEG olduğunu söylemez.
+   olmayan bir `pageId`, boş, çözülemeyen, **kesik** ya da JPEG olmayan
+   `jpegBase64` o kartın **fotoğrafını** götürür, geri yüklemeyi değil: kart
+   v8'deki gibi fotoğrafsız girer ve özet "N kartın sayfa fotoğrafı
+   bulunamadı" der. Tip hatası (geçersiz UUID/tarih) ise bugünkü bütün
+   alanlarda olduğu gibi dosyayı okunamaz yapar.
+   "Kullanılabilir görüntü" iki kontrol (`JPEGIntegrity`): JPEG bölüm yapısı
+   başlangıçtan bitiş işaretine (`FF D9`) kadar yürünebilmeli **ve** ImageIO
+   onu JPEG olarak tanıyıp piksel boyutu okuyabilmeli. İlk sürüm yalnız
+   başlangıç işaretine (`FF D8 FF`) bakıyordu; yarıda kesilmiş bir alan o
+   baytları koruduğu için "fotoğraflı" sayılır, sonra kırık görünürdü (Codex,
+   PR #50, P2). Ölçüldü: ImageIO tek başına yetmez — yarıya kesilmiş bir
+   sayfayı "tamam" diye açıp alt yarısı eksik çiziyor. Tam decode yapılmıyor:
+   ortası bozulmuş ama yapısı sağlam bir görüntü boş değil kusurlu görünür, ve
+   her sayfayı açmak bütün fotoğrafların belleğini aynı anda ister.
+   Sebep: görüntü `-original.jpg` olarak saklanır ve "İkinci görüş"/"Kapsama
+   denetle" onu `image/jpeg` diye gönderir; base64'ün çözülmesi içeriğin bütün
+   bir JPEG olduğunu söylemez.
 
 6. **Sayfa `.ready` doğar ve kuyruk ona dokunmaz.** `ProcessingQueue.shouldProcess`
    `.ready`'yi hiçbir zaman seçmez; geri yüklenen sayfa `POST /api/jobs`'a

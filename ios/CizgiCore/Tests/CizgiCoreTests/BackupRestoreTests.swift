@@ -44,7 +44,7 @@ final class BackupRestoreTests: XCTestCase {
     private func page(id: UUID = UUID(), usable: Bool = true) -> BackupExporter.PageRecord {
         BackupExporter.PageRecord(
             id: id,
-            jpegData: usable ? Data([0xFF, 0xD8, 0xFF, 0xDB, 0x00]) : Data(),
+            jpegData: usable ? TestJPEG.tiny : Data(),
             captureDate: exportedAt,
             subject: "Farmakoloji",
             readText: "Sayfada okunan metin"

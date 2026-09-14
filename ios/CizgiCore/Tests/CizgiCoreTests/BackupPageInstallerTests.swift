@@ -14,7 +14,7 @@ final class BackupPageInstallerTests: XCTestCase {
     private var context: ModelContext!
     private let schema = try? SubjectTopicSchema.bundled()
     private let captured = Date(timeIntervalSince1970: 1_770_000_000)
-    private let jpeg = Data([0xFF, 0xD8, 0xFF, 0xE0, 0x10, 0x20, 0x30])
+    private let jpeg = TestJPEG.tiny
 
     override func setUpWithError() throws {
         root = URL(fileURLWithPath: NSTemporaryDirectory())

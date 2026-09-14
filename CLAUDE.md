@@ -418,8 +418,10 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
   sayfaya bağlanır), yazma `BackupPageInstaller`'da (CizgiCore, bellek-içi
   SwiftData ile testli). **Sayfa kartı izler:** yalnız eklenecek bir kartın
   işaret ettiği ve cihazda olmayan sayfa kurulur — ikinci yükleme hiçbir şey
-  eklemez, yetim sayfa kalmaz. Kopuk `pageId` ya da çözülemeyen/JPEG olmayan
-  görüntü yalnız o kartın **fotoğrafını** götürür ve özette sayılır. Sayfa
+  eklemez, yetim sayfa kalmaz. Kopuk `pageId` ya da çözülemeyen/kesik/JPEG
+  olmayan görüntü (`JPEGIntegrity`: bölüm yapısı `FF D9`'a kadar yürünür +
+  ImageIO JPEG olarak okur — yalnız başlangıç işareti kesik veriyi geçiriyordu,
+  Codex PR #50) yalnız o kartın **fotoğrafını** götürür ve özette sayılır. Sayfa
   `.ready` doğar — `ProcessingQueue.shouldProcess` onu hiç seçmez, yani
   `/api/jobs`'a gitmez. Başarısız `save()`'den sonra yazılan JPEG'ler silinir.
   **"Yedeği hazırla" hâlâ görüntüsüz** (`pages`/`pageId` anahtarı hiç

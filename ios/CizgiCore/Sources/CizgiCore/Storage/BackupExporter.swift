@@ -77,15 +77,17 @@ public enum BackupExporter {
             self.pageLabel = pageLabel
         }
 
-        /// Non-empty and starts with a JPEG start-of-image marker.
+        /// A whole JPEG: its segments run from start to end-of-image and
+        /// ImageIO reads it as a JPEG with real dimensions (`JPEGIntegrity`).
         ///
-        /// The marker, not just "base64 decoded": the image is stored as
-        /// `-original.jpg` and later sent as a JPEG by "İkinci görüş" and
-        /// "Kapsama denetle". Base64 of anything at all decodes, so without
-        /// this a truncated or mislabelled field would be written to disk and
-        /// only fail — silently, as a blank photo — once someone looked.
+        /// Not just "base64 decoded", and not just "starts with `FF D8 FF`":
+        /// the image is stored as `-original.jpg` and later sent as a JPEG by
+        /// "İkinci görüş" and "Kapsama denetle", and a field cut off half-way
+        /// keeps its first bytes. Without the full check such a page would be
+        /// counted as restored with a photo and then show a broken one (Codex,
+        /// PR #50) — instead of the card going in photoless and being counted.
         public var hasUsableImage: Bool {
-            jpegData.count >= 3 && jpegData.prefix(3).elementsEqual([0xFF, 0xD8, 0xFF])
+            JPEGIntegrity.isComplete(jpegData)
         }
 
         enum CodingKeys: String, CodingKey {

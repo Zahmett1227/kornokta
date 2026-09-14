@@ -188,14 +188,11 @@ final class BackupExporterTests: XCTestCase {
 
     // MARK: - Version 9: page photographs (docs/ADR-011)
 
-    /// The smallest real JPEG: what the task's example file carries.
-    static let tinyJPEGBase64 = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/yQALCAABAAEBAREA/8wABgAQEAX/2gAIAQEAAD8A0s8g/9k="
-
     func testPagesAndPageIdsSurviveTheRoundTrip() throws {
         let pageId = UUID()
         let page = BackupExporter.PageRecord(
             id: pageId,
-            jpegData: Data([0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02]),
+            jpegData: TestJPEG.tiny,
             captureDate: Date(timeIntervalSince1970: 1_700_000_000),
             subject: "Mikrobiyoloji",
             readText: "★ Brucella",
@@ -282,7 +279,7 @@ final class BackupExporterTests: XCTestCase {
           "exportedAt": "2026-09-14T10:00:00Z",
           "pages": [
             { "id": "11111111-1111-1111-1111-111111111111",
-              "jpegBase64": "\(Self.tinyJPEGBase64)",
+              "jpegBase64": "\(TestJPEG.tinyBase64)",
               "captureDate": "2026-09-14T10:00:00Z",
               "subject": "Mikrobiyoloji",
               "readText": "★ Brucella: kültür en az 3 hafta bekletilmeli",
@@ -328,5 +325,19 @@ final class BackupExporterTests: XCTestCase {
         XCTAssertEqual(backup.pages.count, 3)
         // The third decodes fine — to "hello", which is not a JPEG.
         XCTAssertEqual(backup.pages.map(\.hasUsableImage), [false, false, false])
+    }
+
+    /// Codex, PR #50: a field cut off part-way keeps its JPEG start marker, and
+    /// used to count as a usable photo.
+    func testATruncatedImageIsNotUsable() throws {
+        let cut = String(TestJPEG.tinyBase64.prefix(80))
+        let json = """
+        {"formatVersion":9,"exportedAt":"1970-01-01T00:00:00Z","cards":[],"pages":[
+          {"id":"00000000-0000-0000-0000-0000000000A1","jpegBase64":"\(cut)","captureDate":"1970-01-01T00:00:00Z"}
+        ]}
+        """
+        let page = try XCTUnwrap(try BackupExporter.decode(Data(json.utf8)).pages.first)
+        XCTAssertTrue(page.jpegData.starts(with: [0xFF, 0xD8, 0xFF]))
+        XCTAssertFalse(page.hasUsableImage)
     }
 }
