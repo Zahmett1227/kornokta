@@ -41,16 +41,6 @@ final class AppNavigator: ObservableObject {
         case usageDetail
     }
 
-    /// Value-based routes for the Library tab's stack.
-    ///
-    /// Bilgi Haritası already pushes a `KnowledgeMapSubjectSummary` and card
-    /// detail pushes a `Card`, both real values. The concept pack importer has
-    /// no such object to hand it, which is exactly the case `CaptureRoute` and
-    /// `SettingsRoute` exist for.
-    enum LibraryRoute: Hashable {
-        case conceptImport
-    }
-
     /// Egzersiz is the product's daily working surface, so launches and the
     /// global home action both land here. Capture remains one tap away.
     @Published var selectedTab: RootTab = .exercise

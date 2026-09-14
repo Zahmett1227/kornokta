@@ -40,40 +40,21 @@ katmanı 2026-08-09 tıraşında koddan silindi.
 ```
 ios/
 ├── CizgiCore/          Swift paketi — mantık, Xcode'suz test edilebilir
-│   ├── Models/             SwiftData modelleri (§16), ders/konu şeması, Bilgi Haritası,
-│   │                       CardScope (deste kapsamı — ADR-010)
+│   ├── Models/             SwiftData modelleri (§16), ders/konu şeması, Bilgi Haritası
 │   ├── Annotation/         AnnotationGroup — persist'in konuştuğu grup sözleşmesi
 │   ├── Queue/              Durum makinesi ve vision işlem hattı (§17)
 │   ├── Backend/             BackendConfiguration, DeviceTokenStore (Keychain), UploadImageEncoder
 │   ├── Providers/          Kart üretimi protokolü: sahte + gerçek backend sağlayıcı
 │   ├── Scheduling/         FSRS-6 + oturum kurgusu + Egzersiz (ExerciseSession,
 │   │                       EarlyPractice — ADR-007 köprüsü, ReviewSession, ReviewPace)
-│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle (v7),
-│                           ConceptPackImporter (kavram paketi — ADR-010), algısal hash
+│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle (v8),
+│                           ConceptDeckRemoval (kaldırılan kavram destesinin temizliği), algısal hash
 ├── App/                SwiftUI uygulaması
 │   └── Features/Capture, ProcessingQueue, Review (Tekrar + Egzersiz),
-│                Library (Bilgilerim + Bilgi Haritası + kavram paketi içe aktarma),
-│                Settings, CardScopePicker (Çekimlerim | Kavramlar anahtarı)
+│                Library (Bilgilerim + Bilgi Haritası), Settings
 ├── spikes/AppleVisionSpike/   Tarihsel ölçüm aracı (bağımsız paket)
 └── project.yml         XcodeGen spec
 ```
-
-## İki deste — Çekimlerim ve Kavramlar (ADR-010)
-
-Kartların ikinci bir kaynağı var: dışarıda hazırlanmış bir **kavram paketi**
-(JSON) Bilgilerim → Kavramlar → "Kavram paketi içe aktar" ile toplu alınır.
-Sayfası, model çağrısı ve `TextRegion`'ı olmayan kartlardır; kavram başına tek
-bir `KnowledgeUnit`'e bağlanırlar.
-
-`Card.collectionRaw` hangi desteye ait olduğunu söyler — **ayrı bir SwiftData
-modeli yoktur** (gerekçe: `docs/ADR-010-kavram-destesi-ayri-alan.md`). Tekrar,
-Egzersiz ve Bilgilerim'in tepesindeki kapsam anahtarı hangi destede olduğunu
-belirler ve **bir kapsamdayken diğerinin kartları hiçbir yerde görünmez.**
-
-İçe aktarma **idempotent**: paket kimlikleri uuid5 türevi olduğu için aynı
-dosyayı ikinci kez seçmek hiçbir şey eklemez. Yeni bir ekran `[Card]` sorgusu
-yapacaksa `CardScope`'tan geçmek **zorunda** — `evals/tests/test_card_scope_sites.py`
-bunu kaynak düzeyinde kilitler ve listeye katılmamış bir sorgu testi düşürür.
 
 ## Mantığı test et (Xcode gerekmez)
 

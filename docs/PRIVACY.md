@@ -31,10 +31,10 @@ pasaj kırpıntısı" daraltması bu pivotla bilinçli olarak gevşetildi.
 | Gemini (kapsama denetimi) | Tam sayfa fotoğrafı | "Hangi işaret hiç kartlaşmadı?" (`/api/coverage`, istek üzerine) | İstek süresince. Bulgular sunucuda kalmaz, telefonda (`CapturedPage.coverageJSON`) durur |
 | Google Document AI | Sayfa/kırpıntı görseli | OCR | **Kullanılmıyor.** Faz 6'da ana akıştan çıktı, 2026-08-09'da **koddan da silindi**. Canlıda `DOCUMENTAI_*` / `GOOGLE_CREDENTIALS_JSON` değişkenleri hâlâ duruyor ve hiçbir kod okumuyor — temizlenmeli (`GOOGLE_CREDENTIALS_JSON` gerçek bir kimlik bilgisi) |
 
-**Hiçbir yere gitmeyen:** toplu içe aktarılan kavram destesi (ADR-010).
-`ConceptPackImporter` tamamen cihazda çalışır — ağ çağrısı yok, sağlayıcı yok,
-`jobs` tablosuna satır yok. Kartları yalnız yedek dosyasına girer (biçim v7),
-o da kullanıcının kendi eline çıkar.
+**2026-09-14'te kaldırılan:** kavram destesi (ADR-010). Hiçbir zaman ağa
+çıkmadı; kartları yalnız cihazda ve yedek dosyasında duruyordu. Kaldırma göçü
+cihazdaki kopyayı siler, yedek biçimi v8 onu artık taşımaz ve eski v7
+dosyalarındaki kavram kayıtları geri yüklemede atlanır.
 
 **2026-09-09'da kaldırılan:** Karanlık Harita (`/api/dark-map`) iki model
 ailesine deste düzeyinde **konu adları ve kart soruları** gönderiyordu. Uç

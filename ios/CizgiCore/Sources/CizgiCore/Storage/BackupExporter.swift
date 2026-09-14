@@ -22,10 +22,14 @@ import Foundation
 /// rather than failing.
 public enum BackupExporter {
     /// 3 adds a card's five options (§13.3); 4 adds its topic (schema v2.2);
-    /// 6 adds the FES record (docs/ADR-008); 7 adds the card's collection
-    /// (`CardCollection`). Older files still restore: every field added after
-    /// version 1 is decoded with `decodeIfPresent`.
-    public static let formatVersion = 7
+    /// 6 adds the FES record (docs/ADR-008); 7 added the card's collection,
+    /// and 8 takes it away again with the concept deck (2026-09-14).
+    ///
+    /// Older files still restore: every field added after version 1 is decoded
+    /// with `decodeIfPresent`, and a v7 file's `collection` key is simply not
+    /// read. Its concept cards are recognised by their tag instead and left out
+    /// — `BackupRestorer.plan` counts them so the restore can say so.
+    public static let formatVersion = 8
 
     /// One graded review, as recorded at the time (§16.7).
     public struct ReviewRecord: Codable, Sendable, Equatable {
@@ -119,20 +123,8 @@ public enum BackupExporter {
         public let fesScore: Int
         public let fesNegativeCount: Int
         public let fesInitializedAt: Date?
-        // --- added in version 7 ---
-        /// Which deck the card belongs to (`CardCollection.rawValue`).
-        ///
-        /// Imported concept cards travel in the backup like any other card,
-        /// and this field is why that is safe: without it a restore would
-        /// rebuild all 3.017 of them as `.capture` and permanently flood the
-        /// photographed deck — the failure would be silent, because every
-        /// restored card is individually valid. The pack itself is
-        /// reproducible from JSON, but a card's FSRS history is not, and that
-        /// history is the only thing in this file that exists nowhere else.
-        ///
-        /// A pre-v7 file has no such key, and `.capture` is the right reading
-        /// of it: concept cards could not exist when it was written.
-        public let collection: String
+        // Version 7's `collection` field was removed in version 8 with the
+        // concept deck. A v7 file still carries the key; nothing reads it.
 
         public init(
             id: UUID,
@@ -161,8 +153,7 @@ public enum BackupExporter {
             lastPracticedAt: Date? = nil,
             fesScore: Int = 0,
             fesNegativeCount: Int = 0,
-            fesInitializedAt: Date? = nil,
-            collection: String = CardCollection.capture.rawValue
+            fesInitializedAt: Date? = nil
         ) {
             self.id = id
             self.type = type
@@ -191,7 +182,6 @@ public enum BackupExporter {
             self.fesScore = fesScore
             self.fesNegativeCount = fesNegativeCount
             self.fesInitializedAt = fesInitializedAt
-            self.collection = collection
         }
 
         /// Decoded field by field so a version 1 file — which has none of the
@@ -226,8 +216,6 @@ public enum BackupExporter {
             fesScore = try values.decodeIfPresent(Int.self, forKey: .fesScore) ?? 0
             fesNegativeCount = try values.decodeIfPresent(Int.self, forKey: .fesNegativeCount) ?? 0
             fesInitializedAt = try values.decodeIfPresent(Date.self, forKey: .fesInitializedAt)
-            collection = try values.decodeIfPresent(String.self, forKey: .collection)
-                ?? CardCollection.capture.rawValue
         }
     }
 
@@ -304,12 +292,23 @@ public struct RestorePlan: Equatable, Sendable {
     public let toInsert: [BackupExporter.CardRecord]
     /// Cards the store already has, left exactly as they are.
     public let skipped: [UUID]
+    /// Cards from the removed concept deck, found in a file written while it
+    /// existed (v7). Left out on purpose and *counted* on purpose: a v7 backup
+    /// holds 3.017 of them next to the photographed cards, and a restore that
+    /// quietly inserted fewer records than the file contains would read as
+    /// data loss.
+    public let skippedLegacyConcept: [UUID]
 
     public var isEmpty: Bool { toInsert.isEmpty }
 
-    public init(toInsert: [BackupExporter.CardRecord], skipped: [UUID]) {
+    public init(
+        toInsert: [BackupExporter.CardRecord],
+        skipped: [UUID],
+        skippedLegacyConcept: [UUID] = []
+    ) {
         self.toInsert = toInsert
         self.skipped = skipped
+        self.skippedLegacyConcept = skippedLegacyConcept
     }
 }
 
@@ -335,8 +334,16 @@ public enum BackupRestorer {
         var seen = existingIds
         var toInsert: [BackupExporter.CardRecord] = []
         var skipped: [UUID] = []
+        var legacyConcept: [UUID] = []
 
         for record in records {
+            // Checked before the duplicate test: a concept card is not
+            // "already here", it is not wanted at all, and counting it under
+            // `skipped` would tell the user it exists on the device.
+            if ConceptDeckLegacy.isConcept(tags: record.tags, status: record.status) {
+                legacyConcept.append(record.id)
+                continue
+            }
             if seen.contains(record.id) {
                 skipped.append(record.id)
                 continue
@@ -344,6 +351,6 @@ public enum BackupRestorer {
             seen.insert(record.id)
             toInsert.append(record)
         }
-        return RestorePlan(toInsert: toInsert, skipped: skipped)
+        return RestorePlan(toInsert: toInsert, skipped: skipped, skippedLegacyConcept: legacyConcept)
     }
 }

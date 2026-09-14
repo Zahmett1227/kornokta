@@ -19,7 +19,6 @@ struct ReviewView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Query private var allCards: [Card]
-    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
 
     /// `nil` before the user has chosen a session — §6.5 asks for the count and
     /// an estimate *before* the first card, not after it.
@@ -37,16 +36,11 @@ struct ReviewView: View {
     @State private var ledger = DailyNewCardLedger()
     @State private var secondsPerCard = ReviewPace.fallbackSecondsPerCard
 
-    private var collection: CardCollection { CardScope.collection(fromStored: collectionRaw) }
-
-    /// The active deck. Every listing on this screen goes through here; a card
-    /// the session already chose is fetched by id (`card(withId:)`), never
-    /// found by scanning this.
-    private var scopedCards: [Card] { CardScope.cards(allCards, in: collection) }
-
-    /// Everything the planner needs, read once per render from the store.
+    /// Everything the planner needs, read once per render from the store. A
+    /// card the session already chose is fetched by id (`card(withId:)`),
+    /// never found by scanning this.
     private var plannableCards: [PlannableCard] {
-        scopedCards.map {
+        allCards.map {
             PlannableCard(
                 id: $0.id,
                 dueDate: $0.dueDate,
@@ -64,26 +58,9 @@ struct ReviewView: View {
         ReviewSessionPlanner.session(
             cards: plannableCards,
             now: .now,
-            newCardLimit: effectiveNewCardLimit,
+            newCardLimit: environment.settings.dailyNewCardLimit,
             alreadyIntroducedToday: ledger.count(on: .now)
         )
-    }
-
-    /// How many new cards this deck may introduce today.
-    ///
-    /// The two decks are paced by different mechanisms and a single number
-    /// cannot serve both (2026-09-10). Captures arrive a page at a time, so a
-    /// daily ceiling is the right shape and Ayarlar's stepper sets it. Concepts
-    /// arrive thousands at a time and are paced at the other end: nothing leaves
-    /// the queue until the owner presses a batch button, which is itself the
-    /// decision "today I want this many". Applying the stepper on top would
-    /// overrule him — press `+50` and see 20 — so the cards he has explicitly
-    /// released are not held back again here.
-    private var effectiveNewCardLimit: Int {
-        switch collection {
-        case .capture: return environment.settings.dailyNewCardLimit
-        case .concept: return .max
-        }
     }
 
     private var quickSessionCardCount: Int {
@@ -109,8 +86,7 @@ struct ReviewView: View {
     /// A sitting is in progress — the screen is a card, not a menu.
     ///
     /// Everything that makes this screen focused reads from here: the large
-    /// title collapses, the deck switcher goes away, the tab bar hides and
-    /// "Bitir" appears in its place.
+    /// title collapses, the tab bar hides and "Bitir" appears in its place.
     private var isSessionActive: Bool {
         guard let session else { return false }
         return !session.isFinished
@@ -156,15 +132,6 @@ struct ReviewView: View {
                     } else {
                         startScreen
                     }
-                }
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                // Hidden mid-session: the switcher would be a second way to
-                // end a run, next to a progress counter that says one is in
-                // flight. `onChange` below covers the case where it is flipped
-                // from another screen while this one is alive.
-                if !isSessionActive {
-                    CardScopePicker().background(Cizgi.paper)
                 }
             }
             .rootTabBarInset()
@@ -237,20 +204,6 @@ struct ReviewView: View {
             navigator.isTabBarHidden = active
         }
         .onDisappear { navigator.isTabBarHidden = false }
-        // A queue built from one deck must not outlive a switch to the other:
-        // its ids still resolve through `allCards`, so the session would go on
-        // showing cards the active scope hides. Ending it is the honest
-        // reading of "I am studying the other deck now".
-        .onChange(of: collectionRaw) {
-            session = nil
-            isAnswerVisible = false
-            selectedOption = nil
-            lastGrade = nil
-            // Each deck keeps its own day's tally, so the one held in `@State`
-            // belongs to the deck we just left. Without this the start screen
-            // would count the other deck's new cards against this one.
-            ledger = DailyNewCardLedger.load(for: collection)
-        }
         .sheet(item: $editingCard) { card in
             CardEditorView(card: card)
         }
@@ -632,7 +585,7 @@ struct ReviewView: View {
     /// Reads the two measured inputs the start screen needs. Never touches
     /// `session`: coming back to this tab mid-session must resume, not restart.
     private func refreshMeasurements() {
-        ledger = DailyNewCardLedger.load(for: collection)
+        ledger = DailyNewCardLedger.load()
         secondsPerCard = measuredSecondsPerCard()
     }
 
@@ -654,7 +607,7 @@ struct ReviewView: View {
         try? await ReviewNotificationManager.reschedule(
             enabled: environment.settings.notificationsEnabled,
             hour: environment.settings.notificationHour,
-            dueDates: scopedCards.filter { $0.status == .active }.map(\.dueDate)
+            dueDates: allCards.filter { $0.status == .active }.map(\.dueDate)
         )
     }
 
@@ -663,11 +616,11 @@ struct ReviewView: View {
     }
 
     private func startSession(cap: Int?) {
-        ledger = DailyNewCardLedger.load(for: collection)
+        ledger = DailyNewCardLedger.load()
         let queue = ReviewSessionPlanner.session(
             cards: plannableCards,
             now: .now,
-            newCardLimit: effectiveNewCardLimit,
+            newCardLimit: environment.settings.dailyNewCardLimit,
             alreadyIntroducedToday: ledger.count(on: .now),
             cap: cap
         )
@@ -832,7 +785,7 @@ struct ReviewView: View {
 
         if wasNew {
             ledger.record(on: now)
-            ledger.save(for: collection)
+            ledger.save()
         }
 
         // A forgotten card goes back into this session rather than waiting for
@@ -928,7 +881,7 @@ struct ReviewView: View {
 
         if snapshot.countedAsNew {
             ledger.undoRecord(on: .now)
-            ledger.save(for: collection)
+            ledger.save()
         }
 
         working.rewind(snapshot.step)

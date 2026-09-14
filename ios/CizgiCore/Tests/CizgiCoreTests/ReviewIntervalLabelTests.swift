@@ -51,8 +51,8 @@ final class ReviewIntervalLabelTests: XCTestCase {
         XCTAssertEqual(ReviewIntervalLabel.short(days: .infinity), "şimdi")
     }
 
-    /// The concept deck is the case that forced this: 3.017 cards at the
-    /// fallback pace is 603 minutes, which the start screen printed verbatim.
+    /// A large queue is the case that forced this: 3.000 cards at the fallback
+    /// pace is 603 minutes, which the start screen printed verbatim.
     func testSessionEstimateClimbsOutOfMinutes() {
         XCTAssertEqual(ReviewIntervalLabel.sessionEstimate(minutes: 4), "4 dk")
         XCTAssertEqual(ReviewIntervalLabel.sessionEstimate(minutes: 59), "59 dk")

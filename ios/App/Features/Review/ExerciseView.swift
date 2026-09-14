@@ -21,7 +21,6 @@ struct ExerciseView: View {
     @Environment(\.modelContext) private var context
 
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
-    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
     @Query(sort: \ExerciseRun.startedAt, order: .reverse) private var exerciseRuns: [ExerciseRun]
 
     @State private var session: ExerciseSession?
@@ -59,10 +58,9 @@ struct ExerciseView: View {
     /// the whole difference from `ReviewView`.
     private var eligibleCards: [Card] {
         let now = Date()
-        return CardScope.cards(allCards, in: CardScope.collection(fromStored: collectionRaw))
-            .filter { card in
-                !card.status.isWithheld && filter.matches(candidate(for: card), now: now)
-            }
+        return allCards.filter { card in
+            !card.status.isWithheld && filter.matches(candidate(for: card), now: now)
+        }
     }
 
     private func candidate(for card: Card) -> ExerciseCandidate {
@@ -201,15 +199,6 @@ struct ExerciseView: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                // Start and completion screens only. During a run the tab bar
-                // is hidden for focus and "Bitir" is the single documented exit
-                // (`AppNavigator.isTabBarHidden`'s rule); a deck switcher there
-                // would be a second, unlabelled one.
-                if !isSessionActive {
-                    CardScopePicker().background(Cizgi.paper)
-                }
-            }
             .rootTabBarInset()
             .navigationTitle("Egzersiz")
             .navigationBarTitleDisplayMode(isSessionActive ? .inline : .large)
@@ -267,7 +256,7 @@ struct ExerciseView: View {
         .sheet(isPresented: $isShowingSetupSheet) {
             ExerciseSetupSheet(
                 filter: $filter,
-                allCards: CardScope.cards(allCards, in: CardScope.collection(fromStored: collectionRaw))
+                allCards: allCards
             )
         }
         .confirmationDialog(
@@ -306,17 +295,6 @@ struct ExerciseView: View {
         }
         .onChange(of: isSessionActive) { _, active in
             navigator.isTabBarHidden = active
-        }
-        // Switched from another screen while a run was open. `finishEarly`
-        // rather than `session = nil`: an `ExerciseRun` whose `finishedAt` is
-        // still nil is exactly what `restoreActiveRunIfNeeded` reopens on the
-        // next launch, so dropping the session without closing the run would
-        // drag the old deck's run back into the new scope.
-        .onChange(of: collectionRaw) {
-            if isSessionActive { finishEarly() }
-            session = nil
-            currentRun = nil
-            resetCardState()
         }
         .onDisappear { navigator.isTabBarHidden = false }
     }

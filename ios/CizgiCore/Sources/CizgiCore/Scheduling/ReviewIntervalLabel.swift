@@ -44,8 +44,8 @@ public enum ReviewIntervalLabel {
     ///
     /// A separate ladder from `short` because it measures effort, not delay,
     /// and it starts from whole minutes. The start screen used to print this
-    /// in minutes at every scale: a 3.017-card concept deck came out as
-    /// "≈ 603 dk", a number nobody reads as ten hours.
+    /// in minutes at every scale: a 3.000-card queue came out as "≈ 603 dk",
+    /// a number nobody reads as ten hours.
     ///
     /// Minutes are dropped past four hours on purpose — at that scale they are
     /// noise around an estimate that is itself built from an average.

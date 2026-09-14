@@ -100,75 +100,89 @@ final class BackupExporterTests: XCTestCase {
         XCTAssertEqual(restored.cards.first?.subject, "Patoloji")
     }
 
-    // MARK: - Version 7: which deck a card belongs to
+    // MARK: - Version 8: the concept deck is gone
 
-    /// The hazard this field exists for: without it a restore rebuilds every
-    /// imported concept card inside the photographed deck, and nothing reports
-    /// it because each restored card is individually valid.
-    func testCollectionSurvivesAFullExportRestoreRoundTrip() throws {
-        let capture = BackupExporter.CardRecord(
-            id: UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!,
-            type: "direct_recall", front: "Çekim", back: "Yanıt",
-            explanation: nil, sourceQuote: nil, subject: "Patoloji",
-            status: "active", dueDate: Date(timeIntervalSince1970: 0),
-            stability: 1, difficulty: 5, reviewCount: 2, lapseCount: 0,
-            collection: CardCollection.capture.rawValue
-        )
-        let concept = BackupExporter.CardRecord(
-            id: UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!,
-            type: "direct_recall", front: "Kavram", back: "Yanıt",
+    private func record(
+        _ front: String,
+        tags: [String] = [],
+        status: String = "active",
+        id: UUID = UUID()
+    ) -> BackupExporter.CardRecord {
+        BackupExporter.CardRecord(
+            id: id, type: "direct_recall", front: front, back: "Yanıt",
             explanation: nil, sourceQuote: nil, subject: "Farmakoloji",
-            status: "active", dueDate: Date(timeIntervalSince1970: 0),
-            stability: 1, difficulty: 5, reviewCount: 2, lapseCount: 0,
-            collection: CardCollection.concept.rawValue
+            status: status, dueDate: Date(timeIntervalSince1970: 0),
+            stability: 1, difficulty: 5, reviewCount: 0, lapseCount: 0,
+            tags: tags
         )
-        let data = try BackupExporter.encode(
-            cards: [capture, concept],
-            exportedAt: Date(timeIntervalSince1970: 0)
-        )
-        let restored = try BackupExporter.decode(data)
-
-        let byFront = Dictionary(restored.cards.map { ($0.front, $0.collection) }) { first, _ in first }
-        XCTAssertEqual(byFront["Çekim"], "capture")
-        XCTAssertEqual(byFront["Kavram"], "concept")
     }
 
-    /// A card exported without saying which deck it is in defaults to the
-    /// photographed one — the same fallback `Card.collection` applies.
-    func testARecordMadeWithoutACollectionIsACaptureCard() throws {
-        let record = BackupExporter.CardRecord(
-            id: UUID(), type: "direct_recall", front: "Soru", back: "Yanıt",
-            explanation: nil, sourceQuote: nil, subject: nil,
-            status: "active", dueDate: Date(timeIntervalSince1970: 0),
-            stability: 1, difficulty: 5, reviewCount: 0, lapseCount: 0
-        )
-        XCTAssertEqual(record.collection, "capture")
-    }
-
-    func testAPreCollectionBackupStillDecodesAsCaptureCards() throws {
-        // A version 6 file has no `collection` key. Reading it as `.capture` is
-        // not a fallback so much as the truth: concept cards could not exist
-        // when it was written.
+    /// The owner's real file: a v7 backup holding the photographed deck *and*
+    /// the concept pack. The key it carries is ignored, the file still decodes,
+    /// and the concept records are recognised by the importer's tag.
+    func testAVersion7FileWithConceptCardsStillDecodes() throws {
         let json = """
-        {"formatVersion":6,"exportedAt":"1970-01-01T00:00:00Z","cards":[{
-          "id":"00000000-0000-0000-0000-000000000001","type":"direct_recall",
-          "front":"Soru","back":"Yanıt","subject":"Patoloji","status":"active",
-          "dueDate":"1970-01-01T00:00:00Z","stability":1,"difficulty":5,
-          "reviewCount":0,"lapseCount":0,"fesScore":4,"fesNegativeCount":2
-        }]}
+        {"formatVersion":7,"exportedAt":"1970-01-01T00:00:00Z","cards":[
+          {"id":"00000000-0000-0000-0000-00000000000A","type":"direct_recall",
+           "front":"Çekim","back":"Yanıt","subject":"Patoloji","status":"active",
+           "dueDate":"1970-01-01T00:00:00Z","stability":1,"difficulty":5,
+           "reviewCount":0,"lapseCount":0,"tags":["solunum"],"collection":"capture"},
+          {"id":"00000000-0000-0000-0000-00000000000B","type":"direct_recall",
+           "front":"Kavram","back":"Yanıt","subject":"Farmakoloji","status":"active",
+           "dueDate":"1970-01-01T00:00:00Z","stability":1,"difficulty":5,
+           "reviewCount":0,"lapseCount":0,"tags":["glibenklamid","kavram-paketi"],
+           "collection":"concept","fesScore":4}
+        ]}
         """
-        let restored = try BackupExporter.decode(Data(json.utf8))
-        XCTAssertEqual(restored.cards.first?.collection, "capture")
-        // The v6 fields still read, so the new key did not shift anything.
-        XCTAssertEqual(restored.cards.first?.fesScore, 4)
+        let backup = try BackupExporter.decode(Data(json.utf8))
+        XCTAssertEqual(backup.cards.count, 2)
+
+        let plan = BackupRestorer.plan(records: backup.cards, existingIds: [])
+        XCTAssertEqual(plan.toInsert.map(\.front), ["Çekim"])
+        XCTAssertEqual(plan.skippedLegacyConcept, [UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!])
+        XCTAssertTrue(plan.skipped.isEmpty, "kavram kartı 'zaten vardı' sayılmamalı")
+    }
+
+    /// A concept card that happens to share an id with a card on the device is
+    /// still reported as a concept card — never as "already here", which would
+    /// claim the device holds it.
+    func testAConceptCardIsNeverCountedAsAlreadyHere() {
+        let id = UUID()
+        let plan = BackupRestorer.plan(
+            records: [record("Kavram", tags: [ConceptDeckLegacy.tag], id: id)],
+            existingIds: [id]
+        )
+        XCTAssertEqual(plan.skippedLegacyConcept, [id])
+        XCTAssertTrue(plan.skipped.isEmpty)
+        XCTAssertTrue(plan.isEmpty)
+    }
+
+    /// Cards imported after the queue existed were `queued`; the status alone
+    /// is enough to leave such a record out.
+    func testAQueuedRecordIsLeftOutEvenWithoutTheTag() {
+        let plan = BackupRestorer.plan(records: [record("Kuyrukta", status: "queued")], existingIds: [])
+        XCTAssertEqual(plan.skippedLegacyConcept.count, 1)
+        XCTAssertTrue(plan.toInsert.isEmpty)
+    }
+
+    /// What the owner asked for in so many words: a backup taken from now on
+    /// holds nothing about the removed deck — not even the empty field.
+    func testAVersion8FileHasNoCollectionKey() throws {
+        let data = try BackupExporter.encode(cards: [record("Çekim")], exportedAt: Date(timeIntervalSince1970: 0))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let cards = try XCTUnwrap(object["cards"] as? [[String: Any]])
+        XCTAssertNil(cards.first?["collection"])
     }
 
     /// Guards the version constant itself: a file from a newer build must be
     /// refused rather than restored as a lossy subset.
-    func testTheFormatVersionIsSeven() {
-        XCTAssertEqual(BackupExporter.formatVersion, 7)
+    func testTheFormatVersionIsEight() {
+        XCTAssertEqual(BackupExporter.formatVersion, 8)
+        XCTAssertNoThrow(try BackupExporter.decode(Data(
+            #"{"formatVersion":7,"exportedAt":"1970-01-01T00:00:00Z","cards":[]}"#.utf8
+        )))
         XCTAssertThrowsError(try BackupExporter.decode(Data(
-            #"{"formatVersion":8,"exportedAt":"1970-01-01T00:00:00Z","cards":[]}"#.utf8
+            #"{"formatVersion":9,"exportedAt":"1970-01-01T00:00:00Z","cards":[]}"#.utf8
         )))
     }
 }

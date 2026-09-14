@@ -70,74 +70,27 @@ public enum CardStatus: String, Codable, Sendable {
     case suspended
     case draft
     case needsReview = "needs_review"
-    /// Imported but not yet let into the deck.
-    ///
-    /// Only `ConceptPackImporter` writes it. A pack arrives as one file of
-    /// thousands of cards; if they all entered as `.active` with `dueDate` now,
-    /// every one of them would be due on day one and FSRS would present a
-    /// backlog nobody can work through — the deck would be abandoned rather
-    /// than learned. So the pack lands in a queue and the owner releases it in
-    /// batches, on the days he wants to, from Bilgilerim.
-    ///
-    /// Deliberately a new case rather than reusing `.suspended` or `.draft`:
-    /// `.suspended` means "the owner set this card aside" and is shown and
-    /// counted as such, `.draft` means "half-written" and `CoverageSection`
-    /// reads it that way. A queued card is neither — it is finished, unseen,
-    /// and waiting. Reusing either would make both counts lie.
-    ///
-    /// Being a status rather than a separate field is what keeps this cheap:
-    /// Tekrar, Egzersiz's budget and the reminder counts already require
-    /// `.active`, so a queued card is excluded by code that already exists.
-    /// The three places that ask the weaker question "not suspended?" are the
-    /// ones that needed changing, and they now ask `isWithheld`.
-    case queued
 }
 
 extension CardStatus {
     /// Whether this status keeps a card out of every study pool.
     ///
-    /// Exists so that "is this card out of play?" has one answer. Before
-    /// `.queued` there was exactly one way to be out — suspension — so three
-    /// call sites asked `status != .suspended` directly and were correct.
-    /// Adding a second way silently made all three wrong, and nothing would
-    /// have caught it: a queued card is valid, due and not suspended, so it
-    /// would simply have appeared in Egzersiz as if released.
+    /// Exists so that "is this card out of play?" has one answer. When a
+    /// second way of being out existed (the concept deck's `queued`, removed
+    /// 2026-09-14 with the deck) three call sites that had asked
+    /// `status != .suspended` directly became silently wrong — a queued card is
+    /// valid, due and not suspended, so it would have appeared in Egzersiz as
+    /// if released. Kept after the removal for the same reason it was made: a
+    /// future "out of play" status is added here, in one place, instead of
+    /// being missed at three.
     ///
     /// `.draft` and `.needsReview` answer `false` — not because they are
     /// strong, but because they already answered `false` at those call sites
     /// and this property must not quietly change how existing cards behave.
     public var isWithheld: Bool {
         switch self {
-        case .suspended, .queued: return true
+        case .suspended: return true
         case .active, .draft, .needsReview: return false
-        }
-    }
-}
-
-/// Which deck a card belongs to: the ones made from pages photographed with
-/// this phone, or a concept pack imported in bulk.
-///
-/// Unlike `CardType` this is *not* locked to the backend schema, and it must
-/// not become so. The distinction is entirely device-side — the model never
-/// sees it, no prompt mentions it, and `llm_output.schema.json` has no place
-/// for it. Adding a case here therefore stays a one-file change, where a new
-/// `CardType` case would mean editing the schema, the TS types and two sync
-/// tests (`evals/tests/test_swift_contract_sync.py`).
-public enum CardCollection: String, Codable, Sendable, CaseIterable {
-    /// Produced by the Yakala flow: photograph, model, cards. The whole
-    /// pipeline in this app builds these, so it is the migration default and
-    /// the answer for any card whose origin is not recorded.
-    case capture
-    /// Imported in bulk from a concept pack (`ConceptPackImporter`). No page,
-    /// no region, no model run — the chain from `Card` up to `CapturedPage` is
-    /// optional precisely because a card can exist without one.
-    case concept
-
-    /// What this deck is called on screen.
-    public var title: String {
-        switch self {
-        case .capture: return "Çekimlerim"
-        case .concept: return "Kavramlar"
         }
     }
 }

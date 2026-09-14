@@ -46,9 +46,16 @@ final class SecondLookTests: XCTestCase {
         }
     }
 
-    /// A queued card has not been let into the deck yet, so asking the owner to
-    /// vouch for it would be asking about a card he has not been given.
-    func testAQueuedCardIsNotListedEvenWhileFlagged() {
-        XCTAssertFalse(SecondLook.isPending(lowConfidence: true, status: .queued))
+    /// The single answer to "is this card out of play?" that SecondLook,
+    /// Egzersiz's pool and its setup sheet all read. Moved here from the
+    /// removed concept-queue tests (2026-09-14) because the property outlived
+    /// the deck: suspension is now the only way out, and the other three
+    /// statuses must go on answering `false` exactly as they did at the call
+    /// sites this property replaced.
+    func testOnlySuspensionWithholdsACard() {
+        XCTAssertTrue(CardStatus.suspended.isWithheld)
+        for status in [CardStatus.active, .draft, .needsReview] {
+            XCTAssertFalse(status.isWithheld, "\(status) desteden düşmemeli")
+        }
     }
 }

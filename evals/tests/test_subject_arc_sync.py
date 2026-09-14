@@ -14,12 +14,11 @@ the schema says "Genel Cerrahi".
 Neither mistake breaks anything loudly. A ders with no stop falls through to the
 time-of-day accent, and `SubjectDistributionBar` drops its cards from the strip
 entirely — the cards are valid, active and due, the screen looks healthy, and
-the deck it describes is wrong. Same silent class as the forgotten `CardScope`
-call, so it gets the same treatment: generate nothing by hand, lock it with a
-test.
+the deck it describes is wrong. That is the silent class this project locks
+with tests rather than trusting to review: generate nothing by hand, lock it.
 
-Python rather than Swift for the reason `test_card_scope_sites.py` gives: the
-arc lives in the App target, which only compiles on a Mac.
+Python rather than Swift because the arc lives in the App target, which only
+compiles on a Mac — and this check has to run wherever the evals do.
 """
 
 from __future__ import annotations

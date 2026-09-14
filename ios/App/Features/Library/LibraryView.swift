@@ -17,7 +17,6 @@ struct LibraryView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
-    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
     @State private var searchText = ""
     @State private var subjectFilter: String?
     @State private var topicFilter: TopicFilter = .all
@@ -37,17 +36,8 @@ struct LibraryView: View {
     /// Filtered in memory rather than with `#Predicate`, on purpose: subject
     /// and topic live on an optional relationship, `CardSearch` folds Turkish
     /// case in a way SQLite will not, and this deck is hundreds of cards.
-    private var collection: CardCollection { CardScope.collection(fromStored: collectionRaw) }
-
-    /// The active deck, before this screen's own subject/topic/search filters.
-    /// Everything on this screen — the tiles, the sections, the map and the
-    /// empty state — starts here, for the same reason the search text was
-    /// folded into `cards` on 2026-08-15: a screen that filters its list but
-    /// not its totals is reporting on a deck the user is not looking at.
-    private var scopedCards: [Card] { CardScope.cards(allCards, in: collection) }
-
     private var cards: [Card] {
-        scopedCards.filter { card in
+        allCards.filter { card in
             LibraryCardFilter.matches(
                 subject: card.knowledgeUnit?.subject,
                 topic: card.knowledgeUnit?.topic,
@@ -79,8 +69,6 @@ struct LibraryView: View {
     var body: some View {
         NavigationStack(path: $navigator.libraryPath) {
             VStack(spacing: 0) {
-                CardScopePicker()
-
                 Picker("Görünüm", selection: $contentMode) {
                     ForEach(ContentMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -97,11 +85,11 @@ struct LibraryView: View {
                         // in map mode the field searched nothing, and a search
                         // box that ignores what you type is worse than none.
                         Group {
-                            if scopedCards.isEmpty { emptyState } else { list }
+                            if allCards.isEmpty { emptyState } else { list }
                         }
                         .searchable(text: $searchText, prompt: "Kartlarda ara")
                     case .map:
-                        KnowledgeMapView(cards: scopedCards)
+                        KnowledgeMapView(cards: allCards)
                     }
                 }
             }
@@ -118,25 +106,10 @@ struct LibraryView: View {
             .navigationDestination(for: KnowledgeMapSubjectSummary.self) { summary in
                 KnowledgeSubjectView(summary: summary)
             }
-            .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
-                switch route {
-                case .conceptImport: ConceptPackImportView()
-                }
-            }
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     if contentMode == .cards {
                         SubjectTopicFilterMenu(subjectFilter: $subjectFilter, topicFilter: $topicFilter)
-                    }
-                }
-                // Still reachable once the deck is no longer empty: a pack gets
-                // revised, and re-importing is how new concepts arrive. Safe to
-                // offer repeatedly because the import is idempotent.
-                ToolbarItem(placement: .topBarLeading) {
-                    if collection == .concept {
-                        NavigationLink(value: AppNavigator.LibraryRoute.conceptImport) {
-                            Label("Kavram paketi içe aktar", systemImage: "square.and.arrow.down")
-                        }
                     }
                 }
             }
@@ -144,32 +117,18 @@ struct LibraryView: View {
         .tint(Cizgi.accent)
     }
 
-    /// Scope-aware, and on the Kavramlar side it is the feature's only door:
-    /// the importer lives behind it, so a generic "henüz bilgi yok" would leave
-    /// an empty deck with no way to fill it.
-    @ViewBuilder
     private var emptyState: some View {
         VStack(spacing: Cizgi.Space.md) {
-            Image(systemName: collection == .concept ? "square.stack.3d.down.right" : "books.vertical")
+            Image(systemName: "books.vertical")
                 .font(.system(size: 52))
                 .foregroundStyle(Cizgi.accent)
-            Text(collection == .concept ? "Henüz kavram yok" : "Henüz bilgi yok")
+            Text("Henüz bilgi yok")
                 .font(.title3.weight(.bold))
                 .foregroundStyle(Cizgi.ink)
-            Text(collection == .concept
-                 ? "Dışarıda hazırlanmış bir kavram paketini içe aktararak başla."
-                 : "Bir sayfa çektiğinde üretilen kartlar burada birikir.")
+            Text("Bir sayfa çektiğinde üretilen kartlar burada birikir.")
                 .font(.subheadline)
                 .foregroundStyle(Cizgi.muted)
                 .multilineTextAlignment(.center)
-            if collection == .concept {
-                NavigationLink(value: AppNavigator.LibraryRoute.conceptImport) {
-                    Text("Kavram paketi içe aktar")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Cizgi.accent)
-                .padding(.top, Cizgi.Space.sm)
-            }
         }
         .padding(Cizgi.Space.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -189,10 +148,6 @@ struct LibraryView: View {
     private func cardList(_ visible: [Card]) -> some View {
         let activeCount = visible.filter { $0.status == .active }.count
         let suspendedCount = visible.filter { $0.status == .suspended }.count
-        // Queued cards are in the deck file but not in the deck. Counted and
-        // shown because the alternative — 2.600 rows listed with no indication
-        // why none of them ever appear in Tekrar — is the confusing version.
-        let queued = visible.filter { $0.status == .queued }
 
         // Cards the server could not fully vouch for (§13.3 rule 6). Faz 6
         // removed the approval gate and §13.3 wants one on a suspicious
@@ -223,15 +178,10 @@ struct LibraryView: View {
                     HStack(spacing: Cizgi.Space.sm) {
                         StatTile(value: "\(visible.count)", label: "Toplam")
                         StatTile(value: "\(activeCount)", label: "Aktif")
-                        if queued.isEmpty {
-                            StatTile(value: "\(suspendedCount)", label: "Askıda")
-                        } else {
-                            StatTile(value: "\(queued.count)", label: "Kuyrukta")
-                        }
+                        StatTile(value: "\(suspendedCount)", label: "Askıda")
                     }
                     // Deste hangi derslerden kurulu — tek satırda. `visible`
-                    // üzerinden okunur, `cards` üzerinden değil: kapsam
-                    // anahtarı ve etkin filtreler burada da geçerli (ADR-010).
+                    // üzerinden okunur: etkin filtreler burada da geçerli.
                     if !visible.isEmpty {
                         SubjectDistributionBar(
                             counts: subjectDistribution(visible),
@@ -245,12 +195,6 @@ struct LibraryView: View {
                                           bottom: Cizgi.Space.sm, trailing: Cizgi.Space.lg))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
-            }
-
-            if !queued.isEmpty {
-                ConceptQueueSection(queued: queued) { target in
-                    release(target, from: queued)
-                }
             }
 
             if visible.isEmpty {
@@ -353,30 +297,6 @@ struct LibraryView: View {
         }
         try? context.save()
     }
-
-    /// Lets a batch of queued concept cards into the deck.
-    ///
-    /// `queued` is the filtered, scoped set this screen is showing — so with a
-    /// subject or topic filter on, "+20" releases 20 from *that* topic. That is
-    /// the useful reading of the filter and it is the one the owner can see:
-    /// the count beside the buttons is the same filtered count.
-    ///
-    /// Saves once, and only reports what the write actually moved: `plan` picks
-    /// ids, `release` returns how many of them were still queued by the time it
-    /// ran.
-    private func release(_ target: Int, from queued: [Card]) {
-        let ids = ConceptRelease.plan(ConceptRelease.candidates(in: queued), target: target)
-        guard !ids.isEmpty else { return }
-        do {
-            let moved = try ConceptRelease.release(ids: ids, in: context)
-            guard moved > 0 else { return }
-            try context.save()
-        } catch {
-            // Left queued on purpose: a failed save means these cards are still
-            // in the queue, and the next press will find them there. Nothing is
-            // lost and nothing is claimed.
-        }
-    }
 }
 
 extension LibraryView {
@@ -426,14 +346,6 @@ struct CardRow: View {
                 Spacer(minLength: 0)
                 if card.status == .suspended {
                     Label("Askıda", systemImage: "pause.circle")
-                        .font(.caption2)
-                        .foregroundStyle(Cizgi.muted)
-                }
-                // Without this a queued card is indistinguishable from an
-                // active one in the list, and the owner would reasonably
-                // wonder why it never comes up in Tekrar.
-                if card.status == .queued {
-                    Label("Kuyrukta", systemImage: "tray.full")
                         .font(.caption2)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -580,22 +492,6 @@ struct CardDetailView: View {
                         card.updatedAt = .now
                         try? context.save()
                     }
-                }
-            } else if card.status == .queued {
-                // One card out of the queue, by hand. The batch buttons in
-                // Bilgilerim are the normal route; this is for the card the
-                // owner happened to open and wants now. Spelled out rather than
-                // folded into the suspend toggle, which would have released it
-                // through a button labelled "Askıdan çıkar".
-                Section {
-                    Button("Desteye al") {
-                        card.status = .active
-                        card.dueDate = .now
-                        card.updatedAt = .now
-                        try? context.save()
-                    }
-                } footer: {
-                    Text("Bu kart kuyrukta bekliyor: tekrar, egzersiz ve hatırlatmalarda görünmüyor.")
                 }
             } else {
                 Section {

@@ -1,7 +1,28 @@
 # ADR-010 — Kavram destesi: ayrı model değil, koleksiyon ayracı
 
-**Tarih:** 2026-09-09 · **Durum:** kabul edildi, uygulandı ve **simülatörde
-uçtan uca doğrulandı** (gerçek cihaz doğrulaması açık)
+**Tarih:** 2026-09-09 · **Durum:** ⛔️ **KALDIRILDI (2026-09-14) — kod ve veri
+silindi.** Yalnız karar arkeolojisi için okuyun; bu belge artık davranışı
+tarif etmiyor.
+
+> **Kaldırma notu (2026-09-14).** Sahibi kavram destesini denedi ve istemedi:
+> "deneme amaçlıydı, sevmedim; yalnız Çekimlerim kalacak, kavramlara dair
+> hiçbir şey bırakma". Silinenler: `CardScope`, `CardScopePicker`,
+> `ConceptPackImporter` + `ConceptPackImportView`, `ConceptRelease` +
+> `ConceptQueueSection`, `CardCollection`, **`Card.collectionRaw` sütunu**,
+> **`CardStatus.queued`**, deste başına günlük sicil, `CardScopeTests`,
+> `ConceptPackImporterTests`, `ConceptReleaseTests` ve
+> `evals/tests/test_card_scope_sites.py`. Yedek biçimi v8'e çıktı (alan yok).
+>
+> Cihazdaki veri `ConceptDeckRemovalMigration` ile silinir — kartlar,
+> unit'ler, `ReviewLog`'lar ve (düz `cardId` taşıdıkları için cascade'in
+> ulaşmadığı) Egzersiz koşuları/denemeleri. Tanıma bu belgenin "Sonuçlar"
+> bölümündeki etiketle yapılır, çünkü aynı açılışta sütun şemadan düşer:
+> **kaldırmadan sağ çıkan tek iz `ConceptDeckLegacy.tag`'dir** ve eski v7
+> yedeklerindeki kavram kayıtlarını atlamak için de o kullanılır.
+>
+> Aşağıdaki "iki katmanlı kilit" gerekçesi kaldırmayla birlikte konusuz kaldı:
+> tek deste varken filtrelenecek bir şey yok. Geri dönüş = kaldırma commit'inin
+> revert'i (`git log`'da "Kavram destesini tamamen kaldır").
 
 ## Bağlam
 

@@ -81,47 +81,13 @@ Karar kayıtları: [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md) (pivot
 [`PLAN-egzersiz-bilgi-haritasi`](PLAN-egzersiz-bilgi-haritasi.md) (Egzersiz +
 Bilgi Haritası).
 
-## İki deste — kartların ikinci kaynağı (ADR-010)
-
-Yukarıdaki akış kartların **tek** kaynağı değil artık. Dışarıda hazırlanmış bir
-**kavram paketi** (JSON) toplu içe aktarılabiliyor: sayfası, model çağrısı ve
-`TextRegion`'ı olmayan kartlar.
-
-Ayrım `Card.collectionRaw` (`CardCollection`: `capture` | `concept`) ile taşınır
-— **ayrı bir SwiftData modeli yoktur**. Ayrı model FSRS'i, tekrar oturumunu,
-Egzersiz seçimini, FES'i, yedeği ve migration'ları ikinci kez yazmak olurdu;
-gerekçe ve reddedilen alternatifler [`ADR-010`](ADR-010-kavram-destesi-ayri-alan.md).
-
-```text
-Bilgilerim → Kavramlar → "Kavram paketi içe aktar"
-   │
-   └─ ConceptPackImporter        (cihazda, ağ yok, ücret yok)
-        ├─ decode        formatVersion kapısı; kitapSayfa string|sayı
-        ├─ plan          idempotent — uuid5 kimlikler, var olan kart atlanır
-        └─ run           gruplar hâlinde yaz + Task.yield  → 3.017 kart ~15 sn
-             │
-             └─ kavram → 1 KnowledgeUnit (region = nil)
-                  └─ kartlar → collection: .concept, status: .active
-```
-
-Kapsam anahtarı (`CardScopePicker`) Tekrar / Egzersiz / Bilgilerim'in tepesinde
-durur ve seçim `@AppStorage` ile paylaşılır; **bir kapsamdayken diğerinin
-kartları hiçbir yerde görünmez** — liste, sayaçlar, arama, Bilgi Haritası ve
-bildirim sayıları dahil. Ayarlar bilerek kapsamsızdır: yedek ve geri yükleme
-cihaz geneli işlemlerdir.
-
-Filtrelemenin tek adı `CardScope`'tur ve bunun sebebi kısaltma değil
-**aranabilirlik**: filtresi unutulmuş bir ekran çökmez, yalnız yanlış desteyi
-anlatır — kartlar geçerli, aktif ve vadesindedir. Bu yüzden iki kilidi var
-(aşağıdaki anti-drift listesine bakın).
-
 ## Bileşenler
 
 - **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData. Yakalama (kamera +
   galeri), dayanıklı işleme kuyruğu, kart üretimi istemcisi, gerçek FSRS-6
-  tekrarı, Egzersiz modu + Bilgi Haritası, kavram paketi içe aktarma (ADR-010),
-  yedekleme (**v7** — kartın koleksiyonu dahil). Ana veri kaynağı telefondaki
-  SwiftData'dır.
+  tekrarı, Egzersiz modu + Bilgi Haritası, yedekleme (**v8**). Ana veri
+  kaynağı telefondaki SwiftData'dır. (Kavram destesi 2026-09-14'te kaldırıldı —
+  ADR-010 tarihsel.)
 - **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar,
   OpenAI vision ile kart üretir ve bunu asenkron iş kuyruğu üzerinden yürütür
   (`/api/jobs`); `/api/cards-vision` senkron ikinci kapı. Üçüncü, isteğe bağlı
@@ -162,14 +128,6 @@ Tıraş sonrası hâlâ canlı olan çiftler:
   kilitlidir: kademe sırası prompt kural 3'ün öncelik merdivenidir ve hem
   sunucunun hem telefonun "önce hangi atlanmış işaret gösterilsin" cevabını
   belirler.
-
-- **Kapsam filtresi** (ADR-010): `CardScope`'u çağırması gereken altı ekran ↔
-  `evals/tests/test_card_scope_sites.py`. Diğerlerinden bir farkı var — burada
-  kilitlenen bir *değer* değil, bir *çağrının varlığıdır*. Filtresi unutulmuş
-  bir ekran çalışmaya devam eder ve yalnız yanlış desteyi anlatır, yani hiçbir
-  çalışma zamanı sinyali yoktur. Test ayrıca yeni bir `[Card]` sorgusunun
-  listeye katılmasını zorunlu kılar; `CardScopeTests` ise bileşimin doğruluğunu
-  ayrı kanıtlar.
 
 Kural değişmedi: yeni bir "aynı davranış iki yerde" durumu çıkarsa elle senkron
 tutma — üret ve testle kilitle.

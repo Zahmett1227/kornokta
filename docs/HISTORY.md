@@ -362,3 +362,33 @@ Kaldırmanın ortaya çıkardığı iki artık da aynı commit'te temizlendi:
 `KnowledgeMapSummary.activeCoveredTopicCount` (yalnız giriş kartının bu ekranla
 aynı sayıyı göstermesi için vardı — Codex, PR #49) ve `openai.ts`'teki
 `isTransientStatus`'un `export`'u (yalnız `darkMap.ts` için açılmıştı).
+
+
+---
+
+## Kavram destesi — yaşadı ve kaldırıldı (2026-09-09 → 2026-09-14)
+
+Dışarıda hazırlanmış bir JSON kavram paketini (831 kavram / 3.017 kart)
+Çekimlerim'in yanına ikinci bir deste olarak alan özellik. Beş gün `main`'de
+durdu; bir gün sonra kuyruk (paket parti parti açılıyordu) ve deste başına
+günlük sicil eklendi. Sahibi denedi ve istemedi: **tamamen kaldırıldı**.
+
+Kaldırılanlar: kapsam anahtarı ve `CardScope`, içe aktarıcı ve ekranı, kuyruk,
+`CardCollection`, `Card.collectionRaw` sütunu, `CardStatus.queued`, deste başına
+sicil ve iki kilit testi (`CardScopeTests`, `test_card_scope_sites.py`).
+
+İki şey bu kaldırmayı Karanlık Harita'nınkinden farklı kıldı:
+
+1. **Silinecek veri vardı.** Karanlık Harita cihazda iz bırakmıyordu; kavram
+   destesi 3.017 kart, geçmişleri ve Egzersiz koşuları bırakmıştı.
+   `ConceptDeckRemovalMigration` bunları siler. Egzersiz denemeleri düz
+   `cardId` taşıdığı için cascade'e güvenilmedi — simülatörde 16 yetim deneme
+   kalacaktı.
+2. **Bu projede ilk kez bir SwiftData sütunu düşürüldü.** Göç sütunu
+   okuyamayacağı için kavram kartları importer'ın etiketiyle tanındı
+   (`ConceptDeckLegacy`); yalnız `queued`'a bakan bir göç hiçbirini
+   bulamazdı, çünkü simülatördeki kartlar kuyruktan önce aktarılmıştı. Eski
+   şemalı gerçek depo üzerine kurulumla kanıtlandı.
+
+Gerekçe ve reddedilen alternatifler [`ADR-010`](ADR-010-kavram-destesi-ayri-alan.md)'da
+tarihsel olarak duruyor.

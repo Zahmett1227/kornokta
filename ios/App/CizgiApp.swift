@@ -33,6 +33,12 @@ struct CizgiApp: App {
         // Tanınmayan/boş ders `nil` bırakır, o zaman saat karar verir.
         Cizgi.activeSubject = CizgiSubject.matching(environment.settings.defaultSubject)
 
+        // First, before anything reads or rewrites the deck. This launch has
+        // just dropped `Card.collectionRaw`, so from here on an imported
+        // concept card looks exactly like a photographed one; every migration
+        // below would otherwise treat 3.017 of them as the owner's own cards —
+        // the duplicate audit and the FES backfill included (2026-09-14).
+        ConceptDeckRemovalMigration.runIfNeeded(container: container)
         // After the container exists, before any view reads it: the library
         // filters assume every unit's subject is either canonical or nil.
         SubjectBackfillMigration.runIfNeeded(container: container)

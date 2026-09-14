@@ -151,82 +151,40 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    Egzersiz'in kendi `ExerciseAttempt.responseTimeMs` örnekleriyle beslenerek
    kart sayısına çevrilir — çekirdekte hiçbir değişiklik gerekmedi.
 
-### İki deste: Çekimlerim ve Kavramlar (ADR-010, 2026-09-09)
+### Kavram destesi kaldırıldı (2026-09-14)
 
-Kartların bir kaynağı daha var: dışarıda hazırlanmış bir **kavram paketi**
-(JSON) toplu içe aktarılıyor. `Card.collectionRaw` (`CardCollection`:
-`capture` | `concept`) hangi desteye ait olduğunu söylüyor; **ayrı bir
-SwiftData modeli yok** — o, FSRS/tekrar/Egzersiz/FES/yedek/migration'ı ikinci
-kez yazmak olurdu (gerekçe ADR-010).
+2026-09-09'da eklenen ikinci deste (dışarıda hazırlanmış JSON kavram paketi,
+3.017 kart) sahibinin kararıyla **tamamen** kaldırıldı: "deneme amaçlıydı,
+sevmedim; yalnız Çekimlerim kalacak". ADR-010 tarihsel. Geri dönüş = kaldırma
+commit'inin revert'i (`git log`'da "Kavram destesini tamamen kaldır").
 
-- **Kapsam anahtarı** (`CardScopePicker`) Tekrar / Egzersiz / Bilgilerim
-  tepesinde; seçim `@AppStorage` ile paylaşılıyor. Altıncı sekme değil:
-  `CizgiRootTabBar` beş öğeli ve ortası yükseltilmiş.
-- **Bir kapsamdayken diğerinin kartları hiçbir yerde görünmez** — liste,
-  sayaçlar, arama, Bilgi Haritası ve bildirim sayıları dahil.
-- **Filtrelemenin tek adı `CardScope`.** Tek gerçek risk bir çağrı yerini
-  unutmak ve bu **sessiz** bir hata: kartlar geçerli, aktif, vadesinde —
-  ekran sağlıklı görünürken yanlış desteyi anlatır. İki kilit:
-  `CardScopeTests` (bileşim doğru mu) ve `evals/tests/test_card_scope_sites.py`
-  (görünüm `CardScope`'u gerçekten çağırıyor mu; yeni bir `[Card]` sorgusu
-  listeye katılmak **zorunda**).
-- **Ayarlar bilerek kapsamsız:** yedek/geri yükleme cihaz geneli işlemler.
-  Kapsamlı bir `existingIds` kümesi zaten burada olan kartları
-  `@Attribute(.unique)` altında yeniden eklemeye kalkardı. Yalnız bildirim
-  sayısı ve kart dökümü kapsamlı.
-- **Kapsam değişince açık oturum kapanır** (Egzersiz'de `finishEarly()`, çünkü
-  `finishedAt`'i boş bir `ExerciseRun` sonraki açılışta geri açılırdı).
-- **`ConceptPackImporter`** idempotent (paket kimlikleri uuid5), kavram başına
-  **tek** `KnowledgeUnit`, `region = nil` (sahte sayfa üretmez), gruplar hâlinde
-  yazar. Bilinmeyen kart tipi `direct_recall`'a düşer — `CardType` backend
-  şemasına kilitli, paketteki 466 `sirali_coklu` kartı bu yoldan geliyor.
-- **Paketin düzensizliği:** `kitapSayfa` 741 kavramda string, 90'ında çıplak
-  sayı. `String` olarak çözmek 559. kavramda `typeMismatch` verip **bütün**
-  import'u düşürüyordu; `LooseString` ikisini de alıyor. Kod okuyarak değil
-  gerçek dosyaya karşı **koşturarak** bulundu.
-
-#### Kuyruk: paket parti parti açılıyor (2026-09-10)
-
-İçe aktarılan kartlar artık `.active` değil **`CardStatus.queued`** olarak
-iniyor. Gerekçe: paket binlerce kart ve hepsi aynı gün vadesinde olursa Tekrar
-devasa bir birikimle açılır; FSRS'in bunu eritecek bir yolu yok, sonuç desteyi
-bırakmak olur. Kuyruktan çıkışın tek yolu **`ConceptRelease`** ve onu yalnız
-kullanıcının bastığı düğme çağırıyor (Bilgilerim → Kavramlar → "Kuyruk" →
-`+10 / +25 / +50`).
-
-- **Kota yok, takvim yok, otomatik damlatma yok.** Önceden girilen bir sayı,
-  düşeceği günü bilemez: nöbet gecesi 40 kart ceza, boş pazar 40 kart israf.
-  Karar, bilginin olduğu yerde — o günde — veriliyor.
-- **Bütün kavram birlikte açılır**, o yüzden `target` taban değil tavan değil:
-  20 istenince 22 gelebilir. Bir kavramın 6 kartından 2'sini görmek parçayı
-  çerçevesiz öğretmek olurdu.
-- **Sıra paketin sırası** (kavram slug'ı, `KnowledgeUnit.tags[0]`), ekleme
-  sırası değil — yeniden import sonrası ekleme sırası anlamsızlaşıyor.
-- **`dueDate` açılışta yazılıyor**, import'ta değil: eylülde alınıp ocakta
-  açılan bir kart dört ay gecikmiş gelmemeli, FSRS o gecikmeyi hafıza kanıtı
-  sayar.
-- **`CardStatus.isWithheld`** eklendi. Daha önce "deste dışı" demenin tek yolu
-  `.suspended` olduğu için üç çağrı yeri (`SecondLook`, `ExerciseView`,
-  `ExerciseSetupSheet`) doğrudan `status != .suspended` soruyordu; ikinci bir
-  yol eklemek bunları **sessizce** yanlış hale getirirdi — kuyruktaki kart
-  geçerli, vadesinde ve askıda değil, yani Egzersiz'e sızardı. Yeni bir "deste
-  dışı" durumu eklenecekse tek yer burası.
-- **`.suspended` ya da `.draft` yeniden kullanılmadı:** ilki "kullanıcı bunu
-  kenara koydu" demek ve öyle sayılıyor, ikincisi "yarım yazılmış" demek ve
-  `CoverageSection` onu öyle okuyor. Kuyruktaki kart ikisi de değil — bitmiş,
-  görülmemiş, bekliyor.
-
-#### Günlük yeni kart sınırı deste başına (2026-09-10)
-
-`dailyNewCardLimit` ve `DailyNewCardLedger` tek ve paylaşımlıydı: sabah 20
-kavram kartı çalışmak, Çekimlerim'i günün kalanında yeni kartsız bırakıyordu ve
-bunu **hiçbir ekran göstermiyordu**. Artık sicil deste başına
-(`DailyNewCardLedger.load(for:)`, concept için ayrı `UserDefaults` anahtarı;
-capture eski anahtarı koruyor ki yükseltme günü kimseye bedava 20 kart
-çıkmasın). Ayarlar'daki sayı **yalnız Çekimlerim'i** yönetiyor ve etiketi öyle
-diyor; Kavramlar tarafında sınır `Int.max`, çünkü orada hız `+N` düğmesiyle
-zaten kullanıcı tarafından veriliyor — üstüne bir de 20 uygulamak `+50`'ye
-basan adama 20 kart göstermek olurdu.
+- **Silinenler:** `CardScope`, `CardScopePicker` (Tekrar/Egzersiz/Bilgilerim
+  tepesindeki anahtar), `ConceptPackImporter` + içe aktarma ekranı,
+  `ConceptRelease` + "Kuyruk" bölümü, `CardCollection` enum'u,
+  **`Card.collectionRaw` sütunu**, **`CardStatus.queued`**, deste başına günlük
+  yeni kart sicili (tek sicile döndü, anahtar `cizgi.newCardLedger.v1`
+  korundu), `evals/tests/test_card_scope_sites.py`.
+- **Cihazdaki veri — `ConceptDeckRemovalMigration`** (tek seferlik,
+  `cizgi.migration.conceptDeckRemoval.v1`, göç zincirinin **en başında**):
+  kavram unit'lerini, kartlarını, `ReviewLog`'larını **ve** o kartlardan
+  yapılmış Egzersiz koşularını/denemelerini siler. Sonuncusu bilinçli:
+  `ExerciseAttempt` kartla ilişki değil düz `cardId` taşır, cascade onu
+  götürmez — simülatörde 16 yetim deneme kalacaktı.
+- **Tanıma etiketle, sütunla değil.** Aynı açılışta `collectionRaw` şemadan
+  düştüğü için göç onu okuyamaz; importer'ın her unit'e yazdığı
+  `"kavram-paketi"` etiketi tek iz. `ConceptDeckLegacy` (CizgiCore) bu yüzden
+  kaldırmadan **sağ çıkan tek kavram izi** — "hiçbir şey bırakma" ile bilinçli
+  gerilim, eski veriyi temizleyebilmek için gerekli. Yalnız `queued`'a bakan
+  bir göç **hiçbir** kartı bulamazdı: simülatördeki 3.017 kart kuyruk
+  özelliğinden önce aktarıldığı için `active`'ti.
+- **Şema kanıtı:** sütun düşürme bu projede ilk kezdi. Eski şemalı gerçek depo
+  (3.021 kart, 834 unit, 12 log, 7 koşu/19 deneme) üzerine yeni build silmeden
+  kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` yok, 4 kart / 3 unit / 3 log /
+  2 koşu / 3 deneme, yetim log ve deneme sıfır, ikinci açılışta sayılar aynı.
+- **Yedek v8:** `collection` alanı yok. v7 dosyası hatasız okunur;
+  `BackupRestorer.plan` kavram kayıtlarını (etiket **veya** `queued`) atlar ve
+  sayar, geri yükleme mesajı "N kavram kartı atlandı (bu deste kaldırıldı)"
+  der. Eski depodan üretilmiş gerçek bir v7 yedeğiyle arayüzden denendi.
 
 ### Tasarım dili — "Kemik & Oxblood" (2026-09-10)
 
@@ -283,10 +241,9 @@ Yerine:
    **Georgia**'ya düşer (iOS'ta hep var, `relativeTo:` korunduğu için Dynamic
    Type de yerinde).
 
-**Font durumu:** `LibreCaslonText-Regular.ttf` **pakete konmadı** (indirme
-kullanıcının kararı). `ios/Resources/` klasörü ve `UIAppFonts` anahtarı
-`project.yml`'de hazır; dosyayı oraya koymak yeterli, başka değişiklik
-gerekmez. Konmadığı sürece serif = Georgia.
+**Font durumu:** `LibreCaslonText-Regular.ttf` pakette (`ios/Resources/`,
+OFL lisansıyla, `UIAppFonts` `project.yml`'de). Georgia geri düşüşü yalnız
+dosya bir gün eksik kalırsa devreye girer.
 
 **Yan düzeltmeler** (tasarımı uygularken görünür hâle gelen gerçek kusurlar):
 Ayarlar / Egzersiz kurulumu / Kullanım dökümü ekranları iOS'un soğuk gri grup
@@ -451,10 +408,9 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 - **Bilgi Haritası:** kanonik ders/konu kapsamı; tanınmayan ad asla kanonik
   düğüm üretmez ama sayılır ("Konusuz" / "tanınmayan konu" /
   "sınıflandırılmamış" kovaları) — ekrandaki satırların toplamı desteye eşit.
-- **Yedek biçimi v7:** v6'nın üstüne kartın **koleksiyonu** (`collection`,
-  ADR-010). Alansız bir geri yükleme 3.017 kavram kartını çekim destesine
-  kurardı ve bunu hiçbir şey bildirmezdi — her kart tek tek geçerli. Alanı
-  olmayan eski dosyalar `.capture` okur.
+- **Yedek biçimi v8:** v7'nin `collection` alanı kavram destesiyle birlikte
+  kalktı. v7 dosyası hatasız okunur; içindeki kavram kayıtları etiketle
+  tanınır, atlanır ve geri yükleme mesajında sayılır.
 - **Yedek biçimi v6:** `CardRecord` = kart + FSRS durumu + tüm `ReviewLog`
   geçmişi + şıklar + `lowConfidence` + `topic` (v4) + `softLapseCount` (v5) +
   FES sicili (v6: `fesScore`/`fesNegativeCount`/`fesInitializedAt`). Eski
@@ -497,8 +453,8 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 | Deste denetimi: kopya kartların askıya alınması (2026-08-18) | ✅ `main`'de (PR #46, squash `deef8dc`) ve **cihazda doğrulandı** (2026-08-18): ilk açılışta askıdaki kart sayısı 11 → **128**, tam beklendiği gibi. Sahibinin 2026-08-18 yedeği (1007 kart) baştan sona okundu: 996 aktif kartın **117'si** (%12) birebir/yakın kopya (74) ya da tutulan başka bir kartın cevabında tamamen kapsanan (43) — ana kaynak aynı sayfanın birden çok kez çekilmesi; en yoğun konu Solunum (142 kartın 49'u). Küme küme gerekçeli rapor + UUID listesi sahibinde (sohbette dosya olarak). Uygulama: `DuplicateSuspendMigration` — kimlik listesi gömülü, tek seferlik, **siler değil askıya alır** (`ReviewLog`/FES korunur, "Askıdan çıkar" ile tek tek geri alınır), yalnız `.active` karta dokunur. Bilinçli olarak `TopicBackfillMigration`'ın seen-set deseni DEĞİL (o desenin sonsuz-tarama açığı "Küçük ve gerçek kalanlar" 2'de kayıtlı): bayrak ilk başarılı kayıtta yazılır; temiz kurulum + sonradan restore boşluğu ise `ApprovalGateMigration`'la aynı biçimde kapalı — `SettingsView.restore`, idempotent `suspend(in:)` adımını restore'un kendi context'inde yeniden koşar (Codex, PR #46 P2). Denetimin yan ürünleri: içeriği şüpheli 3 kart (anjiyomiyolipom-ağrı, miksoma-McCune-Albright, HER2→"Luminal B" — `lowConfidence` olmadıkları için İkinci Görüş düğmesi çıkmaz, elle bakılmalı) ve metni düzeltilmeli ~25 kart (v2.6 öncesi "Pasaja göre…" kalıntıları) rapora yazıldı, koda dahil değil. Kalan mini kontrol (kritik değil, fırsat olunca): bir kartta "Askıdan çıkar" deneyip kartın aktif **kaldığını** görmek — bayrak yazıldığı için migration bir daha dokunmamalı |
 
 
-| Kavram destesi ayrı alanda (`CardCollection` + kapsam anahtarı + `ConceptPackImporter`, ADR-010) | ✅ `main`'de (2026-09-09, `12ccf93` + `efa1978`). **Simülatörde uçtan uca doğrulandı:** eski şemayla yazılmış bir depo (4 kart, 3 unit) üzerine yeni ikili kuruldu → uygulama açıldı, `ZCOLLECTIONRAW` eklendi, dört kart da `capture` oldu, veri kayıpsız. Gerçek 3.017 kartlık paket telefonda içe aktarıldı (~15 sn, 831 kavram/831 unit, konusuz kart **sıfır**), Çekimlerim tarafı 4 kartta kaldı, Ayarlar dökümü 3021 = 4 + 3017, v7 yedeği 3.017 concept + 4 capture ile 4,1 MB çıktı. **Gerçek cihazda kalan:** doğrulama listesinin 23-27. maddeleri |
-| Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 28-31. maddeleri |
+| Kavram destesi (ADR-010) | ⛔️ **Kaldırıldı** (2026-09-14). Kod, şema sütunu, `queued` durumu ve cihazdaki veri gitti; eski şemalı depo ve gerçek v7 yedeğiyle simülatörde kanıtlandı. Ayrıntı: yukarıdaki "Kavram destesi kaldırıldı" bölümü. **Gerçek cihazda kalan:** doğrulama listesinin 23-24. maddeleri |
+| Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
 **Dal durumu:** `main` en güncel ve `origin/main`'e **push edildi**
@@ -629,11 +585,9 @@ boş defterle geçti).
   dokunmadan önce oku — özellikle FES'in **neden saklanan, hesaplanan
   olmadığı** (`ExerciseAttempt` 90 günde siliniyor) ve neden
   `ExercisePracticeWeight`'in yerine değil yanına girdiği.
-- **`docs/ADR-010`** — GÜNCEL YÖN: kavram destesi ayrı bir modelde değil,
-  `Card` üzerindeki bir koleksiyon ayracında; arayüzde kapsam anahtarı.
-  `CardScope.swift`, `ConceptPackImporter.swift`, `CardScopePicker.swift`'e
-  dokunmadan önce oku — özellikle **neden ayrı model olmadığı** ve filtreyi
-  unutmanın neden sessiz bir hata olduğu.
+- **`docs/ADR-010`** — tarihsel: kavram destesi (2026-09-14'te kaldırıldı).
+  Kalan tek iz `ConceptDeckLegacy`; ona dokunmadan önce ADR'nin kaldırma notunu
+  oku.
 - **`docs/ADR-001`** — Türkçe normalizasyon (İ/ı, NFC, diyakritik katlama);
   `providers/turkish.ts` ↔ `MultipleChoice.comparisonKey` hâlâ buna dayanır.
 - **`docs/ADR-002/003/004`** — tarihsel: OCR seçimi, uzlaştırma kapısı,
@@ -660,11 +614,6 @@ Canlı çiftler ve kilitleri:
   Burada **sıra da sözleşmedir**: prompt kural 3'ün öncelik merdiveni (el yazısı
   → sembol → altı çizili → fosforlu) hem sunucunun hem telefonun sıralamasını
   belirler, testler sırayı da kilitler.
-
-- **Kapsam filtresi (ADR-010):** `CardScope`'u çağırması gereken altı ekran ↔
-  `evals/tests/test_card_scope_sites.py`. Burada kilitlenen şey bir *değer*
-  değil bir *çağrının varlığı*: filtresi unutulmuş bir ekran çalışmaya devam
-  eder, yalnız yanlış desteyi anlatır.
 
 - **Ders renk yayı (tasarım dili):** `CizgiSubject` ↔
   `backend/schemas/subject_topics.json` — `evals/tests/test_subject_arc_sync.py`.
@@ -732,8 +681,8 @@ commit'inin revert'i), `docs/FAZ0-*` – `FAZ5-*`,
 
 ## Sıradaki iş
 
-**Elle yapılacak somut işler:** kavram destesinin gerçek cihazda doğrulanması
-(ADR-010, aşağıda 23-27), FES sicili ve Egzersiz'in altı boyutlu filtresinin
+**Elle yapılacak somut işler:** kavram destesi kaldırmasının gerçek cihazda
+doğrulanması (aşağıda 23-24), FES sicili ve Egzersiz'in altı boyutlu filtresinin
 cihaz doğrulaması (ADR-008, aşağıda 1-5) ve A6 (§2 aşağıda).
 Cihaz doğrulama listesinin geri kalanı 2026-08-13'te büyük ölçüde kapandı;
 kalan iki madde (6-7) haftalara yayılan gerçek-kullanım gözlemi, oturup
@@ -882,64 +831,52 @@ gösterir (2026-08-13 tartışması).
     isteğe bağlı alan, varsayılan `nil`) ve o sayfa "kapsama defteri olmadan
     üretilmiş" demeli — "temiz" değil.
 
-23. **Kavram paketi gerçek telefonda (ADR-010).** Paketi Dosyalar'a koy →
-    Bilgilerim → Kavramlar → "Kavram paketi içe aktar". Simülatörde ~15 sn
-    sürdü; gerçek cihazda daha uzun sürebilir, ilerleme çubuğu ilerlemeye
-    devam etmeli ve uygulama yanıt vermeyi bırakmamalı. Bitince "831 kavram,
-    3.017 kart eklendi." demeli. **Aynı dosyayı ikinci kez seç:** "3.017 kart
-    zaten buradaydı, atlandı." demeli ve deste büyümemeli.
-24. **Kapsam sızıntısı (asıl sınanan).** Kavramlar'a geç, sonra Çekimlerim'e
-    dön: Bilgilerim'in üç sayısı, Tekrar'ın oturum sayısı ve Egzersiz'in
-    "Hızlı 10"u **içe aktarmadan önceki** değerlerinde olmalı. Bir yerde
-    3.017'yi hatırlatan bir sayı görürsen bir `CardScope` çağrısı atlanmış
-    demektir — sessiz hata sınıfı, kilidi `test_card_scope_sites.py`.
-25. **Bildirim sayısı.** Kapsam Kavramlar'dayken gelen tekrar bildirimi
-    kavram kartlarını saymalı, Çekimlerim'e geçince çekim kartlarını.
-26. **Yedek al → geri yükle (v7).** Yedek her iki desteyi de taşımalı
-    (dosya ~4 kat büyür). Geri yüklemeden sonra kavram kartları **Kavramlar**
-    tarafında olmalı, Çekimlerim'e sızmamalı. Ayrıca **v6 bir eski yedeği**
-    geri yükle: gelen kartların hepsi Çekimlerim'de olmalı.
-27. **Performans ölçümü (plandaki açık madde).** 3.017 kart içerideyken:
-    Bilgilerim'de arama kutusuna yazarken gecikme var mı, Egzersiz açılışı ve
-    uygulama açılışı yavaşladı mı. Gerekirse çözüm kapsam filtresini `@Query`
-    predicate'ine taşımak — çağrı yerleri aynı kalır (ADR-010 "Kapsam dışı").
+23. **Kavram destesi kaldırma göçü (2026-09-14).** **Önce Ayarlar → "Yedeği
+    hazırla" ile yedek al** (sütun düşürme bu projede ilk; simülatörde
+    kanıtlandı ama sigorta ucuz). Sonra kur ve aç: uygulama açılmalı,
+    Bilgilerim'in Toplam'ı yalnız çekim kartları olmalı, Tekrar/Egzersiz/
+    Bilgilerim'in hiçbirinde Çekimlerim/Kavramlar anahtarı olmamalı, Ayarlar'da
+    "Kart" tek satır. İkinci açılışta sayılar aynı kalmalı.
+24. **Eski v7 yedeği geri yükle.** Kavram destesi varken alınmış bir yedeği
+    seç: "… kavram kartı atlandı (bu deste kaldırıldı)" satırı çıkmalı ve
+    Toplam büyümemeli.
 
-28. **Vurgu rengi gerçekten kayıyor mu (tasarım dili).** Yakala'daki ders
+25. **Vurgu rengi gerçekten kayıyor mu (tasarım dili).** Yakala'daki ders
     şeridinden ders değiştir: bütün uygulamanın vurgusu (butonlar, seçili
     sekme diski, bağlantılar) o dersin rengine kaymalı — ve bunu yaparken
     **açık bir Egzersiz oturumu kaybolmamalı** (`.id()` yerine yayıncı
     kullanılmasının tek sebebi bu). Ayarlar → Görünüm → "Zamana göre" ve
     "Sabit"i de dene; "Sabit"te ders değişimi rengi **değiştirmemeli**.
-29. **Dokuz değil on bir ders.** Ayarlar → Görünüm'deki önizleme şeridi on bir
+26. **Dokuz değil on bir ders.** Ayarlar → Görünüm'deki önizleme şeridi on bir
     durak göstermeli. Bilgilerim'de Çekimlerim destesinin ders şeridi, kart
     dökümüyle aynı oranları anlatmalı; **gri bir dilim görürsen** yaya
     oturmayan kart var demektir (beklenen: yok).
-30. **Serif üç yerde, fazlasında değil.** Kart sorusu, boş durum başlığı ve
+27. **Serif üç yerde, fazlasında değil.** Kart sorusu, boş durum başlığı ve
     büyük sayılar serif olmalı; gövde metni, etiketler ve butonlar **olmamalı**.
     Font pakete konmadıysa serif = Georgia (kırılma değil, tasarlanmış geri
     düşüş). `LibreCaslonText-Regular.ttf` `ios/Resources/`'a konduktan sonra
     aynı üç yer Caslon'a dönmeli — dördüncü bir yer serif olduysa bir çağrı
     fazladan `Cizgi.serif` kullanıyordur.
-31. **Dynamic Type'ın en büyük iki kademesi.** Sekme çubuğu etiketleri düşüp
+28. **Dynamic Type'ın en büyük iki kademesi.** Sekme çubuğu etiketleri düşüp
     yalnız ikonlar kalmalı; `NumeralActionRow`'un büyük rakamı satırı
     taşırmamalı; `CardTypeMark` işaretleri okunur kalmalı.
 
-32. **Tekrar'ın aralık etiketleri doğru mu (2026-09-12).** Bir kartta "Bildim"e
+29. **Tekrar'ın aralık etiketleri doğru mu (2026-09-12).** Bir kartta "Bildim"e
     bastıktan sonra kart detayındaki vade, düğmenin altında yazan süreyle
     tutmalı. **Asıl sınanan "Unuttum":** `oturumda` diyorsa kart gerçekten bu
     oturumda geri gelmeli; **aynı kartı üst üste üç kez** Unuttum'la geçince
     dördüncüde etiket bir gün sayısına dönmeli (`maxRelearningRepeats`).
-33. **"Bitir" ve sekme çubuğu.** Oturum başlayınca alt çubuk kaybolmalı ve
+30. **"Bitir" ve sekme çubuğu.** Oturum başlayınca alt çubuk kaybolmalı ve
     "Bitir" çıkmalı; Bitir'e basınca onay sorulmadan başlangıç ekranına
     dönmeli, çubuk geri gelmeli ve **verdiğin notlar korunmuş olmalı** (sayaç
     o kadar azalmış olmalı). Yarıda bırakılan kartlar hâlâ vadesinde görünmeli.
-34. **Karanlık mod not düğmeleri.** Dördü de okunur olmalı — özellikle
+31. **Karanlık mod not düğmeleri.** Dördü de okunur olmalı — özellikle
     "Kolay". Simülatörde doğrulandı, gerçek cihazda bir kez görülmeli.
-35. **Beş şıklı kart yeni yüzde (`ReviewCardFace`).** Şık listesi artık bir
+32. **Beş şıklı kart yeni yüzde (`ReviewCardFace`).** Şık listesi artık bir
     slot; şıklar soru ile kesme çizgisi arasında, kutulu satırlar hâlinde
     durmalı. Yanlış şık seçilince "Devam", doğruda üç derece çıkmalı — bu yol
     simülatördeki destede beş şıklı kart olmadığı için **denenmedi**.
-36. **`lowConfidence` kartı.** "Gözden geçir" çipi artık sorunun *üstünde*
+33. **`lowConfidence` kartı.** "Gözden geçir" çipi artık sorunun *üstünde*
     değil, metnin altında. Kıvrık köşe (`DogEar`) kutuyla birlikte kalktı;
     kartın şüpheli olduğu hâlâ anlaşılıyor mu, yoksa çip yetersiz mi — bu bir
     zevk kararı, gerçek kullanımda bakılmalı.

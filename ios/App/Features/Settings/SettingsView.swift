@@ -8,16 +8,12 @@ import CizgiCore
 struct SettingsView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @Environment(\.modelContext) private var context
-    /// Every card in the store, deliberately unscoped. Backup and restore are
-    /// whole-device operations: exporting only the deck that happens to be on
-    /// screen would silently drop the other one, and deduplicating a restore
-    /// against a scoped id set would try to re-insert cards that are already
-    /// there under a `@Attribute(.unique)` id. Only the reminder count and the
-    /// card tally below read a single deck, and they say so at the call.
+    /// Every card in the store. Restore deduplicates against this whole set:
+    /// checking against anything narrower would try to re-insert cards that are
+    /// already there under an `@Attribute(.unique)` id.
     @Query private var cards: [Card]
     @Query private var pages: [CapturedPage]
     @Query private var modelRuns: [ModelRun]
-    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
 
     /// Görünüm bölümündeki seçimler `Cizgi`'nin `static var`'larına yazıyor;
     /// SwiftUI onları göremez, bu yüzden yayıncı burada da gözleniyor.
@@ -162,11 +158,7 @@ struct SettingsView: View {
                         ), in: 0...23
                     )
                     .disabled(!environment.settings.notificationsEnabled)
-                    // Named for the deck it governs since 2026-09-10: the concept
-                    // deck is paced by its own batch buttons in Bilgilerim, not by
-                    // this number, and a label that said only "günlük yeni kart"
-                    // would be describing a limit that deck ignores.
-                    Stepper("Çekimlerde günlük yeni kart: \(environment.settings.dailyNewCardLimit)", value: Binding(
+                    Stepper("Günlük yeni kart: \(environment.settings.dailyNewCardLimit)", value: Binding(
                         get: { environment.settings.dailyNewCardLimit },
                         set: { environment.settings.dailyNewCardLimit = $0; environment.settings.save() }
                     ), in: 0...100)
@@ -187,18 +179,6 @@ struct SettingsView: View {
 
                 Section("Veri") {
                     LabeledContent("Kart", value: "\(cards.count)")
-                    // Ayarlar is not a scoped screen, so the tally above is the
-                    // whole store — but that number stops matching Bilgilerim
-                    // the moment a pack is imported, and an unexplained gap
-                    // reads as a bug. Shown only when there is actually a
-                    // second deck to explain.
-                    if conceptCardCount > 0 {
-                        LabeledContent(
-                            "  · \(CardCollection.capture.title)",
-                            value: "\(cards.count - conceptCardCount)"
-                        )
-                        LabeledContent("  · \(CardCollection.concept.title)", value: "\(conceptCardCount)")
-                    }
                     LabeledContent("Çekilen sayfa", value: "\(pages.count)")
                     Toggle("Orijinal sayfayı sakla", isOn: Binding(
                         get: { environment.settings.keepOriginalPage },
@@ -484,13 +464,9 @@ struct SettingsView: View {
                     enabled: environment.settings.notificationsEnabled,
                     hour: environment.settings.notificationHour,
                     // Suspended cards are excluded for the same reason the
-                    // review screen excludes them, and the active deck for the
-                    // same reason `RootView` uses it: the reminder has to count
+                    // review screen excludes them: the reminder has to count
                     // the cards the screen it opens will show.
-                    dueDates: CardScope
-                        .cards(cards, in: CardScope.collection(fromStored: collectionRaw))
-                        .filter { $0.status == .active }
-                        .map(\.dueDate)
+                    dueDates: cards.filter { $0.status == .active }.map(\.dueDate)
                 )
                 notificationError = nil
             } catch {
@@ -549,11 +525,7 @@ struct SettingsView: View {
                     // device cannot recompute this from scratch.
                     fesScore: card.fesScore,
                     fesNegativeCount: card.fesNegativeCount,
-                    fesInitializedAt: card.fesInitializedAt,
-                    // Version 7. Without it every imported concept card would
-                    // restore into the photographed deck, and nothing would
-                    // report it: each card is individually valid.
-                    collection: card.collectionRaw
+                    fesInitializedAt: card.fesInitializedAt
                 )
             }
             let data = try BackupExporter.encode(cards: records)
@@ -565,10 +537,6 @@ struct SettingsView: View {
             exportURL = nil
             exportError = "Yedek hazırlanamadı: \(error.localizedDescription)"
         }
-    }
-
-    private var conceptCardCount: Int {
-        cards.reduce(into: 0) { $0 += ($1.collection == .concept ? 1 : 0) }
     }
 
     /// Reads a backup and inserts the cards this device does not already have.
@@ -593,8 +561,17 @@ struct SettingsView: View {
                 records: backup.cards,
                 existingIds: Set(cards.map(\.id))
             )
+            // Said on every outcome, including the empty one: a v7 file holds
+            // the removed concept deck next to the photographed cards, and a
+            // restore that silently inserted 4 of 3.021 records would read as
+            // a broken backup (2026-09-14).
+            let conceptNote = plan.skippedLegacyConcept.isEmpty
+                ? ""
+                : " \(plan.skippedLegacyConcept.count) kavram kartı atlandı (bu deste kaldırıldı)."
             guard !plan.isEmpty else {
-                restoreSummary = "Yedekteki \(backup.cards.count) kartın hepsi zaten burada."
+                restoreSummary = plan.skipped.isEmpty
+                    ? "Yedekte geri yüklenecek çekim kartı yok." + conceptNote
+                    : "Yedekteki \(plan.skipped.count) çekim kartının hepsi zaten burada." + conceptNote
                 return
             }
 
@@ -674,9 +651,24 @@ struct SettingsView: View {
                 UserDefaults.standard.removeObject(forKey: DuplicateSuspendMigration.flagKey)
             }
 
-            restoreSummary = plan.skipped.isEmpty
+            // Belt to the plan's filter: the plan already left every tagged or
+            // queued record out, so this should find nothing. It runs because
+            // the startup migration's flag is spent on a fresh install, and a
+            // concept card that slipped through by any other route would
+            // otherwise stay for good.
+            do {
+                if try !ConceptDeckRemoval.remove(in: context).isEmpty {
+                    try context.save()
+                }
+            } catch {
+                context.rollback()
+                UserDefaults.standard.removeObject(forKey: ConceptDeckRemovalMigration.flagKey)
+            }
+
+            restoreSummary = (plan.skipped.isEmpty
                 ? "\(plan.toInsert.count) kart geri yüklendi."
-                : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı."
+                : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı.")
+                + conceptNote
         } catch {
             restoreError = (error as? LocalizedError)?.errorDescription
                 ?? "Yedek okunamadı: \(error.localizedDescription)"
@@ -699,10 +691,7 @@ struct SettingsView: View {
             createdAt: record.createdAt == .distantPast ? .now : record.createdAt,
             dueDate: record.dueDate,
             options: record.options,
-            lowConfidence: record.lowConfidence,
-            // Pre-v7 files have no such key and decode as `.capture`, which is
-            // the truth about them: concept cards could not exist yet.
-            collection: CardCollection(rawValue: record.collection) ?? .capture
+            lowConfidence: record.lowConfidence
         )
         // Scheduling state is assigned after init, which resets it to zero.
         card.stability = record.stability

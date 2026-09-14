@@ -17,11 +17,6 @@ struct RootView: View {
     /// `CizgiAppearance`).
     @ObservedObject private var appearance = CizgiAppearance.shared
     @Query private var cards: [Card]
-    /// The deck the user is currently in. Read here as well as on the three
-    /// card screens because a reminder must count the same cards the screen it
-    /// opens would show — a notification for cards that are invisible until
-    /// you flip the switcher is a notification about nothing.
-    @AppStorage(CardScope.storageKey) private var collectionRaw = CardScope.fallback.rawValue
     /// Held for the lifetime of the scene: `UNUserNotificationCenter.delegate`
     /// is a weak reference, so a locally-created delegate would be deallocated
     /// immediately and tapped reminders would go nowhere.
@@ -30,9 +25,7 @@ struct RootView: View {
     /// Due dates of the cards a reminder may legitimately count — suspended
     /// ones are excluded because the review screen will not show them either.
     private var reviewableDueDates: [Date] {
-        CardScope.cards(cards, in: CardScope.collection(fromStored: collectionRaw))
-            .filter { $0.status == .active }
-            .map(\.dueDate)
+        cards.filter { $0.status == .active }.map(\.dueDate)
     }
 
     var body: some View {
