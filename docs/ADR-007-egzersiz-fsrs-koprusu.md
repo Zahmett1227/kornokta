@@ -53,6 +53,11 @@ döndürdüğü alanlar uygulanır:
 - `ReviewLog` Egzersiz'den **asla** yazılmaz — tekrar geçmişi, gerçek planlı
   tekrarların kaydı olarak kalır (FSRS ağırlık optimizasyonunun girdisi de o).
 - `ExerciseSession` saf kalır; köprü kayıt anında, App katmanında uygulanır.
+- **Egzersiz'den askıya alma bir cevap değildir** (2026-09-14): kartı
+  `.suspended` yapar ve koşudan `ExerciseSession.remove` ile çıkarır;
+  `ExerciseAttempt`, FES sinyali, `EarlyPractice` ve `ReviewLog` yazılmaz.
+  Silinmiş kartın geçtiği yolun aynısıdır, bu yüzden köprüye yapısal olarak
+  hiç ulaşmaz.
 - Zayıf Nokta seçimi değişmedi: Egzersiz yanlışı zaten pratik-hatası kanalından
   besleniyor; `softLapseCount`'u ayrıca saydırmak aynı olayı iki kez tartardı.
 

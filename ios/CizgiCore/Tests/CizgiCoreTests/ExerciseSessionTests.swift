@@ -102,6 +102,31 @@ final class ExerciseSessionTests: XCTestCase {
         XCTAssertEqual(session.current, following)
     }
 
+    /// Suspending the card on screen from Egzersiz (2026-09-14) goes through
+    /// `remove`. What the owner sees must stay honest: the counter shrinks, the
+    /// cards already answered are still the cards answered, and suspending the
+    /// last card left ends the run instead of stranding it.
+    func testSuspendingTheCurrentCardNeverTouchesTheSummary() {
+        var generator = SeededGenerator(seed: 31)
+        var session = ExerciseSession(cardIds: ids(4), using: &generator)
+        session.record(.knew)
+        session.record(.missed)
+        XCTAssertEqual(session.completed, 2)
+
+        session.remove(session.current!)
+
+        XCTAssertEqual(session.completed, 2, "askıya alma bir cevap sayılmamalı")
+        XCTAssertEqual(session.total, 3)
+        XCTAssertEqual(session.summary.answered, 2)
+        XCTAssertEqual(session.summary.knew, 1)
+        XCTAssertEqual(session.summary.missed, 1)
+        XCTAssertFalse(session.isFinished)
+
+        session.remove(session.current!)
+        XCTAssertTrue(session.isFinished, "son kart askıya alınınca oturum bitmeli")
+        XCTAssertEqual(session.summary.answered, 2)
+    }
+
     func testRecordingResultsAdvancesAndBuildsAPracticeOnlySummary() {
         var generator = SeededGenerator(seed: 21)
         var session = ExerciseSession(cardIds: ids(3), using: &generator)

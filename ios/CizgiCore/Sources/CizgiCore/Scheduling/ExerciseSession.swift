@@ -115,8 +115,12 @@ public struct ExerciseSession: Equatable, Sendable {
         results = [:]
     }
 
-    /// Drops cards that no longer exist (deleted mid-session), keeping the
-    /// cursor on the card the user is looking at.
+    /// Drops a card from the run — deleted mid-session, or suspended from the
+    /// run itself — keeping the cursor on the card the user is looking at.
+    ///
+    /// Removing the *current* card leaves `position` where it is, so the next
+    /// card slides under the cursor and `total` shrinks by one. Its result, if
+    /// it had one, goes too; a card suspended before answering never had one.
     public mutating func remove(_ id: UUID) {
         guard let index = queue.firstIndex(of: id) else { return }
         queue.remove(at: index)

@@ -225,16 +225,26 @@ struct ExerciseView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if let card = currentCard {
-                        // Kept from the review screen on purpose: the exercise run
-                        // is exactly where a wrong card gets noticed.
-                        Button {
-                            editingCard = card
+                        // The same menu as Tekrar, on purpose: the exercise run
+                        // is exactly where a wrong or unwanted card gets noticed,
+                        // and one screen offering "Askıya al" while the other
+                        // hides it made the owner go looking for it (2026-09-14).
+                        Menu {
+                            Button {
+                                editingCard = card
+                            } label: {
+                                Label("Kartı düzenle", systemImage: "pencil")
+                            }
+                            Button {
+                                suspend(card)
+                            } label: {
+                                Label("Askıya al", systemImage: "pause.circle")
+                            }
                         } label: {
-                            Label("Kartı düzenle", systemImage: "pencil")
+                            Label("Kart işlemleri", systemImage: "ellipsis.circle")
                         }
                         .tint(Cizgi.accent)
                         .disabled(session?.isFinished ?? true)
-                        .accessibilityLabel("Kartı düzenle")
                     } else if session == nil {
                         Button {
                             isShowingSetupSheet = true
@@ -911,6 +921,26 @@ struct ExerciseView: View {
     /// vermiyor, dolayısıyla söylenecek bir aralık da yok (ADR-007).
     private func resultButton(_ title: String, result: ExerciseResult, tint: Color) -> some View {
         CizgiChoiceButton(title: title, tint: tint) { recordAndAdvance(result) }
+    }
+
+    /// Takes the card on screen out of the deck and out of this run.
+    ///
+    /// Not an answer, and it must not look like one to anything downstream: no
+    /// `ExerciseAttempt`, no FES signal, no `EarlyPractice` bridge — so no
+    /// `ReviewLog` either, which docs/ADR-007 forbids Egzersiz to write at all.
+    /// It goes through `skipCurrentCard`, the path a deleted card already takes,
+    /// which shrinks the queue rather than advancing it: "3 / 12" becomes
+    /// "3 / 11" and the next card slides into place. The run's summary counts
+    /// answers, so a card that was never answered cannot skew it.
+    ///
+    /// No confirmation, matching Tekrar: it is one tap to undo from Bilgilerim
+    /// ("Askıdan çıkar"), and a dialog on every unwanted card would be friction
+    /// on the exact moment the owner has decided.
+    private func suspend(_ card: Card) {
+        card.status = .suspended
+        card.updatedAt = .now
+        try? context.save()
+        skipCurrentCard()
     }
 
     private func skipCurrentCard() {
