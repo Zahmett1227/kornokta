@@ -478,11 +478,9 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 (`sadelestirme-ve-bilgilerim`: kavram destesinin kaldırılması, Egzersiz'de
 askıya alma, kaynak fotoğrafı zoom, günlük bildirim, Bilgilerim + istatistik,
 arka plan gravürleri — altı commit) `main`'e fast-forward merge edildi, çalışma
-dalı silindi. **`origin/main`'e henüz push edilmedi** — sahibinin kararı. Yeni
-iş `main`'in ucundan yeni bir dalla başlar. Yedek v9 işi (ADR-011) bu kurala
-uygun olarak `yedek-v9-sayfa` dalında; dal `origin`'e push edildi (bu, `main`'in
-push edilmemiş commit'lerini dalın geçmişi olarak taşır ama `origin/main`'i
-ilerletmez).
+dalı silindi; `main` `origin/main` ile aynı (`0b13033`). Yeni iş `main`'in
+ucundan yeni bir dalla başlar. Yedek v9 işi (ADR-011) bu kurala uygun olarak
+`yedek-v9-sayfa` dalında ve PR olarak açık.
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
