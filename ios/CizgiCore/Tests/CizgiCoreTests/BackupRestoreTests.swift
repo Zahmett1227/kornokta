@@ -14,7 +14,8 @@ final class BackupRestoreTests: XCTestCase {
         id: UUID = UUID(),
         front: String = "Soru",
         tags: [String] = ["Farmakoloji"],
-        reviews: [BackupExporter.ReviewRecord] = []
+        reviews: [BackupExporter.ReviewRecord] = [],
+        pageId: UUID? = nil
     ) -> BackupExporter.CardRecord {
         BackupExporter.CardRecord(
             id: id,
@@ -35,7 +36,18 @@ final class BackupRestoreTests: XCTestCase {
             lastReviewedAt: exportedAt.addingTimeInterval(-3600),
             tags: tags,
             canonicalClaim: "Sayfada okunan metin",
-            reviews: reviews
+            reviews: reviews,
+            pageId: pageId
+        )
+    }
+
+    private func page(id: UUID = UUID(), usable: Bool = true) -> BackupExporter.PageRecord {
+        BackupExporter.PageRecord(
+            id: id,
+            jpegData: usable ? Data([0xFF, 0xD8, 0xFF, 0xDB, 0x00]) : Data(),
+            captureDate: exportedAt,
+            subject: "Farmakoloji",
+            readText: "Sayfada okunan metin"
         )
     }
 
@@ -172,6 +184,146 @@ final class BackupRestoreTests: XCTestCase {
         let first = BackupRestorer.plan(records: records, existingIds: [])
         let second = BackupRestorer.plan(records: records, existingIds: Set(first.toInsert.map(\.id)))
         XCTAssertTrue(second.isEmpty)
+    }
+
+    // MARK: Restore planning — pages (version 9, docs/ADR-011)
+
+    /// (a) Cards naming a page in the file go in with it, and the page is
+    /// planned once however many cards share it.
+    func testCardsAndTheirPageArePlannedTogether() {
+        let pageId = UUID()
+        let first = record(pageId: pageId)
+        let second = record(pageId: pageId)
+        let plan = BackupRestorer.plan(
+            records: [first, second],
+            pages: [page(id: pageId)],
+            existingIds: []
+        )
+        XCTAssertEqual(plan.toInsert.count, 2)
+        XCTAssertEqual(plan.pagesToInsert.map(\.id), [pageId])
+        XCTAssertEqual(plan.pageLinks, [first.id: pageId, second.id: pageId])
+        XCTAssertEqual(plan.linkedPageCount, 1)
+        XCTAssertTrue(plan.cardsWithMissingPage.isEmpty)
+    }
+
+    /// (b) A dangling reference costs the card its photo, not the restore.
+    func testAPageIdWithNoPageInTheFileStillInsertsTheCard() {
+        let card = record(pageId: UUID())
+        let plan = BackupRestorer.plan(records: [card], pages: [page()], existingIds: [])
+        XCTAssertEqual(plan.toInsert.map(\.id), [card.id])
+        XCTAssertTrue(plan.pagesToInsert.isEmpty, "hiçbir karta bağlı olmayan sayfa kurulmamalı")
+        XCTAssertTrue(plan.pageLinks.isEmpty)
+        XCTAssertEqual(plan.cardsWithMissingPage, [card.id])
+    }
+
+    /// A page whose image would not decode is the same as no page: its cards
+    /// go in photoless and are counted, and no page is built for them.
+    func testAPageWithAnUnusableImageIsCountedAsMissing() {
+        let pageId = UUID()
+        let card = record(pageId: pageId)
+        let plan = BackupRestorer.plan(
+            records: [card],
+            pages: [page(id: pageId, usable: false)],
+            existingIds: []
+        )
+        XCTAssertEqual(plan.toInsert.count, 1)
+        XCTAssertTrue(plan.pagesToInsert.isEmpty)
+        XCTAssertEqual(plan.cardsWithMissingPage, [card.id])
+    }
+
+    /// A repeated page id with a broken image first and a good one second still
+    /// gets its photo — the file is untrusted; restore what it can.
+    func testTheFirstUsableCopyOfARepeatedPageWins() {
+        let pageId = UUID()
+        let card = record(pageId: pageId)
+        let good = page(id: pageId)
+        let plan = BackupRestorer.plan(
+            records: [card],
+            pages: [page(id: pageId, usable: false), good, page(id: pageId)],
+            existingIds: []
+        )
+        XCTAssertEqual(plan.pagesToInsert, [good])
+        XCTAssertEqual(plan.pageLinks[card.id], pageId)
+    }
+
+    /// (c) Every card of a page already on the device: the page is not built,
+    /// so no `CapturedPage` is left with nothing under it.
+    func testAPageWhoseCardsAreAllHereAlreadyIsNotPlanned() {
+        let pageId = UUID()
+        let cards = [record(pageId: pageId), record(pageId: pageId)]
+        let plan = BackupRestorer.plan(
+            records: cards,
+            pages: [page(id: pageId)],
+            existingIds: Set(cards.map(\.id))
+        )
+        XCTAssertTrue(plan.isEmpty)
+        XCTAssertTrue(plan.pagesToInsert.isEmpty)
+        XCTAssertTrue(plan.cardsWithMissingPage.isEmpty)
+    }
+
+    /// Only the cards still going in keep a page alive: one of two here.
+    func testAPageIsPlannedForItsRemainingNewCardOnly() {
+        let pageId = UUID()
+        let present = record(pageId: pageId)
+        let fresh = record(pageId: pageId)
+        let plan = BackupRestorer.plan(
+            records: [present, fresh],
+            pages: [page(id: pageId)],
+            existingIds: [present.id]
+        )
+        XCTAssertEqual(plan.pagesToInsert.map(\.id), [pageId])
+        XCTAssertEqual(plan.pageLinks, [fresh.id: pageId])
+    }
+
+    /// (d) A page the device already has is not built or written again, but a
+    /// new card naming it is still linked to it.
+    func testAPageAlreadyOnTheDeviceIsLinkedNotRebuilt() {
+        let pageId = UUID()
+        let card = record(pageId: pageId)
+        let plan = BackupRestorer.plan(
+            records: [card],
+            pages: [page(id: pageId)],
+            existingIds: [],
+            existingPageIds: [pageId]
+        )
+        XCTAssertTrue(plan.pagesToInsert.isEmpty)
+        XCTAssertEqual(plan.pageLinks, [card.id: pageId])
+        XCTAssertEqual(plan.linkedPageCount, 1)
+        XCTAssertTrue(plan.cardsWithMissingPage.isEmpty)
+    }
+
+    /// The owner's second gate: the same v9 file twice builds nothing new.
+    func testRestoringAFileWithPagesTwiceBuildsNothingTheSecondTime() {
+        let pageId = UUID()
+        let records = [record(pageId: pageId), record()]
+        let pages = [page(id: pageId)]
+        let first = BackupRestorer.plan(records: records, pages: pages, existingIds: [])
+        let second = BackupRestorer.plan(
+            records: records,
+            pages: pages,
+            existingIds: Set(first.toInsert.map(\.id)),
+            existingPageIds: Set(first.pagesToInsert.map(\.id))
+        )
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertTrue(second.pagesToInsert.isEmpty)
+    }
+
+    /// A card with no `pageId` plans exactly as it did in version 8, whatever
+    /// pages the file carries.
+    func testACardWithoutAPageIdIsUntouchedByPages() {
+        let card = record()
+        let plan = BackupRestorer.plan(records: [card], pages: [page()], existingIds: [])
+        XCTAssertEqual(plan, RestorePlan(toInsert: [card], skipped: []))
+    }
+
+    /// A removed-deck card never keeps a page alive: it is not going in.
+    func testAConceptCardDoesNotPlanItsPage() {
+        let pageId = UUID()
+        let concept = record(tags: [ConceptDeckLegacy.tag], pageId: pageId)
+        let plan = BackupRestorer.plan(records: [concept], pages: [page(id: pageId)], existingIds: [])
+        XCTAssertEqual(plan.skippedLegacyConcept, [concept.id])
+        XCTAssertTrue(plan.pagesToInsert.isEmpty)
+        XCTAssertTrue(plan.cardsWithMissingPage.isEmpty)
     }
 
     // MARK: Perceptual hash

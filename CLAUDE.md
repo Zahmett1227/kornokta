@@ -408,6 +408,22 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 - **Bilgi Haritası:** kanonik ders/konu kapsamı; tanınmayan ad asla kanonik
   düğüm üretmez ama sayılır ("Konusuz" / "tanınmayan konu" /
   "sınıflandırılmamış" kovaları) — ekrandaki satırların toplamı desteye eşit.
+- **Yedek biçimi v9 (2026-09-14, docs/ADR-011):** dosya isteğe bağlı
+  `pages[]` (JPEG base64 + `captureDate`/`subject`/`readText`/`pageLabel`) ve
+  kartta `pageId` taşıyabilir; geri yükleme fotoğraflı kart için üretimin
+  zincirini kurar (`CapturedPage(.ready) → tam sayfa .manual TextRegion →
+  KnowledgeUnit → Card`), yani "Kaynağı göster" dışarıda (Claude'un sayfa
+  fotoğrafını okuyarak) üretilmiş kartta da fotoğrafı gösterir. Karar
+  `BackupRestorer.plan`'da (saf, testli: hangi sayfa kurulur, hangi kart hangi
+  sayfaya bağlanır), yazma `BackupPageInstaller`'da (CizgiCore, bellek-içi
+  SwiftData ile testli). **Sayfa kartı izler:** yalnız eklenecek bir kartın
+  işaret ettiği ve cihazda olmayan sayfa kurulur — ikinci yükleme hiçbir şey
+  eklemez, yetim sayfa kalmaz. Kopuk `pageId` ya da çözülemeyen/JPEG olmayan
+  görüntü yalnız o kartın **fotoğrafını** götürür ve özette sayılır. Sayfa
+  `.ready` doğar — `ProcessingQueue.shouldProcess` onu hiç seçmez, yani
+  `/api/jobs`'a gitmez. Başarısız `save()`'den sonra yazılan JPEG'ler silinir.
+  **"Yedeği hazırla" hâlâ görüntüsüz** (`pages`/`pageId` anahtarı hiç
+  yazılmaz) — v9 şimdilik yalnız içe aktarmada. Şema değişmedi, göç yok.
 - **Yedek biçimi v8:** v7'nin `collection` alanı kavram destesiyle birlikte
   kalktı. v7 dosyası hatasız okunur; içindeki kavram kayıtları etiketle
   tanınır, atlanır ve geri yükleme mesajında sayılır.
@@ -455,6 +471,7 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 
 | Kavram destesi (ADR-010) | ⛔️ **Kaldırıldı** (2026-09-14). Kod, şema sütunu, `queued` durumu ve cihazdaki veri gitti; eski şemalı depo ve gerçek v7 yedeğiyle simülatörde kanıtlandı. Ayrıntı: yukarıdaki "Kavram destesi kaldırıldı" bölümü. **Gerçek cihazda kalan:** doğrulama listesinin 23-24. maddeleri |
 | Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
+| Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | 🟡 `yedek-v9-sayfa` dalında (2026-09-14). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
 **Dal durumu (2026-09-14):** "Sadeleştirme ve Bilgilerim" turu
@@ -462,7 +479,10 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 askıya alma, kaynak fotoğrafı zoom, günlük bildirim, Bilgilerim + istatistik,
 arka plan gravürleri — altı commit) `main`'e fast-forward merge edildi, çalışma
 dalı silindi. **`origin/main`'e henüz push edilmedi** — sahibinin kararı. Yeni
-iş `main`'in ucundan yeni bir dalla başlar.
+iş `main`'in ucundan yeni bir dalla başlar. Yedek v9 işi (ADR-011) bu kurala
+uygun olarak `yedek-v9-sayfa` dalında; dal `origin`'e push edildi (bu, `main`'in
+push edilmemiş commit'lerini dalın geçmişi olarak taşır ama `origin/main`'i
+ilerletmez).
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
@@ -587,6 +607,10 @@ boş defterle geçti).
   dokunmadan önce oku — özellikle FES'in **neden saklanan, hesaplanan
   olmadığı** (`ExerciseAttempt` 90 günde siliniyor) ve neden
   `ExercisePracticeWeight`'in yerine değil yanına girdiği.
+- **`docs/ADR-011`** — GÜNCEL YÖN: yedek biçimi v9, geri yüklemede sayfa
+  fotoğrafı. `BackupExporter.swift`/`BackupPageInstaller.swift`/
+  `SettingsView.restore`'a dokunmadan önce oku — özellikle sayfanın neden
+  kartı izlediği ve dışa aktarmanın neden hâlâ görüntüsüz olduğu.
 - **`docs/ADR-010`** — tarihsel: kavram destesi (2026-09-14'te kaldırıldı).
   Kalan tek iz `ConceptDeckLegacy`; ona dokunmadan önce ADR'nin kaldırma notunu
   oku.
@@ -662,7 +686,7 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 ## Doküman haritası
 
 Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler),
-`docs/ADR-005/006/007/008/010`,
+`docs/ADR-005/006/007/008/010/011`,
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -926,6 +950,16 @@ gösterir (2026-08-13 tartışması).
     görüldü. Opaklık **%7** — sahibi %5/%7/%9 karşılaştırmasından seçti
     (`SubjectFigure.opacity`); gerçek telefon ekranında da aynı eşikte mi, bakılmalı.
     Kaynaklar ve lisanslar: `docs/FIGURES-SOURCES.md`.
+41. **Yedek v9 — sayfa fotoğraflı geri yükleme (2026-09-14, ADR-011).**
+    Claude'un ürettiği v9 dosyasını Dosyalar'dan geri yükle: özet "N kart, M
+    sayfa fotoğrafıyla" demeli; bir karta gir → "Kaynağı göster" → fotoğraf ve
+    tam ekran zoom çalışmalı; Kuyruk ekranında sayfalar Hazır olarak
+    listelenmeli; aynı dosyayı ikinci kez yükle → hiçbir şey eklenmemeli.
+    Ayarlar → Yedeği hazırla ile alınan yeni yedek hâlâ görüntüsüz olmalı
+    (dosya boyutu şişmemeli). Simülatörde ilk dördü görüldü; **dışa aktarmanın
+    boyutu** yalnız birim testiyle (anahtarlar yazılmıyor) kilitli, gerçek bir
+    yedekte bakılmalı. Büyük bir dosyada (onlarca sayfa) geri yükleme süresi de
+    hissedilir mi, ona bakılmalı — simülatördeki dosyalar küçüktü.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

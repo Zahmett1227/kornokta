@@ -211,8 +211,13 @@ struct SettingsView: View {
                     if let restoreError {
                         Text(restoreError).font(.footnote).foregroundStyle(Cizgi.danger)
                     }
+                    // Two halves since version 9 (docs/ADR-011): the app's own
+                    // backup still carries no photos, but a file that does
+                    // restores them — "Yedekte fotoğraflar yok" was true of the
+                    // first and would now be false about the second.
                     Text("Geri yükleme yalnızca ekler: bu cihazda zaten olan bir kart "
-                         + "olduğu gibi bırakılır. Yedekte fotoğraflar yok.")
+                         + "olduğu gibi bırakılır. Buradan hazırlanan yedekte fotoğraf "
+                         + "yok; fotoğraf taşıyan bir yedeğin sayfaları geri yüklenir.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }
@@ -562,7 +567,9 @@ struct SettingsView: View {
             let backup = try BackupExporter.decode(try Data(contentsOf: url))
             let plan = BackupRestorer.plan(
                 records: backup.cards,
-                existingIds: Set(cards.map(\.id))
+                pages: backup.pages,
+                existingIds: Set(cards.map(\.id)),
+                existingPageIds: Set(pages.map(\.id))
             )
             // Said on every outcome, including the empty one: a v7 file holds
             // the removed concept deck next to the photographed cards, and a
@@ -578,17 +585,33 @@ struct SettingsView: View {
                 return
             }
 
-            for record in plan.toInsert {
-                insert(record, into: context)
-            }
+            // Pages first (version 9, docs/ADR-011), so each card can be hung
+            // off its page's region as it goes in. `install` writes the images
+            // before anything is saved; if it throws, it has already removed
+            // what it wrote.
+            var writtenImages: [String] = []
             do {
+                let installed = try BackupPageInstaller.install(
+                    plan,
+                    imageStore: environment.imageStore,
+                    context: context,
+                    schema: SubjectTopicSchema.shared,
+                    hash: { PageImageHasher.hash($0)?.stringValue }
+                )
+                writtenImages = installed.writtenImagePaths
+                for record in plan.toInsert {
+                    let region = plan.pageLinks[record.id].flatMap { installed.regions[$0] }
+                    insert(record, region: region, into: context)
+                }
                 try context.save()
             } catch {
                 // A failed save leaves every inserted object sitting in the
                 // context, where an unrelated later save would flush half a
                 // restore into the store. Rolling back is the only way to make
-                // "the restore failed" mean nothing was written.
+                // "the restore failed" mean nothing was written — and the
+                // images are the part a rollback cannot reach.
                 context.rollback()
+                BackupPageInstaller.discard(writtenImages, imageStore: environment.imageStore)
                 throw error
             }
 
@@ -668,21 +691,38 @@ struct SettingsView: View {
                 UserDefaults.standard.removeObject(forKey: ConceptDeckRemovalMigration.flagKey)
             }
 
+            // Both photo notes are said only when they apply: a version 8 file
+            // restores with exactly the sentence it always did.
+            let restored = plan.linkedPageCount == 0
+                ? "\(plan.toInsert.count) kart geri yüklendi"
+                : "\(plan.toInsert.count) kart, \(plan.linkedPageCount) sayfa fotoğrafıyla geri yüklendi"
+            let missingPhotoNote = plan.cardsWithMissingPage.isEmpty
+                ? ""
+                : " \(plan.cardsWithMissingPage.count) kartın sayfa fotoğrafı bulunamadı."
             restoreSummary = (plan.skipped.isEmpty
-                ? "\(plan.toInsert.count) kart geri yüklendi."
-                : "\(plan.toInsert.count) kart geri yüklendi, \(plan.skipped.count) tanesi zaten vardı.")
-                + conceptNote
+                ? restored + "."
+                : restored + ", \(plan.skipped.count) tanesi zaten vardı.")
+                + missingPhotoNote + conceptNote
         } catch {
             restoreError = (error as? LocalizedError)?.errorDescription
                 ?? "Yedek okunamadı: \(error.localizedDescription)"
         }
     }
 
-    /// A restored card gets its own `KnowledgeUnit` to carry the subject, tags
-    /// and read text — there is no page to attach it to, because images are
-    /// deliberately not in the backup (§24.6). "Kaynağı göster" will therefore
-    /// show the text but no photograph, which is the honest result.
-    private func insert(_ record: BackupExporter.CardRecord, into context: ModelContext) {
+    /// A restored card gets a `KnowledgeUnit` to carry the subject, tags and
+    /// read text.
+    ///
+    /// With a `region` — a version 9 file that carried this card's page — the
+    /// unit hangs off that page's region, which is all "Kaynağı göster" needs to
+    /// find the photograph (docs/ADR-011). Without one there is no page to
+    /// attach it to, because the app's own backups carry no images (§24.6):
+    /// "Kaynağı göster" then shows the text but no photograph, which is the
+    /// honest result.
+    private func insert(
+        _ record: BackupExporter.CardRecord,
+        region: TextRegion?,
+        into context: ModelContext
+    ) {
         let card = Card(
             id: record.id,
             type: CardType(rawValue: record.type) ?? .directRecall,
@@ -725,7 +765,19 @@ struct SettingsView: View {
         // remapped subject can leave a stored topic belonging to another ders.
         let topic = TopicGrouping.validatedTopic(record.topic, subject: subject, schema: schema)
 
-        if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
+        if let region {
+            // Always a unit here, even for a record with nothing else to put on
+            // one: the unit is the only link from a card to its page.
+            card.knowledgeUnit = BackupPageInstaller.unit(
+                on: region,
+                subject: subject,
+                topic: topic,
+                claim: record.canonicalClaim ?? record.front,
+                tags: record.tags,
+                createdAt: card.createdAt,
+                context: context
+            )
+        } else if subject != nil || topic != nil || !record.tags.isEmpty || record.canonicalClaim != nil {
             let unit = KnowledgeUnit(
                 canonicalClaim: record.canonicalClaim ?? record.front,
                 subject: subject,
