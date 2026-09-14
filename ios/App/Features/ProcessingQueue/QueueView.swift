@@ -186,11 +186,18 @@ struct PageDetailView: View {
                 }
             }
 
-            if let image = loadImage() {
+            if environment.imageStore.exists(relativePath: page.originalImagePath) {
                 Section("Sayfa") {
-                    image
-                        .resizable()
-                        .scaledToFit()
+                    // The same tappable photo and full-screen zoom viewer as
+                    // "Kaynağı göster" — this is the screen where reading the
+                    // page closely matters most, next to the cards made from it.
+                    SourcePageImage(
+                        path: page.originalImagePath,
+                        imageStore: environment.imageStore,
+                        caption: page.captureDate.formatted(.dateTime.day().month().year()),
+                        cornerRadius: 0
+                    )
+                    .listRowInsets(EdgeInsets())
                 }
             }
 
@@ -314,15 +321,4 @@ struct PageDetailView: View {
         }
     }
 
-    private func loadImage() -> Image? {
-        guard let data = try? environment.imageStore.load(relativePath: page.originalImagePath) else {
-            return nil
-        }
-        #if os(iOS)
-        guard let uiImage = UIImage(data: data) else { return nil }
-        return Image(uiImage: uiImage)
-        #else
-        return nil
-        #endif
-    }
 }

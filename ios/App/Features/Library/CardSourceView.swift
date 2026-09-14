@@ -42,16 +42,11 @@ struct CardSourceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-            if let path = material.pageImagePath, let image = loadImage(path) {
-                image
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
-                            .stroke(Cizgi.hairline, lineWidth: 1)
-                    )
+            if let path = material.pageImagePath {
+                // Tappable, opening the full-screen zoom viewer (2026-09-14) —
+                // the same one Tekrar, Egzersiz and the card detail all reach,
+                // because all three show the photo through this view.
+                SourcePageImage(path: path, imageStore: imageStore, caption: viewerCaption)
             } else if material.pageImageDiscarded {
                 Label(
                     "Orijinal sayfa saklanmıyor (Ayarlar → Veri).",
@@ -101,13 +96,11 @@ struct CardSourceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func loadImage(_ path: String) -> Image? {
-        guard let data = try? imageStore.load(relativePath: path) else { return nil }
-        #if canImport(UIKit)
-        guard let uiImage = UIImage(data: data) else { return nil }
-        return Image(uiImage: uiImage)
-        #else
-        return nil
-        #endif
+    /// "Patoloji · 12 Eyl 2026" under the photo in the viewer, where the card
+    /// that led there is no longer on screen to say it.
+    private var viewerCaption: String? {
+        let parts = [material.subject, material.capturedAt?.formatted(.dateTime.day().month().year())]
+            .compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }

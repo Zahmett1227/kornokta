@@ -880,6 +880,18 @@ gösterir (2026-08-13 tartışması).
     değil, metnin altında. Kıvrık köşe (`DogEar`) kutuyla birlikte kalktı;
     kartın şüpheli olduğu hâlâ anlaşılıyor mu, yoksa çip yetersiz mi — bu bir
     zevk kararı, gerçek kullanımda bakılmalı.
+34. **Egzersiz'de askıya alma (2026-09-14).** Bir koşuda ⋯ → "Askıya al":
+    sayaç bir azalmalı ("3 / 12" → "3 / 11"), kart Bilgilerim'de Askıda
+    görünmeli, koşu bitince özet "N kart yanıtlandı"yı askıya alınan kartı
+    saymadan göstermeli. Simülatörde görüldü; ADR-007 gereği kayıt yazmadığı
+    (deneme/log sayısı değişmedi) sqlite ile doğrulandı.
+35. **Kaynak fotoğrafı tam ekran (2026-09-14).** Tekrar/Egzersiz'de "Kaynağı
+    göster" → fotoğrafa dokun → tam ekran. **İki parmakla büyüt, parmakları
+    kaldır: büyük kalmalı** (sahibinin asıl şartı); kaydır; aşağı çek → kapanmalı
+    (yalnız sığdırılmışken); kapat düğmesi. Simülatörde dördü de görüldü.
+    **Görülmeyen tek şey çift dokunuş** (1× ↔ 2,5×): simülatör aracı iki
+    dokunuşu çift dokunuş eşiğinden yavaş gönderiyor — gerçek cihazda denenmeli.
+    Aynı görüntüleyici kart detayında ve sayfa detayında da var.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

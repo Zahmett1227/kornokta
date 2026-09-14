@@ -11,7 +11,7 @@ import CizgiCore
 ///
 /// Deletes rather than suspends, unlike `DuplicateSuspendMigration`: those were
 /// the owner's own cards with history worth keeping, these are an experiment
-/// he asked to have leave no trace. The decision itself lives in
+/// the owner asked to have leave no trace. The decision itself lives in
 /// `ConceptDeckRemoval` so it runs against a real container in `swift test`.
 ///
 /// Why this matters more than a cleanup usually does. The same launch that runs
