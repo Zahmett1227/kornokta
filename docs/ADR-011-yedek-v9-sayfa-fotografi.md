@@ -73,6 +73,26 @@ tek yolu (§5.5).
 8. **Görüntüye dokunulmaz.** Yükleme bütçesine göre küçültme/yeniden sıkıştırma
    yok — bu görüntü modele gitmek için değil ekranda gösterilmek için orada.
 
+9. **Ağır yarı ana iş parçacığının dışında, dosya boyutu sınırlı** (Codex, PR
+   #50, P2). v9 dosyası onlarca sayfa fotoğrafı taşıyabilir ve geri yükleme
+   ilk hâlinde okuma + JSON çözme + base64 + plan + görüntü yazma + hash'i
+   Ayarlar ekranının üstünde, ana aktörde yapıyordu. Artık iki yarı:
+   `BackupRestorer.plan(fileAt:)` ve `BackupPageInstaller.writeImages`
+   `ModelContext`'e dokunmaz ve ayrık bir görevde koşar; ana aktöre yalnız
+   `BackupPageInstaller.install` (sayfa/bölge/`Source` eklemeleri), kart
+   eklemeleri ve tek `save()` döner. Geri yükleme sürerken düğme kilitli ve
+   "Geri yükleniyor…" görünür. Dosya okunmak yerine **belleğe eşlenir**
+   (`.mappedIfSafe`) — baytlar uygulamanın kendi belleğinde ikinci kopya değil,
+   sistemin boşaltabileceği temiz sayfalar.
+   **Sınır 256 MB** (`BackupRestorer.maxFileBytes`), okumadan önce söylenir.
+   `JSONDecoder`'ın akış modu yok ve plan bütün sayfaları aynı anda ister;
+   çözülmüş görüntülerin hepsi bellekte. Bir telefon fotoğrafı dosyada ~3–4 MB,
+   yani sınır ~60 sayfa; ötesinde gerçekçi sonuç yavaş bir geri yükleme değil,
+   sistemin uygulamayı yarıda kapatması. Mesaj çıkış yolunu söyler: dosyayı böl,
+   her sayfayı kartlarıyla aynı dosyada tut — geri yükleme yalnız eklediği için
+   parçalar birbirini bozmaz. Simülatörde 91 MB / 25 sayfa / 51 kartlık dosya
+   birkaç saniyede geri yüklendi.
+
 ## Bilinçli ayrıntılar
 
 - **Birim paylaşımı tam yük üzerinden.** Aynı sayfanın kartları, `persist`'teki
@@ -91,6 +111,13 @@ tek yolu (§5.5).
   sayfanın tekrar çekilmesiydi.
 - **`coverageJSON` `nil`.** Sayfa detayı "kapsama defteri olmadan üretilmiş"
   der — model bu sayfanın işaret defterini yazmadı, doğru cümle bu.
+- **Cihazda görüntüsü silinmiş bir sayfaya bağlanma düzeltilmedi** (Codex, PR
+  #50, P2 — sahibin kararıyla bırakıldı). Senaryo: aynı kimlikli sayfa depoda
+  duruyor ama "Orijinal sayfayı sakla" kapalıyken görüntüsü silinmiş; yeni kart
+  ona bağlanır ve özet onu fotoğraflı sayar. Görüntüyü silen tek yol
+  `ProcessingQueue`'nun üretimi bitirdiği an; geri yüklenen sayfalar o yoldan
+  hiç geçmez. Olması için dışarıda yazılmış bir dosyanın sayfa kimliğinin
+  kameradan çekilmiş gerçek bir sayfanınkiyle aynı olması gerekir.
 - **"Orijinal sayfayı sakla" kapalıyken de fotoğraf yazılır.** O ayar üretim
   hattının görüntüyü kart hazır olunca silip silmeyeceğini yönetir; fotoğraf
   taşıyan bir dosyayı geri yüklemek, fotoğrafı istemenin açık hâlidir.

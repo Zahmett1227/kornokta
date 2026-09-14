@@ -326,6 +326,63 @@ final class BackupRestoreTests: XCTestCase {
         XCTAssertTrue(plan.cardsWithMissingPage.isEmpty)
     }
 
+    // MARK: Restore planning — from a file (Codex, PR #50)
+
+    private func temporaryFile(_ data: Data) throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("cizgi-yedek-\(UUID().uuidString).json")
+        try data.write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    /// The detached half of a restore plans exactly what planning the decoded
+    /// contents would.
+    func testPlanningAFileMatchesPlanningItsContents() throws {
+        let pageId = UUID()
+        let existing = UUID()
+        let records = [record(pageId: pageId), record(id: existing), record(pageId: UUID())]
+        let pages = [page(id: pageId)]
+        let url = try temporaryFile(try BackupExporter.encode(cards: records, pages: pages, exportedAt: exportedAt))
+
+        let fromFile = try BackupRestorer.plan(fileAt: url, existingIds: [existing], existingPageIds: [])
+        let decoded = try BackupExporter.decode(try Data(contentsOf: url))
+        XCTAssertEqual(
+            fromFile,
+            BackupRestorer.plan(records: decoded.cards, pages: decoded.pages, existingIds: [existing])
+        )
+        XCTAssertEqual(fromFile.pagesToInsert.map(\.id), [pageId])
+        XCTAssertEqual(fromFile.cardsWithMissingPage.count, 1)
+    }
+
+    /// Past the limit a restore would be ended by the system mid-way; it is
+    /// refused up front, with the way out in the message.
+    func testAFileOverTheLimitIsRefusedWithAWayOut() throws {
+        let data = try BackupExporter.encode(cards: [record()], exportedAt: exportedAt)
+        let url = try temporaryFile(data)
+
+        XCTAssertThrowsError(
+            try BackupRestorer.plan(fileAt: url, existingIds: [], existingPageIds: [], maxBytes: data.count - 1)
+        ) { error in
+            XCTAssertEqual(
+                error as? BackupExporter.BackupError,
+                .tooLarge(bytes: data.count, limit: data.count - 1)
+            )
+        }
+        XCTAssertNoThrow(
+            try BackupRestorer.plan(fileAt: url, existingIds: [], existingPageIds: [], maxBytes: data.count)
+        )
+
+        let megabyte = 1024 * 1024
+        let message = try XCTUnwrap(
+            BackupExporter.BackupError.tooLarge(bytes: 300 * megabyte, limit: BackupRestorer.maxFileBytes)
+                .errorDescription
+        )
+        XCTAssertTrue(message.contains("300 MB"))
+        XCTAssertTrue(message.contains("256 MB"))
+        XCTAssertTrue(message.contains("böl"))
+    }
+
     // MARK: Perceptual hash
 
     /// A gradient: every pixel is brighter than the one to its left, so every

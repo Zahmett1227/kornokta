@@ -424,6 +424,10 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
   Codex PR #50) yalnız o kartın **fotoğrafını** götürür ve özette sayılır. Sayfa
   `.ready` doğar — `ProcessingQueue.shouldProcess` onu hiç seçmez, yani
   `/api/jobs`'a gitmez. Başarısız `save()`'den sonra yazılan JPEG'ler silinir.
+  **Okuma/çözme/plan/görüntü yazma ana aktörün dışında** (`plan(fileAt:)` +
+  `writeImages`; ana aktörde yalnız `install` + kartlar + `save`), dosya belleğe
+  eşlenir ve **256 MB sınırı** var (`BackupRestorer.maxFileBytes`; aşan dosyaya
+  "böl" mesajı) — Codex PR #50.
   **"Yedeği hazırla" hâlâ görüntüsüz** (`pages`/`pageId` anahtarı hiç
   yazılmaz) — v9 şimdilik yalnız içe aktarmada. Şema değişmedi, göç yok.
 - **Yedek biçimi v8:** v7'nin `collection` alanı kavram destesiyle birlikte
@@ -958,8 +962,10 @@ gösterir (2026-08-13 tartışması).
     Ayarlar → Yedeği hazırla ile alınan yeni yedek hâlâ görüntüsüz olmalı
     (dosya boyutu şişmemeli). Simülatörde ilk dördü görüldü; **dışa aktarmanın
     boyutu** yalnız birim testiyle (anahtarlar yazılmıyor) kilitli, gerçek bir
-    yedekte bakılmalı. Büyük bir dosyada (onlarca sayfa) geri yükleme süresi de
-    hissedilir mi, ona bakılmalı — simülatördeki dosyalar küçüktü.
+    yedekte bakılmalı. Büyük dosya simülatörde denendi (91 MB / 25 sayfa, birkaç
+    saniye); **gerçek telefonda bellek** farklıdır — onlarca sayfalık gerçek bir
+    dosyada uygulama kapanmadan bitiyor mu, bakılmalı. 256 MB'ı aşan dosya
+    "böl" mesajıyla reddedilmeli.
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

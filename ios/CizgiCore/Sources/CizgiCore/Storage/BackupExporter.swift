@@ -374,6 +374,9 @@ public enum BackupExporter {
         case unreadable(String)
         /// Written by a newer build than this one.
         case unsupportedVersion(Int)
+        /// Larger than `BackupRestorer.maxFileBytes` (version 9 files carry
+        /// photos, and a restore holds every decoded page at once).
+        case tooLarge(bytes: Int, limit: Int)
 
         public var errorDescription: String? {
             switch self {
@@ -382,6 +385,12 @@ public enum BackupExporter {
             case .unsupportedVersion(let version):
                 return "Bu yedek daha yeni bir sürümle alınmış (biçim \(version)). "
                     + "Uygulamayı güncelleyip tekrar dene."
+            case .tooLarge(let bytes, let limit):
+                let megabyte = 1024 * 1024
+                return "Bu yedek çok büyük (\(bytes / megabyte) MB; sınır \(limit / megabyte) MB). "
+                    + "Sayfaları birkaç dosyaya bölüp ayrı ayrı geri yükle — her sayfayı "
+                    + "kartlarıyla aynı dosyada tut. Geri yükleme yalnız eklediği için "
+                    + "parçalar birbirini bozmaz."
             }
         }
     }
@@ -558,6 +567,46 @@ public enum BackupRestorer {
             pagesToInsert: pageOrder.filter(plannedPageIds.contains).compactMap { usablePages[$0] },
             pageLinks: pageLinks,
             cardsWithMissingPage: missing
+        )
+    }
+
+    /// The largest backup file a restore will open: 256 MB.
+    ///
+    /// A version 9 file carries its pages as base64, and a restore holds every
+    /// decoded page at once — `JSONDecoder` has no streaming mode, and the plan
+    /// needs all of them to decide which to keep. One phone photo is roughly
+    /// 3–4 MB in the file, so this is some sixty pages: past it the realistic
+    /// outcome is the system ending the app mid-restore, not a slow one. Said
+    /// before anything is read, with the way out (split the file — a restore
+    /// only adds, so the parts cannot conflict) (Codex, PR #50).
+    public static let maxFileBytes = 256 * 1024 * 1024
+
+    /// Reads, decodes and plans a backup file. Everything here is the
+    /// expensive, store-free half of a restore, so it is meant to run off the
+    /// main actor; the caller passes the ids it read from the store first.
+    ///
+    /// The file is mapped rather than read where the system allows it, so its
+    /// bytes are clean pages the system can drop instead of a second copy of
+    /// the archive in the app's own memory.
+    public static func plan(
+        fileAt url: URL,
+        existingIds: Set<UUID>,
+        existingPageIds: Set<UUID>,
+        maxBytes: Int = maxFileBytes
+    ) throws -> RestorePlan {
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > maxBytes {
+            throw BackupExporter.BackupError.tooLarge(bytes: size, limit: maxBytes)
+        }
+        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+        guard data.count <= maxBytes else {
+            throw BackupExporter.BackupError.tooLarge(bytes: data.count, limit: maxBytes)
+        }
+        let backup = try BackupExporter.decode(data)
+        return plan(
+            records: backup.cards,
+            pages: backup.pages,
+            existingIds: existingIds,
+            existingPageIds: existingPageIds
         )
     }
 }

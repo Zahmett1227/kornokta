@@ -11,96 +11,123 @@ import SwiftData
 /// full-screen viewer and the page detail need no change to show a restored
 /// card's photograph: they already walk `card.knowledgeUnit.region.page`.
 ///
-/// Every decision about *which* pages and cards is `BackupRestorer.plan`'s. This
-/// only writes what the plan says, and inserts without saving: the restore owns
-/// the one `save()` and the rollback around it.
+/// Every decision about *which* pages and cards is `BackupRestorer.plan`'s.
+/// This only carries it out, in two halves that run on different actors
+/// (Codex, PR #50):
+///
+/// 1. `writeImages` — the disk and CPU work: every planned page's JPEG to the
+///    image store, and its perceptual hash. Touches no `ModelContext`, so a
+///    restore of many photos runs it off the main actor instead of freezing
+///    the screen.
+/// 2. `install` — the store work: `CapturedPage`, region and `Source` inserts,
+///    on the context the restore saves. Inserts without saving: the restore
+///    owns the one `save()` and the rollback around it.
 public enum BackupPageInstaller {
 
-    /// What `install` put in place.
-    public struct Installed {
-        /// Page id → the region cards linked to that page attach to, for new
-        /// and already-present pages alike.
-        public let regions: [UUID: TextRegion]
-        /// Every image file this install wrote. A failed save rolls the context
-        /// back but cannot roll the disk back — `discard` does that part.
-        public let writtenImagePaths: [String]
+    /// One page image already on disk.
+    public struct WrittenImage: Sendable, Equatable {
+        /// Relative image-store path, as `CapturedPage.originalImagePath`.
+        public let path: String
+        public let perceptualHash: String?
+
+        public init(path: String, perceptualHash: String?) {
+            self.path = path
+            self.perceptualHash = perceptualHash
+        }
     }
 
-    /// Writes each planned page's image and inserts its `CapturedPage` and
-    /// region; finds the region of each linked page the device already has.
+    /// Writes each planned page's image and computes its hash. Keyed by page id.
+    ///
+    /// If a write throws half-way, the images written before it are removed
+    /// before the error leaves: the caller never sees those paths.
+    ///
+    /// The bytes are written exactly as the file carried them — no resizing or
+    /// re-compression. This image is shown, not sent to the model.
+    ///
+    /// - Parameter hash: the perceptual hash to record for a page's image, or
+    ///   `nil` to record none. A closure because the hasher lives with the
+    ///   capture screen; recording one is what lets a *later* camera capture
+    ///   of the same page be recognised and asked about.
+    public static func writeImages(
+        for plan: RestorePlan,
+        imageStore: ImageStore,
+        hash: (@Sendable (Data) -> String?)? = nil
+    ) throws -> [UUID: WrittenImage] {
+        var written: [UUID: WrittenImage] = [:]
+        do {
+            for record in plan.pagesToInsert {
+                let path = try imageStore.store(record.jpegData, id: record.id, kind: .original, fileExtension: "jpg")
+                written[record.id] = WrittenImage(path: path, perceptualHash: hash?(record.jpegData))
+            }
+        } catch {
+            discard(written.values.map(\.path), imageStore: imageStore)
+            throw error
+        }
+        return written
+    }
+
+    /// Inserts each planned page's `CapturedPage` and region, and finds the
+    /// region of each linked page the device already has. Returns page id →
+    /// the region cards linked to that page attach to, new and existing alike.
     ///
     /// The page is born `.ready`, which is the one state `ProcessingQueue`
     /// never selects (`shouldProcess`): a restored page must never reach
     /// `POST /api/jobs`. That would pay to regenerate cards the file already
     /// holds, and put a second set next to them.
     ///
-    /// If an image write throws half-way, the images written before it are
-    /// removed before the error leaves: the caller never sees those paths.
-    ///
-    /// - Parameter hash: the perceptual hash to record for a page's image, or
-    ///   `nil` to record none. A closure because the hasher lives with the
-    ///   capture screen; recording one is what lets a *later* camera capture
-    ///   of the same page be recognised and asked about.
+    /// A planned page with no entry in `images` is skipped — its cards then go
+    /// in without a photo — rather than recorded with a path nothing was
+    /// written to.
     public static func install(
         _ plan: RestorePlan,
-        imageStore: ImageStore,
+        images: [UUID: WrittenImage],
         context: ModelContext,
-        schema: SubjectTopicSchema?,
-        hash: ((Data) -> String?)? = nil
-    ) throws -> Installed {
-        var written: [String] = []
+        schema: SubjectTopicSchema?
+    ) throws -> [UUID: TextRegion] {
         var regions: [UUID: TextRegion] = [:]
         var sources: [String: Source] = [:]
 
-        do {
-            for record in plan.pagesToInsert {
-                let path = try imageStore.store(record.jpegData, id: record.id, kind: .original, fileExtension: "jpg")
-                written.append(path)
-
-                let page = CapturedPage(
-                    id: record.id,
-                    originalImagePath: path,
-                    captureDate: record.captureDate,
-                    state: .ready
-                )
-                page.pageNumber = nonEmpty(record.pageLabel)
-                page.perceptualHash = hash?(record.jpegData)
-                if let subject = pageSubject(record.subject, schema: schema) {
-                    if let cached = sources[subject] {
-                        page.source = cached
-                    } else {
-                        let source = try SourceBinding.existingOrNew(subject: subject, context: context)
-                        sources[subject] = source
-                        page.source = source
-                    }
-                }
-                context.insert(page)
-                regions[record.id] = makeRegion(on: page, readText: record.readText, context: context)
-            }
-
-            let planned = Set(plan.pagesToInsert.map(\.id))
-            let existingIds = Array(Set(plan.pageLinks.values).subtracting(planned))
-            if !existingIds.isEmpty {
-                let descriptor = FetchDescriptor<CapturedPage>(
-                    predicate: #Predicate { existingIds.contains($0.id) }
-                )
-                for page in try context.fetch(descriptor) {
-                    // The region an earlier restore of the same file built. The
-                    // image is not rewritten: the page already has one.
-                    regions[page.id] = page.regions.first
-                        ?? makeRegion(on: page, readText: nil, context: context)
+        for record in plan.pagesToInsert {
+            guard let image = images[record.id] else { continue }
+            let page = CapturedPage(
+                id: record.id,
+                originalImagePath: image.path,
+                captureDate: record.captureDate,
+                state: .ready
+            )
+            page.pageNumber = nonEmpty(record.pageLabel)
+            page.perceptualHash = image.perceptualHash
+            if let subject = pageSubject(record.subject, schema: schema) {
+                if let cached = sources[subject] {
+                    page.source = cached
+                } else {
+                    let source = try SourceBinding.existingOrNew(subject: subject, context: context)
+                    sources[subject] = source
+                    page.source = source
                 }
             }
-        } catch {
-            discard(written, imageStore: imageStore)
-            throw error
+            context.insert(page)
+            regions[record.id] = makeRegion(on: page, readText: record.readText, context: context)
         }
 
-        return Installed(regions: regions, writtenImagePaths: written)
+        let planned = Set(plan.pagesToInsert.map(\.id))
+        let existingIds = Array(Set(plan.pageLinks.values).subtracting(planned))
+        if !existingIds.isEmpty {
+            let descriptor = FetchDescriptor<CapturedPage>(
+                predicate: #Predicate { existingIds.contains($0.id) }
+            )
+            for page in try context.fetch(descriptor) {
+                // The region an earlier restore of the same file built. The
+                // image is not rewritten: the page already has one.
+                regions[page.id] = page.regions.first
+                    ?? makeRegion(on: page, readText: nil, context: context)
+            }
+        }
+        return regions
     }
 
-    /// Removes the images an install wrote, after the save that should have
-    /// recorded them failed — otherwise a half restore leaves JPEGs on disk
+    /// Removes the images `writeImages` wrote, after the restore that should
+    /// have recorded them failed — otherwise a half restore leaves JPEGs on disk
     /// that no page points at and nothing will ever delete.
     ///
     /// Best effort by nature: this runs on the way out of a failure that is

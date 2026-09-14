@@ -59,15 +59,24 @@ final class BackupPageInstallerTests: XCTestCase {
         return files.count
     }
 
+    /// Both halves, the way the restore runs them: images (detached), then the
+    /// store inserts.
+    private func restorePages(
+        _ plan: RestorePlan,
+        hash: (@Sendable (Data) -> String?)? = nil
+    ) throws -> (images: [UUID: BackupPageInstaller.WrittenImage], regions: [UUID: TextRegion]) {
+        let images = try BackupPageInstaller.writeImages(for: plan, imageStore: store, hash: hash)
+        let regions = try BackupPageInstaller.install(plan, images: images, context: context, schema: schema)
+        return (images, regions)
+    }
+
     // MARK: The page
 
     func testAPlannedPageIsBuiltReadyWithItsPhotoAndAWholePageRegion() throws {
         let record = pageRecord()
         let plan = BackupRestorer.plan(records: [cardRecord(pageId: record.id)], pages: [record], existingIds: [])
 
-        let installed = try BackupPageInstaller.install(
-            plan, imageStore: store, context: context, schema: schema, hash: { _ in "hash-1" }
-        )
+        let installed = try restorePages(plan, hash: { _ in "hash-1" })
         try context.save()
 
         let page = try XCTUnwrap(try context.fetch(FetchDescriptor<CapturedPage>()).first)
@@ -80,7 +89,7 @@ final class BackupPageInstallerTests: XCTestCase {
         XCTAssertEqual(page.perceptualHash, "hash-1")
         XCTAssertNil(page.coverageJSON, "kapsama defteri olmadan üretilmiş — doğrusu bu")
         XCTAssertEqual(try store.load(relativePath: page.originalImagePath), jpeg, "yeniden sıkıştırılmamalı")
-        XCTAssertEqual(installed.writtenImagePaths, [page.originalImagePath])
+        XCTAssertEqual(installed.images.values.map(\.path), [page.originalImagePath])
 
         let region = try XCTUnwrap(page.regions.first)
         XCTAssertIdentical(installed.regions[record.id], region)
@@ -99,7 +108,7 @@ final class BackupPageInstallerTests: XCTestCase {
         let record = pageRecord()
         let cardRec = cardRecord(pageId: record.id)
         let plan = BackupRestorer.plan(records: [cardRec], pages: [record], existingIds: [])
-        let installed = try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
+        let installed = try restorePages(plan)
 
         let region = try XCTUnwrap(plan.pageLinks[cardRec.id].flatMap { installed.regions[$0] })
         let card = Card(id: cardRec.id, type: .directRecall, front: cardRec.front, back: cardRec.back, status: .active)
@@ -139,7 +148,7 @@ final class BackupPageInstallerTests: XCTestCase {
             pages: [first, second, third],
             existingIds: []
         )
-        _ = try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
+        _ = try restorePages(plan)
         try context.save()
 
         let sources = try context.fetch(FetchDescriptor<Source>())
@@ -153,7 +162,7 @@ final class BackupPageInstallerTests: XCTestCase {
     func testAPageWithNoSubjectOrLabelGetsNoSourceAndNoLabel() throws {
         let record = pageRecord(subject: "  ", readText: nil, label: "")
         let plan = BackupRestorer.plan(records: [cardRecord(pageId: record.id)], pages: [record], existingIds: [])
-        let installed = try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
+        let installed = try restorePages(plan)
 
         let region = try XCTUnwrap(installed.regions[record.id])
         XCTAssertNil(region.page?.source)
@@ -169,7 +178,7 @@ final class BackupPageInstallerTests: XCTestCase {
     func testAnExistingPageIsLinkedWithoutRewritingItsImage() throws {
         let record = pageRecord()
         let firstPlan = BackupRestorer.plan(records: [cardRecord(pageId: record.id)], pages: [record], existingIds: [])
-        let first = try BackupPageInstaller.install(firstPlan, imageStore: store, context: context, schema: schema)
+        let first = try restorePages(firstPlan)
         try context.save()
         let filesAfterFirst = storedFileCount()
 
@@ -179,11 +188,11 @@ final class BackupPageInstallerTests: XCTestCase {
             existingIds: [],
             existingPageIds: [record.id]
         )
-        let second = try BackupPageInstaller.install(secondPlan, imageStore: store, context: context, schema: schema)
+        let second = try restorePages(secondPlan)
         try context.save()
 
         XCTAssertIdentical(second.regions[record.id], first.regions[record.id])
-        XCTAssertTrue(second.writtenImagePaths.isEmpty)
+        XCTAssertTrue(second.images.isEmpty)
         XCTAssertEqual(storedFileCount(), filesAfterFirst)
         XCTAssertEqual(try context.fetch(FetchDescriptor<CapturedPage>()).count, 1)
         XCTAssertEqual(try context.fetch(FetchDescriptor<TextRegion>()).count, 1)
@@ -195,8 +204,7 @@ final class BackupPageInstallerTests: XCTestCase {
         let record = pageRecord()
         let plan = BackupRestorer.plan(records: [cardRecord(pageId: record.id)], pages: [record], existingIds: [])
         let region = try XCTUnwrap(
-            try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
-                .regions[record.id]
+            try restorePages(plan).regions[record.id]
         )
 
         func unit(_ tags: [String], topic: String? = "Bakteriyoloji") -> KnowledgeUnit {
@@ -240,11 +248,19 @@ final class BackupPageInstallerTests: XCTestCase {
         )
         XCTAssertEqual(plan.pagesToInsert.map(\.id), [good.id, blocked.id])
 
-        XCTAssertThrowsError(
-            try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
-        )
+        XCTAssertThrowsError(try BackupPageInstaller.writeImages(for: plan, imageStore: store))
         let goodPath = "\(good.id.uuidString.prefix(2))/\(good.id.uuidString)-original.jpg"
         XCTAssertFalse(store.exists(relativePath: goodPath), "yarım geri yükleme diskte yetim JPEG bırakmamalı")
+    }
+
+    /// The image half and the store half run on different actors; a page whose
+    /// image never made it to disk is not recorded with a path to nothing.
+    func testInstallSkipsAPlannedPageWithNoWrittenImage() throws {
+        let record = pageRecord()
+        let plan = BackupRestorer.plan(records: [cardRecord(pageId: record.id)], pages: [record], existingIds: [])
+        let regions = try BackupPageInstaller.install(plan, images: [:], context: context, schema: schema)
+        XCTAssertTrue(regions.isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<CapturedPage>()).isEmpty)
     }
 
     /// The save-failed half: what the restore calls after its rollback.
@@ -255,11 +271,11 @@ final class BackupPageInstallerTests: XCTestCase {
             pages: pages,
             existingIds: []
         )
-        let installed = try BackupPageInstaller.install(plan, imageStore: store, context: context, schema: schema)
+        let installed = try restorePages(plan)
         XCTAssertEqual(storedFileCount(), 2)
         context.rollback()
 
-        BackupPageInstaller.discard(installed.writtenImagePaths, imageStore: store)
+        BackupPageInstaller.discard(installed.images.values.map(\.path), imageStore: store)
         XCTAssertEqual(storedFileCount(), 0)
         XCTAssertTrue(try context.fetch(FetchDescriptor<CapturedPage>()).isEmpty)
     }
