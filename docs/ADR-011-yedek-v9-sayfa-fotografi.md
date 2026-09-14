@@ -1,6 +1,6 @@
 # ADR-011 — Yedek biçimi v9: geri yüklemede sayfa fotoğrafı
 
-**Tarih:** 2026-09-14 · **Durum:** ✅ Kabul edildi · **Dal:** `yedek-v9-sayfa`
+**Tarih:** 2026-09-14 · **Durum:** ✅ Kabul edildi · **PR:** #50 (dört Codex turu)
 
 ## Bağlam
 
@@ -118,6 +118,13 @@ tek yolu (§5.5).
   `ProcessingQueue`'nun üretimi bitirdiği an; geri yüklenen sayfalar o yoldan
   hiç geçmez. Olması için dışarıda yazılmış bir dosyanın sayfa kimliğinin
   kameradan çekilmiş gerçek bir sayfanınkiyle aynı olması gerekir.
+- **Arka plan planlaması sırasında silinen mevcut sayfa düzeltilmedi** (Codex,
+  PR #50, dördüncü tur, P2 — gerekli sayılmadı). Planın kullandığı sayfa
+  kimlikleri ana aktörde okunur, çözme ayrık görevde sürer; o birkaç saniyede
+  sahibi Kuyruk'a geçip tam o sayfayı silerse yeni kartlar fotoğrafsız girer ve
+  özet onları fotoğraflı sayar. Veri kaybı yok, yalnız özet bir sayı fazla
+  söyler; olması için geri yükleme sürerken ekran değiştirip dosyanın bağlandığı
+  sayfayı elle silmek gerekir.
 - **"Orijinal sayfayı sakla" kapalıyken de fotoğraf yazılır.** O ayar üretim
   hattının görüntüyü kart hazır olunca silip silmeyeceğini yönetir; fotoğraf
   taşıyan bir dosyayı geri yüklemek, fotoğrafı istemenin açık hâlidir.

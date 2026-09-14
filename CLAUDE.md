@@ -477,16 +477,16 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 
 | Kavram destesi (ADR-010) | ⛔️ **Kaldırıldı** (2026-09-14). Kod, şema sütunu, `queued` durumu ve cihazdaki veri gitti; eski şemalı depo ve gerçek v7 yedeğiyle simülatörde kanıtlandı. Ayrıntı: yukarıdaki "Kavram destesi kaldırıldı" bölümü. **Gerçek cihazda kalan:** doğrulama listesinin 23-24. maddeleri |
 | Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
-| Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | 🟡 `yedek-v9-sayfa` dalında (2026-09-14). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
+| Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | ✅ `main`'de (PR #50, squash; 2026-09-14). Dört Codex turu: iki P2 düzeltildi (kesik JPEG'in fotoğraf sayılması → `JPEGIntegrity`; büyük yedeğin ana iş parçacığında açılması → ayrık görev + 256 MB sınırı), iki P2 gerekçeyle bırakıldı (ADR-011 "Bilinçli ayrıntılar"). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
 
 **Dal durumu (2026-09-14):** "Sadeleştirme ve Bilgilerim" turu
 (`sadelestirme-ve-bilgilerim`: kavram destesinin kaldırılması, Egzersiz'de
 askıya alma, kaynak fotoğrafı zoom, günlük bildirim, Bilgilerim + istatistik,
 arka plan gravürleri — altı commit) `main`'e fast-forward merge edildi, çalışma
-dalı silindi; `main` `origin/main` ile aynı (`0b13033`). Yeni iş `main`'in
-ucundan yeni bir dalla başlar. Yedek v9 işi (ADR-011) bu kurala uygun olarak
-`yedek-v9-sayfa` dalında ve PR olarak açık.
+dalı silindi. Yedek v9 işi (ADR-011) `yedek-v9-sayfa` dalında yapılıp PR #50
+ile `main`'e squash merge edildi, dal silindi; `main` `origin/main` ile aynı.
+Yeni iş `main`'in ucundan yeni bir dalla başlar.
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
