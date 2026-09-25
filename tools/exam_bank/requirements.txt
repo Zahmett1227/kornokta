@@ -1,7 +1,7 @@
-# Faz 0 (registry + --dry-run) needs only the standard library.
-# From Faz A1 on, extraction reads word boxes with pdfplumber
-# (docs/PLAN-cikmis-soru-bankasi.md §5.3) and validates the bank against
-# exam_bank.schema.json.
+# The registry and --dry-run need only the standard library.
+# Extraction (A1–A4) reads word boxes with pdfplumber, which brings pypdfium2
+# for crops and page images; the bank is validated with jsonschema.
+# Packaging (A9) also needs the qpdf command (brew install qpdf).
 pdfplumber>=0.11,<0.12
 jsonschema>=4.21
 pytest>=8.0

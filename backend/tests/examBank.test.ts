@@ -129,7 +129,11 @@ describe("exam bank prompts", () => {
     expect(temel.properties.items.items.properties.subject.enum).toEqual([...TEMEL_SUBJECTS]);
     const klinik = labelSchema("K") as any;
     expect(klinik.properties.items.items.properties.subject.enum).toEqual([...KLINIK_SUBJECTS]);
-    expect(labelSystem("K")).toContain(KLINIK_SUBJECTS.join(", "));
+    // Six blocks: the minor specialties come twice (Faz A1's measurement).
+    expect(labelSystem("K").match(/Küçük Stajlar/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(labelSystem("K").indexOf("Dahiliye, Küçük Stajlar")).toBeGreaterThan(0);
+    expect(labelSystem("T")).toContain(TEMEL_SUBJECTS.join(", "));
+    expect(labelSystem("T2")).toMatch(/yıla göre değişir/);
   });
 
   it("offer topics only from the app's schema, or null", () => {

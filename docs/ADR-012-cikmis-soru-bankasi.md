@@ -1,6 +1,6 @@
 # ADR-012 — Çıkmış soru bankası: soru kart değildir
 
-**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0
+**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0 ve Faz A1
 `cikmis-soru-bankasi` dalında · **Plan:** [`PLAN-cikmis-soru-bankasi.md`](PLAN-cikmis-soru-bankasi.md)
 
 ## Bağlam
@@ -94,6 +94,24 @@ akışı"nı dışlar — o yasak **dağıtım** içindir. Bu banka:
   2009–2011'de Temel ve Klinik aynı dosyada ikisi de 1'den numaralanıyor
   (kural düzeltildi) ve macOS dosya adlarını NFD döndürdüğü için `yenikeşif/`
   dışlaması eşleşmiyordu (ADR-001 sınıfı; yollar NFC'ye çevriliyor).
+
+## Faz A1'de yapılanlar (2026-09-25)
+
+Hat (`tools/exam_bank/` + `backend/scripts/examBank.ts`) gerçek klasörde koştu:
+8.410 soru, V1–V8 ve V10 geçiyor, **V9 sahibinin onayını bekliyor** (paket onaydan
+sonra yazılır). Model maliyeti $0,64 (Luna @low, 406 çağrı; plan $3–5). Karar 3'ün
+"model yalnız dört yerde" sınırı tuttu: A5 onarım (15 soru), A6 2011/1 (31 sayfa),
+A7 etiket (351 küme), V6 sağlama (61 kağıt).
+
+Bu karar belgesini etkileyen iki ölçüm:
+
+- **Kimlik kuralı ilk kez sınandı.** Tusdata derlemesinin 2024/1 Klinik
+  numaraları ÖSYM'nin görünür sorularından kayıyor. Karar 2 ("kimlik bir kez
+  verildikten sonra asla başka soruya verilmez") gereği çapaların iki yanı
+  tutarsız 22 soru kimlik almadı ve bankaya girmedi; tahmini bir kimlik, ileride
+  ÖSYM'nin tam kitapçığı gelince başka bir soruya ait çıkabilirdi.
+- **2011 İlkbahar Temel-1 + Temel-2**, Klinik değil: kayıtta `TUS-2011-1-T2`; o
+  sınavın Klinik testi eksik kaynaklar listesinde.
 
 ## Geri dönüş
 

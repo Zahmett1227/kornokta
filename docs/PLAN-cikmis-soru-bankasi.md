@@ -12,11 +12,43 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 | Faz | Durum |
 |---|---|
 | Faz 0 — hazırlık | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
-| Faz A1 — banka hattı | 🔲 |
+| Faz A1 — banka hattı | 🟡 `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 yazıldı ve gerçek klasörde koştu; **V1–V8 ve V10 geçiyor, V9 (sahibinin 30 soruluk örneklem onayı) bekliyor** — paket onaydan sonra yazılır. 8.410 soru, model maliyeti $0,64. Ölçümün düzelttiği varsayımlar: aşağıda "Faz A1 sonucu" |
 | Faz A2 — uygulama çekirdeği | 🔲 |
 | Faz A3 — Deneme | 🔲 |
 | Kanıt turu | 🔲 |
 | Faz B / C | 🔲 |
+
+### Faz A1 sonucu (ölçülen, 2026-09-25)
+
+| | |
+|---|---|
+| Soru | **8.410**: ok 6.985 · anahtarsız 1.357 · iptal 55 · değiştirilmiş 12 · insan gerekli 1 |
+| Görsel | gerekli 161 · atıf 51 |
+| Ders/konu | 85 kağıdın hepsi monoton; 932 referans etiketle **%97,9**; konulu soru 7.856 |
+| Kapılar | V1 tamam · V2 tamam · V3 tamam · V4 80/80 · V5 100/100 · V6 61/61 (ort. %95) · V7 %97,9 · V8 161 · V10 temiz · **V9 bekliyor** |
+| Model | Luna @low, 406 çağrı, **$0,64** (A5 15 · A6 31 · A7 351 · V6 61) |
+
+Planın varsaydığı, ölçümün düzelttiği:
+
+1. **2011 İlkbahar = Temel Testi-1 + Temel Testi-2**, Temel+Klinik değil (kitapçığın
+   açıklama sayfası ve anahtar başlıkları). Kayıtta `TUS-2011-1-K` → `TUS-2011-1-T2`;
+   o sınavın Klinik testi klasörde **yok** (§10'a eklenen eksik).
+2. **Klinik test 6 blok:** Dahiliye → Küçük Stajlar (dahilî) → Pediatri → Genel
+   Cerrahi → Küçük Stajlar (cerrahî) → Kadın-Doğum — 2006'dan 2026'ya her yıl
+   (F1'in "İç Hastalıkları, Pediatri, Cerrahi, Kadın-Doğum" başlığına rağmen soruları
+   aynı bloklarda). Temel Testi-2'nin sırası yıla göre değişiyor (2012/1 Biyokimya →
+   Mikrobiyoloji, 2011/1 tersi); oylardan okunuyor. §5.2 ve §5.10'daki sıra buna göre.
+3. **Derlemenin 2024/1 Klinik numarası ÖSYM'den kayıyor** (resmî 64 = derleme 63,
+   70 = 69, 89 = 89): ÖSYM'nin görünür soruları çapa; iki yanı tutarsız **22 soru**
+   (anahtarsız) bankaya girmiyor — kimlik tahminle verilmez. V5 artık numara eşitliği
+   değil metin çapası.
+4. **Derleyici değişikliği kendisi yazıyor:** 14 soruda "modifiye/revizyon" notu —
+   dış rapora gerek kalmadı; 2'sinin resmî metni var, 12'si `modified`.
+5. **İptal iki kaynaktan:** 29'u kitapçık+anahtar, 16'sı yalnız anahtar (2009–2013
+   kitapçığı metni korumuş), 10'u yalnız kitapçık (2017 anahtarı eski harfi basıyor).
+6. **V4 80/80** (Faz 0'da 77/77): 2024/2, 2025/1, 2025/2, 2026/2'nin 20'şer görünür sorusu.
+7. **Yıllar arası neredeyse aynı soru yok** (Jaccard > 0,8): `similarTo` boş.
+8. **Model maliyeti planın ~%15'i** ($0,64 / $3–5): Luna @low, kısa çıktılar.
 
 ---
 
@@ -66,7 +98,7 @@ sayımı, cevap anahtarı ayrıştırması). Kitapçık kitapçık tablo: **Ek A
 | Aile | Kapsam | Biçim | Anahtar | Bilinen sorun |
 |---|---|---|---|---|
 | **F1** | 2006–2008 (6 sınav × Temel 100 + Klinik 100) | Ayrı Temel/Klinik PDF, iki sütun | **Yok** | Klinik testte Küçük Stajlar yok ("İç Hastalıkları, Pediatri, Cerrahi, Kadın-Doğum") |
-| **F2** | 2009–2011 (6 sınav, 200 soru tek PDF) | Birleşik kitapçık, iki sütun | Son iki sayfada, "A KİTAPÇIĞI" | **2011 İlkbahar'ın metin katmanı bozuk kodlu** (özel font eşlemesi); anahtar okunuyor |
+| **F2** | 2009–2011 (6 sınav, 200 soru tek PDF) | Birleşik kitapçık, iki sütun | Son iki sayfada, "A KİTAPÇIĞI" | **2011 İlkbahar'ın metin katmanı bozuk kodlu** (özel font eşlemesi); anahtar okunuyor. 2011 İlkbahar'ın iki testi Temel-1 + Temel-2 (Faz A1'de ölçüldü) |
 | **F3** | 2012–2021 (Temel 120 + Klinik 120) | Ayrı PDF, iki sütun | Son sayfada ızgara | 2013–2017'de 39 "Bu soru iptal edilmiştir"; 2012 İlkbahar'da ek bir **Temel Testi-2** (120 soru) |
 | **F4** | 2022–2026 ÖSYM resmî | Kitapçığın ~%10'u görünür, geri kalanı boş yuva | Görünen soruda "DOĞRU CEVAP: X" | Yalnız 212 soru görünür |
 | **F5** | Tusdata derlemesi (`TUS_2024-2026_TamSorular_Derleme.pdf`) | 2024/1, 2024/2, 2025/1, 2025/2 — 800 soru; Temel 1–100, Klinik 101–200 | 2024/2, 2025/1, 2025/2 için var; **2024/1 için yok** | Ticarî (Tusdata); önceki analizde 14 "derleyen değiştirmiş" kaydı, 12'si güvenilmez |
@@ -222,8 +254,9 @@ bir kayıt; bir PDF birden çok kağıt taşıyabilir (F2, F5):
 - F5 dört kağıda bölünür (Temel 1–100, Klinik 101–200 → K 1–100).
 - 2012 İlkbahar: `TUS-2012-1-T`, `TUS-2012-1-T2`, `TUS-2012-1-K`.
 - Dışarıda: `yenikeşif/*`, `2024-2025-2026 TUS.pdf`, `tmp/`, `TUS_Guncellik_Raporu/`.
-- Klinik ders sırası: `[Dahiliye, Pediatri, Genel Cerrahi, Kadın Doğum, Küçük Stajlar]`;
-  F1'de Küçük Stajlar yok. (2006 kitapçığı sırayı yazıyor; diğer yıllarda A7 doğrular.)
+- Klinik blok sırası (Faz A1'de ölçüldü): `[Dahiliye, Küçük Stajlar, Pediatri, Genel
+  Cerrahi, Küçük Stajlar, Kadın Doğum]` — Küçük Stajlar iki kez (dahilî, cerrahî). F1
+  kitapçığı başlıkta dört ders yazsa da soruları aynı altı blokta.
 
 ### 5.3 A1 — Metin çıkarımı (deterministik)
 
@@ -327,7 +360,8 @@ alınmaz** (miras alınırsa maliyet 5–8 kat şaşar).
 1. Model, her soru için ÖSYM dersini seçer (enum: 7 Temel + 5 Klinik ders adı) ve
    uygulamanın konu listesinden birini (dinamik şema: o dersin `subject_topics.json`
    konuları + `null`). `sanitizeTopics` kuralı: geçersiz konu → `null`, iş düşmez.
-2. **Monoton bölütleme:** ÖSYM her testte dersleri sabit sırayla dizer. Model etiketi
+2. **Monoton bölütleme** (Klinik altı blok, Temel yedi ders; Temel-2'nin sırası oylardan —
+   bkz. "Faz A1 sonucu"): ÖSYM her testte dersleri sabit sırayla dizer. Model etiketi
    bir öneri; nihai ders, "sıra bozulmadan en çok model etiketiyle uyuşan bölütleme"
    dinamik programlamasıyla seçilir. Tek bir yanlış etiket böylece kendiliğinden düzelir.
    Kağıdın sırası kayıttakiyle tutarsızsa bölütleme o kağıt için kapanır ve raporlanır.
@@ -748,6 +782,7 @@ eklenmesi için adaptör (yeni bir Tusdata cildi F5 adaptörüyle girer).
 | Eksik | Etki | Yol | Kimde |
 |---|---|---|---|
 | 2022/1, 2022/2, 2023/1, 2023/2, 2026/1 tam setleri (1.008 soru) | En yeni yılların yarısı yok | Aynı serinin (Tusdata vb.) 2022–2023 cildi ve 2026/1 derlemesi; F5 adaptörü aynen çalışır; V4 resmî görünürlerle doğrular | Sahibi (kaynak edinme) |
+| 2011/1 Klinik testi (100 soru) | Klasörde yok (kitapçık Temel-1 + Temel-2) | Aynı sınavın Klinik kitapçığı | Sahibi |
 | 2024/1 anahtarı (180 soru) | Çözülür ama puanlanmaz | Başka bir derlemenin 2024/1 anahtarı; ya da Faz C "önerilen cevap" | Sahibi / Faz C |
 | 2006–2008 anahtarları (1.200 soru) | En eski dilim, varsayılanda zaten dışarıda | ÖSYM arşivi ya da Faz C | Düşük öncelik |
 | Açıklamalar | "Neden" yok, yalnız köprü | Açıklamalı soru kitabı (yeni adaptör: açıklama alanı `explanation` + `explanationSource`); ya da Faz C model açıklaması | K3 |

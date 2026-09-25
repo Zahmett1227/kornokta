@@ -12,7 +12,11 @@
 
 import { SUBJECT_TOPIC_SCHEMA } from "../providers/subjectTopics.js";
 
-export const EXAM_BANK_PROMPT_VERSION = "exam-bank-1";
+// exam-bank-2: the Klinik order is six blocks, Küçük Stajlar twice (measured
+// in Faz A1 — tools/exam_bank/subjects.py KLINIK_ORDER). Labels already made
+// under exam-bank-1 stand: the model labelled by content, and the order only
+// enters through the segmentation.
+export const EXAM_BANK_PROMPT_VERSION = "exam-bank-2";
 
 export const TEMEL_SUBJECTS = [
   "Anatomi", "Histoloji-Embriyoloji", "Fizyoloji", "Biyokimya", "Mikrobiyoloji", "Patoloji", "Farmakoloji",
@@ -104,12 +108,22 @@ function topicsOf(osymSubject: string): readonly string[] {
   return SUBJECT_TOPIC_SCHEMA.find((s) => s.name === app)?.topics ?? [];
 }
 
+/** The blocks as ÖSYM prints them (tools/exam_bank/subjects.py KLINIK_ORDER). */
+export const KLINIK_BLOCKS =
+  "Dahiliye, Küçük Stajlar (nöroloji, psikiyatri, dermatoloji gibi dahilî dallar), Pediatri, Genel Cerrahi, " +
+  "Küçük Stajlar (üroloji, ortopedi, KBB, göz gibi cerrahî dallar), Kadın Hastalıkları ve Doğum";
+
 export function labelSystem(test: string): string {
   const subjects = subjectsFor(test);
   const lists = subjects.map((s) => `- ${s}: ${topicsOf(s).join(" · ") || "(konu listesi yok — null ver)"}`).join("\n");
+  const order = test === "K"
+    ? `Bloklar bu sırayla gelir: ${KLINIK_BLOCKS}.`
+    : test === "T2"
+      ? "Bu ikinci Temel testinin ders sırası yıla göre değişir; her soruyu içeriğine göre etiketle."
+      : `Dersler bu sırayla gelir: ${subjects.join(", ")}.`;
   return `TUS sorularını ÖSYM'nin ders adıyla ve uygulamanın konu listesinden bir konuyla etiketliyorsun.
 
-Bu test ${test === "K" ? "Klinik Tıp Bilimleri" : "Temel Tıp Bilimleri"} testi. ÖSYM dersleri bu sırayla dizer: ${subjects.join(", ")}. Sorular kitapçık sırasıyla geliyor; ardışık sorular çoğunlukla aynı derstendir.
+Bu test ${test === "K" ? "Klinik Tıp Bilimleri" : "Temel Tıp Bilimleri"} testi. ${order} Sorular kitapçık sırasıyla geliyor; ardışık sorular çoğunlukla aynı derstendir.
 
 Her soru için:
 - "subject": sorunun ÖSYM dersi (yalnız yukarıdaki adlardan biri).
