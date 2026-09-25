@@ -131,16 +131,29 @@ def main(argv: Optional[List[str]] = None) -> int:
     return run_stages(registry, source_dir, args.out)
 
 
+def _write(out: Path, name: str, result: dict) -> None:
+    (out / name).write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def run_stages(registry: reg.Registry, source_dir: Path, out: Path) -> int:
-    from . import a1  # needs pdfplumber; the dry run does not
+    from . import a1, a2  # need pdfplumber; the dry run does not
 
     out.mkdir(parents=True, exist_ok=True)
-    result = a1.run(registry, source_dir, cache_dir=out / "cache")
-    (out / "a1.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
-    for line in a1.report(result):
+    cache = out / "cache"
+    first = a1.run(registry, source_dir, cache_dir=cache)
+    _write(out, "a1.json", first)
+    for line in a1.report(first):
         print(line)
-    if any(p["missing"] for p in result["papers"]):
+    if any(p["missing"] for p in first["papers"]):
         print("V1 düştü: numarası bulunamayan soru var; sonraki aşamalara geçilmiyor.", file=sys.stderr)
+        return EXIT_GATE
+
+    second = a2.run(registry, first, source_dir, cache_dir=cache)
+    _write(out, "a2.json", second)
+    for line in a2.report(second, first):
+        print(line)
+    if second["problems"]:
+        print("V3/V4 düştü: anahtar eksik ya da ÖSYM ile uyuşmuyor; sonraki aşamalara geçilmiyor.", file=sys.stderr)
         return EXIT_GATE
     return EXIT_OK
 

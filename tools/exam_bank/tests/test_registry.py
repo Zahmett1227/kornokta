@@ -25,13 +25,17 @@ def test_real_registry_counts(real):
     # 12 F1 + 6 F2 + 41 F3 + 20 F4 + 1 F5 + 2 F6 files.
     assert len(real.sources) == 82
     assert len(real.papers) == 95
-    # 2006–2021: 16 years × 2 sessions × 2 tests, plus 2012/1's extra Temel
-    # Testi-2; 2022–2026: 5 × 2 × 2.
-    assert len(real.paper_ids()) == 65 + 20
+    # 2006–2021: 16 years × 2 sessions × 2 tests, plus the extra Temel
+    # Testi-2 of 2011/1 and 2012/1, minus 2011/1's Klinik (not in the
+    # folder); 2022–2026: 5 × 2 × 2.
+    assert len(real.paper_ids()) == 64 + 2 - 1 + 20
 
 
-def test_every_exam_2006_2026_has_both_tests(real):
-    assert reg.missing_tests(real) == []
+def test_every_exam_2006_2026_is_registered_and_the_one_gap_is_known(real):
+    # 2011/1's booklet is Temel Testi-1 and Temel Testi-2 (its cover says so;
+    # found while reading its key in Faz A1). That exam's Klinik test is not
+    # in the owner's folder — a gap to report, not to paper over.
+    assert reg.missing_tests(real) == ["TUS-2011-1-K"]
     exams = {(p.year, p.session) for _, p in real.papers}
     assert exams == {(y, s) for y in range(2006, 2027) for s in (1, 2)}
 
