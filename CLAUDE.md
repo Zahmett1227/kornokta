@@ -138,7 +138,10 @@ tıraşla") revert'i. O mimarinin kaydı ADR-002/003/004 + `docs/HISTORY.md`'de.
    Egzersiz'in "FES kartlar" hızlı başlangıcında (üyelik FES, sıra
    `WeakPointRanking.rank`), Bilgilerim'de ayrı bir bölümde ve kart
    detayında görünür; öncesi değil **cevap açıldıktan sonra** (ölçümü
-   bozmasın diye). Geçmiş kartlar `FesBackfillMigration` ile karta özel
+   bozmasın diye). **Canlı yazım tek fonksiyonda** (2026-09-25):
+   `FesScore.record(_:on:at:)` — Tekrar ve Egzersiz'in iki kopyası oraya indi,
+   Çıkmış köprüsü de oraya bağlanacak; `FesScore.swift` Foundation-only kalsın
+   diye ayrı dosyada (`FesScore+Card.swift`). Geçmiş kartlar `FesBackfillMigration` ile karta özel
    `fesInitializedAt` alanına bakılarak (bir UserDefaults bayrağı değil —
    yeni kart da pre-v6 yedekten gelen kart da `nil` ile başlar ve
    kendiliğinden işlenir) bir kerelik geriye oynatılır.
@@ -479,6 +482,7 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 | Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
 | Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | ✅ `main`'de (PR #50, squash; 2026-09-14). Dört Codex turu: iki P2 düzeltildi (kesik JPEG'in fotoğraf sayılması → `JPEGIntegrity`; büyük yedeğin ana iş parçacığında açılması → ayrık görev + 256 MB sınırı), iki P2 gerekçeyle bırakıldı (ADR-011 "Bilinçli ayrıntılar"). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
+| Çıkmış soru bankası (ADR-012, 2026-09-25) | 🟡 **Faz 0** `cikmis-soru-bankasi` dalında. Vizyon panelinin ("kitap yanımda olmadan çalışma") çekirdek önerisi, sahibinin 86 çıkmış soru PDF'ine göre planlandı ve onaylandı: [`docs/PLAN-cikmis-soru-bankasi.md`](docs/PLAN-cikmis-soru-bankasi.md). Faz 0'da: kart yüzü `Card` yerine `StudyFaceContent` değeri çiziyor (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma), `FesScore.record` tek canlı FES yazarı, `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256 sabitli) + `--dry-run`. **Sıradaki:** Faz A1 — banka üretim hattı |
 
 **Dal durumu (2026-09-14):** "Sadeleştirme ve Bilgilerim" turu
 (`sadelestirme-ve-bilgilerim`: kavram destesinin kaldırılması, Egzersiz'de
@@ -486,7 +490,8 @@ askıya alma, kaynak fotoğrafı zoom, günlük bildirim, Bilgilerim + istatisti
 arka plan gravürleri — altı commit) `main`'e fast-forward merge edildi, çalışma
 dalı silindi. Yedek v9 işi (ADR-011) `yedek-v9-sayfa` dalında yapılıp PR #50
 ile `main`'e squash merge edildi, dal silindi; `main` `origin/main` ile aynı.
-Yeni iş `main`'in ucundan yeni bir dalla başlar.
+Yeni iş `main`'in ucundan yeni bir dalla başlar. **2026-09-25:** Çıkmış soru
+bankası `cikmis-soru-bankasi` dalında (Faz 0).
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
@@ -615,6 +620,12 @@ boş defterle geçti).
   fotoğrafı. `BackupExporter.swift`/`BackupPageInstaller.swift`/
   `SettingsView.restore`'a dokunmadan önce oku — özellikle sayfanın neden
   kartı izlediği ve dışa aktarmanın neden hâlâ görüntüsüz olduğu.
+- **`docs/ADR-012`** — GÜNCEL YÖN: çıkmış soru bankası. **Soru kart değildir**
+  (Tekrar'a, FSRS'e, Bilgilerim sayılarına girmez; yalnız Egzersiz'de ölçü),
+  banka değişmez bir dosya + kullanıcı durumu kararlı soru kimliğiyle
+  SwiftData'da, FES yalnız sahibinin köprüde seçtiği karta, `EarlyPractice`/
+  `ReviewLog` asla. PDF'ler ve banka repoya ve yedeğe girmez. `tools/exam_bank/`
+  ya da kart yüzüne dokunmadan önce oku.
 - **`docs/ADR-010`** — tarihsel: kavram destesi (2026-09-14'te kaldırıldı).
   Kalan tek iz `ConceptDeckLegacy`; ona dokunmadan önce ADR'nin kaldırma notunu
   oku.
@@ -657,7 +668,14 @@ Canlı çiftler ve kilitleri:
   birinde, FES işareti yalnız birinde, soru puntosu 24'e karşı 26. Buranın
   testi yok ve olamaz (SwiftUI görünümü); koruma testte değil **yapıda**:
   ekrana özgü olan iki şey (`options`, `footer`) slot, geri kalanı ortak.
-  Not düğmeleri de aynı sebeple ortak (`CizgiChoiceButton`).
+  Not düğmeleri de aynı sebeple ortak (`CizgiChoiceButton`). **2026-09-25:**
+  yüz artık `Card` değil `StudyFaceContent` değeri çiziyor — çıkmış soru aynı
+  sayfayı kullanacak ve kart değil (ADR-012). Kartın yüzü nasıl doldurduğu tek
+  yerde: `StudyFaceContent.init(card:isAnswerVisible:showsFesMark:)`.
+- **Çıkmış soru kaynak kaydı:** `tools/exam_bank/sources.json` ↔ sahibinin PDF
+  klasörü — dosya başına sha256 + "kayıtsız PDF yok" kuralı
+  (`python -m tools.exam_bank.build --dry-run`, `EXAM_SOURCE_DIR` ile).
+  Faz A1'de eklenecek çift: `exam_bank.schema.json` ↔ Swift Codable.
 
 Yeni bir "aynı davranış iki yerde" durumu çıkarsa aynı deseni uygula — elle
 senkron tutma, üret ve testle kilitle.
@@ -680,6 +698,8 @@ Ayrıntı: `docs/RUNBOOK.md`. Özet:
 
 ```bash
 python -m pytest evals -q                      # eval + sözleşme testleri
+python -m pytest tools -q                      # çıkmış soru bankası hattı
+python -m tools.exam_bank.build --dry-run      # kaynak kaydı (EXAM_SOURCE_DIR ile klasör denetimi)
 cd ios/CizgiCore && swift test                 # yalnız bir Mac'te / CI
 cd backend && npm test                         # vitest
 cd backend && npm run typecheck                # tsc --noEmit
@@ -690,7 +710,8 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 ## Doküman haritası
 
 Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler),
-`docs/ADR-005/006/007/008/010/011`,
+`docs/ADR-005/006/007/008/010/011/012`,
+`docs/PLAN-cikmis-soru-bankasi.md` (onaylı; Faz 0 → A1),
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -710,6 +731,12 @@ commit'inin revert'i), `docs/FAZ0-*` – `FAZ5-*`,
 `docs/MODEL-CARD.md`.
 
 ## Sıradaki iş
+
+**Kod tarafında sıradaki:** Çıkmış soru bankası Faz A1 — banka üretim hattı
+(`docs/PLAN-cikmis-soru-bankasi.md` §9.2): pdfplumber ile sütun duyarlı çıkarım,
+anahtarlar, birleştirme, görsel tespiti, model aşamaları, V1–V10 kapıları,
+paketleme. Sahibinin işi: eksik tam setler (2022–2023, 2026/1) ve 2024/1 anahtarı
+için kaynak (plan §10).
 
 **Elle yapılacak somut işler:** kavram destesi kaldırmasının gerçek cihazda
 doğrulanması (aşağıda 23-24), FES sicili ve Egzersiz'in altı boyutlu filtresinin
