@@ -36,6 +36,8 @@ class Box:
     top: float
     bottom: float
     kind: str = "image"
+    sig: tuple = ()          # what makes two copies the same object (A4 repetition test)
+    artifact: bool = False   # tagged PDFs mark watermarks and page furniture as /Artifact
 
     @property
     def width(self) -> float:

@@ -155,6 +155,23 @@ def run_stages(registry: reg.Registry, source_dir: Path, out: Path) -> int:
     if second["problems"]:
         print("V3/V4 düştü: anahtar eksik ya da ÖSYM ile uyuşmuyor; sonraki aşamalara geçilmiyor.", file=sys.stderr)
         return EXIT_GATE
+
+    from . import figures, merge
+    from .a1 import read_pages
+
+    third = merge.run(registry, first, second)
+    by_file = {s.file: s for s in registry.sources}
+    third["figures"] = figures.annotate(third["questions"],
+                                        lambda f: read_pages(by_file[f], source_dir, cache))
+    _write(out, "a3.json", third)
+    for line in merge.report(third):
+        print(line)
+    counts = third["figures"]
+    print(f"A4: görsel gerekli {counts.get('required', 0)}, görsele atıf {counts.get('reference', 0)}, "
+          f"görselsiz {counts.get('none', 0)}")
+    if third["problems"]:
+        print("V5 düştü: ÖSYM'nin görünür sorusu kopyada bulunamadı; sonraki aşamalara geçilmiyor.", file=sys.stderr)
+        return EXIT_GATE
     return EXIT_OK
 
 

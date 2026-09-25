@@ -15,7 +15,7 @@ from .extract import families, paper, pdfwords
 
 # Bump when anything in pdfwords changes what a page yields, so a stale
 # page cache is not reused.
-READER_VERSION = 1
+READER_VERSION = 2
 
 
 def read_pages(source: reg.Source, source_dir: Path, cache_dir: Optional[Path]):

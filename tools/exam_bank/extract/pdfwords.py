@@ -86,12 +86,16 @@ def read_page(page, number: int) -> Page:
     words = drop_watermark(words)
     graphics: List[Box] = []
     for img in page.images:
-        box = Box(float(img["x0"]), float(img["x1"]), float(img["top"]), float(img["bottom"]), "image")
-        if box.width >= MIN_FIGURE_SIDE and box.height >= MIN_FIGURE_SIDE:
-            graphics.append(box)
+        w, h = float(img["x1"]) - float(img["x0"]), float(img["bottom"]) - float(img["top"])
+        if w < MIN_FIGURE_SIDE or h < MIN_FIGURE_SIDE:
+            continue
+        sig = ("image", tuple(img.get("srcsize") or ()), round(w), round(h))
+        graphics.append(Box(float(img["x0"]), float(img["x1"]), float(img["top"]), float(img["bottom"]), "image",
+                            sig, img.get("tag") == "Artifact"))
     for kind, objs in (("curve", page.curves), ("rect", page.rects), ("line", page.lines)):
         for o in objs:
-            graphics.append(Box(float(o["x0"]), float(o["x1"]), float(o["top"]), float(o["bottom"]), kind))
+            box = (float(o["x0"]), float(o["x1"]), float(o["top"]), float(o["bottom"]))
+            graphics.append(Box(*box, kind, (kind,) + tuple(round(v) for v in box), o.get("tag") == "Artifact"))
     return Page(number=number, width=float(page.width), height=float(page.height), words=words,
                 gutter_hint=_gutter_hint(page), graphics=graphics)
 
