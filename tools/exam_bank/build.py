@@ -2,12 +2,13 @@
 
     python -m tools.exam_bank.build --dry-run
     EXAM_SOURCE_DIR=/path/to/pdfs python -m tools.exam_bank.build --dry-run
+    EXAM_SOURCE_DIR=/path/to/pdfs python -m tools.exam_bank.build
 
-Faz 0 ships only the dry run: it validates `sources.json` and, when the source
-folder is given, checks that every registered PDF is there and unchanged
-(sha256) and that no PDF in the folder is silently ignored. The extraction
-stages (A1–A9) are Faz A1's work; running without `--dry-run` says so and
-exits non-zero rather than pretending to build.
+The dry run validates `sources.json` and, when the source folder is given,
+checks that every registered PDF is there and unchanged (sha256) and that no
+PDF in the folder is silently ignored. A real run does the same checks first
+and then runs the deterministic stages, writing each one's output under
+`tools/exam_bank/out/` (gitignored — it holds booklet text).
 """
 from __future__ import annotations
 
@@ -19,11 +20,16 @@ from collections import Counter
 from pathlib import Path
 from typing import List, Optional
 
+import json
+
 from . import registry as reg
 
 EXIT_OK = 0
 EXIT_INVALID = 1
 EXIT_NOT_IMPLEMENTED = 2
+EXIT_GATE = 3  # a stage ran, and its gate failed
+
+OUT_DIR = Path(__file__).with_name("out")
 
 
 def sha256_of(path: Path) -> str:
@@ -88,6 +94,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                         help="PDF klasörü (varsayılan: EXAM_SOURCE_DIR)")
     parser.add_argument("--registry", type=Path, default=reg.REGISTRY_PATH)
     parser.add_argument("--list", action="store_true", help="kağıtları tek tek listele")
+    parser.add_argument("--out", type=Path, default=OUT_DIR, help="çıktı klasörü (varsayılan: tools/exam_bank/out)")
     args = parser.parse_args(argv)
 
     registry = reg.load(args.registry)
@@ -116,10 +123,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             return EXIT_INVALID
         print(f"Kaynak klasör tamam: {len(registry.sources)} dosyanın hepsi yerinde ve değişmemiş.")
 
-    if not args.dry_run:
-        print("Çıkarım aşamaları (A1–A9) henüz yazılmadı — Faz A1 (docs/PLAN-cikmis-soru-bankasi.md §9.2).",
-              file=sys.stderr)
-        return EXIT_NOT_IMPLEMENTED
+    if args.dry_run:
+        return EXIT_OK
+    if source_dir is None:
+        print("Üretim için kaynak klasör gerekli (EXAM_SOURCE_DIR ya da --source-dir).", file=sys.stderr)
+        return EXIT_INVALID
+    return run_stages(registry, source_dir, args.out)
+
+
+def run_stages(registry: reg.Registry, source_dir: Path, out: Path) -> int:
+    from . import a1  # needs pdfplumber; the dry run does not
+
+    out.mkdir(parents=True, exist_ok=True)
+    result = a1.run(registry, source_dir, cache_dir=out / "cache")
+    (out / "a1.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
+    for line in a1.report(result):
+        print(line)
+    if any(p["missing"] for p in result["papers"]):
+        print("V1 düştü: numarası bulunamayan soru var; sonraki aşamalara geçilmiyor.", file=sys.stderr)
+        return EXIT_GATE
     return EXIT_OK
 
 

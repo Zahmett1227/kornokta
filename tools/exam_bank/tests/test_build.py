@@ -96,8 +96,17 @@ def test_invalid_registry_fails_before_reading_the_folder(tmp_path, capsys):
     assert "schemaVersion" in capsys.readouterr().err
 
 
-def test_building_is_not_pretended(folder, capsys):
-    # Faz 0 has no extraction stages; a real run must say so, not exit 0.
+def test_building_needs_the_source_folder(folder, capsys, monkeypatch):
+    _, registry_path = folder
+    monkeypatch.delenv("EXAM_SOURCE_DIR", raising=False)
+    assert build.main(["--registry", str(registry_path)]) == build.EXIT_INVALID
+    assert "kaynak klasör gerekli" in capsys.readouterr().err
+
+
+def test_building_checks_the_folder_before_reading_a_page(folder, tmp_path, capsys):
+    # A changed booklet must stop the build before extraction mints IDs from it.
     root, registry_path = folder
-    assert build.main(["--registry", str(registry_path), "--source-dir", str(root)]) == build.EXIT_NOT_IMPLEMENTED
-    assert "Faz A1" in capsys.readouterr().err
+    (root / "2013-2021/TUS_2019_Ilkbahar_Temel.pdf").write_bytes(b"%PDF-1.4 changed")
+    code = build.main(["--registry", str(registry_path), "--source-dir", str(root), "--out", str(tmp_path / "o")])
+    assert code == build.EXIT_INVALID
+    assert not (tmp_path / "o").exists()
