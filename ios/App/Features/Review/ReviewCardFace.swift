@@ -25,52 +25,22 @@ import CizgiCore
 /// The parts that genuinely differ are the two slots: `options` (each screen
 /// owns its own selection state) and `footer` (the source disclosure, which
 /// needs each screen's image store).
+///
+/// ### Why it draws a value, not a `Card`
+///
+/// A past exam question needs this same page and is not a card
+/// (`StudyFaceContent` explains the rest). The card-shaped initializer below
+/// keeps Tekrar's and Egzersiz's call sites exactly as they were.
 struct ReviewCardFace<Options: View, Footer: View>: View {
-    let card: Card
+    let content: StudyFaceContent
     let isAnswerVisible: Bool
-    /// Egzersiz marks a FES card once the answer is out; Tekrar does not.
-    /// Never before the reveal — seeing "this one is hard" before trying to
-    /// recall it contaminates the very measurement FES is built from.
-    var showsFesMark = false
     @ViewBuilder var options: () -> Options
     @ViewBuilder var footer: () -> Footer
 
-    private var subject: CizgiSubject? {
-        CizgiSubject.matching(card.knowledgeUnit?.subject)
-    }
-
-    /// The rule falls back to the accent when the card has no recognised
+    /// The rule falls back to the accent when the item has no recognised
     /// subject, so the margin is never blank — an absent rule would read as a
     /// design slip rather than as missing data.
-    private var rule: Color { subject?.color ?? Cizgi.accent }
-
-    /// Where the card sits, in the order a reader wants it: subject, then
-    /// topic. The question's *type* is not repeated here — `CardTypeMark`
-    /// draws its shape, which is what that mark exists for. If the card has
-    /// neither subject nor topic the type name stands in, so the line is never
-    /// empty.
-    private var eyebrow: String {
-        let parts = [card.knowledgeUnit?.subject, card.knowledgeUnit?.topic]
-            .compactMap { $0 }
-            .filter { !$0.isEmpty }
-        return parts.isEmpty ? card.type.displayName : parts.joined(separator: " · ")
-    }
-
-    private var marks: [(String, String)] {
-        var marks: [(String, String)] = []
-        // Flagged, not blocked (§13.3 rule 6): the card is reviewed like any
-        // other, but the user is told it was never fully vouched for before
-        // they trust the answer. The old `DogEar` that said this a second time
-        // is gone with the box it was folded into — the chip carries both an
-        // icon and the words, so the meaning never rested on colour anyway.
-        if card.lowConfidence {
-            marks.append(("Gözden geçir", "exclamationmark.triangle.fill"))
-        }
-        if showsFesMark, isAnswerVisible, FesScore.isFes(score: card.fesScore) {
-            marks.append(("FES", "flame.fill"))
-        }
-        return marks
-    }
+    private var rule: Color { content.subject?.color ?? Cizgi.accent }
 
     var body: some View {
         HStack(alignment: .top, spacing: Cizgi.Space.lg) {
@@ -87,21 +57,21 @@ struct ReviewCardFace<Options: View, Footer: View>: View {
                     // VoiceOver); the type name it draws is spoken by the line
                     // beside it, which also restores the uppercased text to
                     // its real casing.
-                    CardTypeMark(type: card.type, size: 17, tint: rule)
+                    CardTypeMark(type: content.type, size: 17, tint: rule)
                     // `uppercased()` alone gives "ENDOKRIN SISTEM" — right in
                     // English, wrong here (docs/ADR-001).
-                    Text(TurkishText.uppercased(eyebrow))
+                    Text(TurkishText.uppercased(content.eyebrow))
                         .font(.caption2.weight(.bold))
                         .tracking(1.1)
                         .foregroundStyle(Cizgi.faint)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .accessibilityLabel("\(card.type.displayName), \(eyebrow)")
+                        .accessibilityLabel("\(content.type.displayName), \(content.eyebrow)")
                 }
 
                 // Serifin üç yerinden biri: kart sorusu. Kutunun dolgusu
                 // kalktığı için satır genişledi ve punto bir kademe büyüdü.
-                Text(card.front)
+                Text(content.question)
                     .font(Cizgi.serif(27, relativeTo: .title2))
                     .lineSpacing(3)
                     .foregroundStyle(Cizgi.ink)
@@ -116,15 +86,15 @@ struct ReviewCardFace<Options: View, Footer: View>: View {
 
                     // On a five-option card the answer is already marked in the
                     // list above; repeating it as a line of text would push the
-                    // reasons off screen.
-                    if card.options == nil {
-                        Text(card.back)
+                    // reasons off screen — `StudyFaceContent` leaves it `nil`.
+                    if let answer = content.answer {
+                        Text(answer)
                             .font(.body)
                             .foregroundStyle(Cizgi.ink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    if let explanation = card.explanation, !explanation.isEmpty {
+                    if let explanation = content.explanation, !explanation.isEmpty {
                         // § işareti açıklamayı cevaptan ayırır: cevap sayfanın
                         // sorduğu şey, açıklama kenar notu.
                         HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
@@ -139,15 +109,15 @@ struct ReviewCardFace<Options: View, Footer: View>: View {
                     footer()
                 }
 
-                if !marks.isEmpty {
+                if !content.marks.isEmpty {
                     // Under the text rather than over it. These are notes
                     // *about* the card, and at the top — where they used to
                     // sit, as a row of chips above the question — they were
                     // the first thing read on a screen whose whole job is to
                     // put the question first.
                     HStack(spacing: Cizgi.Space.sm) {
-                        ForEach(marks, id: \.0) { title, icon in
-                            TagChip(title, systemImage: icon)
+                        ForEach(content.marks, id: \.self) { mark in
+                            TagChip(mark.title, systemImage: mark.systemImage)
                         }
                     }
                 }
@@ -155,5 +125,25 @@ struct ReviewCardFace<Options: View, Footer: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .animation(.easeInOut(duration: 0.2), value: isAnswerVisible)
+    }
+}
+
+extension ReviewCardFace {
+    /// Tekrar and Egzersiz's way in: the face as it was before it took a
+    /// value. `showsFesMark` — Egzersiz marks a FES card once the answer is
+    /// out; Tekrar does not.
+    init(
+        card: Card,
+        isAnswerVisible: Bool,
+        showsFesMark: Bool = false,
+        @ViewBuilder options: @escaping () -> Options,
+        @ViewBuilder footer: @escaping () -> Footer
+    ) {
+        self.init(
+            content: StudyFaceContent(card: card, isAnswerVisible: isAnswerVisible, showsFesMark: showsFesMark),
+            isAnswerVisible: isAnswerVisible,
+            options: options,
+            footer: footer
+        )
     }
 }
