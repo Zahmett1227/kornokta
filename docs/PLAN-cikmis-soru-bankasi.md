@@ -14,7 +14,7 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 | Faz 0 — hazırlık | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
 | Faz A1 — banka hattı | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu): sürüm **2026-09-25.2**, 8.410 soru, 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri: "Faz A1 sonucu" |
 | Faz A2 — uygulama çekirdeği | ✅ `cikmis-soru-bankasi` dalında (2026-09-26): CizgiCore çekirdeği + üç SwiftData modeli + içe aktarma + Pratik + köprü + "Kitaba dönünce"; §9.3/6 senaryosu simülatörde uçtan uca gerçek paketle koştu. Ayrıntı: "Faz A2 sonucu" |
-| Faz A3 — Deneme | 🔲 |
+| Faz A3 — Deneme | ✅ `cikmis-soru-bankasi` dalında (2026-09-26): kağıt denemesi + karma deneme, duvar saatiyle geri sayım, duraklatma (süresi sonuçta yazılır), işaretleme, gezgin, teslim, sonuç ekranı (net, ders bazında net ve oran, süre, önceki denemeyle karşılaştırma), köprülü gözden geçirme. Ayrıntı: "Faz A3 sonucu" |
 | Kanıt turu | 🔲 |
 | Faz B / C | 🔲 |
 
@@ -92,6 +92,45 @@ köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası
 uygulama dersinden (eşleme bankanın kendi verisinden okunuyor, ikinci bir tablo yok). "Boş bırak" da
 köprüyü sorar (sahibi için "yapamadığım soru"). Deneme (süreli kağıt) Faz A3'te. Yedek v10 Faz B'de —
 o gelene kadar çözüm geçmişi uygulama yedeğine girmez (ADR-012 geri dönüş notu).
+
+### Faz A3 sonucu (2026-09-26)
+
+**Yazılan:** CizgiCore'da `ExamMockClock` (duvar saati, duraklatma, son tarih), `ExamMockComposer` (kağıt
+sırası, kısmi kitapçıkta orantılı süre, karma denemenin şablon kağıdı ve en büyük kalan yöntemiyle ders
+kotaları), `ExamBank.mockScoredAnswers` (hiç ulaşılmamış soru boş sayılır, anahtarsız puanlanmaz),
+`ExamBank.result` (her ekranın sonucu **bankanın anahtarından** okuduğu tek kural) ve `ExamRecorder`'a
+deneme yazımları (`setMockAnswer`, `addMockTime`, `toggleFlag`, `submitMock`). `ExamRun`'a üç alan
+(`pausedAt`, `pausedSeconds`, `endedByTimeLimit`; bildirimde varsayılanlı). Uygulamada `ExamMockView`,
+`ExamMockNavigator`, `ExamPaperPickerView`, `ExamMixedMockSheet`, `ExamResultView` (Pratik'in eski özetinin
+yerine, iki mod ortak), `ExamReviewView`.
+
+**Kararlar:**
+
+- **Saat duvar saatidir.** Uygulama arka plandayken ya da kapalıyken de işler (sınav salonu gibi); tek
+  durdurma yolu duraklat düğmesi, duraklamada sorular gizli ve toplam duraklama sonuçta yazılır. Süre
+  uygulama kapalıyken dolduysa deneme **dolduğu anda** teslim edilmiş sayılır.
+- **İşaret karar değildir.** Denemede şık değiştirilebilir ve silinebilir; soruların geçmişe
+  (`ExamQuestionState`) yazılması teslimde, bir kerede olur. Hiç ulaşılmamış soru netteki boştur ama
+  geçmişe girmez — soru hakkında bir kanıt değil.
+- **Köprü denemede sorulmaz**, sonuçtaki "Yanlışları gözden geçir"de sorulur; Pratik'le aynı panel ve
+  aynı kural (FES oturum başına kart başına bir kez).
+- **Karma deneme** en son tam kağıdın (ÖSYM kısmi olmayan, sorularının ≥ %90'ı bankada) ders payını
+  kopyalar; her dersten önce hiç çözülmemiş sorular. Süresi şablon kağıdın oranıyla.
+- **Kısmi kitapçık** (ÖSYM'nin %10'u) kendi süresinin orantılı payıyla gelir: 2026/1 Temel 10 soru, 13 dk.
+- **Karşılaştırma:** aynı kağıdın önceki denemesiyle net, karma denemelerde (sorular her seferinde farklı)
+  doğru oranı.
+
+**Simülatörde görülen:** 2026/1 Temel denemesi — işaret taşıma, bayrak, gezgin (cevaplı/boş/işaretli),
+duraklatma (sorular gizli, sayaç durdu), uygulama yeniden açılınca "kalan 10 dk (duraklatıldı)" ile geri
+dönüş, teslim onayı ("Cevaplı 3 · boş 7 · işaretli 1"), sonuç (net 1 − 2/4 = 0,5, "varsayılan" kural notu,
+süre ve duraklama, ders tablosu), gözden geçirmede köprü → "Kitaba dönünce". Süresi uygulama kapalıyken
+dolmuş ikinci deneme açılışta tam 750. saniyede teslim edildi ("Süre doldu"), karşılaştırma satırı "net 3 →
+0,5 (−2,5)". Karma deneme: 40 soru / 50 dk, dağılım 5+3+3+8+7+7+7.
+
+**Simülatörün düzelttiği:** araç çubuğunun orta yuvasında `Label` yalnız simgesini gösteriyordu — sayaç
+rakamsız bir saat yüzüydü; artık simge + metin. Ayrıca sonuç ve yanlış listesi saklanan `isCorrect`'e
+değil bankanın anahtarına bakıyor: banka yeniden üretilip bir anahtar düzeltilirse net ile yanlış listesi
+aynı cevap için farklı şey söylemesin diye.
 
 ---
 

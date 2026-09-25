@@ -60,7 +60,9 @@ public enum ExamScoring {
             }
             if answer.result != .unscored, answer.penalty == .unknown { usesDefault = true }
         }
-        let times = answers.map(\.responseTimeMs)
+        // A mock's never-visited questions carry no time; averaging their
+        // zeros in would make a half-finished sitting look fast.
+        let times = answers.map(\.responseTimeMs).filter { $0 > 0 }
         return ExamScore(
             correct: correct,
             wrong: wrong,

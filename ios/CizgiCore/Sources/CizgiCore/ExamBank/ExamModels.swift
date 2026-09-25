@@ -54,6 +54,13 @@ public final class ExamRun {
     public var timeLimitSeconds: Int?
     public var startedAt: Date = Date.now
     public var finishedAt: Date?
+    /// A mock's pause (plan §7.4 e): set while paused, its span added to
+    /// `pausedSeconds` on resume. The result screen reports the total — a
+    /// paused mock is allowed, a silently paused one would be a false net.
+    public var pausedAt: Date?
+    public var pausedSeconds: Double = 0
+    /// The clock, not the owner, ended the mock.
+    public var endedByTimeLimit: Bool = false
 
     @Relationship(deleteRule: .cascade, inverse: \ExamAttempt.run)
     public var attempts: [ExamAttempt] = []
@@ -94,6 +101,17 @@ public final class ExamRun {
     }
 
     public var isFinished: Bool { finishedAt != nil || position >= queuedQuestionIds.count }
+
+    /// The mock's countdown, as a value (`ExamMockClock`).
+    public var clock: ExamMockClock {
+        get {
+            ExamMockClock(startedAt: startedAt, limitSeconds: timeLimitSeconds, pausedSeconds: pausedSeconds, pausedAt: pausedAt)
+        }
+        set {
+            pausedSeconds = newValue.pausedSeconds
+            pausedAt = newValue.pausedAt
+        }
+    }
 }
 
 @Model

@@ -1,6 +1,6 @@
 # ADR-012 — Çıkmış soru bankası: soru kart değildir
 
-**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0, A1 ve A2
+**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0, A1, A2 ve A3
 `cikmis-soru-bankasi` dalında · **Plan:** [`PLAN-cikmis-soru-bankasi.md`](PLAN-cikmis-soru-bankasi.md)
 
 ## Bağlam
@@ -137,6 +137,15 @@ Kararların uygulamadaki karşılığı:
 - **Sözleşme:** `exam_bank.schema.json` ↔ `ExamBankDocument.swift` artık
   `evals/tests/test_exam_bank_contract_sync.py` ile kilitli (alanlar, boş olabilirlik, enum değerleri,
   ÖSYM ders sırası, desteklenen `schemaVersion`).
+
+## Faz A3'te yapılanlar (2026-09-26)
+
+Deneme kararları bu belgenin 5. ve 6. kararına dokunmadan eklendi: denemede köprü **teslimden sonra**
+sorulur ve Pratik'teki `ExamRecorder.link` ile aynı kuralla FES yazar; deneme hiçbir karta `EarlyPractice`
+ya da `ReviewLog` yazmaz. İşaretler teslime kadar yalnız koşuda durur, soruların geçmişine teslimde girer.
+Sonuç her ekranda **bankanın anahtarından** okunur (`ExamBank.result`): banka yeniden üretilip bir anahtar
+düzeltilirse eski cevaplar yeni anahtarla puanlanır — karar 2'nin "banka değişir, kullanıcı durumu kalır"
+ilkesinin puanlamadaki karşılığı. `ExamRun`'a eklenen üç alan bildirimde varsayılanlı (hafif göç).
 
 ## Geri dönüş
 

@@ -80,6 +80,42 @@ enum ExamText {
     static func net(_ value: Double) -> String {
         value.formatted(.number.precision(.fractionLength(0...2)))
     }
+
+    static func percent(_ value: Double) -> String {
+        "%\(Int((value * 100).rounded()))"
+    }
+
+    /// "1 sa 42 dk", "12 dk 5 sn", "48 sn".
+    static func duration(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3_600, minutes = (total % 3_600) / 60, secs = total % 60
+        if hours > 0 { return minutes > 0 ? "\(hours) sa \(minutes) dk" : "\(hours) sa" }
+        if minutes > 0 { return secs > 0 && minutes < 10 ? "\(minutes) dk \(secs) sn" : "\(minutes) dk" }
+        return "\(secs) sn"
+    }
+
+    /// "1:12:05" / "12:05" — the mock's countdown.
+    static func clock(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded(.up)))
+        let hours = total / 3_600, minutes = (total % 3_600) / 60, secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+            : String(format: "%02d:%02d", minutes, secs)
+    }
+
+    /// "2019 İlkbahar · Temel".
+    static func paperName(_ paper: ExamPaper) -> String {
+        "\(paper.year) \(session(paper.session)) · \(test(paper.test))"
+    }
+
+    static func keySource(_ source: ExamKeySource) -> String {
+        switch source {
+        case .osym: return "ÖSYM"
+        case .tusdata: return "Tusdata"
+        case .reconstruction: return "yeniden dizim"
+        case .missing: return "anahtarsız"
+        }
+    }
 }
 
 extension StudyFaceContent {
@@ -116,11 +152,16 @@ extension StudyFaceContent {
 
 /// A–E. Before an answer every row is a button; after it the key is green, a
 /// wrong pick red, and nothing can be changed.
+///
+/// In a mock (`allowsChange`) nothing is revealed and a mark is only a mark:
+/// tapping another option moves it, tapping the marked one clears it — the
+/// answer sheet, not a decision (plan §7.4 e).
 struct ExamOptionList: View {
     let question: ExamQuestion
     /// `nil` while unanswered.
     let selected: Int?
     let isRevealed: Bool
+    var allowsChange = false
     var onSelect: (Int) -> Void = { _ in }
 
     var body: some View {
@@ -135,7 +176,9 @@ struct ExamOptionList: View {
         let isKey = isRevealed && question.answer == index && question.isScoreable
         let isPicked = selected == index
         let isWrongPick = isRevealed && isPicked && !isKey && question.isScoreable
-        let tint: Color = isKey ? Cizgi.success : (isWrongPick ? Cizgi.danger : Cizgi.ink)
+        let isMarked = !isRevealed && isPicked
+        let tint: Color = isKey ? Cizgi.success : (isWrongPick ? Cizgi.danger : (isMarked ? Cizgi.accent : Cizgi.ink))
+        let emphasised = isKey || isWrongPick || isMarked
         let text = question.options[index]
 
         return Button {
@@ -145,7 +188,7 @@ struct ExamOptionList: View {
             HStack(alignment: .firstTextBaseline, spacing: Cizgi.Space.sm) {
                 Text(ExamText.letter(index))
                     .font(.subheadline.weight(.bold).monospaced())
-                    .foregroundStyle(isKey || isWrongPick ? tint : Cizgi.muted)
+                    .foregroundStyle(emphasised ? tint : Cizgi.muted)
                 Text(text == "[görsel]" ? "Görseldeki şık \(ExamText.letter(index))" : text)
                     .font(.body)
                     .foregroundStyle(tint)
@@ -155,8 +198,8 @@ struct ExamOptionList: View {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(tint)
                 } else if isWrongPick {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(tint)
-                } else if isRevealed && isPicked {
-                    Image(systemName: "circle.inset.filled").foregroundStyle(Cizgi.muted)
+                } else if isPicked {
+                    Image(systemName: "circle.inset.filled").foregroundStyle(isMarked ? tint : Cizgi.muted)
                 }
             }
             .padding(Cizgi.Space.md)
@@ -165,14 +208,16 @@ struct ExamOptionList: View {
             .clipShape(RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Cizgi.Radius.sm, style: .continuous)
-                    .stroke(isKey || isWrongPick ? tint : Cizgi.hairline, lineWidth: isKey || isWrongPick ? 2 : 1)
+                    .stroke(emphasised ? tint : Cizgi.hairline, lineWidth: emphasised ? 2 : 1)
             )
         }
         .buttonStyle(.plain)
         // Not `.disabled`: that also fades the row, and the green key and the
         // red pick are exactly what should read clearest once answered.
         .allowsHitTesting(!isRevealed)
-        .accessibilityLabel(accessibility(index: index, text: text, isKey: isKey, isWrongPick: isWrongPick))
+        .accessibilityLabel(accessibility(index: index, text: text, isKey: isKey, isWrongPick: isWrongPick)
+                            + (isMarked ? ", işaretli" : ""))
+        .accessibilityHint(isMarked && allowsChange ? "Tekrar dokunmak işareti kaldırır." : "")
     }
 
     private func accessibility(index: Int, text: String, isKey: Bool, isWrongPick: Bool) -> String {
@@ -180,6 +225,34 @@ struct ExamOptionList: View {
         if isKey { return base + ", doğru cevap" }
         if isWrongPick { return base + ", senin seçimin, yanlış" }
         return base
+    }
+}
+
+/// What happened to an answered question, in one line under the rule.
+struct ExamResultLine: View {
+    let question: ExamQuestion
+    let selectedOption: Int?
+
+    var body: some View {
+        let (text, tint) = content
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(tint)
+    }
+
+    private var content: (String, Color) {
+        let key = ExamText.letter(question.answer ?? 0)
+        let result = question.isScoreable
+            ? ExamResult.of(selectedOption: selectedOption, answer: question.answer)
+            : (selectedOption == nil ? .blank : .unscored)
+        switch result {
+        case .correct: return ("Doğru.", Cizgi.success)
+        case .wrong: return ("Doğru cevap: \(key)", Cizgi.danger)
+        case .blank:
+            return (question.isScoreable ? "Boş bıraktın. Doğru cevap: \(key)" : "Boş bıraktın.", Cizgi.warning)
+        case .unscored:
+            return ("Bu sorunun anahtarı yok — kaynakta cevap basılı değil.", Cizgi.muted)
+        }
     }
 }
 

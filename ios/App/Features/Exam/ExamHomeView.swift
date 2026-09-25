@@ -2,8 +2,8 @@ import SwiftUI
 import SwiftData
 import CizgiCore
 
-/// Egzersiz → "Çıkmış" (plan §7.4 b): Pratik, Yanlışlarım, Kitaba dönünce,
-/// and the last few runs. Deneme (a timed paper) comes in Faz A3.
+/// Egzersiz → "Çıkmış" (plan §7.4 b): Pratik, Deneme (a real paper or a
+/// mixed one, timed), Yanlışlarım, Kitaba dönünce, and the last few runs.
 ///
 /// A past question is not a card (docs/ADR-012): nothing here touches Tekrar,
 /// FSRS or the deck's counts. The only thing that reaches a card is the
@@ -21,6 +21,7 @@ struct ExamHomeView: View {
     @State private var budgetKind: BudgetKind = .questions
     @State private var secondsPerQuestion = ExamPace.fallbackSecondsPerQuestion
     @State private var isShowingSetup = false
+    @State private var isShowingMixedMock = false
     @State private var emptyMessage: String?
 
     private enum BudgetKind: Hashable { case questions, minutes }
@@ -56,6 +57,13 @@ struct ExamHomeView: View {
         .sheet(isPresented: $isShowingSetup) {
             if let bank = examLibrary.bank {
                 ExamSetupSheet(filter: $filter, bank: bank, progress: progress)
+            }
+        }
+        .sheet(isPresented: $isShowingMixedMock) {
+            if let bank = examLibrary.bank {
+                ExamMixedMockSheet(bank: bank, progress: progress) { run in
+                    navigator.exercisePath.append(AppNavigator.ExamRoute.mock(run.id))
+                }
             }
         }
         .onChange(of: filter) { _, newValue in ExamFilterMemory.save(newValue) }
@@ -116,8 +124,10 @@ struct ExamHomeView: View {
 
                 practiceSection(eligibleCount: eligible.count, bank: bank)
 
+                mockSection(bank)
+
                 VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-                    CizgiSectionTitle("Tekrar çöz", index: 2,
+                    CizgiSectionTitle("Tekrar çöz", index: 3,
                                       subtitle: "Yanlış yaptıkların ve destende kartı olmayanlar.")
                     NumeralActionRow(
                         numeral: "\(wrong)",
@@ -141,9 +151,12 @@ struct ExamHomeView: View {
 
                 if !finishedRuns.isEmpty {
                     VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-                        CizgiSectionTitle("Son oturumlar", index: 3)
+                        CizgiSectionTitle("Son oturumlar", index: 4)
                         ForEach(finishedRuns.prefix(5)) { run in
-                            runRow(run, bank: bank)
+                            NavigationLink(value: AppNavigator.ExamRoute.result(run.id)) {
+                                runRow(run, bank: bank)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -165,20 +178,61 @@ struct ExamHomeView: View {
                 Text("Yarım kalan oturum")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Cizgi.ink)
-                Text("\(ExamText.mode(run.mode)) · soru \(min(run.position + 1, run.queuedQuestionIds.count)) / \(run.queuedQuestionIds.count)")
+                Text(resumeLine(run))
                     .font(.caption)
                     .foregroundStyle(Cizgi.muted)
                 HStack(spacing: Cizgi.Space.sm) {
                     Button("Devam et") {
-                        navigator.exercisePath.append(AppNavigator.ExamRoute.session(run.id))
+                        navigator.exercisePath.append(
+                            run.mode == .mock ? AppNavigator.ExamRoute.mock(run.id) : AppNavigator.ExamRoute.session(run.id)
+                        )
                     }
                     .buttonStyle(CizgiPrimaryButtonStyle())
-                    Button("Kapat") {
-                        run.finishedAt = .now
-                        try? context.save()
+                    Button(run.mode == .mock ? "Teslim et" : "Kapat") {
+                        // A mock is handed in as it stands, never dropped.
+                        if let bank = examLibrary.bank {
+                            ExamRunLauncher(context: context, bank: bank).close(run)
+                            try? context.save()
+                        }
                     }
                     .buttonStyle(CizgiSecondaryButtonStyle())
                 }
+            }
+        }
+    }
+
+    private func resumeLine(_ run: ExamRun) -> String {
+        let count = run.queuedQuestionIds.count
+        guard run.mode == .mock else {
+            return "\(ExamText.mode(run.mode)) · soru \(min(run.position + 1, count)) / \(count)"
+        }
+        let title = examLibrary.bank.map { ExamRunScore.title(for: run, bank: $0) } ?? "Deneme"
+        guard let remaining = run.clock.remainingSeconds(at: .now) else { return title }
+        return remaining > 0
+            ? "\(title) · kalan \(ExamText.duration(remaining))\(run.clock.isPaused ? " (duraklatıldı)" : "")"
+            : "\(title) · süre doldu"
+    }
+
+    private func mockSection(_ bank: ExamBank) -> some View {
+        let papers = bank.papers.filter {
+            ExamMockComposer.scoreableCount(bank, queue: ExamMockComposer.paperQueue(bank, paper: $0)) > 0
+        }.count
+        return VStack(alignment: .leading, spacing: Cizgi.Space.md) {
+            CizgiSectionTitle("Deneme", index: 2,
+                              subtitle: "Süreli; cevaplar sen bitirene kadar açılmaz, net ve ders bazında sonuç çıkar.")
+            NumeralActionRow(
+                numeral: "\(papers)",
+                title: "Kağıt denemesi",
+                subtitle: "Gerçek bir kitapçık, ÖSYM'nin sırası ve süresiyle"
+            ) {
+                navigator.exercisePath.append(AppNavigator.ExamRoute.mockPapers)
+            }
+            NumeralActionRow(
+                numeral: "40",
+                title: "Karma deneme",
+                subtitle: "Gerçek bir kağıdın ders dağılımıyla, çözmediklerinden"
+            ) {
+                isShowingMixedMock = true
             }
         }
     }
@@ -256,11 +310,11 @@ struct ExamHomeView: View {
     }
 
     private func runRow(_ run: ExamRun, bank: ExamBank) -> some View {
-        let score = ExamScoring.score(bank.scoredAnswers(run.attempts.map { ($0.questionId, $0.result, $0.responseTimeMs) }))
+        let score = ExamRunScore.score(for: run, attempts: run.attempts, bank: bank)
         return CardSurface {
             HStack(spacing: Cizgi.Space.md) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(ExamText.mode(run.mode))
+                    Text(ExamRunScore.title(for: run, bank: bank))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Cizgi.ink)
                     Text(run.startedAt, format: .dateTime.day().month().hour().minute())

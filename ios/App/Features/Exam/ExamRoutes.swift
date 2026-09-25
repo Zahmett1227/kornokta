@@ -11,6 +11,10 @@ struct ExamRouteDestination: View {
         switch route {
         case .home: ExamHomeView()
         case .session(let id): ExamSessionView(runId: id)
+        case .mock(let id): ExamMockView(runId: id)
+        case .mockPapers: ExamPaperPickerView()
+        case .result(let id): ExamResultScreen(runId: id)
+        case .review(let id): ExamReviewView(runId: id)
         case .gaps: ExamGapsView()
         case .question(let id): ExamQuestionDetailView(questionId: id)
         case .bankSettings: ExamBankSettingsView()

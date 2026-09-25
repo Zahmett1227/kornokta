@@ -51,7 +51,7 @@ struct ExamSessionView: View {
                         Color.clear.onAppear { advance(run) }
                     }
                 } else {
-                    ExamRunSummary(run: run, bank: bank) { dismiss() }
+                    ExamResultView(run: run, bank: bank) { dismiss() }
                 }
             } else if examLibrary.phase == .loading {
                 ProgressView()
@@ -253,9 +253,9 @@ private struct ExamQuestionScreen: View {
     @ViewBuilder
     private func revealedFooter(_ attempt: ExamAttempt) -> some View {
         VStack(alignment: .leading, spacing: Cizgi.Space.md) {
-            resultLine(attempt)
+            ExamResultLine(question: question, selectedOption: attempt.selectedOption)
 
-            if question.isScoreable, attempt.result.isMiss {
+            if bank.result(questionId: question.id, selectedOption: attempt.selectedOption).isMiss {
                 ExamBridgePanel(question: question, attempt: attempt, candidates: candidates) {
                     revision += 1
                 }
@@ -283,28 +283,6 @@ private struct ExamQuestionScreen: View {
             .tint(Cizgi.accent)
         }
         .id(revision)
-    }
-
-    private func resultLine(_ attempt: ExamAttempt) -> some View {
-        let text: String
-        let tint: Color
-        switch attempt.result {
-        case .correct:
-            text = "Doğru."
-            tint = Cizgi.success
-        case .wrong:
-            text = "Doğru cevap: \(ExamText.letter(question.answer ?? 0))"
-            tint = Cizgi.danger
-        case .blank:
-            text = question.isScoreable ? "Boş bıraktın. Doğru cevap: \(ExamText.letter(question.answer ?? 0))" : "Boş bıraktın."
-            tint = Cizgi.warning
-        case .unscored:
-            text = "Bu sorunun anahtarı yok — kaynakta cevap basılı değil."
-            tint = Cizgi.muted
-        }
-        return Text(text)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(tint)
     }
 
     /// Cards linked to this question before (the "Kartların" fold after a
@@ -359,7 +337,7 @@ private struct ExamQuestionScreen: View {
     }
 
     private func refreshCandidates() {
-        guard let attempt, attempt.result.isMiss, question.isScoreable else {
+        guard let attempt, bank.result(questionId: question.id, selectedOption: attempt.selectedOption).isMiss else {
             candidates = []
             return
         }
@@ -368,93 +346,5 @@ private struct ExamQuestionScreen: View {
             linked: state?.linkedCards ?? [],
             cards: activeCards
         )
-    }
-}
-
-/// The end of a run: counts, net, per subject (plan §7.4 f — the full result
-/// screen with comparisons comes with Deneme in Faz A3).
-struct ExamRunSummary: View {
-    let run: ExamRun
-    let bank: ExamBank
-    let onClose: () -> Void
-
-    var body: some View {
-        let answers = bank.scoredAnswers(run.attempts.map { ($0.questionId, $0.result, $0.responseTimeMs) })
-        let score = ExamScoring.score(answers)
-        let bySubject = ExamScoring.bySubject(answers)
-        let gapsAdded = run.attempts.filter { $0.bridgeOutcome == .noCard }.count
-        let linked = run.attempts.filter { $0.bridgeOutcome == .linked }.count
-
-        ScrollView {
-            VStack(spacing: Cizgi.Space.xl) {
-                VStack(spacing: Cizgi.Space.md) {
-                    ZStack {
-                        RingGauge(progress: score.accuracy ?? 0, tint: Cizgi.accent, lineWidth: 10)
-                            .frame(width: 96, height: 96)
-                        VStack(spacing: 0) {
-                            Text(ExamText.net(score.net))
-                                .font(Cizgi.serif(28, relativeTo: .title))
-                                .foregroundStyle(Cizgi.ink)
-                            Text("net")
-                                .font(.caption2)
-                                .foregroundStyle(Cizgi.muted)
-                        }
-                    }
-                    Text("\(ExamText.mode(run.mode)) bitti")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(Cizgi.ink)
-                    Text(score.usesDefaultPenalty
-                         ? "Net: doğru − yanlış/4 (bu kağıtlarda kural basılı değil; varsayılan)."
-                         : "Net: doğru − yanlış/4.")
-                        .font(.caption)
-                        .foregroundStyle(Cizgi.muted)
-                        .multilineTextAlignment(.center)
-                }
-
-                HStack(spacing: Cizgi.Space.sm) {
-                    StatTile(value: "\(score.correct)", label: "Doğru")
-                    StatTile(value: "\(score.wrong)", label: "Yanlış")
-                    StatTile(value: "\(score.blank)", label: "Boş")
-                }
-
-                if gapsAdded > 0 || linked > 0 || score.averageSeconds != nil {
-                    VStack(alignment: .leading, spacing: Cizgi.Space.xs) {
-                        if linked > 0 {
-                            Label("\(linked) yanlış bir kartına bağlandı", systemImage: "link")
-                        }
-                        if gapsAdded > 0 {
-                            Label("Kitaba dönünce'ye eklenen: \(gapsAdded)", systemImage: "book.closed")
-                        }
-                        if let seconds = score.averageSeconds {
-                            Label("Soru başına \(Int(seconds.rounded())) sn", systemImage: "timer")
-                        }
-                    }
-                    .font(.footnote)
-                    .foregroundStyle(Cizgi.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if bySubject.count > 1 {
-                    VStack(alignment: .leading, spacing: Cizgi.Space.sm) {
-                        CizgiSectionTitle("Ders bazında")
-                        ForEach(bySubject, id: \.subject) { entry in
-                            HStack {
-                                Text(entry.subject ?? "Dersi belirsiz")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Cizgi.ink)
-                                Spacer()
-                                Text("D \(entry.score.correct) · Y \(entry.score.wrong) · net \(ExamText.net(entry.score.net))")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(Cizgi.muted)
-                            }
-                        }
-                    }
-                }
-
-                Button("Çıkmış'a dön") { onClose() }
-                    .buttonStyle(CizgiPrimaryButtonStyle())
-            }
-            .padding(Cizgi.Space.xl)
-        }
     }
 }

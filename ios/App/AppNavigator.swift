@@ -51,6 +51,13 @@ final class AppNavigator: ObservableObject {
     enum ExamRoute: Hashable {
         case home
         case session(UUID)
+        /// Deneme (Faz A3): a timed paper, answered without the key.
+        case mock(UUID)
+        case mockPapers
+        /// A finished run's result, from the home screen's history.
+        case result(UUID)
+        /// A finished run's misses, one by one, with the bridge.
+        case review(UUID)
         case gaps
         case question(String)
         /// Import screen, reachable from Egzersiz when no bank is there yet.

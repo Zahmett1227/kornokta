@@ -70,7 +70,58 @@ struct ExamRunLauncher {
 
     func closeOpenRuns() {
         let open = (try? context.fetch(FetchDescriptor<ExamRun>(predicate: #Predicate { $0.finishedAt == nil }))) ?? []
-        for run in open { run.finishedAt = .now }
+        for run in open { close(run) }
+    }
+
+    /// Ends a run the owner walked away from. A mock is handed in as it
+    /// stands — its marks become history then, never silently dropped — and
+    /// ends when its clock did if that came first.
+    func close(_ run: ExamRun, at now: Date = .now) {
+        guard run.finishedAt == nil else { return }
+        if run.mode == .mock {
+            let deadline = run.clock.deadline
+            let expired = deadline.map { $0 <= now } ?? false
+            ExamRecorder(context: context).submitMock(run, bank: bank, at: expired ? deadline! : now, byTimeLimit: expired)
+        } else {
+            run.finishedAt = now
+        }
+    }
+
+    /// Deneme on a real paper: its questions in booklet order, its own time
+    /// limit (shrunk for a partial booklet).
+    func startMock(paper: ExamPaper) -> ExamRun? {
+        let queue = ExamMockComposer.paperQueue(bank, paper: paper)
+        guard !queue.isEmpty else { return nil }
+        closeOpenRuns()
+        let run = ExamRun(
+            mode: .mock,
+            queuedQuestionIds: queue,
+            paperId: paper.id,
+            timeLimitSeconds: ExamMockComposer.timeLimitSeconds(bank, paper: paper, questionCount: queue.count)
+        )
+        context.insert(run)
+        try? context.save()
+        return run
+    }
+
+    /// "Karma deneme": `count` questions with the latest full paper's subject
+    /// shares, timed at that paper's rate. The group is kept in the run's
+    /// filter so the result can compare it with earlier mixed mocks.
+    func startMixedMock(group: ExamTestGroup, count: Int, progress: [String: ExamProgress]) -> ExamRun? {
+        guard let template = ExamMockComposer.template(bank, group: group) else { return nil }
+        var generator = SystemRandomNumberGenerator()
+        let queue = ExamMockComposer.mixedQueue(bank, group: group, count: count, progress: progress, using: &generator)
+        guard !queue.isEmpty else { return nil }
+        closeOpenRuns()
+        let run = ExamRun(
+            mode: .mock,
+            queuedQuestionIds: queue,
+            filter: ExamFilter(testGroups: [group]),
+            timeLimitSeconds: ExamMockComposer.timeLimitSeconds(bank, paper: template, questionCount: queue.count)
+        )
+        context.insert(run)
+        try? context.save()
+        return run
     }
 
     /// The owner's pace, from the last fifty answers.

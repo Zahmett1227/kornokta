@@ -482,7 +482,7 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 | Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
 | Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | ✅ `main`'de (PR #50, squash; 2026-09-14). Dört Codex turu: iki P2 düzeltildi (kesik JPEG'in fotoğraf sayılması → `JPEGIntegrity`; büyük yedeğin ana iş parçacığında açılması → ayrık görev + 256 MB sınırı), iki P2 gerekçeyle bırakıldı (ADR-011 "Bilinçli ayrıntılar"). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
-| Çıkmış soru bankası (ADR-012, 2026-09-25) | 🟡 **Faz 0 + A1 + A2 tamam** `cikmis-soru-bankasi` dalında. **Faz A2 (uygulama çekirdeği, 2026-09-26):** CizgiCore'da banka biçimi (şemaya `test_exam_bank_contract_sync.py` ile kilitli), filtre, kuyruk, puanlama, köprü sıralaması, açık defteri, `ExamBankStore` (sha256 doğrulamalı içe aktarma, iCloud yedeğinden hariç), `ExamRecorder` (bütün yazımlar, bellek içi depoyla testli) + üç SwiftData modeli; uygulamada Ayarlar → Veri → "Çıkmış soru bankası", Egzersiz'de "Çıkmış" satırı, Pratik, köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası), hata bildirimi, "Kitaba dönünce" (Egzersiz + Bilgilerim). Eski şemalı simülatör deposu üzerine kurulum ve §9.3/6 senaryosu gerçek paketle uçtan uca görüldü; ayrıntı planın "Faz A2 sonucu". Cihazda kalan: doğrulama listesinin 42-47. maddeleri. **Faz A1 (banka hattı):** A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru; incelemenin bulduğu tablo-şık hatası bankanın tamamında düzeltildi). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu, sürüm 2026-09-25.2): 8.410 soru (ok 6.985, anahtarsız 1.357, iptal 55, değiştirilmiş 12), 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri planın "Faz A1 sonucu" bölümünde (2011/1 = Temel-1+2; Klinik 6 blok; derlemenin 2024/1 Klinik numara kayması → 22 soru dışarıda). Faz 0: Vizyon panelinin ("kitap yanımda olmadan çalışma") çekirdek önerisi, sahibinin 86 çıkmış soru PDF'ine göre planlandı ve onaylandı: [`docs/PLAN-cikmis-soru-bankasi.md`](docs/PLAN-cikmis-soru-bankasi.md). Faz 0'da: kart yüzü `Card` yerine `StudyFaceContent` değeri çiziyor (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma), `FesScore.record` tek canlı FES yazarı, `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256 sabitli) + `--dry-run`. **Sıradaki:** Faz A3 (Deneme) |
+| Çıkmış soru bankası (ADR-012, 2026-09-25) | 🟡 **Faz 0 + A1 + A2 + A3 tamam** `cikmis-soru-bankasi` dalında. **Faz A3 (Deneme, 2026-09-26):** kağıt denemesi ve karma deneme, duvar saatiyle geri sayım (uygulama kapalıyken de işler; süre dolunca dolduğu anda teslim), duraklatma (sonuçta yazılır), işaretleme, gezgin, sonuç ekranı (net, ders bazında, süre, önceki denemeyle karşılaştırma), teslimden sonra köprülü gözden geçirme; simülatörde uçtan uca görüldü (planın "Faz A3 sonucu"). **Faz A2 (uygulama çekirdeği, 2026-09-26):** CizgiCore'da banka biçimi (şemaya `test_exam_bank_contract_sync.py` ile kilitli), filtre, kuyruk, puanlama, köprü sıralaması, açık defteri, `ExamBankStore` (sha256 doğrulamalı içe aktarma, iCloud yedeğinden hariç), `ExamRecorder` (bütün yazımlar, bellek içi depoyla testli) + üç SwiftData modeli; uygulamada Ayarlar → Veri → "Çıkmış soru bankası", Egzersiz'de "Çıkmış" satırı, Pratik, köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası), hata bildirimi, "Kitaba dönünce" (Egzersiz + Bilgilerim). Eski şemalı simülatör deposu üzerine kurulum ve §9.3/6 senaryosu gerçek paketle uçtan uca görüldü; ayrıntı planın "Faz A2 sonucu". Cihazda kalan: doğrulama listesinin 42-47. maddeleri. **Faz A1 (banka hattı):** A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru; incelemenin bulduğu tablo-şık hatası bankanın tamamında düzeltildi). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu, sürüm 2026-09-25.2): 8.410 soru (ok 6.985, anahtarsız 1.357, iptal 55, değiştirilmiş 12), 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri planın "Faz A1 sonucu" bölümünde (2011/1 = Temel-1+2; Klinik 6 blok; derlemenin 2024/1 Klinik numara kayması → 22 soru dışarıda). Faz 0: Vizyon panelinin ("kitap yanımda olmadan çalışma") çekirdek önerisi, sahibinin 86 çıkmış soru PDF'ine göre planlandı ve onaylandı: [`docs/PLAN-cikmis-soru-bankasi.md`](docs/PLAN-cikmis-soru-bankasi.md). Faz 0'da: kart yüzü `Card` yerine `StudyFaceContent` değeri çiziyor (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma), `FesScore.record` tek canlı FES yazarı, `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256 sabitli) + `--dry-run`. **Sıradaki:** kanıt turu (14 gün kullanım, plan §9.5) |
 
 **Dal durumu (2026-09-14):** "Sadeleştirme ve Bilgilerim" turu
 (`sadelestirme-ve-bilgilerim`: kavram destesinin kaldırılması, Egzersiz'de
@@ -722,7 +722,7 @@ cd ios && xcodegen generate                    # App'e dosya eklendiyse ŞART
 
 Güncel yön: `docs/ARCHITECTURE.md` (akış + bileşenler),
 `docs/ADR-005/006/007/008/010/011/012`,
-`docs/PLAN-cikmis-soru-bankasi.md` (onaylı; Faz 0 → A2),
+`docs/PLAN-cikmis-soru-bankasi.md` (onaylı; Faz 0 → A3),
 `docs/FAZ6-PLAN.md`, `docs/FAZ7-PLAN-coktan-secmeli.md`,
 `docs/PLAN-egzersiz-bilgi-haritasi.md`, `docs/PLAN-galeriden-foto.md`,
 `docs/PLAN-model-karsilastirma.md` (Sol/Terra/Luna deneyi + kademe
@@ -743,10 +743,12 @@ commit'inin revert'i), `docs/FAZ0-*` – `FAZ5-*`,
 
 ## Sıradaki iş
 
-**Kod tarafında sıradaki:** Çıkmış soru bankası Faz A3 — Deneme (`ExamMockView`: süre,
-işaretleme, gezgin, `ExamResultView`, ders bazında net, sonuçta köprülü gözden geçirme;
-`docs/PLAN-cikmis-soru-bankasi.md` §9.4). `ExamTimeLimit` ve `ExamScoring` Faz A2'de yazıldı.
-Önce gerçek cihazda 42-47. maddeler: paketi telefona AirDrop'la, Ayarlar'dan içe aktar. Sahibinin işi: eksik
+**Sıradaki:** Çıkmış soru bankasının Faz A'sı bitti (Pratik + Deneme). Şimdi **kanıt turu**
+(`docs/PLAN-cikmis-soru-bankasi.md` §9.5): 14 gün gerçek kullanım; karar kapısı §1'in ölçütleri
+(14 günün ≥ 8'inde kullanım, yanlışlarda köprüye cevap ≥ %50, açıkların ≥ %20'si çekimle kapanıyor,
+200 soruda ≤ 2 hata bildirimi). Kapı geçerse Faz B (sorudan kart yaz, istatistik, yedek v10).
+Önce gerçek cihazda 42-49. maddeler: paketi telefona AirDrop'la, Ayarlar'dan içe aktar.
+Dal (`cikmis-soru-bankasi`) henüz PR'a açılmadı. Sahibinin işi: eksik
 tam setler (2022–2023, 2026/1), 2011/1 Klinik testi ve 2024/1 anahtarı için kaynak
 (plan §10).
 
@@ -1025,6 +1027,14 @@ gösterir (2026-08-13 tartışması).
 47. **Bitir onayı.** Çıkmış oturumunda "Bitir" → "Bitir": özet ekranı gelmeli. (Simülatör aracıyla
     Egzersiz'in aynı biçimdeki onay düğmesi dokunuş almadı — bizim koddan önce de öyleydi; gerçek
     cihazda iki ekranın onayı da denenmeli.)
+
+48. **Deneme süresi arka planda.** Bir kağıt denemesi başlat, uygulamayı arka plana al, birkaç
+    dakika sonra dön: sayaç o kadar ilerlemiş olmalı (sınav salonu gibi). Duraklatıp arka plana al:
+    dönüşte sayaç aynı yerde, sonuçta "duraklama" o süreyi göstermeli. Kısa bir kısmi kitapçığı
+    (13 dk) başlatıp uygulamayı kapat, süre dolduktan sonra aç: "süre doldu" ve sonuç ekranı.
+49. **Deneme sonucu ve gözden geçirme.** Aynı kağıdı ikinci kez çöz: sonuçta "Önceki deneme: net
+    … → …" satırı. "Yanlışları gözden geçir"de bir yanlışı karta bağla → o kartın FES'i işlenmeli,
+    vadesi değişmemeli (Pratik'teki köprünün aynısı).
 
 ### 2. A6 — beş şıklı kartın gerçek sayfayla denenmesi
 

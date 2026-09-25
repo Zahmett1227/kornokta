@@ -150,6 +150,84 @@ public struct ExamRecorder {
         return reopened
     }
 
+    // MARK: Mock (plan §7.4 e)
+
+    /// The run's row for a question, created blank on first touch. A mock
+    /// keeps one row per question and rewrites it until the paper is handed
+    /// in — an answer there is a mark on the sheet, not a decision yet.
+    public func mockAttempt(for question: ExamQuestion, in run: ExamRun, at now: Date) -> ExamAttempt {
+        if let existing = attempt(for: question.id, in: run) { return existing }
+        let attempt = ExamAttempt(
+            questionId: question.id,
+            selectedOption: nil,
+            isCorrect: nil,
+            responseTimeMs: 0,
+            answeredAt: now
+        )
+        attempt.run = run
+        context.insert(attempt)
+        return attempt
+    }
+
+    /// Marks, changes or clears (`nil`) a mock answer. Nothing reaches the
+    /// question's state until `submitMock` — the owner may still change it.
+    public func setMockAnswer(_ option: Int?, to question: ExamQuestion, in run: ExamRun, at now: Date) {
+        let attempt = mockAttempt(for: question, in: run, at: now)
+        attempt.selectedOption = option
+        let result = ExamResult.of(selectedOption: option, answer: question.isScoreable ? question.answer : nil)
+        attempt.isCorrect = result == .correct ? true : (result == .wrong ? false : nil)
+        attempt.answeredAt = now
+    }
+
+    /// Time spent looking at a question, added on every visit. Creates the
+    /// row, so a question seen and left empty is a blank the owner met — not
+    /// one the clock never let them reach.
+    public func addMockTime(_ milliseconds: Int, to question: ExamQuestion, in run: ExamRun, at now: Date) {
+        guard milliseconds > 0 else { return }
+        mockAttempt(for: question, in: run, at: now).responseTimeMs += milliseconds
+    }
+
+    public func toggleFlag(_ questionId: String, in run: ExamRun) {
+        if run.flaggedQuestionIds.contains(questionId) {
+            run.flaggedQuestionIds.removeAll { $0 == questionId }
+        } else {
+            run.flaggedQuestionIds.append(questionId)
+        }
+    }
+
+    /// Hands the paper in. Every question the owner met becomes history now,
+    /// at once, exactly as Pratik records one answer: a miss leaves its
+    /// bridge pending for the result screen's review (the bridge is never
+    /// asked during a mock), everything else is `notAsked`. Questions the
+    /// clock never reached get no row and no history — they are blanks in the
+    /// net (`mockScoredAnswers`), not evidence about the question.
+    ///
+    /// Idempotent: a second call on a finished run does nothing.
+    @discardableResult
+    public func submitMock(_ run: ExamRun, bank: ExamBank, at now: Date, byTimeLimit: Bool) -> Int {
+        guard run.finishedAt == nil else { return 0 }
+        let runId = run.id
+        let attempts = (try? context.fetch(
+            FetchDescriptor<ExamAttempt>(predicate: #Predicate { $0.run?.id == runId })
+        )) ?? []
+        var recorded = 0
+        for attempt in attempts {
+            guard let question = bank.question(attempt.questionId) else { continue }
+            // Against the bank being handed in to, whatever was stored when
+            // the mark was made.
+            let result = bank.result(questionId: question.id, selectedOption: attempt.selectedOption)
+            attempt.isCorrect = result == .correct ? true : (result == .wrong ? false : nil)
+            attempt.bridgeOutcome = result.isMiss && question.isScoreable ? nil : .notAsked
+            state(for: question.id).record(result, at: now)
+            recorded += 1
+        }
+        run.clock = run.clock.resuming(at: now)
+        run.finishedAt = now
+        run.position = run.queuedQuestionIds.count
+        run.endedByTimeLimit = byTimeLimit
+        return recorded
+    }
+
     // MARK: Reports
 
     /// "Soruda hata bildir". `nil` withdraws the report.

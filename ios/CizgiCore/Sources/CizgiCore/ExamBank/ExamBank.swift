@@ -179,6 +179,18 @@ extension ExamBank {
         }
     }
 
+    /// How an answer stands against *this* bank's key — the one rule every
+    /// screen reads a result through. `ExamAttempt.isCorrect` is what the
+    /// key said when the answer was given; a rebuilt bank may have corrected
+    /// that key since, and the net, the miss list and the bridge must not
+    /// disagree about the same answer.
+    public func result(questionId: String, selectedOption: Int?) -> ExamResult {
+        guard let question = questionsById[questionId], question.isScoreable else {
+            return selectedOption == nil ? .blank : .unscored
+        }
+        return ExamResult.of(selectedOption: selectedOption, answer: question.answer)
+    }
+
     /// The scoring view of a run's answers: subject and penalty come from the
     /// bank, the result from the answer. Answers to questions this bank does
     /// not have are left out — they cannot be attributed.
