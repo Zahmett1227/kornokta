@@ -1,6 +1,6 @@
 # ADR-012 — Çıkmış soru bankası: soru kart değildir
 
-**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0 ve Faz A1
+**Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0, A1 ve A2
 `cikmis-soru-bankasi` dalında · **Plan:** [`PLAN-cikmis-soru-bankasi.md`](PLAN-cikmis-soru-bankasi.md)
 
 ## Bağlam
@@ -115,6 +115,28 @@ Bu karar belgesini etkileyen iki ölçüm:
   ÖSYM'nin tam kitapçığı gelince başka bir soruya ait çıkabilirdi.
 - **2011 İlkbahar Temel-1 + Temel-2**, Klinik değil: kayıtta `TUS-2011-1-T2`; o
   sınavın Klinik testi eksik kaynaklar listesinde.
+
+## Faz A2'de yapılanlar (2026-09-26)
+
+Kararların uygulamadaki karşılığı:
+
+- **Karar 1 (soru kart değildir):** soru `StudyFaceContent(question:reportedIssue:)` ile aynı sayfayı
+  çiziyor ama hiçbir yerde `Card` üretilmiyor; Bilgilerim'in sayıları değişmedi (simülatörde 380 kart
+  önce ve sonra). Bilgilerim'deki "Kitaba dönünce · N" bölümü bir *yönlendirme*, sayılara karışmıyor.
+- **Karar 2 (banka dosya, durum SwiftData'da):** `ExamBankStore` bankayı
+  `Application Support/Cizgi/ExamBank/<sürüm>/` altına sha256 doğrulayarak kopyalıyor; tutmayan tek dosya
+  içe aktarmayı durduruyor ve eski banka yerinde kalıyor. Üç model (`ExamRun`, `ExamAttempt`,
+  `ExamQuestionState`) `Card`'a ilişki kurmuyor. Güncellenen bankada olmayan kimliğin durumu silinmiyor,
+  Ayarlar'da "bankada yok" olarak sayılıyor.
+- **Karar 5 ve 6 (FES yalnız seçilen karta, EarlyPractice/ReviewLog asla):** bütün yazımlar
+  `ExamRecorder`'da ve bellek içi depoyla testli: bağlanan kartın FES'i oturum başına bir kez `.wrong`
+  alıyor; vade, tekrar sayısı, stabilite ve `ReviewLog` sayısı hiç değişmiyor (test + simülatörde sqlite).
+  Açığı kapatan kart FES almıyor (kapatmak bir yanlış değil).
+- **Telif:** banka klasörü `isExcludedFromBackup`; simülatörde `com_apple_backup_excludeItem` ile görüldü.
+  Uygulamanın kendi yedeği (v9) çözüm geçmişini henüz taşımıyor — v10 Faz B'de.
+- **Sözleşme:** `exam_bank.schema.json` ↔ `ExamBankDocument.swift` artık
+  `evals/tests/test_exam_bank_contract_sync.py` ile kilitli (alanlar, boş olabilirlik, enum değerleri,
+  ÖSYM ders sırası, desteklenen `schemaVersion`).
 
 ## Geri dönüş
 

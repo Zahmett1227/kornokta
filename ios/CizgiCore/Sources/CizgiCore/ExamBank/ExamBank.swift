@@ -154,3 +154,44 @@ extension ExamQuestion {
 
     public var isOld: Bool { (year ?? Int.max) <= Self.lastOldYear }
 }
+
+extension ExamBank {
+    /// The questions a filter admits, in bank order, given the owner's
+    /// history (a question with no entry is untouched).
+    public func questions(matching filter: ExamFilter, progress: [String: ExamProgress]) -> [ExamQuestion] {
+        document.questions.filter {
+            filter.matches($0, paper: papersById[$0.paperId], progress: progress[$0.id] ?? .untouched)
+        }
+    }
+
+    /// What `ExamSelection.queue` needs to know about each of them.
+    public func selectionCandidates(
+        for questions: [ExamQuestion],
+        progress: [String: ExamProgress]
+    ) -> [ExamSelectionCandidate] {
+        questions.map {
+            ExamSelectionCandidate(
+                id: $0.id,
+                subject: $0.osymSubject,
+                similarTo: $0.similarTo,
+                progress: progress[$0.id] ?? .untouched
+            )
+        }
+    }
+
+    /// The scoring view of a run's answers: subject and penalty come from the
+    /// bank, the result from the answer. Answers to questions this bank does
+    /// not have are left out — they cannot be attributed.
+    public func scoredAnswers(_ answers: [(questionId: String, result: ExamResult, responseTimeMs: Int)]) -> [ExamScoredAnswer] {
+        answers.compactMap { answer in
+            guard let question = questionsById[answer.questionId] else { return nil }
+            return ExamScoredAnswer(
+                questionId: answer.questionId,
+                subject: question.osymSubject,
+                result: answer.result,
+                responseTimeMs: answer.responseTimeMs,
+                penalty: papersById[question.paperId]?.penalty ?? .unknown
+            )
+        }
+    }
+}

@@ -13,7 +13,7 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 |---|---|
 | Faz 0 — hazırlık | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
 | Faz A1 — banka hattı | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu): sürüm **2026-09-25.2**, 8.410 soru, 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri: "Faz A1 sonucu" |
-| Faz A2 — uygulama çekirdeği | 🔲 |
+| Faz A2 — uygulama çekirdeği | ✅ `cikmis-soru-bankasi` dalında (2026-09-26): CizgiCore çekirdeği + üç SwiftData modeli + içe aktarma + Pratik + köprü + "Kitaba dönünce"; §9.3/6 senaryosu simülatörde uçtan uca gerçek paketle koştu. Ayrıntı: "Faz A2 sonucu" |
 | Faz A3 — Deneme | 🔲 |
 | Kanıt turu | 🔲 |
 | Faz B / C | 🔲 |
@@ -55,6 +55,43 @@ Planın varsaydığı, ölçümün düzelttiği:
    12 sorunun 28 şıkkını düzeltti; aynı incelemede iki satırlık hücrelerin birleşmesi ve
    kesirli şıklar da giderildi. Anahtarsız sorularda "cevap yok" beklenen durum; V9
    sayfası bunu açıkça yazıyor.
+
+### Faz A2 sonucu (2026-09-26)
+
+**Yazılan:** CizgiCore'da `ExamBankDocument` (şemayla `evals/tests/test_exam_bank_contract_sync.py`
+kilidi: alanlar, boş olabilirlik, enum değerleri, ÖSYM ders sırası, `schemaVersion`), `ExamBank`,
+`ExamQuestionID`, `ExamFilter`, `ExamSelection`, `ExamScoring`, `ExamBridgeRanking`, `ExamGapLedger`,
+`ExamPace`/`ExamTimeLimit`, `ExamPageGeometry`, `ExamBankStore` (içe aktarma) ve `ExamRecorder`
+(bütün yazımlar tek yerde) + üç SwiftData modeli. Uygulamada Ayarlar → Veri → "Çıkmış soru bankası",
+Egzersiz'de dördüncü satır "Çıkmış", `ExamHomeView`, `ExamSetupSheet`, `ExamSessionView` (Pratik),
+köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası, soru ders renginde vurgulu),
+"Soruda hata bildir", "Kitaba dönünce" (Egzersiz + Bilgilerim bölümü) ve soru ayrıntısı.
+
+**Ölçülen / görülen:**
+
+| | |
+|---|---|
+| Testler | CizgiCore'a 74 yeni test (sentetik banka fikstürü; gerçek paket testi `EXAM_BANK_PACKAGE` ile) · sözleşme kilidi 18 test |
+| Gerçek paket (Mac, hata ayıklama derlemesi) | `bank.json` 0,2 sn'de çözülüyor ve doğrulanıyor; 162 MB içe aktarma (her dosyada sha256) 0,5 sn |
+| Şema kanıtı | Eski şemalı simülatör deposu (380 kart, 723 log, 7 koşu) üzerine silmeden kuruldu: açıldı, sayılar aynı, üç yeni tablo boş |
+| Simülatörde uçtan uca (§9.3/6) | Arayüzden içe aktarma (klasör yedekten hariç, 82 PDF) → Pratik → yanlış + karta bağla (FES 0→2; vade, tekrar sayısı, stabilite, ReviewLog değişmedi) → yanlış + "Kitaba dönünce" → boş + atla → erken bitir → Bilgilerim'de "Kitaba dönünce · 1" → yeni kart → "muhtemelen kapandı" → onay (kapatan kartın FES'i değişmedi) → yeniden açılışta aynı soruda devam → görselli soru kırpıntısı + tam ekran → hata bildirimi |
+
+**Planın varsaydığı, simülatörün düzelttiği:**
+
+1. **Kart puntosu vinyete büyük.** Kart yüzünün 27'lik serif sorusu 80 kelimelik bir vakada beş şıkkı
+   ilk ekranın dışına itiyordu; `StudyFaceContent.questionSize` eklendi (kart 27, soru 20 — hâlâ serif).
+2. **İlişki üzerinden gözlem gecikiyor.** `attempt.run = run` ile doldurulan `run.attempts` SwiftUI'a
+   değiştiğini haber vermedi: cevap kaydedildi, ekran açılmadı. Cevaplar artık soru kimliğiyle
+   sorgulanıyor; FES'in "oturum başına bir kez" kontrolü de ilişkiye değil sorguya dayanıyor.
+3. **Yarı saydam vurgu `fill`'de siyah kutu oldu** (opak bağlamda `UIRectFill` rengi kopyalıyor); açık
+   `.normal` karışım.
+4. **Kilitli şık soluklaşmamalı.** `.disabled` doğru şıkkın yeşilini ve yanlışın kırmızısını da
+   soldurduğu için dokunma `allowsHitTesting` ile kapatılıyor.
+
+**Bilinçli ayrıntılar:** Pratik'in ders filtresi ÖSYM'nin 12 dersi (Histoloji ayrı); konuları eşlenen
+uygulama dersinden (eşleme bankanın kendi verisinden okunuyor, ikinci bir tablo yok). "Boş bırak" da
+köprüyü sorar (sahibi için "yapamadığım soru"). Deneme (süreli kağıt) Faz A3'te. Yedek v10 Faz B'de —
+o gelene kadar çözüm geçmişi uygulama yedeğine girmez (ADR-012 geri dönüş notu).
 
 ---
 

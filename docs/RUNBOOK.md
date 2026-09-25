@@ -42,6 +42,26 @@ Kamera ve SwiftUI ekranları bunun dışında — onlar gerçek cihazda denenir
 cd ios && xcodegen generate                                       # yoksa Xcode dosyayı hedefe almaz
 ```
 
+## Çıkmış soru bankası (ADR-012)
+
+Üretim (Mac, tek seferlik; ayrıntı `tools/exam_bank/README.md`):
+
+```bash
+EXAM_SOURCE_DIR=… python -m tools.exam_bank.build    # A1–A4
+python -m tools.exam_bank.finish                      # A5–A9; eksik model aşamasının komutunu söyler
+```
+
+Çıktı `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu). Telefona AirDrop ya da Dosyalar ile
+klasör olarak gönderilir; uygulamada **Ayarlar → Veri → Çıkmış soru bankası → İçe aktar** ve klasörün
+kendisi seçilir. Her dosya manifestteki sha256 ile karşılaştırılır; biri tutmazsa hiçbir şey değişmez.
+Güncelleme aynı yoldan: soru kimlikleri kalıcı olduğu için çözüm geçmişi yeni bankaya kendiliğinden bağlanır.
+
+Gerçek paketle CizgiCore testi (paket bu Mac'teyse):
+
+```bash
+cd ios/CizgiCore && EXAM_BANK_PACKAGE=../../tools/exam_bank/out/CizgiSoruBankasi swift test --filter ExamBankRealPackageTests
+```
+
 ## Backend — TypeScript
 
 ```bash

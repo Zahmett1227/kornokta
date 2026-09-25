@@ -18,6 +18,11 @@ struct LibraryView: View {
     @EnvironmentObject private var navigator: AppNavigator
     @Environment(\.modelContext) private var context
     @Query(sort: \Card.createdAt, order: .reverse) private var allCards: [Card]
+    /// "Kitaba dönünce" (docs/PLAN-cikmis-soru-bankasi.md §7.4 g): past exam
+    /// questions the owner missed and has no card for. Questions, not cards —
+    /// they never enter the counts above; this is a signpost to the book.
+    @Query(filter: #Predicate<ExamQuestionState> { $0.gapStatusRaw == "open" }) private var openGaps: [ExamQuestionState]
+    @EnvironmentObject private var examLibrary: ExamLibrary
     @State private var searchText = ""
     @State private var subjectFilter: String?
     @State private var topicFilter: TopicFilter = .all
@@ -109,6 +114,7 @@ struct LibraryView: View {
             .navigationDestination(for: KnowledgeMapSubjectSummary.self) { summary in
                 KnowledgeSubjectView(summary: summary)
             }
+            .examRouteDestinations()
             .navigationDestination(for: AppNavigator.LibraryRoute.self) { route in
                 switch route {
                 case .subject(let subject):
@@ -128,6 +134,13 @@ struct LibraryView: View {
             }
         }
         .tint(Cizgi.accent)
+    }
+
+    /// Gaps whose question is in the imported bank. Search and filters do not
+    /// narrow it: they are about cards, and these are questions.
+    private var openGapCount: Int {
+        guard let bank = examLibrary.bank else { return 0 }
+        return openGaps.filter { bank.questionsById[$0.questionId] != nil }.count
     }
 
     private var emptyState: some View {
@@ -261,6 +274,23 @@ struct LibraryView: View {
                          + "desteye girdi; doğruluğunu bir kez kontrol et. "
                          + "Doğruysa sağa kaydırıp işaretle — kart listeden çıkar, "
                          + "tekrar sırasında kalır.")
+                        .font(.footnote)
+                        .foregroundStyle(Cizgi.muted)
+                }
+            }
+
+            if openGapCount > 0 {
+                Section {
+                    NavigationLink(value: AppNavigator.ExamRoute.gaps) {
+                        Label("\(openGapCount) çıkmış soru destende kart bekliyor", systemImage: "book.closed")
+                            .font(.subheadline)
+                            .foregroundStyle(Cizgi.ink)
+                    }
+                } header: {
+                    sectionHeader("Kitaba dönünce · \(openGapCount)")
+                } footer: {
+                    Text("Çıkmış'ta yanlış yapıp \"destemde yok\" dediğin sorular. Kitabı açtığında "
+                         + "neyi çekeceğini gerçek sınav söylüyor.")
                         .font(.footnote)
                         .foregroundStyle(Cizgi.muted)
                 }

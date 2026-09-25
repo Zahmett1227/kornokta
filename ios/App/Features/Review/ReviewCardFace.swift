@@ -72,7 +72,7 @@ struct ReviewCardFace<Options: View, Footer: View>: View {
                 // Serifin üç yerinden biri: kart sorusu. Kutunun dolgusu
                 // kalktığı için satır genişledi ve punto bir kademe büyüdü.
                 Text(content.question)
-                    .font(Cizgi.serif(27, relativeTo: .title2))
+                    .font(Cizgi.serif(content.questionSize, relativeTo: .title2))
                     .lineSpacing(3)
                     .foregroundStyle(Cizgi.ink)
                     .fixedSize(horizontal: false, vertical: true)

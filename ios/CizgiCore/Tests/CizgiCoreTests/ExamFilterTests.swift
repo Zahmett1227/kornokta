@@ -161,3 +161,26 @@ final class ExamSelectionTests: XCTestCase {
         }
     }
 }
+
+final class ExamBankQueryTests: XCTestCase {
+    func testMatchingAndCandidatesCarryTheOwnersHistory() throws {
+        let bank = try ExamBank(document: ExamBankFixture.standard)
+        let progress = ["TUS-2019-1-T-050": ExamProgress(attemptCount: 1, lastResult: .wrong)]
+        let wrong = bank.questions(matching: ExamFilter(progress: .wrong), progress: progress)
+        XCTAssertEqual(wrong.map(\.id), ["TUS-2019-1-T-050"])
+        let candidates = bank.selectionCandidates(for: wrong, progress: progress)
+        XCTAssertEqual(candidates.first?.subject, "Farmakoloji")
+        XCTAssertTrue(candidates.first?.progress.isWrong == true)
+    }
+
+    func testScoredAnswersTakeSubjectAndPenaltyFromTheBank() throws {
+        let bank = try ExamBank(document: ExamBankFixture.standard)
+        let scored = bank.scoredAnswers([
+            ("TUS-2019-1-T-001", .correct, 1_000),
+            ("TUS-2099-1-T-001", .wrong, 1_000),
+        ])
+        XCTAssertEqual(scored.count, 1, "an answer the bank cannot place is left out")
+        XCTAssertEqual(scored[0].subject, "Anatomi")
+        XCTAssertEqual(scored[0].penalty, .quarter)
+    }
+}

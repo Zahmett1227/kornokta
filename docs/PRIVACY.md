@@ -15,6 +15,10 @@
   yok; yalnız Vercel'deki `service_role` anahtarı erişir.
 - Sunucu loglarında görüntü, kart metni, tam OCR metni veya kişisel el yazısı saklanmaz; debug loglarında OCR içeriği maskelenir.
 - Telifli kitap sayfaları repoya commit edilmez; altın set görselleri yerelde (`evals/fixtures/`, gitignore'lu) tutulur.
+- **Çıkmış soru bankası** (ADR-012) yalnız sahibinin Mac'inde (`tools/exam_bank/out/`, gitignore'lu) ve
+  telefonunda durur: sunucuya hiç gitmez, telefonda iCloud yedeğinden hariç tutulur
+  (`isExcludedFromBackup`), uygulamanın yedeğine içerik olarak girmez (Faz B'nin yedek v10'u yalnız soru
+  kimliği ve sonuç taşıyacak).
 
 ## Model sağlayıcılarına ve altyapıya gönderilen veri
 

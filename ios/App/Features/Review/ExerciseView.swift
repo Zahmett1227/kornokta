@@ -202,6 +202,7 @@ struct ExerciseView: View {
                 }
             }
             .rootTabBarInset()
+            .examRouteDestinations()
             .navigationTitle("Egzersiz")
             .navigationBarTitleDisplayMode(isSessionActive ? .inline : .large)
             .toolbar {
@@ -379,6 +380,11 @@ struct ExerciseView: View {
                         }
                         .disabled(review.isEmpty)
                         .opacity(review.isEmpty ? 0.45 : 1)
+
+                        // Past exam questions (docs/ADR-012): not cards, so
+                        // none of the filters above apply to them — the row
+                        // opens their own screen.
+                        ExamEntryRow()
                     }
                 }
 

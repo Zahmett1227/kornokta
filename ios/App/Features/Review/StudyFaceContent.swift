@@ -41,6 +41,10 @@ struct StudyFaceContent {
     let answer: String?
     let explanation: String?
     let marks: [Mark]
+    /// The serif's size. A card's question is a line or two and gets the
+    /// face's full 27; a TUS vignette runs to eighty words, and at 27 it
+    /// pushed all five options off the first screen (simulator, 2026-09-25).
+    var questionSize: CGFloat = 27
 }
 
 extension StudyFaceContent {
