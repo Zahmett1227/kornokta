@@ -53,6 +53,8 @@ def _is_figure_part(g: Box, page: Page, box: Tuple[float, float, float, float], 
     x0, top, x1, bottom = box
     if g.artifact or g.sig in decor:
         return False
+    if not (0 <= (g.x0 + g.x1) / 2 <= page.width and 0 <= (g.top + g.bottom) / 2 <= page.height):
+        return False  # off the page (2011/1 keeps its neighbour's objects outside its box)
     if g.width * g.height > 0.5 * page.width * page.height:
         return False  # a full-page background
     if g.width > (x1 - x0) + 10:

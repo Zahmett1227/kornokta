@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import clean
-from .columns import Line, Page, Word, column_lines, page_gutters
+from .columns import Line, Page, Word, column_lines, page_gutters, visible
 
 NUMBER = re.compile(r"^(\d{1,3})\.(.*)$")
 SORU = re.compile(r"^Soru\s+(\d{1,3})$")
@@ -85,7 +85,7 @@ def classify(line: Line, page: Page) -> str:
 
 
 def build_stream(pages: Iterable[Page]) -> Stream:
-    pages = list(pages)
+    pages = [visible(p) for p in pages]
     gutters = page_gutters(pages)
     out: List[StreamLine] = []
     by_number: Dict[int, Page] = {}

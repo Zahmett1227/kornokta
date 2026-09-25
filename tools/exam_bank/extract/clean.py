@@ -69,8 +69,38 @@ ROMAN_PREMISE = re.compile(r"^(I|II|III|IV|V|VI|VII|VIII)\.")
 LOWER_START = re.compile(r"^[a-zçğıöşüâîû]")
 
 
+# Glyphs set in the Symbol font reach the text layer as private-use code
+# points, U+F000 + the Symbol encoding ("Ca\uf02b2" is Ca+2, "\uf061-keto"
+# is α-keto, "39 \uf0b0C" is 39 °C). These are the ones the booklets use;
+# anything else in the private-use area is left in place and reported
+# (`unreadable`), never guessed.
+SYMBOL_FONT = {
+    0x20: " ", 0x2B: "+", 0x2D: "−", 0x3D: "=", 0x3C: "<", 0x3E: ">",
+    0x61: "α", 0x62: "β", 0x63: "χ", 0x64: "δ", 0x65: "ε", 0x66: "φ", 0x67: "γ", 0x68: "η",
+    0x69: "ι", 0x6B: "κ", 0x6C: "λ", 0x6D: "μ", 0x6E: "ν", 0x70: "π", 0x71: "θ", 0x72: "ρ",
+    0x73: "σ", 0x74: "τ", 0x77: "ω", 0x44: "Δ",
+    0xA3: "≤", 0xA5: "∞", 0xAC: "←", 0xAD: "↑", 0xAE: "→", 0xAF: "↓",
+    0xB0: "°", 0xB1: "±", 0xB3: "≥", 0xB4: "×", 0xB7: "•", 0xB8: "÷", 0xB9: "≠", 0xBB: "≈",
+    0xD6: "√", 0xD7: "·",
+    # Wingdings-style arrow the 2012 booklet uses in "3’→5’ ekzonükleaz".
+    0xE0: "→",
+}
+PRIVATE_USE = re.compile("[\ue000-\uf8ff]")
+CID = re.compile(r"\(cid:\d+\)")
+
+
+def symbols(text: str) -> str:
+    return PRIVATE_USE.sub(lambda m: SYMBOL_FONT.get(ord(m.group(0)) - 0xF000, m.group(0)), text)
+
+
+def unreadable(text: str) -> bool:
+    """Glyphs the text layer does not name: an unmapped private-use code point
+    or pdfminer's "(cid:129)" for a glyph with no Unicode at all."""
+    return bool(PRIVATE_USE.search(text) or CID.search(text))
+
+
 def nfc(text: str) -> str:
-    return unicodedata.normalize("NFC", text)
+    return unicodedata.normalize("NFC", symbols(text))
 
 
 def is_noise(text: str) -> bool:

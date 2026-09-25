@@ -79,3 +79,18 @@ def test_options_printed_as_images_are_reported_not_invented():
 def test_no_labels_at_all():
     parsed = options.parse(_lines(row("Şıkları görsel olan soru", LEFT_TEXT, 100)))
     assert parsed.options is None and parsed.problems == ["şıklar bulunamadı"]
+
+
+def test_options_differing_only_in_sign_are_not_duplicates():
+    lines = _lines(row("Hangisi?", LEFT_TEXT, 100),
+                   *[row(f"{l}) {t}", LEFT_TEXT, 120 + 15 * i)
+                     for i, (l, t) in enumerate(zip("ABCDE", ["HBsAg (+)", "HBsAg (-)", "F⁺", "F⁻", "x"]))])
+    assert options.parse(lines).problems == []
+
+
+def test_duplicate_options_and_unreadable_glyphs_go_to_repair():
+    lines = _lines(row("Hangisi?", LEFT_TEXT, 100),
+                   *[row(f"{l}) {t}", LEFT_TEXT, 120 + 15 * i)
+                     for i, (l, t) in enumerate(zip("ABCDE", ["1000", "900", "1000", "(cid:129)", "y"]))])
+    problems = options.parse(lines).problems
+    assert "A ve C şıkkı aynı" in problems and "okunamayan glif" in problems

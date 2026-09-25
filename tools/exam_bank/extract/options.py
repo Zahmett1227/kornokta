@@ -99,7 +99,22 @@ def parse(lines: Sequence[Line]) -> Parsed:
     for letter, text in zip(LETTERS, options):
         if not text:
             problems.append(f"{letter} şıkkı boş")
+    if any(clean.unreadable(t) for t in [stem] + options):
+        problems.append("okunamayan glif")
+    seen = {}
+    for letter, text in zip(LETTERS, options):
+        key = same_option(text)
+        if key and key in seen:
+            problems.append(f"{seen[key]} ve {letter} şıkkı aynı")
+        seen.setdefault(key, letter)
     return Parsed(stem=stem, options=options, problems=problems)
+
+
+def same_option(text: str) -> str:
+    """What makes two options the same, for V2: case and spacing, nothing
+    else. Signs are the whole difference between "HBsAg (+)" and "HBsAg (−)",
+    so unlike text matching (merge.fold) they are kept."""
+    return " ".join(text.casefold().split())
 
 
 def _owner(li: int, w: Word, segment, label_at) -> Optional[str]:

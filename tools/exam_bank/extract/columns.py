@@ -95,6 +95,23 @@ _CLINGS_RIGHT = tuple("-,.;:)’'/")
 _CLINGS_LEFT = tuple("-(/")
 
 
+def visible(page: Page) -> Page:
+    """The page as printed: words and objects whose centre lies on it.
+
+    2011/1 is cut from printed spreads and keeps the neighbouring page's text
+    outside its own box (x < 0, x > width). A reader never sees it; left in,
+    it lands in a column and joins that column's lines."""
+    def on(x0: float, x1: float, top: float, bottom: float) -> bool:
+        cx, cy = (x0 + x1) / 2, (top + bottom) / 2
+        return 0 <= cx <= page.width and 0 <= cy <= page.height
+
+    words = [w for w in page.words if on(w.x0, w.x1, w.top, w.bottom)]
+    graphics = [g for g in page.graphics if on(g.x0, g.x1, g.top, g.bottom)]
+    if len(words) == len(page.words) and len(graphics) == len(page.graphics):
+        return page
+    return Page(page.number, page.width, page.height, words, page.gutter_hint, graphics)
+
+
 def join_words(words: Sequence[Word]) -> str:
     """Words left to right, a space between them — except where two boxes
     touch. The extractor only splits at a space or a real gap, so touching

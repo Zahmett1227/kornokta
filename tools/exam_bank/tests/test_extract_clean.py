@@ -80,3 +80,13 @@ def test_group_head():
     m = clean.GROUP_HEAD.match("73. ve 74. SORULARI AŞAĞIDAKİ BİLGİLERE")
     assert (m.group(1), m.group(2)) == ("73", "74")
     assert clean.GROUP_HEAD.match("40.-41. SORULARI AŞAĞIDAKİ BİLGİLERE GÖRE CEVAPLAYINIZ.")
+
+
+def test_symbol_font_code_points_become_unicode():
+    assert clean.nfc("Ca2 ve -ketoglutarat, 39 C, BMI 40") == "Ca+2 ve α-ketoglutarat, 39 °C, BMI ≥40"
+    assert not clean.unreadable(clean.nfc(""))
+
+
+def test_unmapped_glyphs_are_reported_not_guessed():
+    assert clean.unreadable("(cid:129)")
+    assert clean.unreadable("x")
