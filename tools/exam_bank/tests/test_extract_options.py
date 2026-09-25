@@ -94,3 +94,46 @@ def test_duplicate_options_and_unreadable_glyphs_go_to_repair():
                      for i, (l, t) in enumerate(zip("ABCDE", ["1000", "900", "1000", "(cid:129)", "y"]))])
     problems = options.parse(lines).problems
     assert "A ve C şıkkı aynı" in problems and "okunamayan glif" in problems
+
+
+def _table_option(label, top, cells, pitch=10.5):
+    """One option row: `cells` is a list of (x, [lines]) — a cell may wrap."""
+    rows_ = [row(f"{label})", LEFT_TEXT, top)]
+    words = []
+    for x, texts in cells:
+        for i, t in enumerate(texts):
+            words += row(t, x, top + i * pitch)
+    return rows_[0] + words
+
+
+def test_a_wrapped_table_row_is_read_cell_by_cell():
+    # 2010/1 Temel 52: "Herpes simpleks / virusu | Orofarengeal karsinom".
+    table = [("A", 120, [(75, ["Herpes simpleks", "virusu"]), (170, ["Orofarengeal karsinom"])]),
+             ("B", 150, [(75, ["Varicella-zoster", "virusu"]), (170, ["Skuamöz hücreli karsinom"])]),
+             ("C", 180, [(75, ["Sitomegalovirus"]), (170, ["T-hücre lösemisi"])]),
+             ("D", 210, [(75, ["İnsan Herpes virus", "tip 6"]), (170, ["Kaposi sarkomu"])]),
+             ("E", 240, [(75, ["Epstein-Barr virusu"]), (170, ["Nazofarenks kanseri"])])]
+    words = [row("Hangisi birlikte verilmiştir?", LEFT_TEXT, 100)]
+    for label, top, cells in table:
+        words.append(_table_option(label, top, cells))
+    lines = []
+    for w in words:
+        lines.extend(columns.group_lines(w))
+    parsed = options.parse(sorted(lines, key=lambda l: l.top))
+    assert parsed.options[0] == "Herpes simpleks virusu – Orofarengeal karsinom"
+    assert parsed.options[3] == "İnsan Herpes virus tip 6 – Kaposi sarkomu"
+    assert parsed.options[2] == "Sitomegalovirus – T-hücre lösemisi"
+
+
+def test_rows_stacked_inside_one_option_read_line_by_line():
+    # 2024/1 Klinik 42: each option lists "Anne : …", "Çocuk 1 : …" on its own line.
+    words = [row("Hangisi uygundur?", LEFT_TEXT, 100)]
+    for i, label in enumerate("ABCDE"):
+        top = 120 + i * 40
+        words.append(row(f"{label})", LEFT_TEXT, top) + row("Anne", 75, top) + row(f": ilaç{i}", 130, top))
+        words.append(row("Çocuk 1", 75, top + 10) + row(": gerekmez", 130, top + 10))
+    lines = []
+    for w in words:
+        lines.extend(columns.group_lines(w))
+    parsed = options.parse(sorted(lines, key=lambda l: l.top))
+    assert parsed.options[0] == "Anne : ilaç0 Çocuk 1 : gerekmez"

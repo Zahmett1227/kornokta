@@ -87,3 +87,11 @@ def test_letter_spaced_line_is_read_as_words():
             x += 5.5        # 1.5 pt between letters
         x += 4.0            # plus 4 pt between words
     assert columns.join_words(words) == "Aşağıdaki inflamasyon mediatörlerinden"
+
+
+def test_a_cell_centred_beside_a_two_line_cell_does_not_chain_the_rows():
+    # 2017/2 Klinik 2: "Neisseria / meningitidis" beside a centred "– Sefotaksim".
+    rows_ = [Word("Neisseria", 75, 115, 419.6, 428.6), Word("meningitidis", 75, 125, 430.1, 439.1),
+             Word("–", 157, 161, 424.9, 433.9), Word("Sefotaksim", 182, 230, 424.9, 433.9)]
+    lines = columns.group_lines(rows_)
+    assert [l.text for l in lines] == ["Neisseria", "– Sefotaksim", "meningitidis"]

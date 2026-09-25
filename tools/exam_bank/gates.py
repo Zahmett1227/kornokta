@@ -121,7 +121,10 @@ def v9_page(sample: List[dict], source_dir: Path, dest: Path) -> None:
             buf = io.BytesIO()
             image.save(buf, format="PNG")
             crops.append(f'<img src="data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}">')
-        answer = "—" if q["answer"] is None else "ABCDE"[q["answer"]]
+        # Keyless is by design (2006–2008 print no key; the compilation has
+        # none for 2024/1): say so, or the sheet reads as a missing answer.
+        answer = ("anahtar yok — kaynakta cevap basılı değil" if q["answer"] is None
+                  else "ABCDE"[q["answer"]] + f" ({q.get('answerSource')})")
         options = "".join(f"<li{' class=ans' if i == q['answer'] else ''}>{'ABCDE'[i]}) {html.escape(o)}</li>"
                           for i, o in enumerate(q["options"] or []))
         where = ", ".join(f"{r['file'].split('/')[-1]} s.{r['page']}" for r in q["provenance"])

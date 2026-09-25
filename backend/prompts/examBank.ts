@@ -12,11 +12,12 @@
 
 import { SUBJECT_TOPIC_SCHEMA } from "../providers/subjectTopics.js";
 
+// exam-bank-3: fractions on one line, "(pay) / (payda)" (2018/1 Klinik 38).
 // exam-bank-2: the Klinik order is six blocks, Küçük Stajlar twice (measured
 // in Faz A1 — tools/exam_bank/subjects.py KLINIK_ORDER). Labels already made
 // under exam-bank-1 stand: the model labelled by content, and the order only
 // enters through the segmentation.
-export const EXAM_BANK_PROMPT_VERSION = "exam-bank-2";
+export const EXAM_BANK_PROMPT_VERSION = "exam-bank-3";
 
 export const TEMEL_SUBJECTS = [
   "Anatomi", "Histoloji-Embriyoloji", "Fizyoloji", "Biyokimya", "Mikrobiyoloji", "Patoloji", "Farmakoloji",
@@ -39,7 +40,8 @@ const TRANSCRIBE_RULES = `Kurallar:
 4. Bir şık yalnız bir görselden (EKG, grafik, şekil, formül çizimi) ibaretse o şıkka "[görsel]" yaz.
 5. Kökü "stem"e, şıkları sırasıyla "a"…"e"ye yaz. Şık harflerini ("A)") metne katma.
 6. Görüntüde başka bir sorudan parça görünüyorsa onu yazma.
-7. Soru metninde "I. … II. …" öncülleri varsa her birini ayrı satıra yaz.`;
+7. Soru metninde "I. … II. …" öncülleri varsa her birini ayrı satıra yaz.
+8. Kesir çizgisiyle basılmış bir ifadeyi tek satırda "(pay) / (payda)" biçiminde yaz: "(Bir yılda ölen bebek sayısı) / (Toplam doğum sayısı) × 1000".`;
 
 function optionProperties(): Record<string, unknown> {
   return Object.fromEntries(OPTION_FIELDS.map((f) => [f, { type: "string" }]));

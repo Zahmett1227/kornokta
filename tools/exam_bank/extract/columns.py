@@ -179,7 +179,17 @@ def group_lines(words: Sequence[Word], page: int = 0, column: int = 0) -> List[L
             c_top, c_bot = min(w.top for w in ws), max(w.bottom for w in ws)
             overlap = min(p_bot, c_bot) - max(p_top, c_top)
             shorter = min(p_bot - p_top, c_bot - c_top)
-            if shorter > 0 and overlap >= 0.4 * shorter:
+            # A sub/superscript is set smaller and may sit well off its line
+            # (40 % overlap is enough). Two runs of the same size must share
+            # most of their height: a table cell centred beside a two-line
+            # neighbour ("Neisseria / meningitidis" | "– Sefotaksim") overlaps
+            # each of its lines by ~40 %, and at that threshold all three
+            # rows chained into one (2017/2 Klinik 2).
+            # "Smaller" is any real difference: 2007/1 sets its superscripts
+            # at 7.9 pt beside 9 pt text (Na⁺/HCO₃⁻) and raises them ~4 pt.
+            smaller = min(w.size for w in ws) < 0.95 * max(w.size for w in prev) or \
+                min(w.size for w in prev) < 0.95 * max(w.size for w in ws)
+            if shorter > 0 and overlap >= (0.4 if smaller else 0.5) * shorter:
                 prev.extend(ws)
                 continue
         merged.append(list(ws))
