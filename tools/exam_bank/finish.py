@@ -187,6 +187,7 @@ def stage_eight(registry: reg.Registry, a7: dict, source_dir: Path, out: Path, h
         print("bank.json şemaya uymuyor:", *errors[:10], sep="\n  ")
         return 3
     manifest = package.write_package(dest, document, registry, results, human)
+    package.commit_version(out, version)
     size = sum(f["bytes"] for f in manifest["files"]) / 1e6
     print(f"A9: {dest} — {manifest['counts']['questions']} soru, {manifest['counts']['papers']} kağıt, "
           f"{len(manifest['files'])} dosya, {size:.0f} MB, sürüm {version}")

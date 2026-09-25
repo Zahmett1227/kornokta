@@ -12,7 +12,7 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 | Faz | Durum |
 |---|---|
 | Faz 0 — hazırlık | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
-| Faz A1 — banka hattı | 🟡 `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 yazıldı ve gerçek klasörde koştu; **V1–V8 ve V10 geçiyor, V9 (sahibinin 30 soruluk örneklem onayı) bekliyor** — paket onaydan sonra yazılır. 8.410 soru, model maliyeti $0,64. Ölçümün düzelttiği varsayımlar: aşağıda "Faz A1 sonucu" |
+| Faz A1 — banka hattı | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu): sürüm **2026-09-25.2**, 8.410 soru, 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri: "Faz A1 sonucu" |
 | Faz A2 — uygulama çekirdeği | 🔲 |
 | Faz A3 — Deneme | 🔲 |
 | Kanıt turu | 🔲 |
@@ -23,10 +23,11 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 | | |
 |---|---|
 | Soru | **8.410**: ok 6.985 · anahtarsız 1.357 · iptal 55 · değiştirilmiş 12 · insan gerekli 1 |
-| Görsel | gerekli 161 · atıf 51 |
+| Görsel | gerekli 163 · atıf 51 |
 | Ders/konu | 85 kağıdın hepsi monoton; 932 referans etiketle **%97,9**; konulu soru 7.856 |
-| Kapılar | V1 tamam · V2 tamam · V3 tamam · V4 80/80 · V5 100/100 · V6 61/61 (ort. %95) · V7 %97,9 · V8 161 · V10 temiz · **V9 bekliyor** |
-| Model | Luna @low, 406 çağrı, **$0,64** (A5 15 · A6 31 · A7 351 · V6 61) |
+| Kapılar | V1 tamam · V2 tamam · V3 tamam · V4 80/80 · V5 100/100 · V6 61/61 (ort. %95) · V7 %97,9 · V8 163 · V9 Tuğba Çağlar, 30 soru · V10 temiz |
+| Model | Luna @low, 410 çağrı, **$0,65** (A5 18 · A6 31 · A7 351 · V6 61) |
+| Paket | sürüm 2026-09-25.2 · 82 PDF (F4'ler yalnız görünür soru sayfaları) · bank.json 6,7 MB · toplam 163 MB |
 
 Planın varsaydığı, ölçümün düzelttiği:
 
@@ -48,7 +49,12 @@ Planın varsaydığı, ölçümün düzelttiği:
    kitapçığı metni korumuş), 10'u yalnız kitapçık (2017 anahtarı eski harfi basıyor).
 6. **V4 80/80** (Faz 0'da 77/77): 2024/2, 2025/1, 2025/2, 2026/2'nin 20'şer görünür sorusu.
 7. **Yıllar arası neredeyse aynı soru yok** (Jaccard > 0,8): `similarTo` boş.
-8. **Model maliyeti planın ~%15'i** ($0,64 / $3–5): Luna @low, kısa çıktılar.
+8. **Model maliyeti planın ~%15'i** ($0,65 / $3–5): Luna @low, kısa çıktılar.
+9. **V9 bir hata sınıfı yakaladı:** tablo satırı biçimindeki şıklarda sarılan hücrenin
+   kuyruğu komşu hücreye düşüyordu (2010/1 Temel 52). Hücre hücre okuma bütün bankada
+   12 sorunun 28 şıkkını düzeltti; aynı incelemede iki satırlık hücrelerin birleşmesi ve
+   kesirli şıklar da giderildi. Anahtarsız sorularda "cevap yok" beklenen durum; V9
+   sayfası bunu açıkça yazıyor.
 
 ---
 

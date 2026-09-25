@@ -97,11 +97,14 @@ akışı"nı dışlar — o yasak **dağıtım** içindir. Bu banka:
 
 ## Faz A1'de yapılanlar (2026-09-25)
 
-Hat (`tools/exam_bank/` + `backend/scripts/examBank.ts`) gerçek klasörde koştu:
-8.410 soru, V1–V8 ve V10 geçiyor, **V9 sahibinin onayını bekliyor** (paket onaydan
-sonra yazılır). Model maliyeti $0,64 (Luna @low, 406 çağrı; plan $3–5). Karar 3'ün
-"model yalnız dört yerde" sınırı tuttu: A5 onarım (15 soru), A6 2011/1 (31 sayfa),
-A7 etiket (351 küme), V6 sağlama (61 kağıt).
+Hat (`tools/exam_bank/` + `backend/scripts/examBank.ts`) gerçek klasörde koştu ve
+**V1–V10'un hepsi geçti** (V9: Tuğba Çağlar'ın 30 soruluk incelemesi; bulduğu tablo-şık
+hatası bankanın tamamında düzeltildi). Paket sürüm 2026-09-25.2: 8.410 soru, 82 PDF,
+163 MB, yalnız yerelde. Model maliyeti $0,65 (Luna @low, 410 çağrı; plan $3–5). Karar
+3'ün "model yalnız dört yerde" sınırı tuttu: A5 onarım (18 soru), A6 2011/1 (31 sayfa),
+A7 etiket (351 küme), V6 sağlama (61 kağıt). Karar 4'ün koordinat kuralı paketle
+doğrulandı: rastgele 75 sorunun bölge kutusu paketteki PDF'te sorunun kendi metnini
+içeriyor (ÖSYM kısmi kitapçıkları yeni sayfa numaralarıyla).
 
 Bu karar belgesini etkileyen iki ölçüm:
 

@@ -121,7 +121,22 @@ def test_schema_rejects_what_the_phone_could_not_use():
     assert package.validate(doc)
 
 
-def test_bank_version_counts_rebuilds_within_a_day(tmp_path):
+def test_bank_version_counts_packages_written_within_a_day(tmp_path):
     assert package.bank_version(tmp_path, "2026-09-25") == "2026-09-25.1"
+    assert package.bank_version(tmp_path, "2026-09-25") == "2026-09-25.1"   # nothing written yet
+    package.commit_version(tmp_path, "2026-09-25.1")
     assert package.bank_version(tmp_path, "2026-09-25") == "2026-09-25.2"
     assert package.bank_version(tmp_path, "2026-09-26") == "2026-09-26.1"
+
+
+def test_a_cancelled_slot_without_text_packages_with_no_options():
+    q = _q(status="cancelled", options=(), answer=None, answerSource=None, osymSubject="Anatomi",
+           subject="Anatomi", topic=None, stem="Bu soru iptal edilmiştir.")
+    q["options"] = None
+    a7 = {"questions": [q], "papers": []}
+    doc = package.bank_document(a7, {"f.pdf": "pdf/" + "a" * 64 + ".pdf"}, {("f.pdf", 3): 3},
+                                "2026-09-25.1", "2026-09-25T20:00:00+00:00", 1)
+    assert doc["questions"][0]["options"] == []
+    assert package.validate(doc) == []
+    doc["questions"][0]["options"] = ["a", "b"]
+    assert package.validate(doc)

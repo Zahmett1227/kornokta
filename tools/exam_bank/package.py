@@ -81,6 +81,9 @@ def bank_document(a7: dict, paths: Dict[str, str], page_map: Dict[Tuple[str, int
     questions = []
     for q in a7["questions"]:
         out = {k: q.get(k) for k in QUESTION_FIELDS}
+        # A slot the booklet replaced with "Bu soru iptal edilmiştir." has no
+        # options to carry; the schema allows exactly none or all five.
+        out["options"] = q.get("options") or []
         out["provenance"] = [region(r) for r in q["provenance"]]
         out["altProvenance"] = [region(r) for r in q["altProvenance"]]
         out["similarTo"] = q.get("similarTo") or []
@@ -131,11 +134,18 @@ def write_package(dest: Path, document: dict, registry: reg.Registry, gates: dic
 
 
 def bank_version(out: Path, today: Optional[str] = None) -> str:
-    """Date plus a counter (§5.12): 2026-09-25.1, .2, … for rebuilds that day."""
+    """Date plus a counter (§5.12): 2026-09-25.1, .2, … for packages written
+    that day. Only a written package uses up a number (`commit_version`), so
+    an attempt that fails a gate or the schema does not leave a gap."""
     today = today or datetime.now(timezone.utc).strftime("%Y-%m-%d")
     counter = out / "bank_version.json"
     state = json.loads(counter.read_text()) if counter.exists() else {}
-    n = state.get(today, 0) + 1
-    state[today] = n
+    return f"{today}.{state.get(today, 0) + 1}"
+
+
+def commit_version(out: Path, version: str) -> None:
+    day, n = version.rsplit(".", 1)
+    counter = out / "bank_version.json"
+    state = json.loads(counter.read_text()) if counter.exists() else {}
+    state[day] = max(state.get(day, 0), int(n))
     counter.write_text(json.dumps(state))
-    return f"{today}.{n}"
