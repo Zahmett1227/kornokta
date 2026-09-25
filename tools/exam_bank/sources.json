@@ -1,0 +1,1541 @@
+{
+  "_comment": "Çıkmış soru kaynak kaydı (docs/PLAN-cikmis-soru-bankasi.md §5.2). Dosya yolları EXAM_SOURCE_DIR'e görelidir; PDF'ler repoda değildir. sha256 kaynağı sabitler: dosya değişirse kuru çalıştırma durur, soru kimlikleri sessizce kaymaz. Tarih, süre ve 'yanlışların dörtte biri' kuralı yalnız kitapçıkta okunduğu yerde dolu; okunamayan yer null/unknown.",
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "file": "2006-2012/TUS_2006_Ilkbahar_Klinik.pdf",
+      "sha256": "79efb2bee04f6089e85d4df36ac158c76e635ff3d228729f2df84a957ad8c9c5",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2006-1-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2006_Ilkbahar_Temel.pdf",
+      "sha256": "3b80a0b7105f58f45172730d43d4ffbbd68a84785d8c273dcfbb8f0a71c77908",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2006-1-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2006_Sonbahar_Klinik.pdf",
+      "sha256": "9b664f5ef055c90a6fd8363e1821dbf91243d1099e43946033a638f9f81bc6ca",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2006-2-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2006_Sonbahar_Temel.pdf",
+      "sha256": "2d8fae39199b81fa637514d81c0cc3acf37892e611ce8e3fca1f5bea0b989d61",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2006-2-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2007_Ilkbahar_Klinik.pdf",
+      "sha256": "6c0a9b388ef68a97479e762c18c6aadd7f8dd2d687672ed41eeab1d5d7cf4906",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2007-1-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2007_Ilkbahar_Temel.pdf",
+      "sha256": "21c2be2442b732e31b2474089bcc4aa309c91bbf830bb7c07c05bb9436067d4d",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2007-1-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2007_Sonbahar_Klinik.pdf",
+      "sha256": "d7d5d080d096b376738ed4055870fcbb24cd2d81c04a8eabb054fe0e64117ef4",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2007-2-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2007_Sonbahar_Temel.pdf",
+      "sha256": "2a4bee492dfeaaff06d32ab8602045032decfe196ab525ee5d6d4b1961e26ac5",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2007-2-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2008_Ilkbahar_Klinik.pdf",
+      "sha256": "7d56d399727c68b25e226850aba30a55998f5c5d366ab8dd7169bf01f2a0b86b",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2008-1-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2008_Ilkbahar_Temel.pdf",
+      "sha256": "f197e43ab4a950b53f79eb44d8b947b16812a35e809680cc93cf3e8bc7796ab1",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2008-1-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2008_Sonbahar_Klinik.pdf",
+      "sha256": "e2a8668f3752e643fe21032983171ee4ff9d117b674707c4d0f063fa1a9c29d8",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2008-2-K",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2008_Sonbahar_Temel.pdf",
+      "sha256": "2f4fcdf0e07c3e9698c66b27662ef9977002a8e5cb0c9a5907e1a5ddddc8fa9c",
+      "family": "F1",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2008-2-T",
+          "date": null,
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2009_Ilkbahar_TemelKlinik.pdf",
+      "sha256": "5f760acd6d99e55f922a066747d39833b0270b006727b80743a6a9b502bb8247",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2009-1-T",
+          "date": "2009-04-12",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2009-1-K",
+          "date": "2009-04-12",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2009_Sonbahar_TemelKlinik.pdf",
+      "sha256": "98c6cabf5a7e04c0427f67381f5c74a13485af81d138aba96a175593f444399d",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2009-2-T",
+          "date": "2009-09-13",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2009-2-K",
+          "date": "2009-09-13",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2010_Ilkbahar_TemelKlinik.pdf",
+      "sha256": "939b2c124619c4c82c0abf02f278e7924111f8f124b396708d4a03820745c91f",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2010-1-T",
+          "date": "2010-04-18",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2010-1-K",
+          "date": "2010-04-18",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2010_Sonbahar_TemelKlinik.pdf",
+      "sha256": "6474c60142daa0a0ad545c1b9bb4e5573cbeca6227429601c0ca265df23a4c43",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2010-2-T",
+          "date": "2010-12-12",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2010-2-K",
+          "date": "2010-12-12",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2011_Ilkbahar_TemelKlinik.pdf",
+      "sha256": "66fa4bf1f3ffa8e6d2d8e76f91c3af93baadd3fd6497e890963bd7aa3f4ba24f",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2011-1-T",
+          "date": "2011-05-15",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2011-1-K",
+          "date": "2011-05-15",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2011_Sonbahar_TemelKlinik.pdf",
+      "sha256": "72e64531270bed7e4e4feab9f40cd410e347d3d4f187655cc1dfecde621f7eda",
+      "family": "F2",
+      "sourceKind": "osym",
+      "sessionTimeLimitMinutes": 210,
+      "papers": [
+        {
+          "id": "TUS-2011-2-T",
+          "date": "2011-09-25",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        },
+        {
+          "id": "TUS-2011-2-K",
+          "date": "2011-09-25",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2012_Ilkbahar_Klinik.pdf",
+      "sha256": "5d7cc46e15e15f95b1d09411db777bc9d3957e6478e71b98058c267460eba9b8",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2012-1-K",
+          "date": "2012-04-22",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2012_Ilkbahar_Temel-1.pdf",
+      "sha256": "034523c27650b7666be09864f7cfd251b5f571a13d168f85b6c1b15231288dae",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2012-1-T",
+          "date": "2012-04-22",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2012_Ilkbahar_Temel-2.pdf",
+      "sha256": "0f8774d88b80623e3f63cab09680239324d0f78a16da91473dc1cc54a2a0f3ff",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2012-1-T2",
+          "date": "2012-04-22",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2012_Sonbahar_Klinik.pdf",
+      "sha256": "6752d146a07b637ab4e653821d84322c701c3da114d39fb294dddba4c0a8041b",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2012-2-K",
+          "date": "2012-09-09",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2006-2012/TUS_2012_Sonbahar_Temel.pdf",
+      "sha256": "cf97ea945fd6901f845968f19c5a47f1e5ba2a444601bb716d200158abe5218a",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2012-2-T",
+          "date": "2012-09-09",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2013_Ilkbahar_Klinik.pdf",
+      "sha256": "d1e960bc0bb2f4ec276cd9703a8cac8e8e30d696bdf12a3d2551d87ee4ad21c6",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2013-1-K",
+          "date": "2013-04-14",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2013_Ilkbahar_Temel.pdf",
+      "sha256": "e26d9148efcc085b87af9e663c06632aa25edb943a6d8f1cc06cde05842eb8e7",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2013-1-T",
+          "date": "2013-04-14",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2013_Sonbahar_Klinik.pdf",
+      "sha256": "5961cf7b0d68d0a38f331bbee6ff12de320e6ca5e322c236ca3768bb80eaf808",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2013-2-K",
+          "date": "2013-09-08",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2013_Sonbahar_Temel.pdf",
+      "sha256": "9bc2e6dc1ed89f3ec7f958a39d71015bf35f6020d499057fcf8afd929f6ea8df",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2013-2-T",
+          "date": "2013-09-08",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2014_Ilkbahar_Klinik.pdf",
+      "sha256": "db4c64178bf38f9431400ffc665959d6e73e53ab14c283ce6a6eb1ecf35e7d63",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2014-1-K",
+          "date": "2014-04-13",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2014_Ilkbahar_Temel.pdf",
+      "sha256": "355eced43f1fec93fe06003cb29026a19e1e8e029bf6f5e812ee0095b7c1bd10",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2014-1-T",
+          "date": "2014-04-13",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2014_Sonbahar_Klinik.pdf",
+      "sha256": "97c0fbe8d7d742c3ddfee45a7a56ed49af9730409a92ccbd3f4136beaaab0bcb",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2014-2-K",
+          "date": "2014-09-14",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2014_Sonbahar_Temel.pdf",
+      "sha256": "1ad7d334ff0e7e7b1c6bac03db5aaf88a44e1fe2748a766754bff3aa56e475f0",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2014-2-T",
+          "date": "2014-09-14",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2015_Ilkbahar_Klinik.pdf",
+      "sha256": "1bac7ca3f1ab67647fd09227d2f86bdab72a0d81e0241dd54bff0b9906136a32",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2015-1-K",
+          "date": "2015-04-12",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2015_Ilkbahar_Temel.pdf",
+      "sha256": "0d8e3d97bd23f0631c2008b7ba907cb936608cd18d1601ecfcfe3e6dc0db61c8",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2015-1-T",
+          "date": "2015-04-12",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2015_Sonbahar_Klinik.pdf",
+      "sha256": "fe3bce30dc90d3089a870e9c2482b00ddd4a4084644dd0742501a3a40b76d57c",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2015-2-K",
+          "date": "2015-09-20",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2015_Sonbahar_Temel.pdf",
+      "sha256": "e0466b0a96e7908fe119a640f4d813715fdd6f9d599236551fd97532ca5ad5ce",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2015-2-T",
+          "date": "2015-09-20",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": 150,
+          "penalty": "quarter",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2016_Ilkbahar_Klinik.pdf",
+      "sha256": "bdadee0ac1c8d3afa7cb230417e2c19725d42b4d73ac967ea8755bf4aea4be00",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2016-1-K",
+          "date": "2016-04-10",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2016_Ilkbahar_Temel.pdf",
+      "sha256": "5db42d708820aae1a043f074f07466d0d5dfb33b98a28b2271f88871fe691d32",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2016-1-T",
+          "date": "2016-04-10",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2016_Sonbahar_Klinik.pdf",
+      "sha256": "c357f7020ecca254e5023496de678601401051897826b40d34e03e196e818e2a",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2016-2-K",
+          "date": "2016-09-25",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2016_Sonbahar_Temel.pdf",
+      "sha256": "1cd3e9effad4afe755704553515ad2b85e9a0977f43eeb71dfa0718c742b7303",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2016-2-T",
+          "date": "2016-09-25",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2017_Ilkbahar_Klinik.pdf",
+      "sha256": "28b20e91a3cda24c4a667cb6428401ac495eeb8379d58c8f70a0c24f193774ca",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2017-1-K",
+          "date": "2017-04-22",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2017_Ilkbahar_Temel.pdf",
+      "sha256": "1e6733826169e4b1d13aa9f0fa8eaf57e7bfd8efb28d86a2dd97a1abf9624905",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2017-1-T",
+          "date": "2017-04-22",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2017_Sonbahar_Klinik.pdf",
+      "sha256": "e0f08c804c294fc0bd347538718ed75fa224119a429d878bbbe316c291850402",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2017-2-K",
+          "date": "2017-08-27",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2017_Sonbahar_Temel.pdf",
+      "sha256": "44b5017ccb308c148e2028815cf4bcd545220999543610b89eb321acb08b3d6d",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2017-2-T",
+          "date": "2017-08-27",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2018_Ilkbahar_Klinik.pdf",
+      "sha256": "e88d87cdcc26764787a943abc0cac9b97f6a2a5811b2d2f6bc8444fc1b2b9b85",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2018-1-K",
+          "date": "2018-02-25",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2018_Ilkbahar_Temel.pdf",
+      "sha256": "468216ae2c3f640d902da07e7181bc6b9b24ecd43d00850668ba19be3e060b68",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2018-1-T",
+          "date": "2018-02-25",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2018_Sonbahar_Klinik.pdf",
+      "sha256": "7c710b4d13d1125ff710e47e94c200365380ff0c6224b3f3edd20a401e22ac4b",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2018-2-K",
+          "date": "2018-08-12",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2018_Sonbahar_Temel.pdf",
+      "sha256": "3fa97b1ca448b58ac8109b45539bb7d73f42b07a590df0322536213f22cfe3b1",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2018-2-T",
+          "date": "2018-08-12",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2019_Ilkbahar_Klinik.pdf",
+      "sha256": "3ba9c641fcfdfd84f3863d813d42963bbda80a6159b58fae5e98d55d9bdbc710",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2019-1-K",
+          "date": "2019-02-24",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2019_Ilkbahar_Temel.pdf",
+      "sha256": "5ede208fd36b79a06258aa15d801c3bc58e098d57a5e61d3083ca5529ed0ccaf",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2019-1-T",
+          "date": "2019-02-24",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2019_Sonbahar_Klinik.pdf",
+      "sha256": "731987a7532ed2f7c6cc1e61dd575f60e1a3b26a7131fd74b6d8ddf7da115747",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2019-2-K",
+          "date": "2019-09-01",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2019_Sonbahar_Temel.pdf",
+      "sha256": "80985dc8270a7d0901c9eb724f7f31787035b08ad9395b25911c923174008dd6",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2019-2-T",
+          "date": "2019-09-01",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2020_Ilkbahar_Klinik.pdf",
+      "sha256": "feafa0edd80a3ffa92953a82cb2fd7a74790db489b3ef73bd93a66ba901bb181",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2020-1-K",
+          "date": "2020-02-23",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2020_Ilkbahar_Temel.pdf",
+      "sha256": "f77d56bf2166eec75e1e969121c7542e2a0128acc68bf0a0e3bd69266ef9fa86",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2020-1-T",
+          "date": "2020-02-23",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2020_Sonbahar_Klinik.pdf",
+      "sha256": "4dad7414312be7fecc16b31c71e43090091580dbb1ef41e8e31dca113cfa8ebc",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2020-2-K",
+          "date": "2020-10-04",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2020_Sonbahar_Temel.pdf",
+      "sha256": "51593653abe9f62afce329c65756b392d5bf66ca361954111979f874080fcde2",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2020-2-T",
+          "date": "2020-10-04",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2021_Ilkbahar_Klinik.pdf",
+      "sha256": "2fc1a84542d22e8de581f7f878b833236aa91cfb5525584537378445bb1a08f0",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2021-1-K",
+          "date": "2021-03-21",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2021_Ilkbahar_Temel.pdf",
+      "sha256": "0cba11eb1157aeabbd303805f12c0a0acf22b3f9840528ebc6912d71e58b6978",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2021-1-T",
+          "date": "2021-03-21",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2021_Sonbahar_Klinik.pdf",
+      "sha256": "395b96c7531beea44a8e15789042b3c3a20d2a5f917d1ba9166b206f7290c224",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2021-2-K",
+          "date": "2021-09-05",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2013-2021/TUS_2021_Sonbahar_Temel.pdf",
+      "sha256": "0b57c434d3a52565cc009b68bf5d45292cb1afb38544cf61381d8836d750e709",
+      "family": "F3",
+      "sourceKind": "osym",
+      "papers": [
+        {
+          "id": "TUS-2021-2-T",
+          "date": "2021-09-05",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2022_Ilkbahar_Klinik.pdf",
+      "sha256": "6eea0131441eae004dc90827c2a92e12ad05bba4def60f9b815f7e5aa20859a9",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2022-1-K",
+          "date": "2022-03-06",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2022_Ilkbahar_Temel.pdf",
+      "sha256": "5092fd7b46b646276c622ab9954115eefe6dae1c73c552969f7a25f3d219928c",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2022-1-T",
+          "date": "2022-03-06",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2022_Sonbahar_Klinik.pdf",
+      "sha256": "b7aef5fdc4e4ce61cf059ce586850c62753db483ec18e7cc0361b17103419218",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2022-2-K",
+          "date": "2022-09-04",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2022_Sonbahar_Temel.pdf",
+      "sha256": "7490083d55917bfe4a748ac7ad0bf8275b4a22484ecf3f5ee0fe8182d31cc6e6",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2022-2-T",
+          "date": "2022-09-04",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2023_Ilkbahar_Klinik.pdf",
+      "sha256": "624c67960e7dd7311145da35ae5b8839f9ce3c49019fb52616d6a11ba52812c4",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2023-1-K",
+          "date": "2023-04-15",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2023_Ilkbahar_Temel.pdf",
+      "sha256": "b0b7c89173c7ead6d0d2c263a237e64f947b9ca5d7b16f9f31a59d6bac8489f4",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2023-1-T",
+          "date": "2023-04-15",
+          "expected": 120,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2023_Sonbahar_Klinik.pdf",
+      "sha256": "4681735a5542c8eb8fdb5a736154da4a753f3339abb0908a5dc761cca33f71d0",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2023-2-K",
+          "date": "2023-09-24",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2023_Sonbahar_Temel.pdf",
+      "sha256": "cd2fd7ad689b2240764704c8e7225202d82b0903811131e544fd5afb896e4954",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2023-2-T",
+          "date": "2023-09-24",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2024_Ilkbahar_Klinik.pdf",
+      "sha256": "12a5e546f87acaa11e99c7073be429759d518827456fefa48ce0efc546d7c672",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2024-1-K",
+          "date": "2024-03-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2024_Ilkbahar_Temel.pdf",
+      "sha256": "d3b977cb3d063839244f79a543a2c149f43a62ec768c93ea7ddfa2656cd69ac2",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2024-1-T",
+          "date": "2024-03-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2024_Sonbahar_Klinik.pdf",
+      "sha256": "74e3819d6dcfce0632fe2f5c41b769238d9e8309498b6490bd2b74f3334ab7a7",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2024-2-K",
+          "date": "2024-08-18",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2024_Sonbahar_Temel.pdf",
+      "sha256": "40b46c2034bd3e9c3212b850b09626b7fab636e98fe7ded23bc98750004aefa3",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2024-2-T",
+          "date": "2024-08-18",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2025_Ilkbahar_Klinik.pdf",
+      "sha256": "fcb18b35c6ab71fb86e2e87aeb34091726fe0652be5ca36919a10bb77319a0fc",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2025-1-K",
+          "date": "2025-03-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2025_Ilkbahar_Temel.pdf",
+      "sha256": "325a6093546b8623dd24fb0aaac2518ef88e12954424582758b65156eb83f5c1",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2025-1-T",
+          "date": "2025-03-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2025_Sonbahar_Klinik.pdf",
+      "sha256": "7051524100ab43f7272e959798c3249c280ae94baef9f6d598bedb2470afdd0e",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2025-2-K",
+          "date": "2025-08-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2025_Sonbahar_Temel.pdf",
+      "sha256": "6879095ab17450077e4601c7bed026f950876dec1f0232db3d31d2519387c86b",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2025-2-T",
+          "date": "2025-08-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2026_Ilkbahar_Klinik.pdf",
+      "sha256": "e6b4c82de482f9d4d55d8955388bfa25e1c44189a041feb79ad6d3d3f8bf746e",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2026-1-K",
+          "date": "2026-03-15",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2026_Ilkbahar_Temel.pdf",
+      "sha256": "8429bc5dbb7f6766da55a1fda97a77ac67dcfebf1493fd2a49b83ebda34e31c6",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2026-1-T",
+          "date": "2026-03-15",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2026_Sonbahar_Klinik.pdf",
+      "sha256": "514eef2646f48b13d8b1e245cfc165ea2a123aba310f48ab9908c202c570e4ef",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2026-2-K",
+          "date": "2026-08-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2026_Sonbahar_Temel.pdf",
+      "sha256": "3c91d43b4fb2f0e9a978c35b61e062a2730ffc7fa900b7f4544641b9e88635ac",
+      "family": "F4",
+      "sourceKind": "osymPartial",
+      "papers": [
+        {
+          "id": "TUS-2026-2-T",
+          "date": "2026-08-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "osym"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/TUS_2024-2026_TamSorular_Derleme.pdf",
+      "sha256": "5e2b08939ff570f2dd8dffea83fe9181e44cc85c25f416a0845522e5b4e79a0c",
+      "family": "F5",
+      "sourceKind": "tusdata",
+      "papers": [
+        {
+          "id": "TUS-2024-1-T",
+          "date": "2024-03-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        },
+        {
+          "id": "TUS-2024-1-K",
+          "date": "2024-03-17",
+          "expected": 100,
+          "numberOffset": 100,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "none"
+        },
+        {
+          "id": "TUS-2024-2-T",
+          "date": "2024-08-18",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        },
+        {
+          "id": "TUS-2024-2-K",
+          "date": "2024-08-18",
+          "expected": 100,
+          "numberOffset": 100,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        },
+        {
+          "id": "TUS-2025-1-T",
+          "date": "2025-03-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        },
+        {
+          "id": "TUS-2025-1-K",
+          "date": "2025-03-23",
+          "expected": 100,
+          "numberOffset": 100,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        },
+        {
+          "id": "TUS-2025-2-T",
+          "date": "2025-08-17",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        },
+        {
+          "id": "TUS-2025-2-K",
+          "date": "2025-08-17",
+          "expected": 100,
+          "numberOffset": 100,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "tusdata"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/Temel_Bilimler_Sinav_1-100.pdf",
+      "sha256": "303dd8bc0c8d15d24772712ea88734b447569328d1c4a59a344f7b018d1bc235",
+      "family": "F6",
+      "sourceKind": "reconstruction",
+      "papers": [
+        {
+          "id": "TUS-2026-2-T",
+          "date": "2026-08-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "reconstruction"
+        }
+      ]
+    },
+    {
+      "file": "2022-2026/Klinik_Sinav_1-100 2026.pdf",
+      "sha256": "70236e48066fa037d75aa9180f612692fcb59e5845c888a937771db84e702f7d",
+      "family": "F6",
+      "sourceKind": "reconstruction",
+      "papers": [
+        {
+          "id": "TUS-2026-2-K",
+          "date": "2026-08-23",
+          "expected": 100,
+          "numberOffset": 0,
+          "timeLimitMinutes": null,
+          "penalty": "unknown",
+          "keySource": "reconstruction"
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "pattern": "2022-2026/2024-2025-2026 TUS.pdf",
+      "reason": "F5 derlemenin taranmış (ABBYY) kaynağı; içerik %98 aynı"
+    },
+    {
+      "pattern": "2022-2026/yenikeşif/*",
+      "reason": "üst klasördeki üç dosyanın birebir kopyası (SHA aynı)"
+    },
+    {
+      "pattern": "2022-2026/tmp/*",
+      "reason": "önceki güncellik analizinin ara çıktıları; kaynak değil"
+    },
+    {
+      "pattern": "2022-2026/TUS_Guncellik_Raporu/*",
+      "reason": "analiz raporu; kaynak değil"
+    }
+  ]
+}

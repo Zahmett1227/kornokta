@@ -1,0 +1,7 @@
+# Faz 0 (registry + --dry-run) needs only the standard library.
+# From Faz A1 on, extraction reads word boxes with pdfplumber
+# (docs/PLAN-cikmis-soru-bankasi.md §5.3) and validates the bank against
+# exam_bank.schema.json.
+pdfplumber>=0.11,<0.12
+jsonschema>=4.21
+pytest>=8.0

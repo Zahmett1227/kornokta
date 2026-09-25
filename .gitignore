@@ -18,6 +18,11 @@ evals/fixtures/*
 !evals/fixtures/README.md
 evals/reports/
 
+# --- Past-exam bank: the owner's PDFs never enter the repo, and neither does
+# what is built from them (docs/ADR-012). Sources are read from EXAM_SOURCE_DIR.
+tools/exam_bank/out/
+tools/exam_bank/.venv/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
