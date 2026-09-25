@@ -168,6 +168,8 @@ ADR-006'da yazılı.
 | `scripts/serve.ts` | Yerel geliştirme sunucusu |
 | `scripts/cards.ts` | `npm run cards` — tek bir gerçek OpenAI çağrısıyla istek/yanıt şeklini doğrular |
 | `scripts/token.ts` | Cihaz tokenı üretici |
+| `scripts/compareModels.ts` | `npm run compare` — aynı sayfaları birden çok model/kademede üretip maliyet + kör değerlendirme dosyaları çıkarır (`docs/PLAN-model-karsilastirma.md`) |
+| `supabase/migrations/` | `jobs` tablosunun şeması; yeni sütun **dağıtımdan önce** canlıya uygulanır |
 
 `api/_auth.ts` gibi alt çizgiyle başlayan dosyalar: Vercel `api/` altındaki
 her dosyayı ayrı bir uç nokta sanır, ama bunlar `index.ts`'in içeri aktardığı
@@ -222,5 +224,8 @@ Hepsi gerçek bir dağıtımda yaşandı ve düzeltildi:
 
 ## Henüz yok
 
-- Başarısız kart üretimi çağrıları için iOS tarafında bir `ModelRun` kaydı
-  (yalnız başarılı çağrılar kaydediliyor, `docs/FAZ3-PLAN.md`'de F3-8 altında)
+- Şu an açık bir backend eksiği kayıtlı değil. (Buradaki eski madde —
+  başarısız çağrıların `ModelRun`'a yazılması — çağrı başına maliyet
+  defteriyle kapandı: `ModelRun` artık başarılı ve başarısız her çağrıyı
+  `success`/`billing` alanlarıyla tutuyor.) Açık işler için `CLAUDE.md` →
+  "Küçük ve gerçek kalanlar".

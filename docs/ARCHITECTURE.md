@@ -74,6 +74,8 @@ yerde tanımlı** (sunucu `optionKey`, cihaz `comparisonKey`) ve ikisi aynı
 Karar kayıtları: [`ADR-005`](ADR-005-kisisel-vision-yeniden-tasarim.md) (pivot),
 [`ADR-006`](ADR-006-supabase-is-kuyrugu.md) (iş kuyruğu + saklama),
 [`ADR-007`](ADR-007-egzersiz-fsrs-koprusu.md) (Egzersiz→FSRS köprüsü),
+[`ADR-008`](ADR-008-fes-sicili.md) (FES sicili + altı boyutlu Egzersiz filtresi),
+[`ADR-011`](ADR-011-yedek-v9-sayfa-fotografi.md) (yedek v9, sayfa fotoğrafı),
 [`FAZ6-PLAN`](FAZ6-PLAN.md) (dosya bazlı plan),
 [`COKLU-FOTO-TIMEOUT`](COKLU-FOTO-TIMEOUT.md) (zaman aşımının teşhisi),
 [`PLAN-galeriden-foto`](PLAN-galeriden-foto.md) (galeri içe aktarma),
@@ -85,8 +87,9 @@ Bilgi Haritası).
 
 - **iOS istemci** (`ios/`): Swift 6+, SwiftUI, SwiftData. Yakalama (kamera +
   galeri), dayanıklı işleme kuyruğu, kart üretimi istemcisi, gerçek FSRS-6
-  tekrarı, Egzersiz modu + Bilgi Haritası, yedekleme (**v8**). Ana veri
-  kaynağı telefondaki SwiftData'dır. (Kavram destesi 2026-09-14'te kaldırıldı —
+  tekrarı, Egzersiz modu + Bilgi Haritası, yedekleme (**v9** — geri yükleme
+  isteğe bağlı sayfa fotoğraflarını da kurar, ADR-011). Ana veri kaynağı
+  telefondaki SwiftData'dır. (Kavram destesi 2026-09-14'te kaldırıldı —
   ADR-010 tarihsel.)
 - **Backend** (`backend/`): Vercel Functions. Sağlayıcı anahtarlarını saklar,
   OpenAI vision ile kart üretir ve bunu asenkron iş kuyruğu üzerinden yürütür

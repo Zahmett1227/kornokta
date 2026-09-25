@@ -1,9 +1,9 @@
-# Çizgi — iOS (Faz 6 tamam + galeri içe aktarma + beş şıklı kart + kavram destesi)
+# Çizgi — iOS
 
 Ana akış: **işaretli sayfayı çek → sayfa doğrudan bir vision modeline gider →
 kartlar onaysız aktif desteye girer → FSRS-6 ile tekrar edilir.** Onay ekranı,
-cihaz-üstü işaret tespiti ve bulut OCR ana akıştan çıktı (kod geri dönüş için
-diskte, çağrılmıyor — `docs/ADR-005-kisisel-vision-yeniden-tasarim.md`).
+cihaz-üstü işaret tespiti ve bulut OCR önce ana akıştan çıktı, 2026-08-09'da
+koddan da silindi (`docs/ADR-005-kisisel-vision-yeniden-tasarim.md`).
 
 Kart üretimi **asenkron**: telefon `POST /api/jobs` ile sayfayı bırakır ve
 saniyeler içinde 202 alır, üretim sunucuda sürer, telefon `GET /api/jobs?ids=`
@@ -40,18 +40,25 @@ katmanı 2026-08-09 tıraşında koddan silindi.
 ```
 ios/
 ├── CizgiCore/          Swift paketi — mantık, Xcode'suz test edilebilir
-│   ├── Models/             SwiftData modelleri (§16), ders/konu şeması, Bilgi Haritası
+│   ├── Models/             SwiftData modelleri (§16), ders/konu şeması, Bilgi Haritası,
+│   │                       kapsama, arama, istatistik, beş şık kuralları
 │   ├── Annotation/         AnnotationGroup — persist'in konuştuğu grup sözleşmesi
+│   ├── Capture/            PageSplit — çift sayfa tespiti
 │   ├── Queue/              Durum makinesi ve vision işlem hattı (§17)
-│   ├── Backend/             BackendConfiguration, DeviceTokenStore (Keychain), UploadImageEncoder
-│   ├── Providers/          Kart üretimi protokolü: sahte + gerçek backend sağlayıcı
+│   ├── Backend/            BackendConfiguration, DeviceTokenStore (Keychain),
+│   │                       ImportedImage (galeri normalizasyonu), UploadImageEncoder
+│   ├── Providers/          Kart üretimi (sahte + gerçek backend), ikinci görüş, kapsama denetimi
 │   ├── Scheduling/         FSRS-6 + oturum kurgusu + Egzersiz (ExerciseSession,
-│   │                       EarlyPractice — ADR-007 köprüsü, ReviewSession, ReviewPace)
-│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle (v8),
+│   │                       EarlyPractice — ADR-007 köprüsü, FesScore — ADR-008,
+│   │                       ReviewSession, ReviewIntervalLabel, ReviewReminders)
+│   └── Storage/            Görüntü deposu (§8.3), yedek al/geri yükle (v9, ADR-011),
 │                           ConceptDeckRemoval (kaldırılan kavram destesinin temizliği), algısal hash
 ├── App/                SwiftUI uygulaması
-│   └── Features/Capture, ProcessingQueue, Review (Tekrar + Egzersiz),
-│                Library (Bilgilerim + Bilgi Haritası), Settings
+│   ├── Features/           Capture, ProcessingQueue (Kuyruk + sayfa detayı), Review (Tekrar +
+│   │                       Egzersiz), Library (Bilgilerim + Bilgi Haritası + İstatistik), Settings
+│   ├── Theme/              Tasarım dili "Kemik & Oxblood" (CizgiTheme) + ders gravürleri
+│   └── *Migration.swift    Açılışta tek seferlik veri göçleri
+├── Resources/          Gömülü serif yazı (Libre Caslon Text, OFL lisansı)
 ├── spikes/AppleVisionSpike/   Tarihsel ölçüm aracı (bağımsız paket)
 └── project.yml         XcodeGen spec
 ```
@@ -141,7 +148,8 @@ Belge kamerası **simülatörde çalışmaz**. Gerçek iPhone gerekiyor: Signing
 - [ ] Bildirim izni verildiğinde hatırlatma **gerçek sayıyı** söylüyor ve
       dokununca Tekrar sekmesi açılıyor
 - [ ] "Yedeği hazırla → paylaş" JSON'unda görüntü/base64 yok; "Yedekten geri
-      yükle" mevcut kartları ezmeden eksikleri ekliyor
+      yükle" mevcut kartları ezmeden eksikleri ekliyor, v9 dosyasındaki sayfa
+      fotoğraflarını da kuruyor (ADR-011)
 - [ ] Uygulamayı tamamen kapat, tekrar aç → kartlar ve kuyruk duruyor (§24.1)
 
 Beş şıklı kart (§13.3) için ayrıca:
@@ -167,5 +175,3 @@ Tam liste ve geçmiş bulgular: `docs/FAZ5-DURUM.md`, `CLAUDE.md` → "Sıradaki
 | Gerçek iPhone kabul testi (yukarıdaki liste) | `docs/FAZ5-DURUM.md`, `docs/FAZ6-PLAN.md` §11 |
 | `Models` alan sadeleşmesi + SwiftData göçü | `docs/FAZ6-PLAN.md` §9 |
 | Kartlarda kaynak kırpıntısı ve kitap/sayfa bilgisi (§5.5) | Vision akışında tam sayfa var, kırpıntı yok — uydurulmadı |
-| Kavramın kendi ekranı ("kavramı oku, sonra kartlarını çöz") | Kavram bugün yalnız kartlarının altındaki bir grup — `docs/ADR-010` "Kapsam dışı" |
-| Kavram destesiyle performans ölçümü (3.017 kart, aramada gecikme) | `docs/ADR-010` "Kapsam dışı"; çözüm gerekirse kapsam filtresini `@Query` predicate'ine taşımak |

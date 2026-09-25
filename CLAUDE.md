@@ -443,7 +443,7 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 - **FES sicili ve altı boyutlu Egzersiz filtresi:** ADR-008. Ana akışın 8-9.
   maddelerine bakın.
 
-## Şu an neredeyiz (2026-08-11)
+## Şu an neredeyiz (son güncelleme 2026-09-14)
 
 | İş | Durum |
 |---|---|
