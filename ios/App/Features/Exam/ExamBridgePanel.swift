@@ -83,7 +83,7 @@ struct ExamBridgePanel: View {
     private func candidateRow(_ card: Card) -> some View {
         let isLinked = linkedIds.contains(card.id)
         return Button {
-            ExamRecorder(context: context).link(card, to: attempt, at: .now)
+            ExamRecorder(context: context).link(card, to: attempt, answering: question, at: .now)
             try? context.save()
             onChange()
         } label: {

@@ -64,19 +64,19 @@ final class ExamRecorderTests: XCTestCase {
         let due = card.dueDate
         let run = makeRun()
         let first = recorder.recordAnswer(to: question, selectedOption: 0, in: run, responseTimeMs: 1, at: t0)
-        XCTAssertTrue(recorder.link(card, to: first, at: t0))
-        XCTAssertFalse(recorder.link(card, to: first, at: t0), "the same tap twice is one link")
+        XCTAssertTrue(recorder.link(card, to: first, answering: question, at: t0))
+        XCTAssertFalse(recorder.link(card, to: first, answering: question, at: t0), "the same tap twice is one link")
         XCTAssertEqual(card.fesScore, 2)
         XCTAssertEqual(card.fesNegativeCount, 1)
 
         let other = ExamBankFixture.question("TUS-2019-1-T-051", answer: 1)
         let second = recorder.recordAnswer(to: other, selectedOption: 0, in: run, responseTimeMs: 1, at: t0 + 5)
-        XCTAssertFalse(recorder.link(card, to: second, at: t0 + 5), "one run, one FES write per card")
+        XCTAssertFalse(recorder.link(card, to: second, answering: other, at: t0 + 5), "one run, one FES write per card")
         XCTAssertEqual(card.fesScore, 2)
 
         let nextRun = makeRun()
         let third = recorder.recordAnswer(to: question, selectedOption: 0, in: nextRun, responseTimeMs: 1, at: t0 + 10)
-        XCTAssertTrue(recorder.link(card, to: third, at: t0 + 10))
+        XCTAssertTrue(recorder.link(card, to: third, answering: question, at: t0 + 10))
         XCTAssertEqual(card.fesScore, 4)
 
         // docs/ADR-012 decision 6: never EarlyPractice, never ReviewLog.
@@ -96,14 +96,14 @@ final class ExamRecorderTests: XCTestCase {
         let b = makeCard()
         let run = makeRun()
         let first = recorder.recordAnswer(to: question, selectedOption: 0, in: run, responseTimeMs: 1, at: t0)
-        XCTAssertTrue(recorder.link(a, to: first, at: t0))
-        XCTAssertTrue(recorder.link(b, to: first, at: t0 + 1), "another card that also answers it gets its own FES")
-        XCTAssertFalse(recorder.link(a, to: first, at: t0 + 2), "back to A on the same answer: still one write")
+        XCTAssertTrue(recorder.link(a, to: first, answering: question, at: t0))
+        XCTAssertTrue(recorder.link(b, to: first, answering: question, at: t0 + 1), "another card that also answers it gets its own FES")
+        XCTAssertFalse(recorder.link(a, to: first, answering: question, at: t0 + 2), "back to A on the same answer: still one write")
 
         let other = ExamBankFixture.question("TUS-2019-1-T-051", answer: 1)
         let second = recorder.recordAnswer(to: other, selectedOption: 0, in: run, responseTimeMs: 1, at: t0 + 5)
-        XCTAssertFalse(recorder.link(a, to: second, at: t0 + 5), "one run, one FES write per card")
-        XCTAssertFalse(recorder.link(b, to: second, at: t0 + 6))
+        XCTAssertFalse(recorder.link(a, to: second, answering: other, at: t0 + 5), "one run, one FES write per card")
+        XCTAssertFalse(recorder.link(b, to: second, answering: other, at: t0 + 6))
         XCTAssertEqual(a.fesScore, 2)
         XCTAssertEqual(a.fesNegativeCount, 1)
         XCTAssertEqual(b.fesScore, 2)
@@ -121,9 +121,22 @@ final class ExamRecorderTests: XCTestCase {
         let card = makeCard()
         let attempt = recorder.recordAnswer(to: keyless, selectedOption: nil, in: makeRun(), responseTimeMs: 1, at: t0)
         XCTAssertEqual(attempt.bridgeOutcome, .notAsked)
-        XCTAssertFalse(recorder.link(card, to: attempt, at: t0))
+        XCTAssertFalse(recorder.link(card, to: attempt, answering: keyless, at: t0))
         XCTAssertEqual(card.fesScore, 0)
         XCTAssertNil(attempt.linkedCardId)
+    }
+
+    /// Codex, PR #51: a key corrected by a bank update turns a right answer
+    /// into a miss; the bridge it now shows must be able to link.
+    func testAMissUnderACorrectedKeyCanBeLinked() {
+        let card = makeCard()
+        let attempt = recorder.recordAnswer(to: question, selectedOption: 2, in: makeRun(), responseTimeMs: 1, at: t0)
+        XCTAssertEqual(attempt.bridgeOutcome, .notAsked, "right under the key it was answered with")
+        XCTAssertFalse(recorder.link(card, to: attempt, answering: question, at: t0))
+        let corrected = ExamBankFixture.question(question.id, answer: 4, osymSubject: "Farmakoloji")
+        XCTAssertTrue(recorder.link(card, to: attempt, answering: corrected, at: t0 + 1))
+        XCTAssertEqual(card.fesScore, 2)
+        XCTAssertEqual(attempt.bridgeOutcome, .linked)
     }
 
     func testNoCardOpensAGapAndLinkingLaterClosesIt() {
@@ -134,7 +147,7 @@ final class ExamRecorderTests: XCTestCase {
 
         let card = makeCard()
         let again = recorder.recordAnswer(to: question, selectedOption: 1, in: nil, responseTimeMs: 1, at: t0 + 100)
-        recorder.link(card, to: again, at: t0 + 100)
+        recorder.link(card, to: again, answering: question, at: t0 + 100)
         let gap = recorder.state(for: question.id).gap
         XCTAssertEqual(gap.status, .closed)
         XCTAssertEqual(gap.closedByCardId, card.id)

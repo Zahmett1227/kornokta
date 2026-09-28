@@ -43,7 +43,8 @@ struct ExamSessionView: View {
             if let run, let bank = examLibrary.bank {
                 if isActive, let id = run.currentQuestionId {
                     if let question = bank.question(id) {
-                        ExamQuestionScreen(run: run, question: question, bank: bank) { revision += 1 }
+                        ExamQuestionScreen(run: run, question: question, bank: bank,
+                                           isCovered: isConfirmingFinish) { revision += 1 }
                             .id(id)
                     } else {
                         // The bank was rebuilt without this question. Its
@@ -157,6 +158,8 @@ private struct ExamQuestionScreen: View {
     let question: ExamQuestion
     let bank: ExamBank
     /// Tells the session a write happened, so it redraws (see its `revision`).
+    /// The parent's "Bitir" dialog is up over the question.
+    let isCovered: Bool
     let onChange: () -> Void
 
     @Environment(\.modelContext) private var context
@@ -180,10 +183,11 @@ private struct ExamQuestionScreen: View {
     /// observed properties) is read again.
     @State private var revision = 0
 
-    init(run: ExamRun, question: ExamQuestion, bank: ExamBank, onChange: @escaping () -> Void) {
+    init(run: ExamRun, question: ExamQuestion, bank: ExamBank, isCovered: Bool, onChange: @escaping () -> Void) {
         self.run = run
         self.question = question
         self.bank = bank
+        self.isCovered = isCovered
         self.onChange = onChange
         let id = question.id
         _states = Query(filter: #Predicate<ExamQuestionState> { $0.questionId == id })
@@ -241,10 +245,18 @@ private struct ExamQuestionScreen: View {
         .onAppear { shownAt = .now }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                if shownAt == nil { shownAt = .now }
-            } else if let start = shownAt {
-                visibleSeconds += Date().timeIntervalSince(start)
-                shownAt = nil
+                if shownAt == nil, !isCovered { shownAt = .now }
+            } else {
+                pauseTiming()
+            }
+        }
+        // The "Bitir" dialog covers the question: reading it is not time on
+        // the answer (Codex, PR #51). "Devam et" restarts the clock.
+        .onChange(of: isCovered) { _, covered in
+            if covered {
+                pauseTiming()
+            } else if scenePhase == .active, shownAt == nil {
+                shownAt = .now
             }
         }
         .task(id: attempt?.id) { refreshCandidates() }
@@ -326,6 +338,13 @@ private struct ExamQuestionScreen: View {
     }
 
     // MARK: Actions
+
+    /// Banks the on-screen time so far and stops the clock.
+    private func pauseTiming() {
+        guard let start = shownAt else { return }
+        visibleSeconds += Date().timeIntervalSince(start)
+        shownAt = nil
+    }
 
     private func answer(_ option: Int?) {
         guard attempt == nil else { return }

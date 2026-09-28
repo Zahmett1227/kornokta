@@ -80,10 +80,14 @@ public struct ExamRecorder {
     ///
     /// Returns whether FES was written.
     @discardableResult
-    public func link(_ card: Card, to attempt: ExamAttempt, at now: Date) -> Bool {
-        // An answer that never asked the bridge — right, or to a question
-        // with no key — has no card that failed it.
-        guard attempt.bridgeOutcome != .notAsked else { return false }
+    public func link(_ card: Card, to attempt: ExamAttempt, answering question: ExamQuestion, at now: Date) -> Bool {
+        // Only a miss has a card that failed it — judged by the key of the
+        // bank `question` comes from, not by the outcome stored under the key
+        // the answer was given with: a corrected key can turn a right answer
+        // into a miss, and a blank keyless question is never one (Codex, PR #51).
+        guard question.id == attempt.questionId, question.isScoreable,
+              ExamResult.of(selectedOption: attempt.selectedOption, answer: question.answer).isMiss
+        else { return false }
         let raw = card.id.uuidString
         // Tapping the same card twice, or naming it again for another miss
         // of this run, finds it here: every attempt keeps every card it wrote.
