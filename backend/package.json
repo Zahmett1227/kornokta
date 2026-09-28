@@ -14,7 +14,8 @@
     "cards": "tsx scripts/cards.ts",
     "serve": "tsx scripts/serve.ts",
     "token": "tsx scripts/token.ts",
-    "compare": "tsx scripts/compareModels.ts"
+    "compare": "tsx scripts/compareModels.ts",
+    "exam-bank": "tsx scripts/examBank.ts"
   },
   "dependencies": {
     "@vercel/functions": "^3.8.0",

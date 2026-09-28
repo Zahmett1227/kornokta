@@ -179,11 +179,42 @@ export interface GeminiConfig {
   timeoutMs: number;
 }
 
+/**
+ * The past-exam bank build (docs/PLAN-cikmis-soru-bankasi.md §5.8): the four
+ * one-off model stages `scripts/examBank.ts` runs on the owner's Mac — repair
+ * of questions deterministic extraction could not complete (A5), reading
+ * 2011/1 from page images (A6), subject/topic labels (A7) and the booklet
+ * sanity check (V6). Never called by the phone or a deployed endpoint.
+ *
+ * Its own model, effort and ceiling, **not inherited** from `openai`: the
+ * production card generator runs at `high` effort, and a batch of ~450
+ * classification calls inheriting that would cost 5–8× the plan's $3–5 for
+ * no gain (§5.8). Its own prices too, for the rule that governs every model
+ * change here (CLAUDE.md): a model and its prices move together, or the
+ * ledger silently multiplies one model's tokens by another's price.
+ */
+export interface ExamBankConfig {
+  model: string;
+  reasoningEffort: string;
+  maxOutputTokens: number;
+  imageDetail: string;
+  timeoutMs: number;
+  usdPerMillionInputTokens: number;
+  /** Falls back to the uncached price, never to 0 (see `CostConfig`). */
+  usdPerMillionCachedInputTokens: number;
+  usdPerMillionOutputTokens: number;
+  /** The whole build stops before a call that would take spend past this. 0 disables. */
+  maxUsdPerRun: number;
+  /** Calls in flight at once. */
+  concurrency: number;
+}
+
 export interface Config {
   openai: OpenAIConfig;
   gemini: GeminiConfig;
   cost: CostConfig;
   supabase: SupabaseConfig;
+  examBank: ExamBankConfig;
 }
 
 class ConfigError extends Error {}
@@ -247,6 +278,7 @@ export function loadConfig(): Config {
   // fallback cannot reference a sibling property of the literal it sits in.
   const openaiInputPrice = numeric("OPENAI_USD_PER_MILLION_INPUT_TOKENS", 0);
   const geminiInputPrice = numeric("GEMINI_USD_PER_MILLION_INPUT_TOKENS", 0);
+  const examInputPrice = numeric("OPENAI_EXAM_USD_PER_MILLION_INPUT_TOKENS", 0);
 
   return {
     openai: {
@@ -331,6 +363,22 @@ export function loadConfig(): Config {
       // phone in normal use has collected every result many times over; the
       // residual risk of a second paid generation is accepted.
       resultRetentionMs: numeric("SUPABASE_RESULT_RETENTION_MS", 60 * 24 * 60 * 60 * 1000, 1),
+    },
+    examBank: {
+      // The tier the production generator settled on after three measured
+      // rounds (docs/PLAN-model-karsilastirma.md), at the plan's `low` effort:
+      // these calls classify and transcribe, they do not write cards.
+      model: optional("OPENAI_EXAM_MODEL", "gpt-5.6-luna"),
+      reasoningEffort: optional("OPENAI_EXAM_REASONING_EFFORT", "low"),
+      maxOutputTokens: numeric("OPENAI_EXAM_MAX_OUTPUT_TOKENS", 8000, 1),
+      imageDetail: optional("OPENAI_EXAM_IMAGE_DETAIL", "high"),
+      timeoutMs: numeric("OPENAI_EXAM_TIMEOUT_MS", 120_000, 1),
+      usdPerMillionInputTokens: examInputPrice,
+      usdPerMillionCachedInputTokens: numeric("OPENAI_EXAM_USD_PER_MILLION_CACHED_INPUT_TOKENS", examInputPrice),
+      usdPerMillionOutputTokens: numeric("OPENAI_EXAM_USD_PER_MILLION_OUTPUT_TOKENS", 0),
+      // The plan's ceiling for the whole one-off build (§9.2 acceptance).
+      maxUsdPerRun: numeric("EXAM_BANK_MAX_USD", 5),
+      concurrency: numeric("EXAM_BANK_CONCURRENCY", 4, 1),
     },
   };
 }

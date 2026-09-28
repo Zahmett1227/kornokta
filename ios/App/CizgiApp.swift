@@ -6,6 +6,9 @@ import CizgiCore
 struct CizgiApp: App {
     private let container: ModelContainer
     @StateObject private var environment: AppEnvironment
+    /// The past exam bank (docs/ADR-012): its own object, loaded off the main
+    /// thread after launch — see `ExamLibrary`.
+    @StateObject private var examLibrary = ExamLibrary()
 
     init() {
         // Built before the property wrapper so the throwing calls are not
@@ -65,6 +68,7 @@ struct CizgiApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(environment)
+                .environmentObject(examLibrary)
         }
         .modelContainer(container)
     }

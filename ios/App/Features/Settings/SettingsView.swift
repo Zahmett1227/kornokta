@@ -18,6 +18,16 @@ struct SettingsView: View {
     /// Görünüm bölümündeki seçimler `Cizgi`'nin `static var`'larına yazıyor;
     /// SwiftUI onları göremez, bu yüzden yayıncı burada da gözleniyor.
     @ObservedObject private var appearance = CizgiAppearance.shared
+    @EnvironmentObject private var examLibrary: ExamLibrary
+
+    private var examBankStatus: String {
+        switch examLibrary.phase {
+        case .loading: return "Okunuyor…"
+        case .absent: return "Yok"
+        case .failed: return "Okunamadı"
+        case .ready: return examLibrary.bank.map { "\($0.counts.questions.formatted()) soru" } ?? "Yok"
+        }
+    }
 
     @State private var deviceToken = ""
     @State private var tokenSaved = false
@@ -187,6 +197,11 @@ struct SettingsView: View {
                 Section("Veri") {
                     LabeledContent("Kart", value: "\(cards.count)")
                     LabeledContent("Çekilen sayfa", value: "\(pages.count)")
+                    // The past exam bank lives in its own folder, outside the
+                    // backup (docs/ADR-012); its screen imports and removes it.
+                    NavigationLink(value: AppNavigator.SettingsRoute.examBank) {
+                        LabeledContent("Çıkmış soru bankası", value: examBankStatus)
+                    }
                     Toggle("Orijinal sayfayı sakla", isOn: Binding(
                         get: { environment.settings.keepOriginalPage },
                         set: { environment.settings.keepOriginalPage = $0; environment.settings.save() }
@@ -283,6 +298,7 @@ struct SettingsView: View {
             .navigationDestination(for: AppNavigator.SettingsRoute.self) { route in
                 switch route {
                 case .usageDetail: UsageDetailView()
+                case .examBank: ExamBankSettingsView()
                 }
             }
             .onAppear {

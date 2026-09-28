@@ -7,12 +7,14 @@ on:
   push:
     paths:
       - "evals/**"
+      - "tools/**"
       - "backend/schemas/**"
       - "ios/**"
       - ".github/workflows/evals.yml"
   pull_request:
     paths:
       - "evals/**"
+      - "tools/**"
       - "backend/schemas/**"
       - "ios/**"
 
@@ -30,6 +32,12 @@ jobs:
         run: python -m evals.ocr_eval.validate_manifest evals/gold-manifest.json
       - name: Run unit tests
         run: python -m pytest evals -q
+      # The past-exam bank's source registry (docs/ADR-012). No PDFs on CI —
+      # the dry run validates sources.json only; the folder check is local.
+      - name: Exam bank registry
+        run: |
+          python -m pytest tools -q
+          python -m tools.exam_bank.build --dry-run
       # Shared case files pin the reference detector's behaviour. These fail if
       # the Python source changed without regenerating. (The TypeScript pattern
       # export left with the backend OCR path — ADR-005 trim, 2026-08-09.)

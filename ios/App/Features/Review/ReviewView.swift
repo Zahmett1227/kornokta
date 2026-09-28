@@ -777,16 +777,7 @@ struct ReviewView: View {
         // FES sicili (docs/ADR-008): Tekrar'ın dört derecesi de besler, FSRS
         // durumundan bağımsız muhasebe. "Zor" Egzersiz'in "Kararsızdım"ı gibi
         // okunur — ikisi de kısmi puan.
-        let fesSignal = FesScore.signal(for: rating)
-        card.fesScore = FesScore.apply(fesSignal, to: card.fesScore)
-        if fesSignal.isNegative { card.fesNegativeCount += 1 }
-        // A live update is itself authoritative — it need not wait for
-        // `FesBackfillMigration` to say so. Without this, a card graded
-        // between one launch and the next carries a real, nonzero score next
-        // to a `nil` marker; exporting it in that window and restoring
-        // elsewhere replays an empty history and silently zeroes the score
-        // right back out (Codex review, PR #41).
-        card.fesInitializedAt = now
+        FesScore.record(FesScore.signal(for: rating), on: card, at: now)
 
         try? context.save()
 

@@ -727,6 +727,11 @@ public enum CizgiSchema {
         OCRCorrection.self,
         ModelRun.self,
         ExerciseRun.self,
-        ExerciseAttempt.self
+        ExerciseAttempt.self,
+        // The past exam bank's user state (docs/ADR-012). Added, never
+        // related to the models above — see ExamModels.swift.
+        ExamRun.self,
+        ExamAttempt.self,
+        ExamQuestionState.self
     ]
 }

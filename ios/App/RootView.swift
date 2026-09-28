@@ -7,6 +7,7 @@ import UserNotifications
 
 struct RootView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @EnvironmentObject private var examLibrary: ExamLibrary
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var navigator = AppNavigator()
     /// Vurgu rengi `Cizgi.accent` üzerinden okunuyor — bir `static var`, yani
@@ -75,6 +76,8 @@ struct RootView: View {
         .environmentObject(navigator)
         .task {
             installNotificationDelegate()
+            // Decoded detached; the Çıkmış row shows "okunuyor" until then.
+            await examLibrary.loadIfNeeded()
             // Pick up anything left unfinished by a previous launch (§24.1:
             // pending work must survive the app closing).
             await environment.queue.processPending()

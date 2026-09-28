@@ -39,6 +39,29 @@ final class AppNavigator: ObservableObject {
     /// own to push.
     enum SettingsRoute: Hashable {
         case usageDetail
+        case examBank
+    }
+
+    /// The past exam bank's screens (docs/PLAN-cikmis-soru-bankasi.md §7.4).
+    ///
+    /// Registered on both the Egzersiz and the Bilgilerim stacks: Egzersiz is
+    /// where questions are answered, Bilgilerim lists "Kitaba dönünce". A run
+    /// is pushed by its id — the `ExamRun` row is the durable state, so a
+    /// relaunch resumes the same run from the same value.
+    enum ExamRoute: Hashable {
+        case home
+        case session(UUID)
+        /// Deneme (Faz A3): a timed paper, answered without the key.
+        case mock(UUID)
+        case mockPapers
+        /// A finished run's result, from the home screen's history.
+        case result(UUID)
+        /// A finished run's misses, one by one, with the bridge.
+        case review(UUID)
+        case gaps
+        case question(String)
+        /// Import screen, reachable from Egzersiz when no bank is there yet.
+        case bankSettings
     }
 
     /// Value-based routes for the Library tab's stack (2026-09-14).
@@ -100,6 +123,16 @@ final class AppNavigator: ObservableObject {
     /// Switches to Egzersiz and narrows it, e.g. "Bu dersten Egzersiz".
     func openExercise(subject: String, topic: TopicFilter = .all) {
         show(ExerciseTarget(filter: .init(subject: subject, topic: topic)))
+    }
+
+    /// Switches to Egzersiz and opens Çıkmış screens on a fresh stack — how
+    /// "Kitaba dönünce" in Bilgilerim starts a run: runs live in Egzersiz, so
+    /// "Bitir" always lands on the Çıkmış home a run belongs to.
+    func openExam(_ routes: [ExamRoute]) {
+        var path = NavigationPath()
+        for route in routes { path.append(route) }
+        exercisePath = path
+        selectedTab = .exercise
     }
 
     private func show(_ target: ExerciseTarget) {

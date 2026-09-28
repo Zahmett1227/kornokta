@@ -105,6 +105,13 @@ Bilgi Haritası).
   Bulguları da sunucuda kalmaz, telefonda saklanır (`CapturedPage.coverageJSON`). Kalıcı veri kaynağı değildir — Supabase yalnız bir **iş kuyruğu ve
   geçici görüntü kovasıdır**: görüntü iş bitince, sonuç metni 60 gün sonra
   silinir.
+- **Çıkmış soru bankası** (ADR-012, [`PLAN-cikmis-soru-bankasi`](PLAN-cikmis-soru-bankasi.md)): ikinci
+  girdi akışı, sunucusuz. Mac'teki tek seferlik hat (`tools/exam_bank/`) sahibinin PDF'lerinden
+  `CizgiSoruBankasi/` paketini üretir; telefon onu Ayarlar'dan içe aktarır (`ExamBankStore`, sha256
+  doğrulamalı, iCloud yedeğinden hariç). Banka değişmez bir dosya; sahibinin cevapları, kart bağları ve
+  "Kitaba dönünce" defteri kararlı soru kimliğiyle SwiftData'da (`ExamRun`/`ExamAttempt`/
+  `ExamQuestionState`, `Card`'a ilişkisiz). Soru kart değildir: Tekrar'a ve FSRS'e girmez; yanlıştan
+  sonra yalnız sahibinin seçtiği kartın FES'i işlenir (`ExamRecorder`).
 - **Evals** (`evals/`): FSRS-6 referans algoritması (Swift portunun kilidi),
   sözleşme senkron testleri (kart tipi enum'ları, ders/konu şeması, FSRS
   ağırlıkları), Türkçe normalizasyon referansı ve tarihsel OCR/işaret-tespiti
@@ -131,6 +138,10 @@ Tıraş sonrası hâlâ canlı olan çiftler:
   kilitlidir: kademe sırası prompt kural 3'ün öncelik merdivenidir ve hem
   sunucunun hem telefonun "önce hangi atlanmış işaret gösterilsin" cevabını
   belirler.
+
+- **Çıkmış soru bankası biçimi**: `tools/exam_bank/exam_bank.schema.json` ↔
+  `ExamBankDocument.swift`; `test_exam_bank_contract_sync.py` alanları, boş olabilirliği, enum
+  değerlerini, ÖSYM ders sırasını ve desteklenen `schemaVersion`'ı kilitler.
 
 Kural değişmedi: yeni bir "aynı davranış iki yerde" durumu çıkarsa elle senkron
 tutma — üret ve testle kilitle.
