@@ -110,6 +110,22 @@ final class ExamRecorderTests: XCTestCase {
         XCTAssertEqual(first.linkedCardId, a.id, "the latest link is what the attempt shows")
     }
 
+    /// Codex, PR #51: a blank keyless question showed the bridge, and a card
+    /// picked there got FES `.wrong` for a question nobody can mark.
+    func testAKeylessBlankIsNotAMissAndLinksNothing() throws {
+        let keyless = ExamBankFixture.question("TUS-2007-2-K-003", answer: nil, status: .keyless, osymSubject: "Dahiliye")
+        let bank = try ExamBank(document: ExamBankFixture.document(questions: [keyless, question]))
+        XCTAssertFalse(bank.isMiss(questionId: keyless.id, selectedOption: nil))
+        XCTAssertTrue(bank.isMiss(questionId: question.id, selectedOption: nil), "a blank keyed question still is")
+
+        let card = makeCard()
+        let attempt = recorder.recordAnswer(to: keyless, selectedOption: nil, in: makeRun(), responseTimeMs: 1, at: t0)
+        XCTAssertEqual(attempt.bridgeOutcome, .notAsked)
+        XCTAssertFalse(recorder.link(card, to: attempt, at: t0))
+        XCTAssertEqual(card.fesScore, 0)
+        XCTAssertNil(attempt.linkedCardId)
+    }
+
     func testNoCardOpensAGapAndLinkingLaterClosesIt() {
         let attempt = recorder.recordAnswer(to: question, selectedOption: 0, in: nil, responseTimeMs: 1, at: t0)
         recorder.markNoCard(attempt, at: t0)

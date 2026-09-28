@@ -24,7 +24,7 @@ struct ExamReviewView: View {
         let order = Dictionary(run.queuedQuestionIds.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
         return attempts
             .compactMap { attempt -> (ExamQuestion, ExamAttempt)? in
-                guard bank.result(questionId: attempt.questionId, selectedOption: attempt.selectedOption).isMiss,
+                guard bank.isMiss(questionId: attempt.questionId, selectedOption: attempt.selectedOption),
                       let question = bank.question(attempt.questionId) else {
                     return nil
                 }

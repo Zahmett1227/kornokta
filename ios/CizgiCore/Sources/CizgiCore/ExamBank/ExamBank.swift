@@ -199,6 +199,15 @@ extension ExamBank {
         return ExamResult.of(selectedOption: selectedOption, answer: question.answer)
     }
 
+    /// A miss the bridge asks about and the review lists: a wrong or blank
+    /// answer to a question with a key. A blank keyless question is not one —
+    /// nothing says what the answer was, so no card failed it, and linking one
+    /// would write FES `.wrong` for nothing (Codex, PR #51).
+    public func isMiss(questionId: String, selectedOption: Int?) -> Bool {
+        guard questionsById[questionId]?.isScoreable == true else { return false }
+        return result(questionId: questionId, selectedOption: selectedOption).isMiss
+    }
+
     /// The scoring view of a run's answers: subject and penalty come from the
     /// bank, the result from the answer. Answers to questions this bank does
     /// not have are left out — they cannot be attributed.

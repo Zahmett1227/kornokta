@@ -136,6 +136,21 @@ export function reusableResults(
     .map((r) => [r.id, r]));
 }
 
+/**
+ * A response the schema accepts but the bank cannot use. Label and check
+ * answer numbered questions, and the schema cannot say "each k exactly once":
+ * a missing k left its question without a vote, which `subjects.settle` reads
+ * as sparse evidence rather than a gap (Codex, PR #51). Such a response is
+ * paid for, recorded as a failure and asked again.
+ */
+export function outputProblem(stage: Stage, item: JobItem, output: Record<string, unknown> | null): string | null {
+  if (stage !== "label" && stage !== "check") return null;
+  const expected = (item.questions ?? []).map((q) => q.k).sort((a, b) => a - b);
+  const items = Array.isArray(output?.items) ? (output.items as Array<{ k?: unknown }>) : [];
+  const got = items.map((v) => v?.k).filter((k): k is number => typeof k === "number").sort((a, b) => a - b);
+  return got.length === items.length && got.join(",") === expected.join(",") ? null : "incomplete_output";
+}
+
 /** Refuses to spend with no price set: the ledger would silently read $0. */
 export function checkPrices(config: ExamBankConfig): string | null {
   if (config.usdPerMillionInputTokens <= 0 || config.usdPerMillionOutputTokens <= 0) {
@@ -165,11 +180,18 @@ async function runItem(client: OpenAITextClient, request: TextCallRequest, item:
     try {
       const result = await client.call(request);
       budget.spent += result.costUSD;
+      const problem = outputProblem(stage, item, result.json);
       await appendFile(ledger, JSON.stringify({
         purpose: "exam_bank_build", stage, id: item.id, model: config.model, effort: config.reasoningEffort,
-        promptVersion: EXAM_BANK_PROMPT_VERSION, outcome: "success", billing: "measured",
+        promptVersion: EXAM_BANK_PROMPT_VERSION, outcome: problem ? "failure" : "success",
+        ...(problem ? { failureReason: problem } : {}), billing: "measured",
         usage: result.usage, estimatedCostUSD: result.costUSD, latencyMs: result.latencyMs, at,
       }) + "\n");
+      if (problem) {
+        lastError = problem;
+        await new Promise((r) => setTimeout(r, 2000 * attempts));
+        continue;
+      }
       return { id: item.id, ok: true, output: result.json, error: null, costUSD: result.costUSD,
         usage: { ...result.usage }, latencyMs: result.latencyMs, attempts };
     } catch (error) {

@@ -205,3 +205,18 @@ def test_the_registry_carries_the_digest_of_the_file_it_was_read_from(tmp_path):
     copy.write_bytes(source.read_bytes() + b"\n")
     assert reg.load(copy).digest != reg.load(source).digest
     assert reg.load(source).file_hashes()
+
+
+def test_a_label_result_missing_a_question_is_not_counted(tmp_path):
+    """Codex, PR #51: a missing k left a question without a vote, silently."""
+    item = {"id": "p|1", "fingerprint": "f", "questions": [{"k": 1, "id": "a", "text": "x"},
+                                                           {"k": 2, "id": "b", "text": "y"}]}
+    def results(ks):
+        path = tmp_path / "label.json"
+        path.write_text(json.dumps({"promptVersion": "v", "items": [
+            {"id": "p|1", "ok": True, "fingerprint": "f", "output": {"items": [{"k": k} for k in ks]}}]}),
+            encoding="utf-8")
+        return apply.load_results(path, [item], "v")
+    assert list(results([2, 1])) == ["p|1"]
+    assert results([1]) == {}
+    assert results([1, 1]) == {}

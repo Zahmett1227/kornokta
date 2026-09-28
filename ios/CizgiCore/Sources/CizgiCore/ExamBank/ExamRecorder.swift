@@ -81,6 +81,9 @@ public struct ExamRecorder {
     /// Returns whether FES was written.
     @discardableResult
     public func link(_ card: Card, to attempt: ExamAttempt, at now: Date) -> Bool {
+        // An answer that never asked the bridge — right, or to a question
+        // with no key — has no card that failed it.
+        guard attempt.bridgeOutcome != .notAsked else { return false }
         let raw = card.id.uuidString
         // Tapping the same card twice, or naming it again for another miss
         // of this run, finds it here: every attempt keeps every card it wrote.

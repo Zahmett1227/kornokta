@@ -74,7 +74,7 @@ struct ExamResultView: View {
 
     private var misses: [ExamAttempt] {
         attempts.filter { attempt in
-            bank.result(questionId: attempt.questionId, selectedOption: attempt.selectedOption).isMiss
+            bank.isMiss(questionId: attempt.questionId, selectedOption: attempt.selectedOption)
         }
     }
 

@@ -75,7 +75,9 @@ struct ExamMockView: View {
             if isActive, let run {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Bitir") {
+                        // Reading the dialog is not time on the question (Codex, PR #51).
                         flushTime()
+                        shownAt = nil
                         isConfirmingFinish = true
                     }
                     .tint(Cizgi.accent)
@@ -131,7 +133,7 @@ struct ExamMockView: View {
             switch phase {
             case .active:
                 submitIfExpired()
-                if !isShowingNavigator { shownAt = .now }
+                if !isShowingNavigator, !isConfirmingFinish { shownAt = .now }
             default:
                 flushTime()
                 shownAt = nil
@@ -140,6 +142,13 @@ struct ExamMockView: View {
         .onDisappear {
             flushTime()
             shownAt = nil
+        }
+        // "Devam et", or the dialog dismissed: the question is back. After
+        // "Sınavı bitir" the run is finished and nothing restarts.
+        .onChange(of: isConfirmingFinish) { _, isShowing in
+            if !isShowing, run?.finishedAt == nil, shownAt == nil, scenePhase == .active, !isShowingNavigator {
+                shownAt = .now
+            }
         }
     }
 

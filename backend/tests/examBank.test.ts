@@ -7,7 +7,9 @@ import {
 import { OpenAIError, type Transport } from "../providers/openai.js";
 import { OpenAITextClient } from "../providers/openaiText.js";
 import { SUBJECT_TOPIC_SCHEMA } from "../providers/subjectTopics.js";
-import { buildRequest, checkPrices, reusableResults, type ItemResult, type ResultFile } from "../scripts/examBank.js";
+import {
+  buildRequest, checkPrices, outputProblem, reusableResults, type ItemResult, type ResultFile,
+} from "../scripts/examBank.js";
 
 const KEYS = [
   "OPENAI_MODEL", "OPENAI_REASONING_EFFORT", "OPENAI_MAX_OUTPUT_TOKENS",
@@ -194,5 +196,21 @@ describe("reusableResults", () => {
     const kept = reusableResults(previous([result("a", undefined), result("b", "f2", false)]), job, current);
     expect(kept.size).toBe(0);
     expect(reusableResults(null, job, current).size).toBe(0);
+  });
+});
+
+describe("outputProblem", () => {
+  const item = { id: "p|1", test: "T", questions: [{ k: 1, id: "a", text: "x" }, { k: 2, id: "b", text: "y" }] };
+
+  it("wants every numbered question answered exactly once", () => {
+    expect(outputProblem("label", item, { items: [{ k: 2 }, { k: 1 }] })).toBeNull();
+    expect(outputProblem("label", item, { items: [{ k: 1 }] })).toBe("incomplete_output");
+    expect(outputProblem("check", item, { items: [{ k: 1 }, { k: 1 }] })).toBe("incomplete_output");
+    expect(outputProblem("label", item, { items: [{ k: 1 }, { k: 2 }, { k: 3 }] })).toBe("incomplete_output");
+    expect(outputProblem("label", item, null)).toBe("incomplete_output");
+  });
+
+  it("leaves the one-item stages alone", () => {
+    expect(outputProblem("repair", { id: "q" }, { stem: "…" })).toBeNull();
   });
 });

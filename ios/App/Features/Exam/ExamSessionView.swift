@@ -269,7 +269,7 @@ private struct ExamQuestionScreen: View {
         VStack(alignment: .leading, spacing: Cizgi.Space.md) {
             ExamResultLine(question: question, selectedOption: attempt.selectedOption)
 
-            if bank.result(questionId: question.id, selectedOption: attempt.selectedOption).isMiss {
+            if bank.isMiss(questionId: question.id, selectedOption: attempt.selectedOption) {
                 ExamBridgePanel(question: question, attempt: attempt, candidates: candidates) {
                     revision += 1
                 }
@@ -352,7 +352,7 @@ private struct ExamQuestionScreen: View {
     }
 
     private func refreshCandidates() {
-        guard let attempt, bank.result(questionId: question.id, selectedOption: attempt.selectedOption).isMiss else {
+        guard let attempt, bank.isMiss(questionId: question.id, selectedOption: attempt.selectedOption) else {
             candidates = []
             return
         }

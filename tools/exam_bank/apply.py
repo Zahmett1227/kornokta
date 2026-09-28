@@ -36,13 +36,27 @@ def load_results(path: Path, job_items: Sequence[dict], prompt_version: str) -> 
     and effort are the runner's per-run choice; it keeps one per file."""
     if not path.exists():
         return {}
-    current = {item["id"]: item.get("fingerprint") for item in job_items}
+    current = {item["id"]: item for item in job_items}
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("promptVersion") != prompt_version:
         return {}
-    return {item["id"]: item for item in data["items"]
-            if item.get("ok") and item.get("fingerprint") is not None
-            and item.get("fingerprint") == current.get(item["id"])}
+    return {r["id"]: r for r in data["items"]
+            if r.get("ok") and r.get("fingerprint") is not None and r["id"] in current
+            and r.get("fingerprint") == current[r["id"]].get("fingerprint")
+            and answers_every_question(current[r["id"]], r.get("output"))}
+
+
+def answers_every_question(job_item: dict, output: Optional[dict]) -> bool:
+    """Label and check answer numbered questions; the schema cannot say "each
+    k exactly once". A missing k would leave its question without a vote,
+    which `subjects.settle` reads as sparse evidence, not as a gap — so such a
+    result does not count and the item stays pending (Codex, PR #51). The
+    runner applies the same rule (`outputProblem`)."""
+    if "questions" not in job_item:
+        return True
+    expected = sorted(q["k"] for q in job_item["questions"])
+    got = sorted(v.get("k") for v in (output or {}).get("items", []) if isinstance(v, dict))
+    return got == expected
 
 
 def tidy(text: str) -> str:
