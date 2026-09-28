@@ -26,6 +26,7 @@ final class ExamBankStoreTests: XCTestCase {
         named name: String = "CizgiSoruBankasi",
         version: String = "2026-09-25.1",
         schemaVersion: Int = 1,
+        fileSays: (schemaVersion: Int, bankVersion: String)? = nil,
         tamper: ((URL) throws -> Void)? = nil,
         editManifest: ((inout [[String: Any]]) -> Void)? = nil
     ) throws -> URL {
@@ -42,7 +43,12 @@ final class ExamBankStoreTests: XCTestCase {
             ExamBankFixture.question("TUS-2019-1-T-001", pdf: pdfPath),
             ExamBankFixture.question("TUS-2019-1-T-002", pdf: pdfPath),
         ]
-        let bankData = try ExamBankFixture.json(ExamBankFixture.document(questions: questions, version: version))
+        let base = ExamBankFixture.document(questions: questions, version: fileSays?.bankVersion ?? version)
+        let document = ExamBankDocument(
+            schemaVersion: fileSays?.schemaVersion ?? base.schemaVersion, bankVersion: base.bankVersion,
+            builtAt: base.builtAt, papers: base.papers, questions: base.questions
+        )
+        let bankData = try ExamBankFixture.json(document)
         try bankData.write(to: package.appendingPathComponent("bank.json"))
 
         var files: [[String: Any]] = []
@@ -155,6 +161,21 @@ final class ExamBankStoreTests: XCTestCase {
         let escaping = try makePackage(editManifest: { $0.append(["path": "../evil", "sha256": "0", "bytes": 1]) })
         XCTAssertThrowsError(try store.install(from: escaping)) {
             XCTAssertEqual($0 as? ExamBankInstallError, .unsafePath("../evil"))
+        }
+        XCTAssertNil(store.activeVersion)
+    }
+
+    /// Codex, PR #51: the manifest vouched for the file's hash, not for what
+    /// the file says it is.
+    func testTheBankMustBeWhatItsManifestSays() throws {
+        let future = try makePackage(fileSays: (schemaVersion: 2, bankVersion: "2026-09-25.1"))
+        XCTAssertThrowsError(try store.install(from: future)) {
+            XCTAssertEqual($0 as? ExamBankInstallError,
+                           .bankUnreadable(ExamBank.ValidationError.unsupportedSchema(2).localizedDescription))
+        }
+        let other = try makePackage(version: "2026-09-25.1", fileSays: (schemaVersion: 1, bankVersion: "2026-09-26.1"))
+        XCTAssertThrowsError(try store.install(from: other)) {
+            XCTAssertEqual($0 as? ExamBankInstallError, .versionMismatch(manifest: "2026-09-25.1", bank: "2026-09-26.1"))
         }
         XCTAssertNil(store.activeVersion)
     }

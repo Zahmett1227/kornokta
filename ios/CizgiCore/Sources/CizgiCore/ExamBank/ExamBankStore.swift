@@ -54,6 +54,7 @@ public enum ExamBankInstallError: Error, Equatable, LocalizedError {
     case corruptFile(String)
     case bankUnreadable(String)
     case countMismatch(expected: Int, found: Int)
+    case versionMismatch(manifest: String, bank: String)
     case missingPDF(String)
     case unavailable
 
@@ -75,6 +76,8 @@ public enum ExamBankInstallError: Error, Equatable, LocalizedError {
             return "bank.json okunamadı: \(reason)"
         case .countMismatch(let expected, let found):
             return "Manifest \(expected) soru diyor, bank.json'da \(found) var."
+        case .versionMismatch(let manifest, let bank):
+            return "Manifest \(manifest) sürümünü diyor, bank.json \(bank)."
         case .missingPDF(let path):
             return "Bir soru pakette olmayan bir PDF'e bağlı: \(path)"
         case .unavailable:
@@ -233,6 +236,11 @@ public final class ExamBankStore: @unchecked Sendable {
                 throw ExamBankInstallError.bankUnreadable(error.localizedDescription)
             } catch {
                 throw ExamBankInstallError.bankUnreadable(String(describing: error))
+            }
+            // The folder is named, and activated, by the manifest's version:
+            // it must be the bank's own (Codex, PR #51).
+            guard bank.bankVersion == manifest.bankVersion else {
+                throw ExamBankInstallError.versionMismatch(manifest: manifest.bankVersion, bank: bank.bankVersion)
             }
             guard bank.counts.questions == manifest.counts.questions else {
                 throw ExamBankInstallError.countMismatch(expected: manifest.counts.questions, found: bank.counts.questions)

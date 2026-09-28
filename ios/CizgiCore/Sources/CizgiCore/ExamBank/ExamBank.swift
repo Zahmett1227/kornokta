@@ -28,6 +28,7 @@ public struct ExamBank: Sendable {
     }
 
     public enum ValidationError: Error, Equatable, LocalizedError {
+        case unsupportedSchema(Int)
         case duplicateQuestion(String)
         case malformedQuestionId(String)
         case unknownPaper(question: String, paper: String)
@@ -37,6 +38,8 @@ public struct ExamBank: Sendable {
 
         public var errorDescription: String? {
             switch self {
+            case .unsupportedSchema(let version):
+                return "Bu banka biçimi (sürüm \(version)) bu uygulama sürümünde desteklenmiyor"
             case .duplicateQuestion(let id): return "Aynı kimlikli iki soru var: \(id)"
             case .malformedQuestionId(let id): return "Soru kimliği biçim dışı: \(id)"
             case .unknownPaper(let question, let paper): return "\(question) bilinmeyen kağıda bağlı: \(paper)"
@@ -53,6 +56,11 @@ public struct ExamBank: Sendable {
     /// Mac pipeline already validated the file against the JSON Schema; this
     /// is the phone refusing to trust a file it did not write.
     public init(document: ExamBankDocument) throws {
+        // Decoding ignores keys it does not know, so a newer document would
+        // otherwise be read with this version's meaning (Codex, PR #51).
+        guard document.schemaVersion == ExamBankDocument.supportedSchemaVersion else {
+            throw ValidationError.unsupportedSchema(document.schemaVersion)
+        }
         var papers: [String: ExamPaper] = [:]
         for paper in document.papers { papers[paper.id] = paper }
 
