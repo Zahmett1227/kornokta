@@ -482,7 +482,7 @@ Egzersiz'in üç sonuç düğmesi AX boyutlarında hâlâ kırpılıyor (bu turd
 | Tasarım dili "Kemik & Oxblood" uygulandı (Claude Design → `CizgiTheme.swift`) | ✅ Yerelde tamam ve **simülatörde uçtan uca görüldü** (2026-09-10): açık/karanlık mod, Egzersiz başlangıcı, Tekrar kartı, Bilgilerim ders şeridi, Ayarlar → Görünüm. `xcodegen` + simülatör derlemesi hata/uyarısız; evals 517, `swift test` 483, backend 360 yeşil. Ayrıntı ve üç bilinçli sapma: yukarıdaki "Tasarım dili" bölümü. **Gerçek cihaz doğrulaması açık:** aşağıdaki listenin 25-28. maddeleri |
 | Yedek biçimi v9 — geri yüklemede sayfa fotoğrafı (ADR-011) | ✅ `main`'de (PR #50, squash; 2026-09-14). Dört Codex turu: iki P2 düzeltildi (kesik JPEG'in fotoğraf sayılması → `JPEGIntegrity`; büyük yedeğin ana iş parçacığında açılması → ayrık görev + 256 MB sınırı), iki P2 gerekçeyle bırakıldı (ADR-011 "Bilinçli ayrıntılar"). `swift test`, `xcodegen` + simülatör derlemesi uyarısız. **Simülatörde uçtan uca görüldü:** görevdeki örnek v9 dosyası ("1 kart, 1 sayfa fotoğrafıyla geri yüklendi"), görünür fotoğraflı ikinci dosya (2 bağlı kart + 1 kopuk `pageId` → "3 kart, 1 sayfa fotoğrafıyla geri yüklendi. 1 kartın sayfa fotoğrafı bulunamadı."), kart detayında fotoğraf + tam ekran zoom, Kuyruk'ta "Hazır" sayfa ve sayfa detayında kartlar; aynı dosyanın ikinci yüklemesi "hepsi zaten burada" dedi ve depo sayıları + görüntü dizini değişmedi; kuyruk ekranı açıldıktan sonra sayfalar `ready`, `ModelRun` sıfır. **Gerçek cihazda kalan:** doğrulama listesinin 41. maddesi |
 | Karanlık Harita kaldırıldı (ADR-009 geri alındı) | ✅ `main`'de (2026-09-09, `f50a936`). Arka uç ve arayüzden tamamen silindi (31 dosya, −5.640 satır): `/api/dark-map`, `DarkMapConfig` + `DARK_MAP_*`, `CallPurpose`'un `dark_map` değeri, `DarkMapView`/`DarkMapCoverage`/`DarkMapProvider` ve Bilgi Haritası'ndaki giriş kartı. Kardeşi olan **kapsama sözleşmesi (#47) duruyor** — o *tek sayfada* işaret↔kart ölçer. Geri dönüş = `f50a936`'nın revert'i; gerekçe `docs/ADR-009`'da tarihsel olarak duruyor. Canlıda `DARK_MAP_*` hiç girilmemişti, temizlenecek değişken yok; dağıtımdan sonra `/api/dark-map` 404 döner |
-| Çıkmış soru bankası (ADR-012, 2026-09-25) | 🟡 **Faz 0 + A1 + A2 + A3 tamam** `cikmis-soru-bankasi` dalında. **Faz A3 (Deneme, 2026-09-26):** kağıt denemesi ve karma deneme, duvar saatiyle geri sayım (uygulama kapalıyken de işler; süre dolunca dolduğu anda teslim), duraklatma (sonuçta yazılır), işaretleme, gezgin, sonuç ekranı (net, ders bazında, süre, önceki denemeyle karşılaştırma), teslimden sonra köprülü gözden geçirme; simülatörde uçtan uca görüldü (planın "Faz A3 sonucu"). **Faz A2 (uygulama çekirdeği, 2026-09-26):** CizgiCore'da banka biçimi (şemaya `test_exam_bank_contract_sync.py` ile kilitli), filtre, kuyruk, puanlama, köprü sıralaması, açık defteri, `ExamBankStore` (sha256 doğrulamalı içe aktarma, iCloud yedeğinden hariç), `ExamRecorder` (bütün yazımlar, bellek içi depoyla testli) + üç SwiftData modeli; uygulamada Ayarlar → Veri → "Çıkmış soru bankası", Egzersiz'de "Çıkmış" satırı, Pratik, köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası), hata bildirimi, "Kitaba dönünce" (Egzersiz + Bilgilerim). Eski şemalı simülatör deposu üzerine kurulum ve §9.3/6 senaryosu gerçek paketle uçtan uca görüldü; ayrıntı planın "Faz A2 sonucu". Cihazda kalan: doğrulama listesinin 42-47. maddeleri. **Faz A1 (banka hattı):** A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru; incelemenin bulduğu tablo-şık hatası bankanın tamamında düzeltildi). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu, sürüm 2026-09-25.2): 8.410 soru (ok 6.985, anahtarsız 1.357, iptal 55, değiştirilmiş 12), 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri planın "Faz A1 sonucu" bölümünde (2011/1 = Temel-1+2; Klinik 6 blok; derlemenin 2024/1 Klinik numara kayması → 22 soru dışarıda). Faz 0: Vizyon panelinin ("kitap yanımda olmadan çalışma") çekirdek önerisi, sahibinin 86 çıkmış soru PDF'ine göre planlandı ve onaylandı: [`docs/PLAN-cikmis-soru-bankasi.md`](docs/PLAN-cikmis-soru-bankasi.md). Faz 0'da: kart yüzü `Card` yerine `StudyFaceContent` değeri çiziyor (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma), `FesScore.record` tek canlı FES yazarı, `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256 sabitli) + `--dry-run`. **Sıradaki:** kanıt turu (14 gün kullanım, plan §9.5) |
+| Çıkmış soru bankası (ADR-012, 2026-09-25) | 🟡 **Faz 0 + A1 + A2 + A3 `main`'de** (PR #51, squash; 2026-09-28). **Codex, sekiz tur:** bir P1 (aynı yanlışa ikinci kart bağlanınca birincinin FES'i ikinci kez yazılabiliyordu → `ExamAttempt.fesCardIds`) ve on beş P2 düzeltildi (başlıcaları: köprü ve Yanlışlarım **etkin anahtarla** karar veriyor — `ExamBank.isMiss`, `ExamQuestionState.progress(in:)`; anahtarsız boş soru köprü açmıyor; Deneme ve Pratik süresi yalnız soru ekrandayken birikiyor; içe aktarma `active.json` düşerse geri alınıyor ve `bank.json`'ı manifest'le karşılaştırıyor; banka hattında girdi parmak izi, istem sürümü, kayıt özeti ve içerik özetli V9 onayı), iki P2 gerekçeyle bırakıldı (bütçe tavanının uçuştaki çağrılarca aşılması; anahtar düzeltilince FES'in geri alınmaması — ADR-012 "Bilinçli ayrıntılar"). **Faz A3 (Deneme, 2026-09-26):** kağıt denemesi ve karma deneme, duvar saatiyle geri sayım (uygulama kapalıyken de işler; süre dolunca dolduğu anda teslim), duraklatma (sonuçta yazılır), işaretleme, gezgin, sonuç ekranı (net, ders bazında, süre, önceki denemeyle karşılaştırma), teslimden sonra köprülü gözden geçirme; simülatörde uçtan uca görüldü (planın "Faz A3 sonucu"). **Faz A2 (uygulama çekirdeği, 2026-09-26):** CizgiCore'da banka biçimi (şemaya `test_exam_bank_contract_sync.py` ile kilitli), filtre, kuyruk, puanlama, köprü sıralaması, açık defteri, `ExamBankStore` (sha256 doğrulamalı içe aktarma, iCloud yedeğinden hariç), `ExamRecorder` (bütün yazımlar, bellek içi depoyla testli) + üç SwiftData modeli; uygulamada Ayarlar → Veri → "Çıkmış soru bankası", Egzersiz'de "Çıkmış" satırı, Pratik, köprü paneli, görsel kırpıntısı, "Kaynağı göster" (kitapçık sayfası), hata bildirimi, "Kitaba dönünce" (Egzersiz + Bilgilerim). Eski şemalı simülatör deposu üzerine kurulum ve §9.3/6 senaryosu gerçek paketle uçtan uca görüldü; ayrıntı planın "Faz A2 sonucu". Cihazda kalan: doğrulama listesinin 42-47. maddeleri. **Faz A1 (banka hattı):** A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru; incelemenin bulduğu tablo-şık hatası bankanın tamamında düzeltildi). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu, sürüm 2026-09-25.2): 8.410 soru (ok 6.985, anahtarsız 1.357, iptal 55, değiştirilmiş 12), 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri planın "Faz A1 sonucu" bölümünde (2011/1 = Temel-1+2; Klinik 6 blok; derlemenin 2024/1 Klinik numara kayması → 22 soru dışarıda). Faz 0: Vizyon panelinin ("kitap yanımda olmadan çalışma") çekirdek önerisi, sahibinin 86 çıkmış soru PDF'ine göre planlandı ve onaylandı: [`docs/PLAN-cikmis-soru-bankasi.md`](docs/PLAN-cikmis-soru-bankasi.md). Faz 0'da: kart yüzü `Card` yerine `StudyFaceContent` değeri çiziyor (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma), `FesScore.record` tek canlı FES yazarı, `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256 sabitli) + `--dry-run`. **Sıradaki:** kanıt turu (14 gün kullanım, plan §9.5) |
 
 **Dal durumu (2026-09-14):** "Sadeleştirme ve Bilgilerim" turu
 (`sadelestirme-ve-bilgilerim`: kavram destesinin kaldırılması, Egzersiz'de
@@ -490,8 +490,9 @@ askıya alma, kaynak fotoğrafı zoom, günlük bildirim, Bilgilerim + istatisti
 arka plan gravürleri — altı commit) `main`'e fast-forward merge edildi, çalışma
 dalı silindi. Yedek v9 işi (ADR-011) `yedek-v9-sayfa` dalında yapılıp PR #50
 ile `main`'e squash merge edildi, dal silindi; `main` `origin/main` ile aynı.
-Yeni iş `main`'in ucundan yeni bir dalla başlar. **2026-09-25:** Çıkmış soru
-bankası `cikmis-soru-bankasi` dalında (Faz 0).
+Yeni iş `main`'in ucundan yeni bir dalla başlar. **2026-09-28:** Çıkmış soru
+bankası (Faz 0 → A3) `cikmis-soru-bankasi` dalında yapılıp PR #51 ile `main`'e
+squash merge edildi, dal silindi.
 
 **Test durumu:** sayıların tek kaynağı CI (`.github/workflows/`): backend
 (vitest + tsc), evals (pytest + üretici `--check`'ler), iOS (macOS runner'da
@@ -499,18 +500,12 @@ bankası `cikmis-soru-bankasi` dalında (Faz 0).
 durum sağlıklıdır. Bu belgeye test sayısı yazmıyoruz — üç yerde üç farklı
 sayı tutmayı iki kez denedik, ikisinde de ayrıştı.
 
-**⚠️ CI şu an kullanılamıyor — GitHub Actions kotası doldu (2026-08-14):** üç
-workflow da (backend, evals, ios) artık bir runner'a **hiç atanmadan** saniyeler
-içinde kırmızı dönüyor — imzası belirgin: `runner_id: 0`, boş `runner_name`,
-2-4 saniyede "failure". Bu bir **kod sinyali değil**; checkout adımına bile
-ulaşılmıyor, dolayısıyla log da yok (log indirme 404 veriyor). PR #42'de altı
-koşunun altısı böyleydi ve aynı imza `main`'in kendi HEAD'inde de var (`ios`
-en az 2026-08-12'den beri). **Sonuç:** yukarıdaki "üçü de yeşilse sağlıklıdır"
-ölçütü kota yenilenene kadar geçersiz, ve bu dönemde kırmızı CI'ya bakıp "bu
-değişiklik bir şeyi bozdu" diye okumak yanlış olur. Kota dönene kadar tek
-gerçek kapı yerelde `npm test` + `npm run typecheck` ve bir Mac'te
-`swift test`. Kota yenilendiğinde ilk iş `main`'i bir kez yeşile koşturup bu
-notu silmek.
+**CI yeniden çalışıyor (2026-09-28):** 2026-08-14'ten beri GitHub Actions kotası
+dolu olduğu için üç workflow da runner'a atanmadan kırmızı dönüyordu; PR #51'de
+backend, evals ve ios üçü de gerçekten koştu ve yeşil. Aynı gün backend'in
+`npm audit` adımı kod dışı bir sebeple kırmızıya döndü (yeni `fast-uri`/`vitest`
+uyarıları) ve kilit dosyası güncellenerek kapatıldı — audit adımı tarih
+duyarlıdır, bir gün değişiklik olmadan da kırmızı dönebilir.
 
 **Bu ortamın kalıcı sınırı:** Linux'ta `CizgiCore` **bütün olarak** derlenmiyor
 (CoreGraphics, SwiftData); SwiftUI dosyaları ve App hedefi yalnız
@@ -748,7 +743,7 @@ commit'inin revert'i), `docs/FAZ0-*` – `FAZ5-*`,
 (14 günün ≥ 8'inde kullanım, yanlışlarda köprüye cevap ≥ %50, açıkların ≥ %20'si çekimle kapanıyor,
 200 soruda ≤ 2 hata bildirimi). Kapı geçerse Faz B (sorudan kart yaz, istatistik, yedek v10).
 Önce gerçek cihazda 42-49. maddeler: paketi telefona AirDrop'la, Ayarlar'dan içe aktar.
-Dal (`cikmis-soru-bankasi`) henüz PR'a açılmadı. Sahibinin işi: eksik
+Kod `main`'de (PR #51). Sahibinin işi: eksik
 tam setler (2022–2023, 2026/1), 2011/1 Klinik testi ve 2024/1 anahtarı için kaynak
 (plan §10).
 

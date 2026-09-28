@@ -103,7 +103,7 @@ cihaz doğrulama listesi [`CLAUDE.md`](CLAUDE.md)'de.
 | Tasarım dili "Kemik & Oxblood", yeni Tekrar ekranı | 🟡 Simülatörde doğrulandı; gerçek cihazda bakılmadı |
 | Bilgilerim gezintisi, istatistik, günlük hatırlatıcı, ders gravürleri, kaynak fotoğrafında yakınlaştırma (2026-09-14) | 🟡 Simülatörde doğrulandı; gerçek cihazda bakılmadı |
 | Yedek biçimi v9: geri yüklemede sayfa fotoğrafı (ADR-011) | 🟡 Simülatörde uçtan uca doğrulandı; gerçek cihazda bakılmadı |
-| Çıkmış soru bankası (ADR-012): kitapsızken gerçek TUS sorusu, yanlıştan kendi kartına köprü | 🟡 Faz 0 (`cikmis-soru-bankasi` dalı); plan onaylı: [PLAN-cikmis-soru-bankasi](docs/PLAN-cikmis-soru-bankasi.md) |
+| Çıkmış soru bankası (ADR-012): kitapsızken gerçek TUS sorusu, yanlıştan kendi kartına köprü | 🟡 Faz A (Pratik + Deneme) `main`'de (PR #51); simülatörde doğrulandı, gerçek cihazda bakılmadı; plan: [PLAN-cikmis-soru-bankasi](docs/PLAN-cikmis-soru-bankasi.md) |
 | ~~Kavram destesi~~ (ADR-010) | ⛔️ 2026-09-14'te tamamen kaldırıldı (kod, şema sütunu, cihazdaki veri) |
 | ~~Karanlık Harita~~ (ADR-009) | ⛔️ 2026-09-09'da tamamen kaldırıldı |
 
@@ -191,7 +191,7 @@ Gerekli ortam değişkenleri `backend/.env.example`'da listeli.
 - [ADR-008](docs/ADR-008-fes-sicili.md): FES sicili
 - [ADR-011](docs/ADR-011-yedek-v9-sayfa-fotografi.md): yedek v9
 - [ADR-012](docs/ADR-012-cikmis-soru-bankasi.md): çıkmış soru bankası — soru kart değildir
-- Planlar: [PLAN-cikmis-soru-bankasi](docs/PLAN-cikmis-soru-bankasi.md) (onaylı, Faz 0), [PLAN-kapsama-sozlesmesi](docs/PLAN-kapsama-sozlesmesi.md), [PLAN-model-karsilastirma](docs/PLAN-model-karsilastirma.md), [PLAN-egzersiz-bilgi-haritasi](docs/PLAN-egzersiz-bilgi-haritasi.md), [PLAN-galeriden-foto](docs/PLAN-galeriden-foto.md), [FAZ6-PLAN](docs/FAZ6-PLAN.md), [FAZ7-PLAN](docs/FAZ7-PLAN-coktan-secmeli.md)
+- Planlar: [PLAN-cikmis-soru-bankasi](docs/PLAN-cikmis-soru-bankasi.md) (onaylı, Faz A tamam), [PLAN-kapsama-sozlesmesi](docs/PLAN-kapsama-sozlesmesi.md), [PLAN-model-karsilastirma](docs/PLAN-model-karsilastirma.md), [PLAN-egzersiz-bilgi-haritasi](docs/PLAN-egzersiz-bilgi-haritasi.md), [PLAN-galeriden-foto](docs/PLAN-galeriden-foto.md), [FAZ6-PLAN](docs/FAZ6-PLAN.md), [FAZ7-PLAN](docs/FAZ7-PLAN-coktan-secmeli.md)
 - İşletme: [PRIVACY](docs/PRIVACY.md), [RUNBOOK](docs/RUNBOOK.md), [MALIYET-OLCUMU](docs/MALIYET-OLCUMU.md), [OPENAI-GEMINI-KURULUM](docs/OPENAI-GEMINI-KURULUM.md), [FIGURES-SOURCES](docs/FIGURES-SOURCES.md)
 
 **Tarihsel.** Bu belgeler bugünkü davranışı anlatmaz, yalnızca kararların

@@ -1,7 +1,7 @@
 # ADR-012 — Çıkmış soru bankası: soru kart değildir
 
 **Tarih:** 2026-09-25 · **Durum:** ✅ Kabul edildi (plan onayı) · Faz 0, A1, A2 ve A3
-`cikmis-soru-bankasi` dalında · **Plan:** [`PLAN-cikmis-soru-bankasi.md`](PLAN-cikmis-soru-bankasi.md)
+`main`'de (PR #51, 2026-09-28) · **Plan:** [`PLAN-cikmis-soru-bankasi.md`](PLAN-cikmis-soru-bankasi.md)
 
 ## Bağlam
 
@@ -152,6 +152,19 @@ bağlamaya izin veriyor; kural `ExamAttempt.linkedCardId`'e (yalnız son bağlan
 bağlanan bir cevapta A unutuluyor, aynı oturumun sonraki bir yanlışı A'nın FES'ini ikinci kez
 yazıyordu. Artık her cevap FES yazdığı kartları `fesCardIds`'te tutuyor ve kural koşunun bütün
 cevaplarına bakıyor.
+
+## Bilinçli ayrıntılar (PR #51)
+
+- **Anahtar düzeltilince FES geri alınmaz.** Bir banka güncellemesi anahtarı düzeltip köprüde
+  bağlanmış bir yanlışı doğruya çevirirse, o karta yazılmış `.wrong` (+2) durur. Sonuç ve
+  gözden geçirme ekranları cevabı yeni anahtarla puanlar, Yanlışlarım da öyle — yalnız FES
+  geriye dönmez. Sebep: FES bilerek kalıcı ve [0,12] aralığına kırpılan bir sicildir (ADR-008);
+  Tekrar ve Egzersiz de hiçbir kaydını geri almaz, ve kırpma yüzünden tam geri alma kayıt başına
+  bir defter isterdi. Durum seyrek (anahtarlar V3/V4/V6'dan geçer) ve yanlış +2 sonraki doğru
+  cevaplarla söner. Ters yönde — anahtar bir doğruyu yanlışa çevirirse — köprü açılır ve bağlama
+  çalışır: `ExamRecorder.link` kararı etkin bankanın anahtarıyla verir.
+- **Bütçe tavanı uçuştaki çağrılarca aşılabilir** (en fazla `concurrency − 1` çağrı, kuruşlar):
+  `backend/scripts/examBank.ts` başlığı ve `tools/exam_bank/README.md`.
 
 ## Geri dönüş
 

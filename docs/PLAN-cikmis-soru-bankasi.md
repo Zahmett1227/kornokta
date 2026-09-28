@@ -11,10 +11,10 @@ PDF'lere göre yeniden yazılmış, uygulanabilir hâlidir.*
 
 | Faz | Durum |
 |---|---|
-| Faz 0 — hazırlık | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
-| Faz A1 — banka hattı | ✅ `cikmis-soru-bankasi` dalında (2026-09-25): A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu): sürüm **2026-09-25.2**, 8.410 soru, 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri: "Faz A1 sonucu" |
-| Faz A2 — uygulama çekirdeği | ✅ `cikmis-soru-bankasi` dalında (2026-09-26): CizgiCore çekirdeği + üç SwiftData modeli + içe aktarma + Pratik + köprü + "Kitaba dönünce"; §9.3/6 senaryosu simülatörde uçtan uca gerçek paketle koştu. Ayrıntı: "Faz A2 sonucu" |
-| Faz A3 — Deneme | ✅ `cikmis-soru-bankasi` dalında (2026-09-26): kağıt denemesi + karma deneme, duvar saatiyle geri sayım, duraklatma (süresi sonuçta yazılır), işaretleme, gezgin, teslim, sonuç ekranı (net, ders bazında net ve oran, süre, önceki denemeyle karşılaştırma), köprülü gözden geçirme. Ayrıntı: "Faz A3 sonucu" |
+| Faz 0 — hazırlık | ✅ `main`'de (PR #51) (2026-09-25): plan + [ADR-012](ADR-012-cikmis-soru-bankasi.md); `FesScore.record` (tek canlı FES yazarı, 8 test); kart yüzü `StudyFaceContent` refaktörü (Tekrar simülatörde piksel piksel aynı, Egzersiz'de 0,002 piksellik gözle görülmez kayma); `tools/exam_bank/` kaynak kaydı (82 dosya, 85 kağıt, sha256) + `--dry-run` + 33 test. Sahibin işi olan kaynak klasör düzeni isteğe bağlı kaldı (§9.1) |
+| Faz A1 — banka hattı | ✅ `main`'de (PR #51) (2026-09-25): A1–A9 gerçek klasörde koştu, **V1–V10 geçti** (V9: Tuğba Çağlar, 30 soru). Paket `tools/exam_bank/out/CizgiSoruBankasi/` (gitignore'lu): sürüm **2026-09-25.2**, 8.410 soru, 85 kağıt, 82 PDF, 163 MB. Model $0,65. Ölçümün düzelttikleri: "Faz A1 sonucu" |
+| Faz A2 — uygulama çekirdeği | ✅ `main`'de (PR #51) (2026-09-26): CizgiCore çekirdeği + üç SwiftData modeli + içe aktarma + Pratik + köprü + "Kitaba dönünce"; §9.3/6 senaryosu simülatörde uçtan uca gerçek paketle koştu. Ayrıntı: "Faz A2 sonucu" |
+| Faz A3 — Deneme | ✅ `main`'de (PR #51) (2026-09-26): kağıt denemesi + karma deneme, duvar saatiyle geri sayım, duraklatma (süresi sonuçta yazılır), işaretleme, gezgin, teslim, sonuç ekranı (net, ders bazında net ve oran, süre, önceki denemeyle karşılaştırma), köprülü gözden geçirme. Ayrıntı: "Faz A3 sonucu" |
 | Kanıt turu | 🔲 |
 | Faz B / C | 🔲 |
 
