@@ -189,3 +189,19 @@ def test_a_result_counts_only_while_its_item_is_unchanged(tmp_path):
 def test_the_prompt_version_is_read_from_the_prompts_themselves():
     from tools.exam_bank import jobs
     assert jobs.prompt_version().startswith("exam-bank-")
+
+
+def test_a_booklet_replaced_under_the_same_name_changes_the_v9_digest():
+    """Codex, PR #51: the crop comes from the PDF's bytes, not its name."""
+    sample = [dict(_q(status="ok"), pdfs=["aaa"])]
+    assert gates.v9_digest(sample) != gates.v9_digest([dict(sample[0], pdfs=["bbb"])])
+
+
+def test_the_registry_carries_the_digest_of_the_file_it_was_read_from(tmp_path):
+    source = reg.REGISTRY_PATH
+    copy = tmp_path / "sources.json"
+    copy.write_bytes(source.read_bytes())
+    assert reg.load(copy).digest == reg.load(source).digest
+    copy.write_bytes(source.read_bytes() + b"\n")
+    assert reg.load(copy).digest != reg.load(source).digest
+    assert reg.load(source).file_hashes()

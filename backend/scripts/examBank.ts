@@ -30,7 +30,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadEnvFile } from "dotenv";
@@ -243,10 +243,21 @@ async function main(argv: string[]): Promise<number> {
   const results = new Map(done);
   let next = 0;
   let finished = 0;
-  const save = async () => {
-    const file: ResultFile = { stage: job.stage, model: config.model, reasoningEffort: config.reasoningEffort,
-      promptVersion: EXAM_BANK_PROMPT_VERSION, items: job.items.map((i) => results.get(i.id)).filter(Boolean) as ItemResult[] };
-    await writeFile(outPath, JSON.stringify(file, null, 1));
+  // One checkpoint at a time, written beside the file and renamed over it:
+  // an interrupted write leaves the previous checkpoint — the paid results —
+  // whole, and two workers reaching a ten-item boundary together cannot
+  // interleave (Codex, PR #51).
+  let checkpoint: Promise<void> = Promise.resolve();
+  const save = () => {
+    const write = async () => {
+      const file: ResultFile = { stage: job.stage, model: config.model, reasoningEffort: config.reasoningEffort,
+        promptVersion: EXAM_BANK_PROMPT_VERSION, items: job.items.map((i) => results.get(i.id)).filter(Boolean) as ItemResult[] };
+      const temporary = `${outPath}.${process.pid}.tmp`;
+      await writeFile(temporary, JSON.stringify(file, null, 1));
+      await rename(temporary, outPath);
+    };
+    checkpoint = checkpoint.then(write, write);
+    return checkpoint;
   };
   const worker = async () => {
     while (next < todo.length) {

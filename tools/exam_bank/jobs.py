@@ -20,7 +20,7 @@ import json
 import random
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import registry as reg
 from . import render
@@ -66,7 +66,13 @@ def question_text(q: dict, limit: int = TEXT_LIMIT) -> str:
     return body if len(body) <= limit else body[:limit] + " …"
 
 
-def repair_items(questions: Iterable[dict], source_dir: Path, out: Path) -> List[dict]:
+def pdf_hashes(provenance: Sequence[dict], hashes: Dict[str, str]) -> List[Optional[str]]:
+    """The pinned sha256 of each PDF a crop is cut from: a PDF replaced
+    under the same name renders another image at the same coordinates."""
+    return [hashes.get(r["file"]) for r in provenance]
+
+
+def repair_items(questions: Iterable[dict], source_dir: Path, out: Path, hashes: Dict[str, str]) -> List[dict]:
     items = []
     for q in questions:
         if q["status"] != "needsRepair":
@@ -75,18 +81,21 @@ def repair_items(questions: Iterable[dict], source_dir: Path, out: Path) -> List
         render.save_question_crop(source_dir, q["provenance"], crop, dpi=CROP_DPI)
         text = question_text(q, 4000)
         items.append({"id": q["id"], "text": text, "image": f"../crops/{crop.name}",
-                      "fingerprint": fingerprint({"text": text, "provenance": q["provenance"], "dpi": CROP_DPI})})
+                      "fingerprint": fingerprint({"text": text, "provenance": q["provenance"], "dpi": CROP_DPI,
+                                                  "pdfs": pdf_hashes(q["provenance"], hashes)})})
     return items
 
 
-def vision_items(source_dir: Path, out: Path, pages: Iterable[int] = VISION_PAGES) -> List[dict]:
+def vision_items(source_dir: Path, out: Path, hashes: Dict[str, str],
+                 pages: Iterable[int] = VISION_PAGES) -> List[dict]:
     items = []
     for n in pages:
         dest = out / "pages" / f"TUS_2011_Ilkbahar-p{n:02d}.png"
         dest.parent.mkdir(parents=True, exist_ok=True)
         render.page_image(source_dir / VISION_FILE, n, dpi=PAGE_DPI).save(dest)
         items.append({"id": f"{VISION_FILE}|{n}", "image": f"../pages/{dest.name}",
-                      "fingerprint": fingerprint({"file": VISION_FILE, "page": n, "dpi": PAGE_DPI})})
+                      "fingerprint": fingerprint({"file": VISION_FILE, "pdf": hashes.get(VISION_FILE), "page": n,
+                                                  "dpi": PAGE_DPI})})
     return items
 
 

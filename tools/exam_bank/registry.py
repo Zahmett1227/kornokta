@@ -12,6 +12,7 @@ on CI (3.11) with nothing to install.
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 import re
 import unicodedata
@@ -113,6 +114,13 @@ class Registry:
     sources: List[Source]
     excluded: List[Exclusion]
     errors: List[str] = field(default_factory=list)
+    # sha256 of the sources.json it was read from: build stamps it on its
+    # output, finish refuses output stamped by another registry.
+    digest: str = ""
+
+    def file_hashes(self) -> Dict[str, str]:
+        """Registered file → its pinned sha256."""
+        return {s.file: s.sha256 for s in self.sources}
 
     @property
     def papers(self) -> List[Tuple[Source, Paper]]:
@@ -285,7 +293,10 @@ def parse(doc: dict) -> Registry:
 
 
 def load(path: Path = REGISTRY_PATH) -> Registry:
-    return parse(json.loads(path.read_text(encoding="utf-8")))
+    raw = path.read_bytes()
+    registry = parse(json.loads(raw.decode("utf-8")))
+    registry.digest = hashlib.sha256(raw).hexdigest()[:16]
+    return registry
 
 
 def missing_tests(registry: Registry) -> List[str]:

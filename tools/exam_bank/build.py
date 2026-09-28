@@ -160,6 +160,7 @@ def run_stages(registry: reg.Registry, source_dir: Path, out: Path) -> int:
     from .a1 import read_pages
 
     third = merge.run(registry, first, second)
+    third["sources"] = registry.digest
     by_file = {s.file: s for s in registry.sources}
     third["figures"] = figures.annotate(third["questions"],
                                         lambda f: read_pages(by_file[f], source_dir, cache))

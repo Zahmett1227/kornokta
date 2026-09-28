@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from . import apply, figures, jobs
+from . import apply, build, figures, jobs
 from . import registry as reg
 from .a1 import read_pages
 
@@ -63,8 +63,9 @@ def stage_six(registry: reg.Registry, source_dir: Path, out: Path) -> Optional[d
     a3 = _load(out / "a3.json")
     # The repair queue follows the deterministic stages: rebuilt every run, so
     # a question V2 newly sends to repair is queued without editing anything.
-    jobs.write(out, "repair", jobs.repair_items(a3["questions"], source_dir, out))
-    jobs.write(out, "vision", jobs.vision_items(source_dir, out))
+    hashes = registry.file_hashes()
+    jobs.write(out, "repair", jobs.repair_items(a3["questions"], source_dir, out, hashes))
+    jobs.write(out, "vision", jobs.vision_items(source_dir, out, hashes))
     waiting = [(s, _pending(out, s)) for s in ("repair", "vision")]
     if any(p for _, p in waiting):
         for s, p in waiting:
@@ -161,7 +162,9 @@ def stage_eight(registry: reg.Registry, a7: dict, source_dir: Path, out: Path, h
 
     a1, a2, a3 = (_load(out / f"a{i}.json") for i in (1, 2, 3))
     questions = a7["questions"]
-    sample = gates.v9_sample(questions, seed="v9-" + str(len(questions)))
+    hashes = registry.file_hashes()
+    sample = [dict(q, pdfs=jobs.pdf_hashes(q["provenance"], hashes))
+              for q in gates.v9_sample(questions, seed="v9-" + str(len(questions)))]
     digest = gates.v9_digest(sample)
     # `--human-check` approves the sheet the owner read — the one an earlier
     # run wrote — so it must still show what the bank has now.
@@ -229,6 +232,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Kaynak klasör gerekli (EXAM_SOURCE_DIR ya da --source-dir).", file=sys.stderr)
         return 1
     registry = reg.load()
+    # The build checked the folder; the PDFs may have changed since, or this
+    # may be another folder — and crops, V8, V9 and the package read them
+    # again (Codex, PR #51).
+    problems = build.check_source_dir(registry, source_dir)
+    if problems:
+        print(f"Kaynak klasör ({source_dir}) kayıtla uyuşmuyor:", *problems[:20], sep="\n  ", file=sys.stderr)
+        return 1
+    built = args.out / "a3.json"
+    if built.exists() and _load(built).get("sources") != registry.digest:
+        print("sources.json, build'in çıktısından sonra değişti (ya da çıktı bu kontrolden eski): önce\n"
+              "  python -m tools.exam_bank.build", file=sys.stderr)
+        return 1
     a6 = stage_six(registry, source_dir, args.out)
     if a6 is None:
         return 2

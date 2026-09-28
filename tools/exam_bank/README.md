@@ -60,9 +60,15 @@ değişirse V9 düşer. `--human-check` yalnız sahibinin okuduğu sayfayı — 
 koşunun yazdığını (`out/V9-orneklem.json`) — onaylar; banka o arada değiştiyse onay
 yazılmaz, yeni sayfa açılır.
 
-**Geçiş notu:** 2026-09-25.2 paketini üreten sonuç dosyalarında parmak izi, V9
-onayında özet yok; bir sonraki yeniden üretimde dört model aşaması baştan gönderilir
-(~$0,65) ve V9 yeniden onaylanır.
+**`finish` kaynağı yeniden doğrular.** Klasördeki her PDF'i `sources.json`'a karşı
+yeniden denetler (sha256, kayıtsız PDF yok) ve build'in çıktısının bu kayıtla
+üretildiğini (`a3.json`'daki `sources` özeti) arar; tutmazsa hiçbir şey yazmadan durur.
+Kırpıntılı işlerin parmak izine ve V9 özetine PDF'in sabitlenmiş sha256'sı da girer —
+aynı adla değişen bir kitapçık eski okumayı ya da eski onayı taşıyamaz.
+
+**Geçiş notu:** 2026-09-25.2 paketini üreten çıktılarda kayıt özeti, parmak izi ve V9
+özeti yok; bir sonraki yeniden üretim build'den başlar, dört model aşaması baştan
+gönderilir (~$0,65) ve V9 yeniden onaylanır.
 
 ## Aşamalar
 

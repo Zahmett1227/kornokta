@@ -168,7 +168,13 @@ private struct ExamQuestionScreen: View {
     /// was stored and the screen never revealed it (simulator, 2026-09-25).
     @Query private var questionAttempts: [ExamAttempt]
 
-    @State private var shownAt = Date()
+    @Environment(\.scenePhase) private var scenePhase
+    /// When the question came (back) on screen; `nil` while the app is away.
+    @State private var shownAt: Date?
+    /// On-screen time banked before `shownAt`. A question left open while
+    /// the phone was locked must not enter `ExamPace` as a long answer
+    /// (Codex, PR #51).
+    @State private var visibleSeconds: TimeInterval = 0
     @State private var candidates: [Card] = []
     /// Bumped after every write, so what is read through fetches (not
     /// observed properties) is read again.
@@ -233,6 +239,14 @@ private struct ExamQuestionScreen: View {
                 .padding(.bottom, Cizgi.Space.md)
         }
         .onAppear { shownAt = .now }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                if shownAt == nil { shownAt = .now }
+            } else if let start = shownAt {
+                visibleSeconds += Date().timeIntervalSince(start)
+                shownAt = nil
+            }
+        }
         .task(id: attempt?.id) { refreshCandidates() }
     }
 
@@ -316,12 +330,13 @@ private struct ExamQuestionScreen: View {
     private func answer(_ option: Int?) {
         guard attempt == nil else { return }
         let now = Date()
+        let seen = visibleSeconds + (shownAt.map { now.timeIntervalSince($0) } ?? 0)
         let recorder = ExamRecorder(context: context)
         recorder.recordAnswer(
             to: question,
             selectedOption: option,
             in: run,
-            responseTimeMs: Int(now.timeIntervalSince(shownAt) * 1_000),
+            responseTimeMs: Int(seen * 1_000),
             at: now
         )
         try? context.save()

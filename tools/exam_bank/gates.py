@@ -111,13 +111,16 @@ def v9_sample(questions: List[dict], seed: str) -> List[dict]:
 
 
 # What the V9 sheet shows of a question; the approval covers exactly this.
-V9_SHOWN = ("id", "stem", "options", "answer", "answerSource", "osymSubject", "topic", "textQuality", "provenance")
+V9_SHOWN = ("id", "stem", "options", "answer", "answerSource", "osymSubject", "topic", "textQuality", "provenance",
+            "pdfs")
 
 
 def v9_digest(sample: List[dict]) -> str:
     """The sheet's content, hashed. An approval names it, not only the ids:
     a rebuild that changes a sampled question under the same id — its text,
-    options, key, labels or crop — has not been looked at (Codex, PR #51)."""
+    options, key, labels or crop — has not been looked at (Codex, PR #51).
+    `pdfs` (set by finish: the pinned sha256 of each crop's PDF) covers a
+    booklet replaced under the same name."""
     shown = [{k: q.get(k) for k in V9_SHOWN} for q in sample]
     raw = json.dumps(shown, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
