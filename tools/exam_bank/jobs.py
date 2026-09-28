@@ -7,9 +7,15 @@
 
 Images are written next to them (`out/crops/`, `out/pages/`) and referenced
 relative to the job file. Nothing here calls a model or spends money.
+
+Every item carries a `fingerprint` of what the model will be shown. Item ids
+are stable across rebuilds and inputs are not, so a result is reused — by the
+runner, which skips it, and by `apply.load_results`, which folds it in — only
+while its item's fingerprint is unchanged (Codex, PR #51).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 from pathlib import Path
@@ -26,6 +32,16 @@ VISION_PAGES = range(3, 34)
 LABEL_BATCH = 25
 CHECK_SAMPLE = 15
 TEXT_LIMIT = 900  # characters of a question sent for labelling or checking
+CROP_DPI = 150
+PAGE_DPI = 200
+
+
+def fingerprint(basis: dict) -> str:
+    """The inputs a model result was made from. Images are described by where
+    they are rendered from (the PDFs are pinned by sha256 in sources.json),
+    not by their bytes, so a re-render does not invalidate anything."""
+    raw = json.dumps(basis, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def question_text(q: dict, limit: int = TEXT_LIMIT) -> str:
@@ -40,8 +56,10 @@ def repair_items(questions: Iterable[dict], source_dir: Path, out: Path) -> List
         if q["status"] != "needsRepair":
             continue
         crop = out / "crops" / f"{q['id']}.png"
-        render.save_question_crop(source_dir, q["provenance"], crop)
-        items.append({"id": q["id"], "text": question_text(q, 4000), "image": f"../crops/{crop.name}"})
+        render.save_question_crop(source_dir, q["provenance"], crop, dpi=CROP_DPI)
+        text = question_text(q, 4000)
+        items.append({"id": q["id"], "text": text, "image": f"../crops/{crop.name}",
+                      "fingerprint": fingerprint({"text": text, "provenance": q["provenance"], "dpi": CROP_DPI})})
     return items
 
 
@@ -50,8 +68,9 @@ def vision_items(source_dir: Path, out: Path, pages: Iterable[int] = VISION_PAGE
     for n in pages:
         dest = out / "pages" / f"TUS_2011_Ilkbahar-p{n:02d}.png"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        render.page_image(source_dir / VISION_FILE, n, dpi=200).save(dest)
-        items.append({"id": f"{VISION_FILE}|{n}", "image": f"../pages/{dest.name}"})
+        render.page_image(source_dir / VISION_FILE, n, dpi=PAGE_DPI).save(dest)
+        items.append({"id": f"{VISION_FILE}|{n}", "image": f"../pages/{dest.name}",
+                      "fingerprint": fingerprint({"file": VISION_FILE, "page": n, "dpi": PAGE_DPI})})
     return items
 
 
@@ -70,9 +89,9 @@ def label_items(papers: Sequence[dict], questions: Sequence[dict]) -> List[dict]
         qs.sort(key=lambda q: q["number"])
         for start in range(0, len(qs), LABEL_BATCH):
             run = qs[start:start + LABEL_BATCH]
-            items.append({"id": f"{pid}|{start // LABEL_BATCH + 1}", "test": test_of[pid],
-                           "questions": [{"k": i + 1, "id": q["id"], "text": question_text(q)}
-                                         for i, q in enumerate(run)]})
+            items.append(_with_fingerprint({"id": f"{pid}|{start // LABEL_BATCH + 1}", "test": test_of[pid],
+                                            "questions": [{"k": i + 1, "id": q["id"], "text": question_text(q)}
+                                                          for i, q in enumerate(run)]}))
     return items
 
 
@@ -91,10 +110,15 @@ def check_items(papers: Sequence[dict], questions: Sequence[dict]) -> List[dict]
             continue  # ÖSYM's partial booklets: every answer is ÖSYM's own printed mark
         sample = sorted(random.Random(pid).sample(sorted(qs, key=lambda q: q["number"]), CHECK_SAMPLE),
                         key=lambda q: q["number"])
-        items.append({"id": pid, "test": test_of[pid],
-                      "questions": [{"k": i + 1, "id": q["id"], "text": question_text(q)}
-                                    for i, q in enumerate(sample)]})
+        items.append(_with_fingerprint({"id": pid, "test": test_of[pid],
+                                        "questions": [{"k": i + 1, "id": q["id"], "text": question_text(q)}
+                                                      for i, q in enumerate(sample)]}))
     return items
+
+
+def _with_fingerprint(item: dict) -> dict:
+    """Text-only items: what the model sees is the item itself."""
+    return dict(item, fingerprint=fingerprint({"test": item["test"], "questions": item["questions"]}))
 
 
 def write(out: Path, stage: str, items: List[dict]) -> Path:

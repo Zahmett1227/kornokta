@@ -7,7 +7,7 @@ import {
 import { OpenAIError, type Transport } from "../providers/openai.js";
 import { OpenAITextClient } from "../providers/openaiText.js";
 import { SUBJECT_TOPIC_SCHEMA } from "../providers/subjectTopics.js";
-import { buildRequest, checkPrices } from "../scripts/examBank.js";
+import { buildRequest, checkPrices, reusableResults, type ItemResult, type ResultFile } from "../scripts/examBank.js";
 
 const KEYS = [
   "OPENAI_MODEL", "OPENAI_REASONING_EFFORT", "OPENAI_MAX_OUTPUT_TOKENS",
@@ -165,5 +165,34 @@ describe("buildRequest", () => {
     expect(label.user).toBe("[1] Soru bir\n\n[2] Soru iki");
     expect(label.images).toBeUndefined();
     expect(buildRequest("check", { id: "p", test: "T", questions: qs }, image).schemaName).toBe("exam_check");
+  });
+});
+
+describe("reusableResults", () => {
+  const current = { model: "gpt-5.6-luna", reasoningEffort: "high", promptVersion: "exam-bank-1" };
+  const result = (id: string, fingerprint: string | null | undefined, ok = true): ItemResult => ({
+    id, ok, output: ok ? {} : null, error: ok ? null : "x", costUSD: 0, usage: null, latencyMs: 0, attempts: 1, fingerprint,
+  });
+  const previous = (items: ItemResult[], over: Partial<ResultFile> = {}): ResultFile =>
+    ({ stage: "label", ...current, items, ...over });
+  const job = { stage: "label" as const, items: [{ id: "a", fingerprint: "f1" }, { id: "b", fingerprint: "f2" }] };
+
+  it("keeps a result only while its item is unchanged", () => {
+    const kept = reusableResults(previous([result("a", "f1"), result("b", "old")]), job, current);
+    expect([...kept.keys()]).toEqual(["a"]);
+  });
+
+  it("drops everything when the model, effort or prompt changed", () => {
+    const items = [result("a", "f1"), result("b", "f2")];
+    expect(reusableResults(previous(items), job, current).size).toBe(2);
+    expect(reusableResults(previous(items, { promptVersion: "exam-bank-0" }), job, current).size).toBe(0);
+    expect(reusableResults(previous(items, { model: "gpt-5.6-sol" }), job, current).size).toBe(0);
+    expect(reusableResults(previous(items, { reasoningEffort: "low" }), job, current).size).toBe(0);
+  });
+
+  it("cannot vouch for a result made before fingerprints, nor for a failure", () => {
+    const kept = reusableResults(previous([result("a", undefined), result("b", "f2", false)]), job, current);
+    expect(kept.size).toBe(0);
+    expect(reusableResults(null, job, current).size).toBe(0);
   });
 });

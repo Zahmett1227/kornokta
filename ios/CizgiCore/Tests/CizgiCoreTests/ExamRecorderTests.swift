@@ -89,6 +89,27 @@ final class ExamRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state(for: question.id).linkedCards, [card.id])
     }
 
+    /// Codex, PR #51 P1: linking A then B on one answer used to overwrite A,
+    /// so a later miss of the same run wrote A's FES a second time.
+    func testASecondCardOnOneAnswerDoesNotForgetTheFirst() {
+        let a = makeCard()
+        let b = makeCard()
+        let run = makeRun()
+        let first = recorder.recordAnswer(to: question, selectedOption: 0, in: run, responseTimeMs: 1, at: t0)
+        XCTAssertTrue(recorder.link(a, to: first, at: t0))
+        XCTAssertTrue(recorder.link(b, to: first, at: t0 + 1), "another card that also answers it gets its own FES")
+        XCTAssertFalse(recorder.link(a, to: first, at: t0 + 2), "back to A on the same answer: still one write")
+
+        let other = ExamBankFixture.question("TUS-2019-1-T-051", answer: 1)
+        let second = recorder.recordAnswer(to: other, selectedOption: 0, in: run, responseTimeMs: 1, at: t0 + 5)
+        XCTAssertFalse(recorder.link(a, to: second, at: t0 + 5), "one run, one FES write per card")
+        XCTAssertFalse(recorder.link(b, to: second, at: t0 + 6))
+        XCTAssertEqual(a.fesScore, 2)
+        XCTAssertEqual(a.fesNegativeCount, 1)
+        XCTAssertEqual(b.fesScore, 2)
+        XCTAssertEqual(first.linkedCardId, a.id, "the latest link is what the attempt shows")
+    }
+
     func testNoCardOpensAGapAndLinkingLaterClosesIt() {
         let attempt = recorder.recordAnswer(to: question, selectedOption: 0, in: nil, responseTimeMs: 1, at: t0)
         recorder.markNoCard(attempt, at: t0)

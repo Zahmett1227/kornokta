@@ -245,8 +245,18 @@ public final class ExamBankStore: @unchecked Sendable {
             }
 
             let previous = activeVersion
-            try promote(staging, to: manifest.bankVersion)
-            try writeActive(manifest.bankVersion)
+            let aside = try promote(staging, to: manifest.bankVersion)
+            do {
+                try writeActive(manifest.bankVersion)
+            } catch {
+                // A full disk can fail this last write. Without undoing the
+                // promotion a new version would sit orphaned (163 MB on a
+                // phone already out of space), and a re-import of the same
+                // version would already have replaced the old folder while
+                // reporting failure (Codex, PR #51).
+                demote(manifest.bankVersion, restoring: aside)
+                throw error
+            }
             removeEverything(except: manifest.bankVersion)
             return ExamBankInstallResult(bank: bank, bytes: manifest.totalBytes, replacedVersion: previous)
         } catch {
@@ -290,12 +300,14 @@ public final class ExamBankStore: @unchecked Sendable {
     #endif
 
     /// Staging becomes `<version>/`. A bank of the same version already there
-    /// (re-importing) is moved aside first and put back if the swap fails.
-    private func promote(_ staging: URL, to version: String) throws {
+    /// (re-importing) is moved aside, not deleted, and returned: it comes
+    /// back if the swap fails here or `active.json` fails after it, and
+    /// `removeEverything` deletes it once the import has succeeded.
+    private func promote(_ staging: URL, to version: String) throws -> URL? {
         let final = root.appendingPathComponent(version, isDirectory: true)
         guard fileManager.fileExists(atPath: final.path) else {
             try fileManager.moveItem(at: staging, to: final)
-            return
+            return nil
         }
         let aside = root.appendingPathComponent(".old-\(UUID().uuidString)", isDirectory: true)
         try fileManager.moveItem(at: final, to: aside)
@@ -305,7 +317,15 @@ public final class ExamBankStore: @unchecked Sendable {
             try? fileManager.moveItem(at: aside, to: final)
             throw error
         }
-        try? fileManager.removeItem(at: aside)
+        return aside
+    }
+
+    /// Undoes `promote`: the promoted folder goes, the one it replaced (if
+    /// any) returns. Best effort — this runs on a failure path already.
+    private func demote(_ version: String, restoring aside: URL?) {
+        let final = root.appendingPathComponent(version, isDirectory: true)
+        try? fileManager.removeItem(at: final)
+        if let aside { try? fileManager.moveItem(at: aside, to: final) }
     }
 
     private func writeActive(_ version: String) throws {

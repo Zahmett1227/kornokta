@@ -112,6 +112,37 @@ final class ExamBankStoreTests: XCTestCase {
         XCTAssertEqual(store.activeVersion, "2026-09-25.1")
     }
 
+    /// Makes the last step of an import, writing `active.json`, fail: a
+    /// folder in its place cannot be replaced by a file.
+    private func blockActivation() throws {
+        let active = store.root.appendingPathComponent("active.json")
+        try FileManager.default.removeItem(at: active)
+        try FileManager.default.createDirectory(at: active, withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: active.appendingPathComponent("inside"))
+    }
+
+    /// Codex, PR #51: a failed activation left a new version's folder behind.
+    func testAFailedActivationLeavesNoNewVersionBehind() throws {
+        try store.install(from: makePackage(version: "2026-09-25.1"))
+        try blockActivation()
+        XCTAssertThrowsError(try store.install(from: makePackage(version: "2026-09-25.2")))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path).sorted(),
+                       ["2026-09-25.1", "active.json"])
+    }
+
+    /// Codex, PR #51: re-importing the same version had already replaced the
+    /// old folder when activation failed.
+    func testAFailedActivationPutsTheSameVersionBack() throws {
+        try store.install(from: makePackage(version: "2026-09-25.1"))
+        let marker = store.root.appendingPathComponent("2026-09-25.1/marker")
+        try Data("eski".utf8).write(to: marker)
+        try blockActivation()
+        XCTAssertThrowsError(try store.install(from: makePackage(version: "2026-09-25.1")))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "the folder that was there came back")
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: store.root.path).sorted(),
+                       ["2026-09-25.1", "active.json"])
+    }
+
     func testRefusesWhatItCannotRead() throws {
         XCTAssertThrowsError(try store.install(from: makePackage(schemaVersion: 2))) {
             XCTAssertEqual($0 as? ExamBankInstallError, .unsupportedSchema(2))

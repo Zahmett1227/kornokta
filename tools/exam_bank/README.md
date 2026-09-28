@@ -39,8 +39,19 @@ python -m tools.exam_bank.finish --human-check "Ad"
 
 `python -m tools.exam_bank.build --dry-run` yalnız kaydı ve klasörü denetler
 (sha256, kayıtsız PDF yok). Model koşucusu kaldığı yerden sürer, her çağrıyı
-`out/ledger.jsonl`'a yazar ve toplam harcama `EXAM_BANK_MAX_USD`'yi ($5)
-aşacaksa durur; fiyat girilmeden çalışmaz.
+`out/ledger.jsonl`'a yazar ve toplam harcama `EXAM_BANK_MAX_USD`'ye ($5)
+ulaşınca yeni çağrı başlatmaz (o an uçuştaki en fazla `concurrency − 1` çağrı
+yine biter); fiyat girilmeden çalışmaz.
+
+**Sonuç ancak girdisi değişmediyse kullanılır.** Her iş öğesi modele
+gösterileni özetleyen bir `fingerprint` taşır (`jobs.py`); koşucu da `finish`
+de bir sonucu yalnız öğesinin parmak izi aynıysa ve aynı model/effort/istem
+sürümüyle üretildiyse kullanır. Soru kimlikleri yeniden üretimde sabittir ama
+metinleri değil — kimliğe bakarak kullanmak, düzelmiş bir sorunun üstüne eski
+okumayı sessizce katlardı (Codex, PR #51). Etiket ve V6 işleri de artık her
+koşuda yeniden yazılır. **Geçiş notu:** 2026-09-25.2 paketini üreten sonuç
+dosyalarında parmak izi yok; bir sonraki yeniden üretimde dört model aşaması
+baştan gönderilir (~$0,65).
 
 ## Aşamalar
 

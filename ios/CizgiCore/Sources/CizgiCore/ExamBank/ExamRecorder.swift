@@ -81,16 +81,10 @@ public struct ExamRecorder {
     /// Returns whether FES was written.
     @discardableResult
     public func link(_ card: Card, to attempt: ExamAttempt, at now: Date) -> Bool {
-        // Fetched, not read off `run.attempts`: that list is filled through
-        // its inverse and was seen lagging on screen (ExamQuestionScreen).
-        let target: UUID? = card.id
-        let runId = attempt.run?.id
-        let linkedBefore = (try? context.fetch(
-            FetchDescriptor<ExamAttempt>(predicate: #Predicate { $0.linkedCardId == target })
-        )) ?? []
-        let alreadyWritten = runId != nil && linkedBefore.contains { $0.id != attempt.id && $0.run?.id == runId }
-        // Tapping the same card twice on one attempt is one link.
-        let sameAttempt = attempt.linkedCardId == card.id && attempt.bridgeOutcome == .linked
+        let raw = card.id.uuidString
+        // Tapping the same card twice, or naming it again for another miss
+        // of this run, finds it here: every attempt keeps every card it wrote.
+        let alreadyWritten = attemptsOfItsRun(attempt).contains { $0.fesCardIds.contains(raw) }
 
         attempt.linkedCardId = card.id
         attempt.bridgeOutcome = .linked
@@ -98,9 +92,22 @@ public struct ExamRecorder {
         state.link(card.id)
         state.gap = ExamGapLedger.closing(state.gap, byCard: card.id, at: now)
 
-        guard !alreadyWritten, !sameAttempt else { return false }
+        guard !alreadyWritten else { return false }
+        attempt.fesCardIds.append(raw)
         FesScore.record(.wrong, on: card, at: now)
         return true
+    }
+
+    /// The attempts the once-per-run rule looks across: the run's — fetched,
+    /// not read off `run.attempts`, which is filled through its inverse and
+    /// was seen lagging on screen (ExamQuestionScreen) — or the attempt alone
+    /// when it has no run.
+    private func attemptsOfItsRun(_ attempt: ExamAttempt) -> [ExamAttempt] {
+        guard let runId = attempt.run?.id else { return [attempt] }
+        let fetched = (try? context.fetch(
+            FetchDescriptor<ExamAttempt>(predicate: #Predicate { $0.run?.id == runId })
+        )) ?? []
+        return fetched.contains { $0.id == attempt.id } ? fetched : fetched + [attempt]
     }
 
     /// "Hiçbiri — destemde yok": the question goes on "Kitaba dönünce".

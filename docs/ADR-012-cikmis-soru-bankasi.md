@@ -147,6 +147,12 @@ Sonuç her ekranda **bankanın anahtarından** okunur (`ExamBank.result`): banka
 düzeltilirse eski cevaplar yeni anahtarla puanlanır — karar 2'nin "banka değişir, kullanıcı durumu kalır"
 ilkesinin puanlamadaki karşılığı. `ExamRun`'a eklenen üç alan bildirimde varsayılanlı (hafif göç).
 
+**Oturum başına bir kez, kart başına (Codex, PR #51 P1).** Köprü aynı yanlışa ikinci bir kart
+bağlamaya izin veriyor; kural `ExamAttempt.linkedCardId`'e (yalnız son bağlantı) bakınca A sonra B
+bağlanan bir cevapta A unutuluyor, aynı oturumun sonraki bir yanlışı A'nın FES'ini ikinci kez
+yazıyordu. Artık her cevap FES yazdığı kartları `fesCardIds`'te tutuyor ve kural koşunun bütün
+cevaplarına bakıyor.
+
 ## Geri dönüş
 
 Faz A'dan itibaren kaldırma tek revert + tek göç olacak şekilde tasarlanır:

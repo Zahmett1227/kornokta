@@ -140,3 +140,34 @@ def test_a_cancelled_slot_without_text_packages_with_no_options():
     assert package.validate(doc) == []
     doc["questions"][0]["options"] = ["a", "b"]
     assert package.validate(doc)
+
+
+def _labelled(qid, number, stem):
+    return {"id": qid, "paperId": "TUS-2019-1-T", "number": number, "status": "ok", "stem": stem,
+            "options": ["a", "b", "c", "d", "e"], "answer": 0}
+
+
+def test_a_label_batch_is_fingerprinted_by_what_the_model_sees():
+    from tools.exam_bank import jobs
+    papers = [{"id": "TUS-2019-1-T", "test": "T"}]
+    def batch(second_stem):
+        return jobs.label_items(papers, [_labelled("TUS-2019-1-T-001", 1, "Atropin?"),
+                                         _labelled("TUS-2019-1-T-002", 2, second_stem)])
+    before, again, fixed = batch("Digoksin?"), batch("Digoksin?"), batch("Digoksin nedir?")
+    assert before[0]["fingerprint"] == again[0]["fingerprint"]
+    assert before[0]["id"] == fixed[0]["id"], "ids are stable across rebuilds…"
+    assert before[0]["fingerprint"] != fixed[0]["fingerprint"], "…inputs are not (Codex, PR #51)"
+
+
+def test_a_result_counts_only_while_its_item_is_unchanged(tmp_path):
+    path = tmp_path / "label.json"
+    path.write_text(json.dumps({"items": [
+        {"id": "a", "ok": True, "output": {}, "fingerprint": "f1"},
+        {"id": "b", "ok": True, "output": {}, "fingerprint": "old"},
+        {"id": "c", "ok": True, "output": {}},
+        {"id": "d", "ok": False, "output": None, "fingerprint": "f4"},
+    ]}), encoding="utf-8")
+    items = [{"id": "a", "fingerprint": "f1"}, {"id": "b", "fingerprint": "f2"},
+             {"id": "c", "fingerprint": "f3"}, {"id": "d", "fingerprint": "f4"}]
+    assert list(apply.load_results(path, items)) == ["a"]
+    assert apply.load_results(tmp_path / "none.json", items) == {}

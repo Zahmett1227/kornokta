@@ -3,7 +3,8 @@
     python -m tools.exam_bank.finish
 
 Idempotent and resumable. Each run applies whatever results exist and stops
-at the first thing still missing, saying which command produces it:
+at the first thing still missing, saying which command produces it. A result
+whose job item changed since it was made counts as missing (`jobs.fingerprint`):
 
 1. A5 + A6 results (repair, 2011/1 vision) → `out/a6.json`, then the A7 and
    V6 job files.
@@ -17,7 +18,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from . import apply, figures, jobs
 from . import registry as reg
@@ -41,12 +42,20 @@ def _write(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def _results(out: Path, stage: str) -> Dict[str, dict]:
+    """The stage's results that still match its job items (see `jobs.fingerprint`)."""
+    job = out / "jobs" / f"{stage}.json"
+    if not job.exists():
+        return {}
+    return apply.load_results(out / "results" / f"{stage}.json", _load(job)["items"])
+
+
 def _pending(out: Path, stage: str) -> List[str]:
-    """Job items that have no successful result yet."""
+    """Job items that have no current successful result."""
     job = out / "jobs" / f"{stage}.json"
     if not job.exists():
         return []
-    have = apply.load_results(out / "results" / f"{stage}.json")
+    have = _results(out, stage)
     return [i["id"] for i in _load(job)["items"] if i["id"] not in have]
 
 
@@ -55,23 +64,21 @@ def stage_six(registry: reg.Registry, source_dir: Path, out: Path) -> Optional[d
     # The repair queue follows the deterministic stages: rebuilt every run, so
     # a question V2 newly sends to repair is queued without editing anything.
     jobs.write(out, "repair", jobs.repair_items(a3["questions"], source_dir, out))
-    if not (out / "jobs" / "vision.json").exists():
-        jobs.write(out, "vision", jobs.vision_items(source_dir, out))
+    jobs.write(out, "vision", jobs.vision_items(source_dir, out))
     waiting = [(s, _pending(out, s)) for s in ("repair", "vision")]
     if any(p for _, p in waiting):
         for s, p in waiting:
             if p:
                 print(f"Eksik: {len(p)} {s} sonucu. Çalıştır:\n  {_next(s)}")
         return None
-    results = out / "results"
     a2 = _load(out / "a2.json")
     questions = a3["questions"]
-    notes = apply.apply_repair(questions, apply.load_results(results / "repair.json"))
+    notes = apply.apply_repair(questions, _results(out, "repair"))
 
     source = next(s for s in registry.sources if s.file == jobs.VISION_FILE)
     pages = read_pages(source, source_dir, out / "cache")
     keys = {k.split("|")[0]: v["entries"] for k, v in a2["printedKeys"].items() if k.endswith("|" + source.file)}
-    seen, vnotes = apply.vision_questions(apply.load_results(results / "vision.json"), source.file, pages, keys,
+    seen, vnotes = apply.vision_questions(_results(out, "vision"), source.file, pages, keys,
                                           list(source.papers))
     decor = figures.furniture(pages)
     by_number = {p.number: p for p in pages}
@@ -96,28 +103,29 @@ def stage_six(registry: reg.Registry, source_dir: Path, out: Path) -> Optional[d
 
 
 def stage_seven(registry: reg.Registry, a6: dict, source_dir: Path, out: Path) -> Optional[dict]:
-    results = out / "results"
+    # Rebuilt every run, like the repair queue: a batch whose questions
+    # changed gets a new fingerprint and is sent again, the rest keep their
+    # results. Written once, they went on labelling the questions they were
+    # first built from.
     for stage, maker in (("label", jobs.label_items), ("check", jobs.check_items)):
-        if not (out / "jobs" / f"{stage}.json").exists():
-            items = maker(a6["papers"], a6["questions"])
-            jobs.write(out, stage, items)
-            print(f"{stage}: {len(items)} iş yazıldı.")
-    missing = [s for s in ("label", "check") if not (results / f"{s}.json").exists()]
-    if missing:
-        for s in missing:
-            print(f"Eksik: {s} sonuçları. Çalıştır:\n  {_next(s)}")
+        jobs.write(out, stage, maker(a6["papers"], a6["questions"]))
+    waiting = [(s, _pending(out, s)) for s in ("label", "check")]
+    if any(p for _, p in waiting):
+        for s, p in waiting:
+            if p:
+                print(f"Eksik: {len(p)} {s} sonucu. Çalıştır:\n  {_next(s)}")
         return None
 
     papers = [p for s in registry.sources for p in s.papers]
     unique = list({p.id: p for p in papers}.values())
     topics = _topics()
     label_jobs = _load(out / "jobs" / "label.json")["items"]
-    subjects = apply.apply_labels(unique, a6["questions"], label_jobs, apply.load_results(results / "label.json"),
+    subjects = apply.apply_labels(unique, a6["questions"], label_jobs, _results(out, "label"),
                                   topics)
     reference = apply.v7_reference(source_dir / REFERENCE)
     compared, agree, misses = apply.v7_agreement(a6["questions"], reference)
     answers = {q["id"]: q["answer"] for q in a6["questions"]}
-    check = apply.apply_check(_load(out / "jobs" / "check.json")["items"], apply.load_results(results / "check.json"),
+    check = apply.apply_check(_load(out / "jobs" / "check.json")["items"], _results(out, "check"),
                               answers)
     a7 = dict(a6, stage="A7", subjects=subjects, v6=check,
               v7={"compared": compared, "agree": agree, "misses": misses})

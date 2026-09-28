@@ -125,8 +125,14 @@ public final class ExamAttempt {
     public var responseTimeMs: Int = 0
     public var answeredAt: Date = Date.now
     public var bridgeOutcomeRaw: String?
-    /// A plain id, not a relationship (see the file comment).
+    /// A plain id, not a relationship (see the file comment). The latest
+    /// link only — the bridge lets the owner name a second card.
     public var linkedCardId: UUID?
+    /// Every card this answer wrote FES to (uuid strings). The once-per-run
+    /// rule reads this, not `linkedCardId`: linking A then B overwrote A
+    /// there, and a later miss in the same run wrote A's FES a second time
+    /// (Codex, PR #51 P1).
+    public var fesCardIds: [String] = []
     public var run: ExamRun?
 
     public var bridgeOutcome: ExamBridgeOutcome? {

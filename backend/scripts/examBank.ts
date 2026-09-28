@@ -10,15 +10,20 @@
  *
  * Results go next to the job file (`results/<stage>.json`); every call, paid
  * or failed, is appended to `ledger.jsonl` with `purpose: "exam_bank_build"`.
- * Re-running a stage re-sends only the items that have no result yet, so a
- * run stopped by the budget, a quota or a network drop resumes without paying
- * twice for what it already has.
+ * Re-running a stage re-sends only the items that have no current result, so
+ * a run stopped by the budget, a quota or a network drop resumes without
+ * paying twice for what it already has. "Current" means made with this model,
+ * effort and prompt version from an item whose `fingerprint` (written by
+ * tools/exam_bank/jobs.py) has not changed — see `reusableResults`.
  *
  * Money: the exam model's own prices must be set (`OPENAI_EXAM_USD_PER_
  * MILLION_*`) — with zero prices the ledger would read $0 and the budget
  * check would never trip, the silent mis-count CLAUDE.md warns about — and
- * the run stops before a call that would take the cumulative spend over
- * `EXAM_BANK_MAX_USD` (default $5, the plan's ceiling for the whole build).
+ * no new call starts once the cumulative spend reaches `EXAM_BANK_MAX_USD`
+ * (default $5, the plan's ceiling for the whole build). Calls already in
+ * flight finish, so the ceiling can be passed by up to `concurrency − 1`
+ * calls — a call's price is not known before it returns, and at this build's
+ * cents per call that overshoot is not worth serialising the run for.
  *
  * Privacy (§7.3): question text and images go to OpenAI and to the local,
  * gitignored out/ folder only. The terminal prints ids, counts, tokens, money.
@@ -49,6 +54,8 @@ export interface JobItem {
   /** label / check: the paper's test ("T", "T2", "K"). */
   test?: string;
   questions?: Array<{ k: number; id: string; text: string }>;
+  /** What the model is shown, hashed (tools/exam_bank/jobs.py `fingerprint`). */
+  fingerprint?: string;
 }
 
 export interface JobFile {
@@ -65,6 +72,8 @@ export interface ItemResult {
   usage: Record<string, number> | null;
   latencyMs: number;
   attempts: number;
+  /** The job item's fingerprint when this result was made. */
+  fingerprint?: string | null;
 }
 
 export interface ResultFile {
@@ -101,6 +110,30 @@ export function buildRequest(stage: Stage, item: JobItem, readImage: (path: stri
         schemaName: "exam_check", schema: CHECK_SCHEMA,
       };
   }
+}
+
+/**
+ * The previous results this job may keep: successful, made with the same
+ * model, effort and prompt version, from an item whose fingerprint is still
+ * the same. Item ids are stable across rebuilds and inputs are not, so
+ * reusing by id alone folded stale outputs into newly extracted questions —
+ * and the next save labelled them with the current model and prompt
+ * (Codex, PR #51). A result without a fingerprint cannot be checked and is
+ * not kept.
+ */
+export function reusableResults(
+  previous: ResultFile | null,
+  job: JobFile,
+  current: { model: string; reasoningEffort: string; promptVersion: string },
+): Map<string, ItemResult> {
+  if (!previous || previous.model !== current.model || previous.reasoningEffort !== current.reasoningEffort
+    || previous.promptVersion !== current.promptVersion) {
+    return new Map();
+  }
+  const wanted = new Map(job.items.map((item) => [item.id, item.fingerprint]));
+  return new Map(previous.items
+    .filter((r) => r.ok && r.fingerprint != null && r.fingerprint === wanted.get(r.id))
+    .map((r) => [r.id, r]));
 }
 
 /** Refuses to spend with no price set: the ledger would silently read $0. */
@@ -188,7 +221,11 @@ async function main(argv: string[]): Promise<number> {
   const ledger = join(dirname(absJob), "..", "ledger.jsonl");
 
   const previous: ResultFile | null = existsSync(outPath) ? JSON.parse(readFileSync(outPath, "utf8")) : null;
-  const done = new Map((previous?.items ?? []).filter((r) => r.ok).map((r) => [r.id, r]));
+  const done = reusableResults(previous, job, {
+    model: config.model, reasoningEffort: config.reasoningEffort, promptVersion: EXAM_BANK_PROMPT_VERSION,
+  });
+  const stale = (previous?.items ?? []).filter((r) => r.ok).length - done.size;
+  if (stale > 0) console.log(`${job.stage}: ${stale} eski sonuç girdisi ya da model/istem değiştiği için yeniden gönderilecek.`);
   const todo = job.items.filter((item) => !done.has(item.id)).slice(0, limit);
   const budget: Budget = { spent: 0, max: config.maxUsdPerRun };
   // What the ledger already holds counts against the ceiling: the ceiling is
@@ -214,7 +251,8 @@ async function main(argv: string[]): Promise<number> {
   const worker = async () => {
     while (next < todo.length) {
       const item = todo[next++]!;
-      const result = await runItem(client, buildRequest(job.stage, item, readImage), item, budget, ledger, job.stage, config);
+      const result = { ...await runItem(client, buildRequest(job.stage, item, readImage), item, budget, ledger, job.stage,
+        config), fingerprint: item.fingerprint ?? null };
       if (result.ok || !results.has(item.id)) results.set(item.id, result);
       finished += 1;
       if (finished % 10 === 0 || finished === todo.length) {
