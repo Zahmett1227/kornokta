@@ -101,7 +101,10 @@ struct ExamMockView: View {
         } message: {
             Text(finishSummary)
         }
-        .sheet(isPresented: $isShowingNavigator) {
+        .sheet(isPresented: $isShowingNavigator, onDismiss: {
+            // Closed without picking a question: the one behind it is back.
+            if shownAt == nil, scenePhase == .active { shownAt = .now }
+        }) {
             if let run {
                 ExamMockNavigator(
                     queue: run.queuedQuestionIds,
@@ -128,7 +131,7 @@ struct ExamMockView: View {
             switch phase {
             case .active:
                 submitIfExpired()
-                shownAt = .now
+                if !isShowingNavigator { shownAt = .now }
             default:
                 flushTime()
                 shownAt = nil
@@ -230,7 +233,9 @@ struct ExamMockView: View {
             .accessibilityLabel(flagged ? "İşareti kaldır" : "Soruyu işaretle")
 
             Button {
+                // Browsing the grid is not time on this question (Codex, PR #51).
                 flushTime()
+                shownAt = nil
                 isShowingNavigator = true
             } label: {
                 Text("\(index + 1) / \(count)")

@@ -47,7 +47,7 @@ def _results(out: Path, stage: str) -> Dict[str, dict]:
     job = out / "jobs" / f"{stage}.json"
     if not job.exists():
         return {}
-    return apply.load_results(out / "results" / f"{stage}.json", _load(job)["items"])
+    return apply.load_results(out / "results" / f"{stage}.json", _load(job)["items"], jobs.prompt_version())
 
 
 def _pending(out: Path, stage: str) -> List[str]:

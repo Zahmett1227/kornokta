@@ -207,14 +207,34 @@ final class ExamModelsTests: XCTestCase {
     func testStateCountsAnswersAndKeepsTheNewestResult() {
         let state = ExamQuestionState(questionId: "TUS-2019-1-T-045")
         let t0 = Date(timeIntervalSince1970: 1_770_000_000)
-        state.record(.wrong, at: t0 + 10)
-        state.record(.correct, at: t0)   // an older answer arriving late
-        state.record(.blank, at: t0 + 20)
+        state.record(.wrong, selectedOption: 0, at: t0 + 10)
+        state.record(.correct, selectedOption: 2, at: t0)   // an older answer arriving late
+        state.record(.blank, selectedOption: nil, at: t0 + 20)
         XCTAssertEqual(state.attemptCount, 3)
         XCTAssertEqual(state.wrongCount, 2)
         XCTAssertEqual(state.lastResult, .blank)
         XCTAssertEqual(state.lastAnsweredAt, t0 + 20)
-        XCTAssertTrue(state.progress.isWrong)
+        XCTAssertNil(state.lastSelectedOption)
+    }
+
+    /// Codex, PR #51: Yanlışlarım scores the last answer by the active key,
+    /// as the result screens do — not by the key it was answered under.
+    func testTheLastResultFollowsTheActiveKey() throws {
+        let id = "TUS-2019-1-T-045"
+        let state = ExamQuestionState(questionId: id)
+        state.record(.wrong, selectedOption: 1, at: Date(timeIntervalSince1970: 1_770_000_000))
+        func bank(_ questions: ExamQuestion...) throws -> ExamBank {
+            try ExamBank(document: ExamBankFixture.document(questions: questions))
+        }
+        XCTAssertTrue(state.progress(in: try bank(ExamBankFixture.question(id, answer: 2))).isWrong)
+        let fixed = state.progress(in: try bank(ExamBankFixture.question(id, answer: 1)))
+        XCTAssertEqual(fixed.lastResult, .correct, "a corrected key takes it out of Yanlışlarım")
+        XCTAssertTrue(state.progress(in: try bank(ExamBankFixture.question("TUS-2019-1-T-046"))).isWrong,
+                      "a question the bank dropped keeps what was recorded")
+
+        let legacy = ExamQuestionState(questionId: id)
+        legacy.lastResult = .wrong   // written before the option was kept
+        XCTAssertTrue(legacy.progress(in: try bank(ExamBankFixture.question(id, answer: 1))).isWrong)
     }
 
     func testGapAndLinksRoundTripThroughTheirStrings() {

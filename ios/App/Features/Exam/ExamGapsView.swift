@@ -153,7 +153,7 @@ struct ExamGapsView: View {
         guard let run = launcher.start(
             mode: .gaps,
             filter: ExamFilter(progress: .gaps),
-            progress: ExamRunLauncher.progressMap(allStates),
+            progress: ExamRunLauncher.progressMap(allStates, bank: bank),
             limit: nil,
             order: .oldestFirst
         ) else { return }

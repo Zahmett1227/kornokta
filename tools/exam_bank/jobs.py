@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
@@ -34,6 +35,21 @@ CHECK_SAMPLE = 15
 TEXT_LIMIT = 900  # characters of a question sent for labelling or checking
 CROP_DPI = 150
 PAGE_DPI = 200
+
+
+PROMPTS = Path(__file__).resolve().parents[2] / "backend" / "prompts" / "examBank.ts"
+
+
+def prompt_version(prompts: Path = PROMPTS) -> str:
+    """The model stages' prompt version, read from the prompts themselves so
+    there is one source. A result made under another version is stale even
+    when its item is unchanged (Codex, PR #51); the version covers every
+    stage, so bumping it re-sends all of them — cents, against folding in
+    outputs of a prompt that is gone."""
+    found = re.search(r'EXAM_BANK_PROMPT_VERSION\s*=\s*"([^"]+)"', prompts.read_text(encoding="utf-8"))
+    if not found:
+        raise RuntimeError(f"EXAM_BANK_PROMPT_VERSION bulunamadı: {prompts}")
+    return found.group(1)
 
 
 def fingerprint(basis: dict) -> str:

@@ -180,7 +180,16 @@ public final class ExamQuestionState {
     public var closedByCardId: String?
     public var attemptCount: Int = 0
     public var wrongCount: Int = 0
+    /// The last result as scored when it was recorded. Screens read
+    /// `progress(in:)`, which re-scores `lastSelectedOption` by the active
+    /// bank's key; this is what is left for a question the bank dropped.
     public var lastResultRaw: String?
+    /// The option behind the last result (`nil` = blank). Kept so that a
+    /// rebuilt bank that corrects a key moves the question in or out of
+    /// Yanlışlarım exactly as the result screens re-score it (Codex, PR #51).
+    public var lastSelectedOption: Int?
+    /// Whether `lastSelectedOption` was recorded (a nil option is a blank).
+    public var hasLastSelection: Bool = false
     public var lastAnsweredAt: Date?
     public var reportedIssueRaw: String?
 
@@ -221,10 +230,17 @@ public final class ExamQuestionState {
         }
     }
 
-    public var progress: ExamProgress {
-        ExamProgress(
+    /// What the owner has done with the question, its last answer scored by
+    /// `bank`'s key — the key every result screen uses (`ExamBank.result`).
+    /// `attemptCount`/`wrongCount` stay a tally of how answers scored at the
+    /// time; only "is it wrong now" follows a corrected key.
+    public func progress(in bank: ExamBank) -> ExamProgress {
+        let rescored = hasLastSelection && bank.questionsById[questionId] != nil
+            ? bank.result(questionId: questionId, selectedOption: lastSelectedOption)
+            : lastResult
+        return ExamProgress(
             attemptCount: attemptCount,
-            lastResult: lastResult,
+            lastResult: rescored,
             lastAnsweredAt: lastAnsweredAt,
             gapStatus: gap.status
         )
@@ -232,12 +248,14 @@ public final class ExamQuestionState {
 
     /// Folds one answer in. The only writer of the counters, so a run and a
     /// restored backup (Faz B) cannot count differently.
-    public func record(_ result: ExamResult, at date: Date) {
+    public func record(_ result: ExamResult, selectedOption: Int?, at date: Date) {
         attemptCount += 1
         if result.isMiss { wrongCount += 1 }
         // A restored or out-of-order answer must not overwrite a newer one.
         if lastAnsweredAt.map({ date >= $0 }) ?? true {
             lastResult = result
+            lastSelectedOption = selectedOption
+            hasLastSelection = true
             lastAnsweredAt = date
         }
     }

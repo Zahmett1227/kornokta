@@ -27,15 +27,19 @@ REPAIR_MIN_SHARED = 0.7   # §5.7: share of the extractor's words the repair mus
 PICTURE = "[görsel]"
 
 
-def load_results(path: Path, job_items: Sequence[dict]) -> Dict[str, dict]:
-    """Successful results for the job's *current* items. A result whose
-    fingerprint is not its item's was made from other inputs — or before
-    fingerprints existed, so nobody can tell — and is left out: its item is
-    pending again and the runner re-sends it (Codex, PR #51)."""
+def load_results(path: Path, job_items: Sequence[dict], prompt_version: str) -> Dict[str, dict]:
+    """Successful results for the job's *current* items under the current
+    prompt. A result whose fingerprint is not its item's was made from other
+    inputs — or before fingerprints existed, so nobody can tell — and a file
+    written under another prompt version is stale as a whole: either way the
+    item is pending again and the runner re-sends it (Codex, PR #51). Model
+    and effort are the runner's per-run choice; it keeps one per file."""
     if not path.exists():
         return {}
     current = {item["id"]: item.get("fingerprint") for item in job_items}
     data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("promptVersion") != prompt_version:
+        return {}
     return {item["id"]: item for item in data["items"]
             if item.get("ok") and item.get("fingerprint") is not None
             and item.get("fingerprint") == current.get(item["id"])}

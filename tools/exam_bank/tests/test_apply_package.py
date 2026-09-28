@@ -173,7 +173,7 @@ def test_a_label_batch_is_fingerprinted_by_what_the_model_sees():
 
 def test_a_result_counts_only_while_its_item_is_unchanged(tmp_path):
     path = tmp_path / "label.json"
-    path.write_text(json.dumps({"items": [
+    path.write_text(json.dumps({"promptVersion": "exam-bank-9", "items": [
         {"id": "a", "ok": True, "output": {}, "fingerprint": "f1"},
         {"id": "b", "ok": True, "output": {}, "fingerprint": "old"},
         {"id": "c", "ok": True, "output": {}},
@@ -181,5 +181,11 @@ def test_a_result_counts_only_while_its_item_is_unchanged(tmp_path):
     ]}), encoding="utf-8")
     items = [{"id": "a", "fingerprint": "f1"}, {"id": "b", "fingerprint": "f2"},
              {"id": "c", "fingerprint": "f3"}, {"id": "d", "fingerprint": "f4"}]
-    assert list(apply.load_results(path, items)) == ["a"]
-    assert apply.load_results(tmp_path / "none.json", items) == {}
+    assert list(apply.load_results(path, items, "exam-bank-9")) == ["a"]
+    assert apply.load_results(path, items, "exam-bank-10") == {}, "another prompt: nothing is current"
+    assert apply.load_results(tmp_path / "none.json", items, "exam-bank-9") == {}
+
+
+def test_the_prompt_version_is_read_from_the_prompts_themselves():
+    from tools.exam_bank import jobs
+    assert jobs.prompt_version().startswith("exam-bank-")

@@ -67,7 +67,7 @@ public struct ExamRecorder {
         )
         attempt.run = run
         context.insert(attempt)
-        state(for: question.id).record(result, at: now)
+        state(for: question.id).record(result, selectedOption: selectedOption, at: now)
         return attempt
     }
 
@@ -225,7 +225,7 @@ public struct ExamRecorder {
             let result = bank.result(questionId: question.id, selectedOption: attempt.selectedOption)
             attempt.isCorrect = result == .correct ? true : (result == .wrong ? false : nil)
             attempt.bridgeOutcome = result.isMiss && question.isScoreable ? nil : .notAsked
-            state(for: question.id).record(result, at: now)
+            state(for: question.id).record(result, selectedOption: attempt.selectedOption, at: now)
             recorded += 1
         }
         run.clock = run.clock.resuming(at: now)

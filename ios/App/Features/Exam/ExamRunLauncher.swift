@@ -37,8 +37,9 @@ struct ExamRunLauncher {
     let bank: ExamBank
 
     /// Everything the owner has done, keyed by question id.
-    static func progressMap(_ states: [ExamQuestionState]) -> [String: ExamProgress] {
-        Dictionary(states.map { ($0.questionId, $0.progress) }, uniquingKeysWith: { first, _ in first })
+    /// The last results are scored by `bank`'s key (`ExamQuestionState.progress(in:)`).
+    static func progressMap(_ states: [ExamQuestionState], bank: ExamBank) -> [String: ExamProgress] {
+        Dictionary(states.map { ($0.questionId, $0.progress(in: bank)) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// Closes any run still open and returns the new one, or `nil` when the

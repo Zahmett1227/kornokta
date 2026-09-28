@@ -44,9 +44,11 @@ ulaşınca yeni çağrı başlatmaz (o an uçuştaki en fazla `concurrency − 1
 yine biter); fiyat girilmeden çalışmaz.
 
 **Sonuç ancak girdisi değişmediyse kullanılır.** Her iş öğesi modele
-gösterileni özetleyen bir `fingerprint` taşır (`jobs.py`); koşucu da `finish`
-de bir sonucu yalnız öğesinin parmak izi aynıysa ve aynı model/effort/istem
-sürümüyle üretildiyse kullanır. Soru kimlikleri yeniden üretimde sabittir ama
+gösterileni özetleyen bir `fingerprint` taşır (`jobs.py`). Koşucu bir sonucu
+yalnız öğesinin parmak izi aynıysa ve aynı model/effort/istem sürümüyle
+üretildiyse yeniden kullanır; `finish` de parmak izine ve istem sürümüne bakar
+(sürümü `backend/prompts/examBank.ts`'ten okur). Sürüm bütün aşamalar için
+tektir: `EXAM_BANK_PROMPT_VERSION`'ı artırmak dördünü de yeniden gönderir. Soru kimlikleri yeniden üretimde sabittir ama
 metinleri değil — kimliğe bakarak kullanmak, düzelmiş bir sorunun üstüne eski
 okumayı sessizce katlardı (Codex, PR #51). Etiket ve V6 işleri de artık her
 koşuda yeniden yazılır.

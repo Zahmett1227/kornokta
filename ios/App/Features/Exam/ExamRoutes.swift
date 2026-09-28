@@ -56,7 +56,7 @@ struct ExamEntryRow: View {
         for state in states {
             let scoreable = bank.scoreableIds.contains(state.questionId)
             if scoreable, state.attemptCount > 0 { attempted += 1 }
-            if scoreable, state.progress.isWrong { wrong += 1 }
+            if scoreable, state.progress(in: bank).isWrong { wrong += 1 }
             if state.gap.status == .open, bank.questionsById[state.questionId] != nil { gaps += 1 }
         }
         let unsolved = bank.scoreableIds.count - attempted

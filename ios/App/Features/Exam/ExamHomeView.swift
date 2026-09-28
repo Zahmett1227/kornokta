@@ -26,7 +26,7 @@ struct ExamHomeView: View {
 
     private enum BudgetKind: Hashable { case questions, minutes }
 
-    private var progress: [String: ExamProgress] { ExamRunLauncher.progressMap(states) }
+    private func progress(_ bank: ExamBank) -> [String: ExamProgress] { ExamRunLauncher.progressMap(states, bank: bank) }
 
     private var openRun: ExamRun? {
         runs.first { $0.finishedAt == nil && $0.position < $0.queuedQuestionIds.count }
@@ -56,12 +56,12 @@ struct ExamHomeView: View {
         }
         .sheet(isPresented: $isShowingSetup) {
             if let bank = examLibrary.bank {
-                ExamSetupSheet(filter: $filter, bank: bank, progress: progress)
+                ExamSetupSheet(filter: $filter, bank: bank, progress: progress(bank))
             }
         }
         .sheet(isPresented: $isShowingMixedMock) {
             if let bank = examLibrary.bank {
-                ExamMixedMockSheet(bank: bank, progress: progress) { run in
+                ExamMixedMockSheet(bank: bank, progress: progress(bank)) { run in
                     navigator.exercisePath.append(AppNavigator.ExamRoute.mock(run.id))
                 }
             }
@@ -104,10 +104,10 @@ struct ExamHomeView: View {
     // MARK: Content
 
     private func content(_ bank: ExamBank) -> some View {
-        let progress = self.progress
+        let progress = self.progress(bank)
         let eligible = bank.questions(matching: filter, progress: progress)
         let unsolved = bank.scoreableIds.filter { !(progress[$0]?.isAttempted ?? false) }.count
-        let wrong = states.filter { $0.progress.isWrong && bank.scoreableIds.contains($0.questionId) }.count
+        let wrong = bank.scoreableIds.filter { progress[$0]?.isWrong == true }.count
         let gaps = states.filter { $0.gap.status == .open && bank.questionsById[$0.questionId] != nil }.count
 
         return ScrollView {
@@ -342,7 +342,7 @@ struct ExamHomeView: View {
         guard let run = launcher.start(
             mode: mode,
             filter: filter,
-            progress: progress,
+            progress: progress(bank),
             limit: budget.limit(secondsPerQuestion: secondsPerQuestion),
             order: order
         ) else {
