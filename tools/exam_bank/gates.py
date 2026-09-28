@@ -7,6 +7,7 @@ itself, so a gate cannot pass on a number nobody measured.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import base64
 import io
@@ -109,6 +110,19 @@ def v9_sample(questions: List[dict], seed: str) -> List[dict]:
     return sorted(random.Random(seed).sample(pool, min(V9_SAMPLE, len(pool))), key=lambda q: q["id"])
 
 
+# What the V9 sheet shows of a question; the approval covers exactly this.
+V9_SHOWN = ("id", "stem", "options", "answer", "answerSource", "osymSubject", "topic", "textQuality", "provenance")
+
+
+def v9_digest(sample: List[dict]) -> str:
+    """The sheet's content, hashed. An approval names it, not only the ids:
+    a rebuild that changes a sampled question under the same id — its text,
+    options, key, labels or crop — has not been looked at (Codex, PR #51)."""
+    shown = [{k: q.get(k) for k in V9_SHOWN} for q in sample]
+    raw = json.dumps(shown, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
 def v9_page(sample: List[dict], source_dir: Path, dest: Path) -> None:
     """The owner's sheet: each sampled question as the bank has it, beside its
     crop from the booklet. Local only (out/, gitignored) — never published:
@@ -137,7 +151,7 @@ def v9_page(sample: List[dict], source_dir: Path, dest: Path) -> None:
 section{{border-top:1px solid #ccc;padding:12px 0}}h2{{font-size:16px}}small{{color:#666;font-weight:normal}}
 .row{{display:flex;gap:24px}}.text{{flex:1}}.crop{{flex:1}}.crop img{{max-width:100%;border:1px solid #ddd}}
 ol{{list-style:none;padding:0}}li.ans{{font-weight:bold;color:#0a6}}</style>
-<h1>V9 — insan örneklemi ({len(sample)} soru)</h1>
+<h1>V9 — insan örneklemi ({len(sample)} soru) <small>özet {v9_digest(sample)}</small></h1>
 <p>Her sorunun metnini, şıklarını ve cevabını yanındaki kitapçık kırpıntısıyla karşılaştır. Hepsi doğruysa
 <code>python -m tools.exam_bank.finish --human-check "Ad"</code> ile onayla.</p>
 {''.join(parts)}""", encoding="utf-8")
@@ -149,6 +163,8 @@ def v9(sample: List[dict], human_check: Optional[dict]) -> dict:
         return _gate(False, "sahibinin onayı bekleniyor (out/V9-orneklem.html)")
     if human_check.get("sample") != ids:
         return _gate(False, "onay başka bir örnekleme ait; yeni örneklem gözden geçirilmeli")
+    if human_check.get("digest") != v9_digest(sample):
+        return _gate(False, "örneklemin soruları onaydan sonra değişti; sayfa yeniden gözden geçirilmeli")
     return _gate(True, f"{human_check['by']} · {human_check['at']} · {len(ids)} soru")
 
 

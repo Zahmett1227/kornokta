@@ -49,9 +49,18 @@ de bir sonucu yalnız öğesinin parmak izi aynıysa ve aynı model/effort/istem
 sürümüyle üretildiyse kullanır. Soru kimlikleri yeniden üretimde sabittir ama
 metinleri değil — kimliğe bakarak kullanmak, düzelmiş bir sorunun üstüne eski
 okumayı sessizce katlardı (Codex, PR #51). Etiket ve V6 işleri de artık her
-koşuda yeniden yazılır. **Geçiş notu:** 2026-09-25.2 paketini üreten sonuç
-dosyalarında parmak izi yok; bir sonraki yeniden üretimde dört model aşaması
-baştan gönderilir (~$0,65).
+koşuda yeniden yazılır.
+
+**V9 onayı içeriğe bağlı.** Onay (`out/human_check.json`) örneklemin kimlikleriyle
+birlikte sayfada gösterilenin özetini (`gates.v9_digest`: metin, şıklar, anahtar ve
+kaynağı, ders/konu, kırpıntının yeri) taşır; aynı kimlikli bir soru yeniden üretimde
+değişirse V9 düşer. `--human-check` yalnız sahibinin okuduğu sayfayı — bir önceki
+koşunun yazdığını (`out/V9-orneklem.json`) — onaylar; banka o arada değiştiyse onay
+yazılmaz, yeni sayfa açılır.
+
+**Geçiş notu:** 2026-09-25.2 paketini üreten sonuç dosyalarında parmak izi, V9
+onayında özet yok; bir sonraki yeniden üretimde dört model aşaması baştan gönderilir
+(~$0,65) ve V9 yeniden onaylanır.
 
 ## Aşamalar
 

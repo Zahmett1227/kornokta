@@ -23,7 +23,10 @@ struct ExamMockView: View {
     @Query private var runs: [ExamRun]
     @Query private var attempts: [ExamAttempt]
 
-    @State private var shownAt = Date()
+    /// When the current question came on screen; `nil` while it is not on
+    /// screen (background, another screen), so time away is never counted
+    /// as time spent on it.
+    @State private var shownAt: Date?
     @State private var isConfirmingFinish = false
     @State private var isShowingNavigator = false
     /// See `ExamSessionView.revision`: the redraw must not depend on
@@ -128,9 +131,13 @@ struct ExamMockView: View {
                 shownAt = .now
             default:
                 flushTime()
+                shownAt = nil
             }
         }
-        .onDisappear { flushTime() }
+        .onDisappear {
+            flushTime()
+            shownAt = nil
+        }
     }
 
     // MARK: Screens
@@ -300,16 +307,16 @@ struct ExamMockView: View {
         revision += 1
     }
 
-    /// Adds the time spent on the question on screen to its row. Called on
-    /// every way off it — next, the navigator, pause, background, hand-in.
-    private func flushTime() {
+    /// Adds the time the question on screen has been there — since
+    /// `shownAt`, up to `end` — to its row. Called on every way off it: next,
+    /// the navigator, pause, background, hand-in, and the deadline.
+    private func flushTime(until end: Date = .now) {
         guard let run, run.finishedAt == nil, !run.clock.isPaused, let bank = examLibrary.bank,
-              let id = run.currentQuestionId, let question = bank.question(id) else { return }
-        let now = Date()
-        let milliseconds = Int(now.timeIntervalSince(shownAt) * 1_000)
-        shownAt = now
+              let id = run.currentQuestionId, let question = bank.question(id), let start = shownAt else { return }
+        shownAt = end
+        let milliseconds = Int(end.timeIntervalSince(start) * 1_000)
         guard milliseconds > 250 else { return }
-        ExamRecorder(context: context).addMockTime(milliseconds, to: question, in: run, at: now)
+        ExamRecorder(context: context).addMockTime(milliseconds, to: question, in: run, at: end)
         try? context.save()
     }
 
@@ -333,7 +340,11 @@ struct ExamMockView: View {
 
     private func submit(byTimeLimit: Bool, at date: Date) {
         guard let run, let bank = examLibrary.bank else { return }
-        if !byTimeLimit { flushTime() }
+        // Up to the hand-in — the deadline when time ran out with the
+        // question on screen: the owner looked at it until then, and a blank
+        // one must still become a blank they met (Codex, PR #51). Time ran out
+        // in the background: `shownAt` is nil and nothing is added.
+        flushTime(until: date)
         ExamRecorder(context: context).submitMock(run, bank: bank, at: date, byTimeLimit: byTimeLimit)
         try? context.save()
         revision += 1

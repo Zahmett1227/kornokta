@@ -162,11 +162,21 @@ def stage_eight(registry: reg.Registry, a7: dict, source_dir: Path, out: Path, h
     a1, a2, a3 = (_load(out / f"a{i}.json") for i in (1, 2, 3))
     questions = a7["questions"]
     sample = gates.v9_sample(questions, seed="v9-" + str(len(questions)))
-    gates.v9_page(sample, source_dir, out / "V9-orneklem.html")
+    digest = gates.v9_digest(sample)
+    # `--human-check` approves the sheet the owner read — the one an earlier
+    # run wrote — so it must still show what the bank has now.
+    shown_path = out / "V9-orneklem.json"
+    shown = _load(shown_path).get("digest") if shown_path.exists() else None
     check_path = out / "human_check.json"
-    if human_by:
+    if human_by and shown != digest:
+        print("V9: örneklem, sayfa en son yazıldığından beri değişti; onay yazılmadı. "
+              f"Yeni sayfayı ({out / 'V9-orneklem.html'}) gözden geçirip yeniden onayla.")
+    elif human_by:
         check_path.write_text(json.dumps({"by": human_by, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                                          "sample": [q["id"] for q in sample]}, ensure_ascii=False, indent=1))
+                                          "sample": [q["id"] for q in sample], "digest": digest},
+                                         ensure_ascii=False, indent=1))
+    gates.v9_page(sample, source_dir, out / "V9-orneklem.html")
+    _write(shown_path, {"sample": [q["id"] for q in sample], "digest": digest})
     human = _load(check_path) if check_path.exists() else None
 
     dest = out / "CizgiSoruBankasi"

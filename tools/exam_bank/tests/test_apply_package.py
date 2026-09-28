@@ -93,9 +93,21 @@ def test_v2_passes_picture_options_and_catches_a_blank_one():
 
 def test_v9_needs_an_approval_of_this_very_sample():
     sample = [_q(status="ok")]
+    approval = {"by": "x", "at": "t", "sample": [sample[0]["id"]], "digest": gates.v9_digest(sample)}
     assert not gates.v9(sample, None)["pass"]
-    assert not gates.v9(sample, {"by": "x", "at": "t", "sample": ["başka"]})["pass"]
-    assert gates.v9(sample, {"by": "x", "at": "t", "sample": [sample[0]["id"]]})["pass"]
+    assert not gates.v9(sample, dict(approval, sample=["başka"]))["pass"]
+    assert gates.v9(sample, approval)["pass"]
+
+
+def test_v9_approval_is_of_the_content_not_only_the_ids():
+    """Codex, PR #51 P1: a rebuild that changes a sampled question under the
+    same id — here its key — has not been looked at."""
+    sample = [_q(status="ok")]
+    approval = {"by": "x", "at": "t", "sample": [sample[0]["id"]], "digest": gates.v9_digest(sample)}
+    rebuilt = [dict(sample[0], answer=3)]
+    assert not gates.v9(rebuilt, approval)["pass"]
+    assert not gates.v9(sample, {k: v for k, v in approval.items() if k != "digest"})["pass"], \
+        "an approval from before digests cannot vouch for anything"
 
 
 # --- package -------------------------------------------------------------------
